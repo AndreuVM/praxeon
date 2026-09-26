@@ -136,15 +136,26 @@ def parse_llm_steps(llm_output: str) -> List[Dict[str, Any]]:
                     else:
                         current_args = {"raw": str(parsed)}
                 except Exception:
-                    clean_arg = raw_arg.strip('"').strip("'")
-                    if current_tool == "run_command":
-                        current_args = {"command": clean_arg}
-                    elif current_tool in ("read_file", "view_file"):
-                        current_args = {"path": clean_arg}
-                    elif current_tool == "finish":
-                        current_args = {"summary": clean_arg}
+                    # Detectar si viene con sintaxis Python kwargs: tool(param1="val1", param2="val2")
+                    kw_pairs = re.findall(r'([a-zA-Z0-9_]+)\s*=\s*(?:"([^"]*)"|\'([^\']*)\'|([^\s,)]+))', raw_arg)
+                    if kw_pairs:
+                        current_args = {}
+                        for k, v1, v2, v3 in kw_pairs:
+                            current_args[k] = v1 or v2 or v3
                     else:
-                        current_args = {"raw": clean_arg, "command": clean_arg}
+                        clean_arg = raw_arg.strip('"').strip("'")
+                        for prefix in ("path=", "command=", "summary=", "diff="):
+                            if clean_arg.startswith(prefix):
+                                clean_arg = clean_arg[len(prefix):].strip('"').strip("'")
+                                break
+                        if current_tool == "run_command":
+                            current_args = {"command": clean_arg}
+                        elif current_tool in ("read_file", "view_file"):
+                            current_args = {"path": clean_arg}
+                        elif current_tool == "finish":
+                            current_args = {"summary": clean_arg}
+                        else:
+                            current_args = {"raw": clean_arg, "command": clean_arg}
             else:
                 # 2. Sintaxis estándar: tool_name <json_o_string>
                 parts = action_content.split(maxsplit=1)
@@ -159,15 +170,25 @@ def parse_llm_steps(llm_output: str) -> List[Dict[str, Any]]:
                             else:
                                 current_args = {"raw": str(parsed)}
                         except Exception:
-                            clean_arg = raw_arg.strip('"').strip("'")
-                            if current_tool == "run_command":
-                                current_args = {"command": clean_arg}
-                            elif current_tool in ("read_file", "view_file"):
-                                current_args = {"path": clean_arg}
-                            elif current_tool == "finish":
-                                current_args = {"summary": clean_arg}
+                            kw_pairs = re.findall(r'([a-zA-Z0-9_]+)\s*=\s*(?:"([^"]*)"|\'([^\']*)\'|([^\s,)]+))', raw_arg)
+                            if kw_pairs:
+                                current_args = {}
+                                for k, v1, v2, v3 in kw_pairs:
+                                    current_args[k] = v1 or v2 or v3
                             else:
-                                current_args = {"raw": clean_arg, "command": clean_arg}
+                                clean_arg = raw_arg.strip('"').strip("'")
+                                for prefix in ("path=", "command=", "summary=", "diff="):
+                                    if clean_arg.startswith(prefix):
+                                        clean_arg = clean_arg[len(prefix):].strip('"').strip("'")
+                                        break
+                                if current_tool == "run_command":
+                                    current_args = {"command": clean_arg}
+                                elif current_tool in ("read_file", "view_file"):
+                                    current_args = {"path": clean_arg}
+                                elif current_tool == "finish":
+                                    current_args = {"summary": clean_arg}
+                                else:
+                                    current_args = {"raw": clean_arg, "command": clean_arg}
                     else:
                         current_args = {}
         elif (lower_line.startswith("step ") or lower_line.startswith("paso ")) and ":" in stripped:

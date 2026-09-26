@@ -8,7 +8,11 @@ estándar de chat completions (usando urllib nativo, sin dependencias externas p
 from abc import ABC, abstractmethod
 import json
 import os
+from pathlib import Path
 import re
+import shutil
+import subprocess
+import sys
 import time
 from typing import Any, Dict, List, Optional, Tuple
 import urllib.error
@@ -30,13 +34,14 @@ PROVIDER_PRESETS: Dict[str, Dict[str, Any]] = {
         ],
     },
     "ollama": {
-        "base_url": "http://localhost:11434/v1",
+        "base_url": "http://127.0.0.1:11434/v1",
         "default_model": "qwen2.5-coder:7b",
         "description": "Ollama Local (100% privado, offline, sin coste ni límites de cuota)",
         "env_key": "OLLAMA_API_KEY",
         "requires_key": False,
         "recommended_models": [
             "qwen2.5-coder:7b",
+            "qwen2.5-coder:1.5b",
             "qwen2.5-coder:14b",
             "llama3.2:3b",
             "deepseek-r1:7b",
@@ -176,46 +181,61 @@ class OpenAICompatibleLLM(BaseAgentLLM):
             headers["X-Title"] = "PRAXEON Agent Supervisor"
 
         req_bytes = json.dumps(payload).encode("utf-8")
-        req = urllib.request.Request(self._endpoint, data=req_bytes, headers=headers, method="POST")
 
-        try:
-            with urllib.request.urlopen(req, timeout=self._timeout) as resp:
-                resp_bytes = resp.read()
-                data = json.loads(resp_bytes.decode("utf-8"))
-                choices = data.get("choices", [])
-                if not choices:
-                    return ""
-                msg = choices[0].get("message", {})
-                return (msg.get("content") or "").strip()
-        except urllib.error.HTTPError as http_err:
-            body = ""
+        # Intentar con endpoint configurado y con fallback de loopback (localhost <-> 127.0.0.1)
+        endpoints_to_try = [self._endpoint]
+        if "localhost" in self._endpoint:
+            endpoints_to_try.append(self._endpoint.replace("localhost", "127.0.0.1"))
+        elif "127.0.0.1" in self._endpoint:
+            endpoints_to_try.append(self._endpoint.replace("127.0.0.1", "localhost"))
+
+        last_url_err = None
+        for ep in endpoints_to_try:
+            req = urllib.request.Request(ep, data=req_bytes, headers=headers, method="POST")
             try:
-                body = http_err.read().decode("utf-8", errors="replace")
-            except Exception:
-                pass
-            if http_err.code == 429:
-                raise RuntimeError(
-                    f"[{self._provider_name}] Límite de cuota excedido (HTTP 429) en {self._endpoint}. "
-                    f"Detalle: {body}"
-                ) from http_err
-            elif http_err.code in (401, 403):
-                raise RuntimeError(
-                    f"[{self._provider_name}] Error de autenticación (HTTP {http_err.code}). "
-                    f"Verifica la clave de API para {self._provider_name}. Detalle: {body}"
-                ) from http_err
-            else:
-                raise RuntimeError(
-                    f"[{self._provider_name}] Error HTTP {http_err.code} llamando a {self._endpoint}: {body}"
-                ) from http_err
-        except urllib.error.URLError as url_err:
+                with urllib.request.urlopen(req, timeout=self._timeout) as resp:
+                    resp_bytes = resp.read()
+                    data = json.loads(resp_bytes.decode("utf-8"))
+                    choices = data.get("choices", [])
+                    if not choices:
+                        return ""
+                    msg = choices[0].get("message", {})
+                    # Si respondió con un endpoint alternativo, guardarlo para futuras llamadas
+                    self._endpoint = ep
+                    return (msg.get("content") or "").strip()
+            except urllib.error.HTTPError as http_err:
+                body = ""
+                try:
+                    body = http_err.read().decode("utf-8", errors="replace")
+                except Exception:
+                    pass
+                if http_err.code == 429:
+                    raise RuntimeError(
+                        f"[{self._provider_name}] Límite de cuota excedido (HTTP 429) en {ep}. "
+                        f"Detalle: {body}"
+                    ) from http_err
+                elif http_err.code in (401, 403):
+                    raise RuntimeError(
+                        f"[{self._provider_name}] Error de autenticación (HTTP {http_err.code}). "
+                        f"Verifica la clave de API para {self._provider_name}. Detalle: {body}"
+                    ) from http_err
+                else:
+                    raise RuntimeError(
+                        f"[{self._provider_name}] Error HTTP {http_err.code} llamando a {ep}: {body}"
+                    ) from http_err
+            except urllib.error.URLError as url_err:
+                last_url_err = url_err
+                continue
+
+        if last_url_err:
             if "localhost" in self._endpoint or "127.0.0.1" in self._endpoint:
                 raise ConnectionError(
                     f"[{self._provider_name}] No se pudo conectar al servidor local en {self._base_url}. "
-                    "Verifica que el servicio (ej. 'ollama serve' o LM Studio) esté activo y escuchando."
-                ) from url_err
+                    "Verifica que el servicio esté activo ejecutando 'ollama serve' en tu terminal o abriendo la app de Ollama."
+                ) from last_url_err
             raise ConnectionError(
-                f"[{self._provider_name}] Error de conexión de red hacia {self._endpoint}: {url_err.reason}"
-            ) from url_err
+                f"[{self._provider_name}] Error de conexión de red hacia {self._endpoint}: {last_url_err.reason}"
+            ) from last_url_err
 
 
 class GeminiLLM(BaseAgentLLM):
@@ -308,15 +328,81 @@ class SimulatedAgentLLM(BaseAgentLLM):
             )
 
 
-def is_ollama_online(host: str = "http://localhost:11434") -> bool:
-    """Comprueba de forma no bloqueante (<200ms) si el daemon de Ollama está activo."""
-    try:
-        url = f"{host.rstrip('/')}/api/tags"
-        req = urllib.request.Request(url, headers={"User-Agent": "Praxeon/0.4.0"})
-        with urllib.request.urlopen(req, timeout=0.25) as resp:
-            return resp.status == 200
-    except Exception:
+def is_ollama_online(host: str = "http://127.0.0.1:11434") -> bool:
+    """Comprueba de forma no bloqueante (<350ms) si el daemon de Ollama está activo."""
+    hosts = [host]
+    if "127.0.0.1" in host:
+        hosts.append(host.replace("127.0.0.1", "localhost"))
+    elif "localhost" in host:
+        hosts.append(host.replace("localhost", "127.0.0.1"))
+
+    for h in hosts:
+        try:
+            url = f"{h.rstrip('/')}/api/tags"
+            req = urllib.request.Request(url, headers={"User-Agent": "Praxeon/0.4.0"})
+            with urllib.request.urlopen(req, timeout=0.35) as resp:
+                if resp.status == 200:
+                    return True
+        except Exception:
+            continue
+    return False
+
+
+def get_ollama_installed_models(host: str = "http://127.0.0.1:11434") -> List[str]:
+    """Obtiene la lista de nombres de modelos descargados e instalados en Ollama."""
+    hosts = [host]
+    if "127.0.0.1" in host:
+        hosts.append(host.replace("127.0.0.1", "localhost"))
+    elif "localhost" in host:
+        hosts.append(host.replace("localhost", "127.0.0.1"))
+
+    for h in hosts:
+        try:
+            url = f"{h.rstrip('/')}/api/tags"
+            req = urllib.request.Request(url, headers={"User-Agent": "Praxeon/0.4.0"})
+            with urllib.request.urlopen(req, timeout=0.6) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                models = [m.get("name") for m in data.get("models", []) if m.get("name")]
+                if models:
+                    return models
+        except Exception:
+            continue
+    return []
+
+
+def try_start_ollama_daemon() -> bool:
+    """Intenta arrancar en segundo plano el daemon local de Ollama si está instalado pero apagado."""
+    if is_ollama_online():
+        return True
+
+    ollama_exe = shutil.which("ollama")
+    if not ollama_exe and sys.platform == "win32":
+        local_app = Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Ollama" / "ollama.exe"
+        if local_app.is_file():
+            ollama_exe = str(local_app)
+
+    if not ollama_exe:
         return False
+
+    try:
+        flags = 0
+        if sys.platform == "win32":
+            # DETACHED_PROCESS = 0x00000008, CREATE_NO_WINDOW = 0x08000000
+            flags = 0x00000008 | 0x08000000
+        subprocess.Popen(
+            [ollama_exe, "serve"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=flags,
+            close_fds=True,
+        )
+        for _ in range(20):
+            time.sleep(0.2)
+            if is_ollama_online():
+                return True
+    except Exception:
+        pass
+    return False
 
 
 def create_agent_llm(
@@ -351,7 +437,7 @@ def create_agent_llm(
         # 1. Si hay clave de Groq configurada, usar Groq (máxima velocidad y cuota gratis generosa)
         if groq_key and groq_key.strip():
             prov_key = "groq"
-        # 2. Si Ollama está corriendo en localhost, usar Ollama
+        # 2. Si Ollama está corriendo en localhost o 127.0.0.1, usar Ollama
         elif is_ollama_online():
             prov_key = "ollama"
         # 3. Si hay clave de OpenRouter, usar OpenRouter
@@ -389,8 +475,22 @@ def create_agent_llm(
     # Proveedor: Ollama Local
     elif prov_key == "ollama":
         preset = PROVIDER_PRESETS["ollama"]
+        # 1. Si no responde, intentar arrancar el daemon local automáticamente
+        if not is_ollama_online():
+            try_start_ollama_daemon()
+
         target_url = base_url or os.getenv("OLLAMA_HOST") or preset["base_url"]
-        target_model = model or preset["default_model"]
+        target_model = model
+        if not target_model:
+            # 2. Si no se especificó modelo concreto, detectar qué modelos tiene ya descargados
+            installed = get_ollama_installed_models(target_url.replace("/v1", ""))
+            if installed:
+                # Priorizar modelos de coding (ej. qwen2.5-coder) si están presentes
+                coder_candidates = [m for m in installed if "coder" in m.lower()]
+                target_model = coder_candidates[0] if coder_candidates else installed[0]
+            else:
+                target_model = preset["default_model"]
+
         return OpenAICompatibleLLM(
             base_url=target_url,
             model=target_model,
