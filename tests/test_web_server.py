@@ -10,10 +10,12 @@ Verifica todos los endpoints REST y canales WebSocket especificados en la Secci√
 - Endpoints de salud (/health) y telemetr√≠a agregada (/metrics).
 """
 
+from datetime import datetime, timezone
 import json
 import pytest
 from fastapi.testclient import TestClient
 
+from praxeon.domain.events import EventType
 from praxeon.server.app import create_app
 from praxeon.server.dependencies import (
     RuntimeApplicationService,
@@ -296,4 +298,32 @@ def test_run_mission_interactive_endpoint(client):
     r_resp = client.post(f"/v1/sessions/{sid}/resume")
     assert r_resp.status_code == 200
     assert r_resp.json()["data"]["status"] == "Resumed"
+
+
+def test_websocket_handles_datetime_payload(client, test_service):
+    """Verifica que el WebSocket serializa correctamente payloads con datetime sin fallar."""
+    s_resp = client.post("/v1/sessions", json={"goal": "Test datetime serialization"})
+    session_id = s_resp.json()["data"]["session_id"]
+
+    with client.websocket_connect(f"/v1/sessions/{session_id}/stream") as ws:
+        welcome = ws.receive_json()
+        assert welcome["action"] == "connected"
+
+        # Emitir evento directamente con objetos datetime en el payload
+        now_dt = datetime.now(timezone.utc)
+        test_service.event_bus.emit(
+            session_id=session_id,
+            event_type=EventType.CAPABILITY_ISSUED,
+            payload={
+                "issued_at": now_dt,
+                "expires_at": now_dt,
+                "nested": {"created": now_dt},
+            },
+        )
+
+        msg = ws.receive_json()
+        assert msg["action"] == "event"
+        assert msg["data"]["session_id"] == session_id
+        assert msg["data"]["payload"]["issued_at"] == now_dt.isoformat()
+        assert msg["data"]["payload"]["nested"]["created"] == now_dt.isoformat()
 

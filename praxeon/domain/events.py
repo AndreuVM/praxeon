@@ -5,11 +5,35 @@ Define los 15 tipos canónicos de evento, el contrato de payload estructurado,
 y la secuencia monótona por sesión para streaming y replay determinista.
 """
 
-from datetime import datetime
+from datetime import date, datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
 import uuid
 from pydantic import BaseModel, ConfigDict, Field
+
+
+def serialize_payload_value(val: Any) -> Any:
+    """Convierte recursivamente estructuras complejas (datetime, UUID, Enum, BaseModel) a primitivos JSON seguros."""
+    if val is None or isinstance(val, (bool, int, float, str)):
+        return val
+    if isinstance(val, (datetime, date)):
+        return val.isoformat()
+    if isinstance(val, uuid.UUID):
+        return str(val)
+    if isinstance(val, Enum):
+        return val.value
+    if hasattr(val, "model_dump") and callable(val.model_dump):
+        try:
+            return serialize_payload_value(val.model_dump(mode="json"))
+        except Exception:
+            return serialize_payload_value(val.model_dump())
+    if hasattr(val, "to_dict") and callable(val.to_dict):
+        return serialize_payload_value(val.to_dict())
+    if isinstance(val, dict):
+        return {str(k): serialize_payload_value(v) for k, v in val.items()}
+    if isinstance(val, (list, tuple, set)):
+        return [serialize_payload_value(v) for v in val]
+    return str(val)
 
 
 class EventType(str, Enum):
@@ -52,11 +76,11 @@ class RuntimeEvent(BaseModel):
             "session_id": self.session_id,
             "sequence": self.sequence,
             "type": self.type.value if isinstance(self.type, EventType) else str(self.type),
-            "timestamp": self.timestamp.isoformat(),
+            "timestamp": self.timestamp.isoformat() if hasattr(self.timestamp, "isoformat") else str(self.timestamp),
             "node_id": self.node_id,
             "parent_id": self.parent_id,
             "decision_id": self.decision_id,
-            "payload": self.payload,
+            "payload": serialize_payload_value(self.payload),
         }
 
 

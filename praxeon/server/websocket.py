@@ -8,9 +8,12 @@ Canal en tiempo real /v1/sessions/{session_id}/stream con:
 """
 
 import asyncio
+from datetime import date, datetime
+from enum import Enum
 import json
 import logging
 from typing import Any, Dict, Set
+import uuid
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from praxeon.domain.events import RuntimeEvent
@@ -18,6 +21,33 @@ from praxeon.server.dependencies import RuntimeApplicationService, get_runtime_s
 
 logger = logging.getLogger("praxeon.server.websocket")
 ws_router = APIRouter()
+
+
+def safe_json_dumps(data: Any) -> str:
+    """Serializa estructuras de datos a JSON de forma segura ante datetime, UUID, Enum o modelos."""
+    def _default(obj: Any) -> Any:
+        if isinstance(obj, (datetime, date)):
+            return obj.isoformat()
+        if isinstance(obj, uuid.UUID):
+            return str(obj)
+        if isinstance(obj, Enum):
+            return obj.value
+        if hasattr(obj, "model_dump") and callable(obj.model_dump):
+            try:
+                return obj.model_dump(mode="json")
+            except Exception:
+                return obj.model_dump()
+        if hasattr(obj, "to_dict") and callable(obj.to_dict):
+            return obj.to_dict()
+        return str(obj)
+
+    return json.dumps(data, default=_default, separators=(",", ":"), ensure_ascii=False)
+
+
+async def send_ws_json(websocket: WebSocket, data: Any) -> None:
+    """Envía un payload codificado en JSON por WebSocket de forma a prueba de fallos."""
+    text = safe_json_dumps(data)
+    await websocket.send_text(text)
 
 
 class WebSocketConnectionManager:
@@ -45,7 +75,7 @@ class WebSocketConnectionManager:
         async with self._lock:
             conns = list(self._active_connections.get(session_id, []))
 
-        text_data = json.dumps(message)
+        text_data = safe_json_dumps(message)
         for ws in conns:
             try:
                 await ws.send_text(text_data)
@@ -71,7 +101,7 @@ async def websocket_session_stream(
     try:
         # 1. Mensaje de bienvenida con sincronización inicial
         all_events = service.event_bus.get_all_events(session_id)
-        await websocket.send_json({
+        await send_ws_json(websocket, {
             "action": "connected",
             "session_id": session_id,
             "event_count": len(all_events),
@@ -81,33 +111,49 @@ async def websocket_session_stream(
         # 2. Tarea concurrente para escuchar mensajes entrantes del cliente (sync / ping)
         async def client_listener():
             while True:
-                data_text = await websocket.receive_text()
                 try:
+                    data_text = await websocket.receive_text()
                     msg = json.loads(data_text)
                     action = msg.get("action")
                     if action == "sync":
                         after_seq = int(msg.get("after_sequence", 0))
                         missing = service.event_bus.get_events(session_id, after_sequence=after_seq)
                         for ev in missing:
-                            await websocket.send_json({
+                            await send_ws_json(websocket, {
                                 "action": "event",
                                 "data": ev.to_dict(),
                             })
                     elif action == "ping":
-                        await websocket.send_json({"action": "pong"})
+                        await send_ws_json(websocket, {"action": "pong"})
+                except (WebSocketDisconnect, asyncio.CancelledError):
+                    break
                 except Exception as ex:
                     logger.debug("Error procesando mensaje entrante WebSocket: %s", ex)
 
         # 3. Tarea concurrente para despachar eventos emitidos por el EventBus
         async def event_dispatcher():
             while True:
-                event: RuntimeEvent = await queue.get()
-                if event.session_id == session_id:
-                    await websocket.send_json({
-                        "action": "event",
-                        "data": event.to_dict(),
-                    })
-                queue.task_done()
+                try:
+                    event: RuntimeEvent = await queue.get()
+                except (asyncio.CancelledError, GeneratorExit):
+                    break
+
+                try:
+                    if event.session_id == session_id:
+                        await send_ws_json(websocket, {
+                            "action": "event",
+                            "data": event.to_dict(),
+                        })
+                except (WebSocketDisconnect, asyncio.CancelledError):
+                    queue.task_done()
+                    break
+                except Exception as ex:
+                    logger.error("Error despachando evento por WebSocket: %s", ex, exc_info=True)
+                finally:
+                    try:
+                        queue.task_done()
+                    except ValueError:
+                        pass
 
         listener_task = asyncio.create_task(client_listener())
         dispatcher_task = asyncio.create_task(event_dispatcher())

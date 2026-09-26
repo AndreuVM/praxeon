@@ -424,7 +424,7 @@ class RuntimeApplicationService:
             )
             signed = sign_receipt(receipt_with_exp, self.policy_engine.secret_key)
             cap = signed.to_capability_payload(allowed_tools=[proposal.tool])
-            capability_data = cap.model_dump() if cap else None
+            capability_data = cap.model_dump(mode="json") if cap else None
 
             self.event_bus.emit(
                 session_id=session_id,
@@ -612,7 +612,7 @@ class RuntimeApplicationService:
             )
             signed = sign_receipt(receipt_updated, self.policy_engine.secret_key)
             cap = signed.to_capability_payload(allowed_tools=[action.tool_call.tool_name] if action.tool_call else [])
-            capability_dict = cap.model_dump() if cap else None
+            capability_dict = cap.model_dump(mode="json") if cap else None
 
             record["status"] = "ALLOW"
             record["receipt"] = signed
