@@ -263,3 +263,11 @@ def test_websocket_streaming_and_sync(client):
         ev_msg = ws.receive_json()
         assert ev_msg["action"] == "event"
         assert ev_msg["data"]["session_id"] == session_id
+
+
+def test_frontend_static_serving(client):
+    """Verifica que el frontend web compilado se sirve en /."""
+    resp = client.get("/")
+    assert resp.status_code == 200
+    assert "PRAXEON" in resp.text
+

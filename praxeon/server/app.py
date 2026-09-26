@@ -40,6 +40,12 @@ def create_app() -> FastAPI:
     app.include_router(api_router)
     app.include_router(ws_router)
 
+    # Servir interfaz web de supervisión si está construida
+    frontend_dist = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "web", "dist"))
+    if os.path.isdir(frontend_dist):
+        from fastapi.staticfiles import StaticFiles
+        app.mount("/", StaticFiles(directory=frontend_dist, html=True), name="frontend")
+
     return app
 
 
