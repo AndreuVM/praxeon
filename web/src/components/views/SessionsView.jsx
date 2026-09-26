@@ -110,8 +110,8 @@ export default function SessionsView({
             <div
               key={s.session_id}
               style={{
-                backgroundColor: '#121926',
-                border: `1px solid ${isSelected ? '#38bdf8' : '#1e2a3c'}`,
+                backgroundColor: '#141924',
+                border: `1px solid ${isSelected ? '#f0f6fc' : '#1e2636'}`,
                 borderRadius: '8px',
                 padding: '16px',
                 display: 'flex',
@@ -119,23 +119,23 @@ export default function SessionsView({
                 justifyContent: 'space-between',
                 gap: '14px',
                 transition: 'all 0.18s ease',
-                boxShadow: isSelected ? '0 0 12px rgba(56, 189, 248, 0.2)' : 'var(--shadow-sm)',
+                boxShadow: isSelected ? '0 0 10px rgba(240, 246, 252, 0.12)' : 'var(--shadow-clay-sm)',
               }}
             >
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ fontSize: '13px', fontWeight: '700', color: '#f8fafc', fontFamily: 'var(--font-mono)' }}>
+                    <span style={{ fontSize: '13px', fontWeight: '700', color: '#f0f6fc', fontFamily: 'var(--font-mono)' }}>
                       #{s.session_id}
                     </span>
                     <span className="badge badge-success">{s.status || 'Active'}</span>
                   </div>
-                  <span style={{ fontSize: '11px', color: '#64748b' }}>
+                  <span style={{ fontSize: '11px', color: '#8b949e' }}>
                     {s.created_at ? new Date(s.created_at).toLocaleTimeString() : 'En curso'}
                   </span>
                 </div>
 
-                <p style={{ fontSize: '12.5px', color: '#cbd5e1', lineHeight: '1.4' }}>
+                <p style={{ fontSize: '12.5px', color: '#c9d1d9', lineHeight: '1.4' }}>
                   {s.goal || 'Sin objetivo especificado'}
                 </p>
               </div>
@@ -144,13 +144,13 @@ export default function SessionsView({
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
-                borderTop: '1px solid #1a2333',
+                borderTop: '1px solid #1a202c',
                 paddingTop: '12px',
               }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: '11px', color: '#73849c' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: '11px', color: '#8b949e' }}>
                   <span>{s.steps_count || 12} decisiones</span>
                   <span>·</span>
-                  <span style={{ color: '#34d399' }}>8 autorizadas</span>
+                  <span style={{ color: '#3fb950' }}>8 autorizadas</span>
                 </div>
 
                 <button
@@ -159,9 +159,9 @@ export default function SessionsView({
                   style={{
                     padding: '4px 10px',
                     fontSize: '11.5px',
-                    backgroundColor: isSelected ? '#182438' : '#151d2c',
-                    borderColor: isSelected ? '#38bdf8' : '#243248',
-                    color: isSelected ? '#38bdf8' : '#cbd5e1',
+                    backgroundColor: isSelected ? '#1c2432' : '#161c26',
+                    borderColor: isSelected ? '#f0f6fc' : '#242c3b',
+                    color: isSelected ? '#f0f6fc' : '#c9d1d9',
                   }}
                 >
                   {isSelected ? 'Inspeccionando' : 'Abrir'}

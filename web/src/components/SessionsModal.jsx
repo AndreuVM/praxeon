@@ -114,24 +114,25 @@ export default function SessionsModal({
                   justifyContent: 'space-between',
                   padding: '10px 12px',
                   borderRadius: '6px',
-                  backgroundColor: isSelected ? '#1a2436' : '#0e141f',
-                  border: `1px solid ${isSelected ? '#38bdf8' : '#1e293b'}`,
+                  backgroundColor: isSelected ? '#1c2432' : '#141924',
+                  border: `1px solid ${isSelected ? '#f0f6fc' : '#1e2636'}`,
+                  boxShadow: 'var(--shadow-clay-sm)',
                   cursor: 'pointer',
                   transition: 'all 0.15s ease',
                 }}
               >
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ fontSize: '12px', fontWeight: '600', color: '#f8fafc' }}>
+                    <span style={{ fontSize: '12px', fontWeight: '600', color: '#f0f6fc' }}>
                       #{s.session_id}
                     </span>
                     <span className="badge badge-success">{s.status || 'Active'}</span>
                   </div>
-                  <div style={{ fontSize: '11px', color: '#8595a8', marginTop: '3px' }}>
+                  <div style={{ fontSize: '11px', color: '#8b949e', marginTop: '3px' }}>
                     {s.goal}
                   </div>
                 </div>
-                <ArrowRight size={14} style={{ color: isSelected ? '#38bdf8' : '#475569' }} />
+                <ArrowRight size={14} style={{ color: isSelected ? '#f0f6fc' : '#6b7280' }} />
               </div>
             );
           })}

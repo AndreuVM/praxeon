@@ -178,3 +178,30 @@ export function createWebSocketStream(sessionId, onMessage, onStatusChange) {
     },
   };
 }
+
+export async function runMission(missionConfig) {
+  const res = await fetch(`${API_BASE}/sessions/run`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(missionConfig),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+  return await res.json();
+}
+
+export async function pauseMission(sessionId) {
+  const res = await fetch(`${API_BASE}/sessions/${sessionId}/pause`, {
+    method: 'POST',
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+  return await res.json();
+}
+
+export async function resumeMission(sessionId) {
+  const res = await fetch(`${API_BASE}/sessions/${sessionId}/resume`, {
+    method: 'POST',
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+  return await res.json();
+}
+

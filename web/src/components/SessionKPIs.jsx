@@ -21,8 +21,8 @@ export default function SessionKPIs({ session }) {
       alignItems: 'center',
       justifyContent: 'space-between',
       padding: '16px 20px',
-      backgroundColor: '#0d131d',
-      borderBottom: '1px solid #1a2333',
+      backgroundColor: '#0d121c',
+      borderBottom: '1px solid #1a202c',
     }}>
       {/* Session Title & Subtitle */}
       <div>
@@ -30,7 +30,7 @@ export default function SessionKPIs({ session }) {
           <h1 style={{
             fontSize: '17px',
             fontWeight: '700',
-            color: '#f8fafc',
+            color: '#f0f6fc',
             fontFamily: 'var(--font-sans)',
             letterSpacing: '-0.01em',
           }}>
@@ -41,20 +41,20 @@ export default function SessionKPIs({ session }) {
             fontWeight: '600',
             padding: '2px 8px',
             borderRadius: '9999px',
-            backgroundColor: 'rgba(16, 185, 129, 0.15)',
-            color: '#34d399',
-            border: '1px solid rgba(16, 185, 129, 0.3)',
+            backgroundColor: 'rgba(63, 185, 80, 0.12)',
+            color: '#3fb950',
+            border: '1px solid rgba(63, 185, 80, 0.28)',
           }}>
             {status}
           </span>
         </div>
         <p style={{
           fontSize: '12px',
-          color: '#8292a8',
+          color: '#8b949e',
           marginTop: '4px',
         }}>
-          <span style={{ color: '#94a3b8', fontWeight: '500' }}>{agent}</span>
-          <span style={{ margin: '0 7px', color: '#475569' }}>·</span>
+          <span style={{ color: '#c9d1d9', fontWeight: '500' }}>{agent}</span>
+          <span style={{ margin: '0 7px', color: '#484f58' }}>·</span>
           <span>{goal}</span>
         </p>
       </div>
@@ -68,27 +68,29 @@ export default function SessionKPIs({ session }) {
           gap: '12px',
           padding: '8px 14px',
           borderRadius: '8px',
-          backgroundColor: '#121926',
-          border: '1px solid #1e2a3c',
+          backgroundColor: '#141924',
+          border: '1px solid #1e2636',
+          boxShadow: 'var(--shadow-clay-sm)',
           minWidth: '130px',
         }}>
           <div style={{
             width: '28px',
             height: '28px',
             borderRadius: '6px',
-            backgroundColor: '#1a2436',
+            backgroundColor: '#1a2230',
+            border: '1px solid #283244',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            color: '#94a3b8',
+            color: '#8b949e',
           }}>
             <Layers size={14} />
           </div>
           <div>
-            <div style={{ fontSize: '15px', fontWeight: '700', color: '#f8fafc', lineHeight: 1.1 }}>
+            <div style={{ fontSize: '15px', fontWeight: '700', color: '#f0f6fc', lineHeight: 1.1 }}>
               {metrics.totalDecisions}
             </div>
-            <div style={{ fontSize: '10.5px', color: '#73849c', marginTop: '2px' }}>
+            <div style={{ fontSize: '10.5px', color: '#8b949e', marginTop: '2px' }}>
               Total decisions
             </div>
           </div>
@@ -101,28 +103,29 @@ export default function SessionKPIs({ session }) {
           gap: '12px',
           padding: '8px 14px',
           borderRadius: '8px',
-          backgroundColor: '#121926',
-          border: '1px solid #1e2a3c',
+          backgroundColor: '#141924',
+          border: '1px solid #1e2636',
+          boxShadow: 'var(--shadow-clay-sm)',
           minWidth: '115px',
         }}>
           <div style={{
             width: '28px',
             height: '28px',
             borderRadius: '6px',
-            backgroundColor: 'rgba(16, 185, 129, 0.15)',
-            border: '1px solid rgba(16, 185, 129, 0.3)',
+            backgroundColor: '#13231b',
+            border: '1px solid #1e3a2b',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            color: '#34d399',
+            color: '#3fb950',
           }}>
             <Check size={14} strokeWidth={2.5} />
           </div>
           <div>
-            <div style={{ fontSize: '15px', fontWeight: '700', color: '#f8fafc', lineHeight: 1.1 }}>
+            <div style={{ fontSize: '15px', fontWeight: '700', color: '#f0f6fc', lineHeight: 1.1 }}>
               {metrics.allowed}
             </div>
-            <div style={{ fontSize: '10.5px', color: '#73849c', marginTop: '2px' }}>
+            <div style={{ fontSize: '10.5px', color: '#8b949e', marginTop: '2px' }}>
               Allowed
             </div>
           </div>
@@ -135,28 +138,29 @@ export default function SessionKPIs({ session }) {
           gap: '12px',
           padding: '8px 14px',
           borderRadius: '8px',
-          backgroundColor: '#121926',
-          border: '1px solid #1e2a3c',
+          backgroundColor: '#141924',
+          border: '1px solid #1e2636',
+          boxShadow: 'var(--shadow-clay-sm)',
           minWidth: '115px',
         }}>
           <div style={{
             width: '28px',
             height: '28px',
             borderRadius: '6px',
-            backgroundColor: 'rgba(239, 68, 68, 0.15)',
-            border: '1px solid rgba(239, 68, 68, 0.3)',
+            backgroundColor: '#291418',
+            border: '1px solid #441e25',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            color: '#f87171',
+            color: '#f85149',
           }}>
             <X size={14} strokeWidth={2.5} />
           </div>
           <div>
-            <div style={{ fontSize: '15px', fontWeight: '700', color: '#f8fafc', lineHeight: 1.1 }}>
+            <div style={{ fontSize: '15px', fontWeight: '700', color: '#f0f6fc', lineHeight: 1.1 }}>
               {metrics.blocked}
             </div>
-            <div style={{ fontSize: '10.5px', color: '#73849c', marginTop: '2px' }}>
+            <div style={{ fontSize: '10.5px', color: '#8b949e', marginTop: '2px' }}>
               Blocked
             </div>
           </div>
@@ -169,28 +173,29 @@ export default function SessionKPIs({ session }) {
           gap: '12px',
           padding: '8px 14px',
           borderRadius: '8px',
-          backgroundColor: '#121926',
-          border: '1px solid #1e2a3c',
+          backgroundColor: '#141924',
+          border: '1px solid #1e2636',
+          boxShadow: 'var(--shadow-clay-sm)',
           minWidth: '115px',
         }}>
           <div style={{
             width: '28px',
             height: '28px',
             borderRadius: '6px',
-            backgroundColor: 'rgba(245, 158, 11, 0.15)',
-            border: '1px solid rgba(245, 158, 11, 0.3)',
+            backgroundColor: '#261d11',
+            border: '1px solid #3f2f1a',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            color: '#fbbf24',
+            color: '#d29922',
           }}>
             <AlertTriangle size={14} strokeWidth={2.3} />
           </div>
           <div>
-            <div style={{ fontSize: '15px', fontWeight: '700', color: '#f8fafc', lineHeight: 1.1 }}>
+            <div style={{ fontSize: '15px', fontWeight: '700', color: '#f0f6fc', lineHeight: 1.1 }}>
               {metrics.review}
             </div>
-            <div style={{ fontSize: '10.5px', color: '#73849c', marginTop: '2px' }}>
+            <div style={{ fontSize: '10.5px', color: '#8b949e', marginTop: '2px' }}>
               Review
             </div>
           </div>
@@ -199,3 +204,4 @@ export default function SessionKPIs({ session }) {
     </div>
   );
 }
+

@@ -83,18 +83,18 @@ export default function ProvidersView() {
                   width: '36px',
                   height: '36px',
                   borderRadius: '8px',
-                  backgroundColor: '#182438',
-                  border: '1px solid #24354e',
+                  backgroundColor: '#1a2230',
+                  border: '1px solid #283244',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  color: '#38bdf8',
+                  color: '#f0f6fc',
                 }}>
                   <Cpu size={20} />
                 </div>
                 <div>
-                  <h3 style={{ fontSize: '14px', fontWeight: '700', color: '#f8fafc' }}>{p.name}</h3>
-                  <span style={{ fontSize: '11.5px', color: '#8595a8' }}>{p.role} · {p.model}</span>
+                  <h3 style={{ fontSize: '14px', fontWeight: '700', color: '#f0f6fc' }}>{p.name}</h3>
+                  <span style={{ fontSize: '11.5px', color: '#8b949e' }}>{p.role} · {p.model}</span>
                 </div>
               </div>
 
@@ -108,15 +108,15 @@ export default function ProvidersView() {
               display: 'grid',
               gridTemplateColumns: 'repeat(4, 1fr)',
               gap: '12px',
-              backgroundColor: '#0c111a',
+              backgroundColor: '#121620',
               padding: '12px 16px',
               borderRadius: '6px',
-              border: '1px solid #16202f',
+              border: '1px solid #1e2636',
               textAlign: 'center',
             }}>
               <div>
-                <span style={{ fontSize: '10.5px', color: '#73849c', display: 'block' }}>Latencia p50</span>
-                <span style={{ fontSize: '14px', fontWeight: '700', color: '#38bdf8', fontFamily: 'var(--font-mono)' }}>
+                <span style={{ fontSize: '10.5px', color: '#8b949e', display: 'block' }}>Latencia p50</span>
+                <span style={{ fontSize: '14px', fontWeight: '700', color: '#f0f6fc', fontFamily: 'var(--font-mono)' }}>
                   {p.latencyP50}
                 </span>
               </div>

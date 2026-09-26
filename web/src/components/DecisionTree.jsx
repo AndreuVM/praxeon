@@ -146,8 +146,8 @@ export default function DecisionTree({
     }
 
     if (isSelected) {
-      borderColor = '#38bdf8';
-      bg = '#182438';
+      borderColor = '#5a6882';
+      bg = '#1c2432';
     }
 
     return { icon, iconBg, iconBorder, iconColor, borderColor, bg };
@@ -172,13 +172,13 @@ export default function DecisionTree({
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          borderBottom: '1px solid #182232',
-          backgroundColor: '#0c111a',
+          borderBottom: '1px solid #1a202c',
+          backgroundColor: '#0c0f14',
           zIndex: 10,
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{ fontSize: '13px', fontWeight: '600', color: '#f1f5f9' }}>
+          <span style={{ fontSize: '13px', fontWeight: '600', color: '#f0f6fc' }}>
             Decision Tree (Live)
           </span>
           <span className="pulse-dot" style={{ width: '6px', height: '6px' }} />
@@ -187,14 +187,14 @@ export default function DecisionTree({
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
           {/* Auto layout switch */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontSize: '11.5px', color: '#8292a8' }}>Auto layout</span>
+            <span style={{ fontSize: '11.5px', color: '#8b949e' }}>Auto layout</span>
             <div
               onClick={() => setAutoLayout(!autoLayout)}
               style={{
                 width: '32px',
                 height: '18px',
                 borderRadius: '9999px',
-                backgroundColor: autoLayout ? '#2563eb' : '#334155',
+                backgroundColor: autoLayout ? '#48546a' : '#222a36',
                 position: 'relative',
                 cursor: 'pointer',
                 transition: 'background 0.2s ease',
@@ -243,11 +243,11 @@ export default function DecisionTree({
           zIndex: 10,
           display: 'flex',
           flexDirection: 'column',
-          backgroundColor: '#121824',
+          backgroundColor: '#141924',
           borderRadius: '8px',
-          border: '1px solid #1e293b',
+          border: '1px solid #1e2636',
           overflow: 'hidden',
-          boxShadow: 'var(--shadow-md)',
+          boxShadow: 'var(--shadow-clay-sm)',
         }}
       >
         <button
@@ -256,9 +256,9 @@ export default function DecisionTree({
             padding: '7px 9px',
             background: 'transparent',
             border: 'none',
-            color: '#cbd5e1',
+            color: '#c9d1d9',
             cursor: 'pointer',
-            borderBottom: '1px solid #1a2333',
+            borderBottom: '1px solid #1e2636',
           }}
           title="Zoom In"
         >
@@ -270,9 +270,9 @@ export default function DecisionTree({
             padding: '7px 9px',
             background: 'transparent',
             border: 'none',
-            color: '#cbd5e1',
+            color: '#c9d1d9',
             cursor: 'pointer',
-            borderBottom: '1px solid #1a2333',
+            borderBottom: '1px solid #1e2636',
           }}
           title="Zoom Out"
         >
@@ -396,8 +396,8 @@ export default function DecisionTree({
                   userSelect: 'none',
                   transition: 'all 0.18s ease',
                   boxShadow: isSelected
-                    ? '0 0 14px rgba(56, 189, 248, 0.35)'
-                    : 'var(--shadow-sm)',
+                    ? '0 0 10px rgba(90, 104, 130, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.08)'
+                    : 'var(--shadow-clay-sm)',
                 }}
               >
                 {/* Node icon pill */}
@@ -424,7 +424,7 @@ export default function DecisionTree({
                     style={{
                       fontSize: '11.5px',
                       fontWeight: '600',
-                      color: isSelected ? '#38bdf8' : '#f1f5f9',
+                      color: isSelected ? '#ffffff' : '#f0f6fc',
                       whiteSpace: 'nowrap',
                       overflow: 'hidden',
                       textOverflow: 'ellipsis',
@@ -435,7 +435,7 @@ export default function DecisionTree({
                   <span
                     style={{
                       fontSize: '10px',
-                      color: '#718096',
+                      color: '#8b949e',
                       marginTop: '1px',
                       whiteSpace: 'nowrap',
                     }}

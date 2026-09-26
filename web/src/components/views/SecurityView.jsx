@@ -3,10 +3,10 @@ import { Shield, ShieldCheck, Key, Lock, Network, AlertTriangle, FileCode } from
 
 export default function SecurityView() {
   const securityStats = [
-    { label: 'Capabilities Emitidas', value: '8', icon: Key, color: '#38bdf8' },
-    { label: 'Consumos Únicos (Consume-once)', value: '8 / 8 (100%)', icon: Lock, color: '#34d399' },
-    { label: 'Intentos de Replay Bloqueados', value: '0', icon: ShieldCheck, color: '#10b981' },
-    { label: 'Egress Bloqueados (SSRF / Cloud)', value: '3', icon: Network, color: '#f87171' },
+    { label: 'Capabilities Emitidas', value: '8', icon: Key, color: '#f0f6fc' },
+    { label: 'Consumos Únicos (Consume-once)', value: '8 / 8 (100%)', icon: Lock, color: '#3fb950' },
+    { label: 'Intentos de Replay Bloqueados', value: '0', icon: ShieldCheck, color: '#3fb950' },
+    { label: 'Egress Bloqueados (SSRF / Cloud)', value: '3', icon: Network, color: '#f85149' },
   ];
 
   const policies = [

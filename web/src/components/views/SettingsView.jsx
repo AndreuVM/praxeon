@@ -66,8 +66,9 @@ export default function SettingsView() {
                   padding: '10px 12px',
                   borderRadius: '6px',
                   textAlign: 'left',
-                  backgroundColor: strictness === opt.id ? '#182438' : '#0c111a',
-                  border: `1px solid ${strictness === opt.id ? '#38bdf8' : '#1e293b'}`,
+                  backgroundColor: strictness === opt.id ? '#1c2432' : '#141924',
+                  border: `1px solid ${strictness === opt.id ? '#f0f6fc' : '#1e2636'}`,
+                  boxShadow: 'var(--shadow-clay-sm)',
                   cursor: 'pointer',
                   transition: 'all 0.15s ease',
                 }}

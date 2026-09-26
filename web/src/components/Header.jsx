@@ -10,8 +10,8 @@ export default function Header({
   return (
     <header style={{
       height: '52px',
-      backgroundColor: '#0b0f17',
-      borderBottom: '1px solid #1a2333',
+      backgroundColor: '#0c0f14',
+      borderBottom: '1px solid #1a202c',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'space-between',
@@ -26,7 +26,7 @@ export default function Header({
             fontSize: '15px',
             fontWeight: '800',
             letterSpacing: '0.14em',
-            color: '#ffffff',
+            color: '#f0f6fc',
             fontFamily: 'var(--font-sans)',
           }}>
             PRAXEON
@@ -35,11 +35,12 @@ export default function Header({
 
         <span style={{
           fontSize: '12px',
-          color: '#64748b',
+          color: '#8b949e',
           fontWeight: '400',
           letterSpacing: '0.02em',
-          borderLeft: '1px solid #1e293b',
+          borderLeft: '1px solid #202735',
           paddingLeft: '18px',
+          fontFamily: 'var(--font-mono)',
         }}>
           Runtime supervision for autonomous AI agents
         </span>
@@ -47,23 +48,6 @@ export default function Header({
 
       {/* Right Controls */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-        {/* Propose Action Quick Trigger */}
-        <button
-          onClick={onOpenPropose}
-          className="btn btn-secondary"
-          style={{
-            fontSize: '11.5px',
-            padding: '5px 11px',
-            backgroundColor: '#162235',
-            borderColor: '#25354e',
-            color: '#38bdf8',
-          }}
-          title="Proponer nueva acción al runtime de supervisión"
-        >
-          <Play size={12} style={{ fill: '#38bdf8' }} />
-          Propose Action
-        </button>
-
         {/* Runtime Active Badge */}
         <div style={{
           display: 'flex',
@@ -71,15 +55,15 @@ export default function Header({
           gap: '7px',
           padding: '4px 12px',
           borderRadius: '9999px',
-          backgroundColor: runtimeActive ? 'rgba(16, 185, 129, 0.12)' : 'rgba(239, 68, 68, 0.12)',
-          border: `1px solid ${runtimeActive ? 'rgba(16, 185, 129, 0.28)' : 'rgba(239, 68, 68, 0.28)'}`,
+          backgroundColor: runtimeActive ? 'rgba(63, 185, 80, 0.12)' : 'rgba(248, 81, 73, 0.12)',
+          border: `1px solid ${runtimeActive ? 'rgba(63, 185, 80, 0.28)' : 'rgba(248, 81, 73, 0.28)'}`,
           fontSize: '11.5px',
           fontWeight: '500',
-          color: runtimeActive ? '#34d399' : '#f87171',
+          color: runtimeActive ? '#3fb950' : '#f85149',
         }}>
           <span className="pulse-dot" style={{
-            backgroundColor: runtimeActive ? '#10b981' : '#ef4444',
-            boxShadow: runtimeActive ? '0 0 8px rgba(16, 185, 129, 0.6)' : 'none',
+            backgroundColor: runtimeActive ? '#3fb950' : '#f85149',
+            boxShadow: runtimeActive ? '0 0 6px rgba(63, 185, 80, 0.6)' : 'none',
           }} />
           <span>{runtimeActive ? 'Runtime Active' : 'Offline / Standalone'}</span>
         </div>
@@ -91,22 +75,29 @@ export default function Header({
             display: 'flex',
             alignItems: 'center',
             gap: '8px',
-            padding: '4px 12px',
+            padding: '5px 12px',
             borderRadius: '9999px',
-            backgroundColor: '#151d2c',
-            border: '1px solid #243248',
-            color: '#cbd5e1',
+            backgroundColor: '#161c26',
+            border: '1px solid #242c3b',
+            color: '#c9d1d9',
             fontSize: '11.5px',
             fontWeight: '500',
             cursor: 'pointer',
             transition: 'all 0.15s ease',
+            boxShadow: 'var(--shadow-clay-sm)',
           }}
-          onMouseEnter={(e) => (e.currentTarget.style.borderColor = '#3b82f6')}
-          onMouseLeave={(e) => (e.currentTarget.style.borderColor = '#243248')}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.borderColor = '#384558';
+            e.currentTarget.style.backgroundColor = '#1c2330';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.borderColor = '#242c3b';
+            e.currentTarget.style.backgroundColor = '#161c26';
+          }}
         >
-          <Cpu size={13} style={{ color: '#94a3b8' }} />
+          <Cpu size={13} style={{ color: '#8b949e' }} />
           <span>Session #{sessionId}</span>
-          <ChevronDown size={13} style={{ color: '#64748b' }} />
+          <ChevronDown size={13} style={{ color: '#8b949e' }} />
         </button>
 
         {/* User Icon */}
@@ -114,12 +105,13 @@ export default function Header({
           width: '28px',
           height: '28px',
           borderRadius: '50%',
-          backgroundColor: '#182234',
-          border: '1px solid #27374d',
+          backgroundColor: '#161c26',
+          border: '1px solid #242c3b',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          color: '#94a3b8',
+          color: '#8b949e',
+          boxShadow: 'var(--shadow-clay-sm)',
         }}>
           <User size={14} />
         </div>
@@ -127,3 +119,4 @@ export default function Header({
     </header>
   );
 }
+

@@ -271,3 +271,29 @@ def test_frontend_static_serving(client):
     assert resp.status_code == 200
     assert "PRAXEON" in resp.text
 
+
+def test_run_mission_interactive_endpoint(client):
+    """POST /v1/sessions/run inicializa una misión interactiva y ejecuta pasos en tiempo real."""
+    resp = client.post("/v1/sessions/run", json={
+        "goal": "Test de misión interactiva",
+        "llm_provider": "simulator",
+        "supervisor": "laya",
+        "max_steps": 3,
+        "step_delay_ms": 100,
+    })
+    assert resp.status_code == 201
+    data = resp.json()["data"]
+    assert "session_id" in data
+    assert data["goal"] == "Test de misión interactiva"
+    assert data["status"] == "Active"
+
+    sid = data["session_id"]
+    # Comprobar pausa y reanudación
+    p_resp = client.post(f"/v1/sessions/{sid}/pause")
+    assert p_resp.status_code == 200
+    assert p_resp.json()["data"]["status"] == "Paused"
+
+    r_resp = client.post(f"/v1/sessions/{sid}/resume")
+    assert r_resp.status_code == 200
+    assert r_resp.json()["data"]["status"] == "Resumed"
+

@@ -108,8 +108,8 @@ export default function DecisionInspector({
   return (
     <aside style={{
       width: '335px',
-      backgroundColor: '#0c111a',
-      borderLeft: '1px solid #1a2333',
+      backgroundColor: '#0c0f14',
+      borderLeft: '1px solid #1a202c',
       display: 'flex',
       flexDirection: 'column',
       flexShrink: 0,
@@ -118,8 +118,8 @@ export default function DecisionInspector({
       {/* 4 Tabs Header */}
       <div style={{
         height: '42px',
-        backgroundColor: '#090d14',
-        borderBottom: '1px solid #17202e',
+        backgroundColor: '#0c0f14',
+        borderBottom: '1px solid #1a202c',
         display: 'flex',
         alignItems: 'center',
         padding: '0 16px',
@@ -137,9 +137,9 @@ export default function DecisionInspector({
                 padding: '10px 0',
                 fontSize: '12px',
                 fontWeight: isActive ? '600' : '400',
-                color: isActive ? '#f8fafc' : '#73849c',
+                color: isActive ? '#f0f6fc' : '#8b949e',
                 cursor: 'pointer',
-                borderBottom: isActive ? '2px solid #38bdf8' : '2px solid transparent',
+                borderBottom: isActive ? '2px solid #f0f6fc' : '2px solid transparent',
                 textTransform: 'capitalize',
                 transition: 'all 0.15s ease',
               }}
@@ -158,6 +158,7 @@ export default function DecisionInspector({
         display: 'flex',
         flexDirection: 'column',
         gap: '18px',
+        backgroundColor: '#0c0f14',
       }}>
         {activeTab === 'decision' && (
           <>
@@ -171,14 +172,15 @@ export default function DecisionInspector({
 
             {/* Action Box */}
             <div>
-              <span style={{ fontSize: '11px', color: '#73849c', fontWeight: '500' }}>
+              <span style={{ fontSize: '11px', color: '#8b949e', fontWeight: '500' }}>
                 Action
               </span>
               <div style={{
                 marginTop: '6px',
-                backgroundColor: '#111722',
+                backgroundColor: '#121620',
                 borderRadius: '6px',
-                border: '1px solid #1e2a3c',
+                border: '1px solid #1e2636',
+                boxShadow: 'var(--shadow-clay-sm)',
                 padding: '9px 12px',
                 display: 'flex',
                 alignItems: 'center',
@@ -187,7 +189,7 @@ export default function DecisionInspector({
                 <div style={{
                   fontFamily: 'var(--font-mono)',
                   fontSize: '11.5px',
-                  color: '#e2e8f0',
+                  color: '#f0f6fc',
                   display: 'flex',
                   alignItems: 'center',
                   gap: '8px',
@@ -195,7 +197,7 @@ export default function DecisionInspector({
                   textOverflow: 'ellipsis',
                   whiteSpace: 'nowrap',
                 }}>
-                  <span style={{ color: '#64748b' }}>&gt;_</span>
+                  <span style={{ color: '#8b949e' }}>&gt;_</span>
                   <span>{actionCommand}</span>
                 </div>
                 <button
@@ -203,7 +205,7 @@ export default function DecisionInspector({
                   style={{
                     background: 'none',
                     border: 'none',
-                    color: copied ? '#34d399' : '#64748b',
+                    color: copied ? '#3fb950' : '#8b949e',
                     cursor: 'pointer',
                     padding: '2px',
                   }}
@@ -217,19 +219,19 @@ export default function DecisionInspector({
             {/* Attributes Grid */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '11.5px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: '#73849c' }}>Tool</span>
-                <span style={{ color: '#e2e8f0', fontFamily: 'var(--font-mono)' }}>{tool}</span>
+                <span style={{ color: '#8b949e' }}>Tool</span>
+                <span style={{ color: '#f0f6fc', fontFamily: 'var(--font-mono)' }}>{tool}</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: '#73849c' }}>Provider</span>
-                <span style={{ color: '#e2e8f0' }}>{provider}</span>
+                <span style={{ color: '#8b949e' }}>Provider</span>
+                <span style={{ color: '#f0f6fc' }}>{provider}</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: '#73849c' }}>Model</span>
-                <span style={{ color: '#e2e8f0' }}>{model}</span>
+                <span style={{ color: '#8b949e' }}>Model</span>
+                <span style={{ color: '#f0f6fc' }}>{model}</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ color: '#73849c' }}>Risk Level</span>
+                <span style={{ color: '#8b949e' }}>Risk Level</span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
                   <span style={{
                     width: '7px',
@@ -380,8 +382,8 @@ export default function DecisionInspector({
 
             {/* Related Decisions */}
             {relatedDecisions.length > 0 && (
-              <div style={{ borderTop: '1px solid #1a2333', paddingTop: '14px' }}>
-                <span style={{ fontSize: '11px', color: '#73849c', fontWeight: '600' }}>
+              <div style={{ borderTop: '1px solid #1a202c', paddingTop: '14px' }}>
+                <span style={{ fontSize: '11px', color: '#f0f6fc', fontWeight: '600' }}>
                   Related Decisions
                 </span>
                 <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
@@ -392,19 +394,21 @@ export default function DecisionInspector({
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'space-between',
-                        padding: '6px 8px',
+                        padding: '6px 10px',
                         borderRadius: '6px',
-                        backgroundColor: '#101622',
+                        backgroundColor: '#131822',
+                        border: '1px solid #1e2636',
+                        boxShadow: 'var(--shadow-clay-sm)',
                         fontSize: '11.5px',
                       }}
                     >
-                      <span style={{ color: '#64748b', fontFamily: 'var(--font-mono)' }}>{rd.id}</span>
-                      <span style={{ color: '#cbd5e1' }}>{rd.tool}</span>
+                      <span style={{ color: '#8b949e', fontFamily: 'var(--font-mono)' }}>{rd.id}</span>
+                      <span style={{ color: '#f0f6fc' }}>{rd.tool}</span>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        <span style={{ color: '#34d399', fontWeight: '600', fontSize: '10.5px' }}>
+                        <span style={{ color: '#3fb950', fontWeight: '600', fontSize: '10.5px' }}>
                           ✓ {rd.verdict}
                         </span>
-                        <ChevronRight size={12} style={{ color: '#475569' }} />
+                        <ChevronRight size={12} style={{ color: '#8b949e' }} />
                       </div>
                     </div>
                   ))}
@@ -420,35 +424,36 @@ export default function DecisionInspector({
             <div style={{
               padding: '12px',
               borderRadius: '8px',
-              backgroundColor: '#111722',
-              border: '1px solid #1e2a3c',
+              backgroundColor: '#131822',
+              border: '1px solid #1e2636',
+              boxShadow: 'var(--shadow-clay-sm)',
             }}>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: '#73849c' }}>Grounding Score</span>
-                <span style={{ color: '#34d399', fontWeight: '700' }}>
+                <span style={{ color: '#8b949e' }}>Grounding Score</span>
+                <span style={{ color: '#3fb950', fontWeight: '700' }}>
                   {Math.round((evidenceTab.groundingScore || 0.85) * 100)}%
                 </span>
               </div>
               <div style={{
                 height: '6px',
                 borderRadius: '9999px',
-                backgroundColor: '#1e293b',
+                backgroundColor: '#1a202c',
                 marginTop: '8px',
                 overflow: 'hidden',
               }}>
                 <div style={{
                   width: `${Math.round((evidenceTab.groundingScore || 0.85) * 100)}%`,
                   height: '100%',
-                  backgroundColor: '#10b981',
+                  backgroundColor: '#3fb950',
                 }} />
               </div>
             </div>
 
             <div>
-              <span style={{ color: '#73849c', fontWeight: '600' }}>
+              <span style={{ color: '#f0f6fc', fontWeight: '600' }}>
                 Empirical Claims ({evidenceTab.claimCount || 0})
               </span>
-              <ul style={{ marginTop: '8px', paddingLeft: '16px', color: '#cbd5e1', lineHeight: '1.6' }}>
+              <ul style={{ marginTop: '8px', paddingLeft: '16px', color: '#c9d1d9', lineHeight: '1.6' }}>
                 {(evidenceTab.claims || [
                   'Git branch HEAD is verified against remote origin.',
                   'No uncommitted conflicting unstaged files in tree.'
@@ -458,10 +463,10 @@ export default function DecisionInspector({
               </ul>
             </div>
 
-            <div style={{ borderTop: '1px solid #1a2333', paddingTop: '10px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', color: '#73849c' }}>
+            <div style={{ borderTop: '1px solid #1a202c', paddingTop: '10px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', color: '#8b949e' }}>
                 <span>Freshness</span>
-                <span style={{ color: '#e2e8f0' }}>{evidenceTab.freshness || 'live'}</span>
+                <span style={{ color: '#f0f6fc' }}>{evidenceTab.freshness || 'live'}</span>
               </div>
             </div>
           </div>
@@ -471,7 +476,7 @@ export default function DecisionInspector({
         {activeTab === 'policy' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', fontSize: '11.5px' }}>
             <div>
-              <span style={{ color: '#73849c', fontWeight: '600' }}>Activated Policy Rules</span>
+              <span style={{ color: '#f0f6fc', fontWeight: '600' }}>Activated Policy Rules</span>
               <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 {(policyDecision.rulesActivated || ['EgressPolicy', 'PathContainment']).map((rule, idx) => (
                   <div
@@ -479,9 +484,10 @@ export default function DecisionInspector({
                     style={{
                       padding: '6px 10px',
                       borderRadius: '6px',
-                      backgroundColor: '#111722',
-                      border: '1px solid #1e2a3c',
-                      color: '#cbd5e1',
+                      backgroundColor: '#131822',
+                      border: '1px solid #1e2636',
+                      boxShadow: 'var(--shadow-clay-sm)',
+                      color: '#f0f6fc',
                     }}
                   >
                     🛡️ {rule}
@@ -491,8 +497,8 @@ export default function DecisionInspector({
             </div>
 
             <div>
-              <span style={{ color: '#73849c', fontWeight: '600' }}>Precedence Chain</span>
-              <p style={{ marginTop: '6px', color: '#94a3b8', lineHeight: '1.5' }}>
+              <span style={{ color: '#f0f6fc', fontWeight: '600' }}>Precedence Chain</span>
+              <p style={{ marginTop: '6px', color: '#8b949e', lineHeight: '1.5' }}>
                 {policyDecision.precedence || 'Deterministic Safety Precedence (Hard Block > Human Gate > Auto Allow)'}
               </p>
             </div>
@@ -508,9 +514,9 @@ export default function DecisionInspector({
               gap: '6px',
               padding: '6px 10px',
               borderRadius: '6px',
-              backgroundColor: 'rgba(16, 185, 129, 0.12)',
-              border: '1px solid rgba(16, 185, 129, 0.3)',
-              color: '#34d399',
+              backgroundColor: 'rgba(63, 185, 80, 0.12)',
+              border: '1px solid rgba(63, 185, 80, 0.28)',
+              color: '#3fb950',
               fontWeight: '600',
             }}>
               <ShieldCheck size={14} />
@@ -518,17 +524,17 @@ export default function DecisionInspector({
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <span style={{ color: '#64748b' }}>Decision ID</span>
-              <span style={{ fontFamily: 'var(--font-mono)', color: '#cbd5e1' }}>
+              <span style={{ color: '#8b949e' }}>Decision ID</span>
+              <span style={{ fontFamily: 'var(--font-mono)', color: '#f0f6fc' }}>
                 {receiptTab.decisionId || decisionId}
               </span>
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <span style={{ color: '#64748b' }}>Action Hash</span>
+              <span style={{ color: '#8b949e' }}>Action Hash</span>
               <span style={{
                 fontFamily: 'var(--font-mono)',
-                color: '#cbd5e1',
+                color: '#c9d1d9',
                 wordBreak: 'break-all',
               }}>
                 {receiptTab.actionHash || 'sha256:7e9b04fc41a7d6568297b83321588632a488c0352ef2bc560ec0a8c27e852d43'}
@@ -536,10 +542,10 @@ export default function DecisionInspector({
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <span style={{ color: '#64748b' }}>State Hash</span>
+              <span style={{ color: '#8b949e' }}>State Hash</span>
               <span style={{
                 fontFamily: 'var(--font-mono)',
-                color: '#cbd5e1',
+                color: '#c9d1d9',
                 wordBreak: 'break-all',
               }}>
                 {receiptTab.stateHash || 'sha256:4b81c201a096180373ad412e8473e6a71e8bfb510ca1c1696a60db9372179b02'}
@@ -547,17 +553,17 @@ export default function DecisionInspector({
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <span style={{ color: '#64748b' }}>Nonce</span>
-              <span style={{ fontFamily: 'var(--font-mono)', color: '#cbd5e1' }}>
+              <span style={{ color: '#8b949e' }}>Nonce</span>
+              <span style={{ fontFamily: 'var(--font-mono)', color: '#f0f6fc' }}>
                 {receiptTab.nonce || 'non_89a01f7c11'}
               </span>
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <span style={{ color: '#64748b' }}>Cryptographic Signature</span>
+              <span style={{ color: '#8b949e' }}>Cryptographic Signature</span>
               <span style={{
                 fontFamily: 'var(--font-mono)',
-                color: '#94a3b8',
+                color: '#8b949e',
                 wordBreak: 'break-all',
               }}>
                 {receiptTab.signature || 'hmac-sha256:39a7b212f008cb042aaefc32986423a884efbb5c'}

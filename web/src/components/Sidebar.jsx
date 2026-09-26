@@ -23,8 +23,8 @@ export default function Sidebar({ activeNav = 'live', onNavSelect }) {
   return (
     <aside style={{
       width: '185px',
-      backgroundColor: '#0c111a',
-      borderRight: '1px solid #1a2333',
+      backgroundColor: '#0c0f14',
+      borderRight: '1px solid #1a202c',
       display: 'flex',
       flexDirection: 'column',
       justifyContent: 'space-between',
@@ -47,32 +47,33 @@ export default function Sidebar({ activeNav = 'live', onNavSelect }) {
                 gap: '11px',
                 padding: '9px 12px',
                 borderRadius: '8px',
-                border: 'none',
-                background: isActive ? '#182232' : 'transparent',
-                color: isActive ? '#f8fafc' : '#8595a8',
+                border: isActive ? '1px solid #283244' : '1px solid transparent',
+                background: isActive ? '#1a202c' : 'transparent',
+                color: isActive ? '#f0f6fc' : '#8b949e',
                 fontSize: '12.5px',
                 fontWeight: isActive ? '600' : '400',
                 cursor: 'pointer',
                 textAlign: 'left',
                 transition: 'all 0.15s ease',
+                boxShadow: isActive ? 'var(--shadow-clay-sm)' : 'none',
               }}
               onMouseEnter={(e) => {
                 if (!isActive) {
-                  e.currentTarget.style.background = '#131b28';
-                  e.currentTarget.style.color = '#cbd5e1';
+                  e.currentTarget.style.background = '#141922';
+                  e.currentTarget.style.color = '#c9d1d9';
                 }
               }}
               onMouseLeave={(e) => {
                 if (!isActive) {
                   e.currentTarget.style.background = 'transparent';
-                  e.currentTarget.style.color = '#8595a8';
+                  e.currentTarget.style.color = '#8b949e';
                 }
               }}
             >
               <Icon
                 size={16}
                 style={{
-                  color: isActive ? '#38bdf8' : '#64748b',
+                  color: isActive ? '#f0f6fc' : '#6b7280',
                   strokeWidth: isActive ? 2.2 : 1.8,
                 }}
               />
@@ -85,7 +86,7 @@ export default function Sidebar({ activeNav = 'live', onNavSelect }) {
       {/* Bottom Footer */}
       <div style={{
         padding: '12px 10px',
-        borderTop: '1px solid #17202f',
+        borderTop: '1px solid #1a202c',
         display: 'flex',
         flexDirection: 'column',
         gap: '4px',
@@ -95,17 +96,18 @@ export default function Sidebar({ activeNav = 'live', onNavSelect }) {
             width: '6px',
             height: '6px',
             borderRadius: '50%',
-            backgroundColor: '#38bdf8',
+            backgroundColor: '#8b949e',
             display: 'inline-block',
           }} />
-          <span style={{ fontSize: '11px', color: '#94a3b8', fontWeight: '500' }}>
+          <span style={{ fontSize: '11px', color: '#8b949e', fontWeight: '500' }}>
             PRAXEON v1.0.0
           </span>
         </div>
-        <span style={{ fontSize: '10.5px', color: '#52627a', paddingLeft: '12px' }}>
+        <span style={{ fontSize: '10.5px', color: '#6b7280', paddingLeft: '12px' }}>
           Open source
         </span>
       </div>
     </aside>
   );
 }
+

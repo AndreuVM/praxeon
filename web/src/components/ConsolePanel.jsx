@@ -38,8 +38,8 @@ export default function ConsolePanel({
         <div
           style={{
             height: '32px',
-            backgroundColor: '#090d14',
-            borderBottom: '1px solid #16202f',
+            backgroundColor: '#0c0f14',
+            borderBottom: '1px solid #1a202c',
             display: 'flex',
             alignItems: 'center',
             padding: '0 16px',
@@ -51,12 +51,12 @@ export default function ConsolePanel({
             style={{
               background: 'none',
               border: 'none',
-              padding: '4px 0',
-              color: activeTab === 'terminal' ? '#f1f5f9' : '#64748b',
+              padding: '6px 0',
+              color: activeTab === 'terminal' ? '#f0f6fc' : '#8b949e',
               fontSize: '11.5px',
               fontWeight: activeTab === 'terminal' ? '600' : '400',
               cursor: 'pointer',
-              borderBottom: activeTab === 'terminal' ? '2px solid #38bdf8' : '2px solid transparent',
+              borderBottom: activeTab === 'terminal' ? '2px solid #f0f6fc' : '2px solid transparent',
               transition: 'all 0.15s ease',
             }}
           >
@@ -67,12 +67,12 @@ export default function ConsolePanel({
             style={{
               background: 'none',
               border: 'none',
-              padding: '4px 0',
-              color: activeTab === 'events' ? '#f1f5f9' : '#64748b',
+              padding: '6px 0',
+              color: activeTab === 'events' ? '#f0f6fc' : '#8b949e',
               fontSize: '11.5px',
               fontWeight: activeTab === 'events' ? '600' : '400',
               cursor: 'pointer',
-              borderBottom: activeTab === 'events' ? '2px solid #38bdf8' : '2px solid transparent',
+              borderBottom: activeTab === 'events' ? '2px solid #f0f6fc' : '2px solid transparent',
               transition: 'all 0.15s ease',
             }}
           >
@@ -99,32 +99,32 @@ export default function ConsolePanel({
                 const isError = log.level === 'ERROR';
                 return (
                   <div key={idx} style={{ display: 'flex', gap: '10px', whiteSpace: 'pre-wrap' }}>
-                    <span style={{ color: '#52627a', userSelect: 'none' }}>{log.time}</span>
+                    <span style={{ color: '#6e7681', userSelect: 'none' }}>{log.time}</span>
                     <span
                       style={{
-                        color: isWarn ? '#fbbf24' : isError ? '#f87171' : '#38bdf8',
+                        color: isWarn ? '#d29922' : isError ? '#f85149' : '#8b949e',
                         fontWeight: '600',
                       }}
                     >
                       [{log.level}]
                     </span>
-                    <span style={{ color: isWarn ? '#fde68a' : isError ? '#fca5a5' : '#cbd5e1' }}>
+                    <span style={{ color: isWarn ? '#e3b341' : isError ? '#ffa198' : '#c9d1d9' }}>
                       {log.message.includes('ALLOW') ? (
                         <>
                           {log.message.split('ALLOW')[0]}
-                          <span style={{ color: '#34d399', fontWeight: '700' }}>ALLOW</span>
+                          <span style={{ color: '#3fb950', fontWeight: '700' }}>ALLOW</span>
                           {log.message.split('ALLOW')[1]}
                         </>
                       ) : log.message.includes('REVIEW') ? (
                         <>
                           {log.message.split('REVIEW')[0]}
-                          <span style={{ color: '#fbbf24', fontWeight: '700' }}>REVIEW</span>
+                          <span style={{ color: '#d29922', fontWeight: '700' }}>REVIEW</span>
                           {log.message.split('REVIEW')[1]}
                         </>
                       ) : log.message.includes('BLOCK') ? (
                         <>
                           {log.message.split('BLOCK')[0]}
-                          <span style={{ color: '#f87171', fontWeight: '700' }}>BLOCK</span>
+                          <span style={{ color: '#f85149', fontWeight: '700' }}>BLOCK</span>
                           {log.message.split('BLOCK')[1]}
                         </>
                       ) : (
@@ -146,23 +146,25 @@ export default function ConsolePanel({
                     gap: '10px',
                     padding: '4px 8px',
                     borderRadius: '4px',
-                    backgroundColor: '#111722',
+                    backgroundColor: '#131822',
+                    border: '1px solid #1a202c',
                   }}
                 >
-                  <span style={{ color: '#64748b' }}>#{ev.seq || idx + 1}</span>
-                  <span style={{ color: '#94a3b8' }}>{ev.time}</span>
+                  <span style={{ color: '#6e7681' }}>#{ev.seq || idx + 1}</span>
+                  <span style={{ color: '#8b949e' }}>{ev.time}</span>
                   <span
                     style={{
                       padding: '1px 6px',
                       borderRadius: '4px',
-                      backgroundColor: 'rgba(56, 189, 248, 0.15)',
-                      color: '#38bdf8',
+                      backgroundColor: 'rgba(240, 246, 252, 0.08)',
+                      color: '#c9d1d9',
+                      border: '1px solid #283244',
                       fontSize: '10.5px',
                     }}
                   >
                     {ev.type}
                   </span>
-                  <span style={{ color: '#e2e8f0', flex: 1 }}>{ev.detail}</span>
+                  <span style={{ color: '#f0f6fc', flex: 1 }}>{ev.detail}</span>
                 </div>
               ))}
             </div>
@@ -179,45 +181,45 @@ export default function ConsolePanel({
           flexDirection: 'column',
           justifyContent: 'center',
           gap: '11px',
-          backgroundColor: '#0c111a',
+          backgroundColor: '#0c0f14',
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#73849c', fontSize: '11.5px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#8b949e', fontSize: '11.5px' }}>
             <Cpu size={14} />
             <span>LLM Provider</span>
           </div>
-          <span style={{ fontSize: '11.5px', fontWeight: '600', color: '#e2e8f0', fontFamily: 'var(--font-mono)' }}>
+          <span style={{ fontSize: '11.5px', fontWeight: '600', color: '#f0f6fc', fontFamily: 'var(--font-mono)' }}>
             {runtime.provider}
           </span>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#73849c', fontSize: '11.5px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#8b949e', fontSize: '11.5px' }}>
             <Terminal size={14} />
             <span>Runtime</span>
           </div>
-          <span style={{ fontSize: '11.5px', fontWeight: '600', color: '#e2e8f0', fontFamily: 'var(--font-mono)' }}>
+          <span style={{ fontSize: '11.5px', fontWeight: '600', color: '#f0f6fc', fontFamily: 'var(--font-mono)' }}>
             {runtime.version}
           </span>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#73849c', fontSize: '11.5px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#8b949e', fontSize: '11.5px' }}>
             <Activity size={14} />
             <span>Latency (p50)</span>
           </div>
-          <span style={{ fontSize: '11.5px', fontWeight: '600', color: '#e2e8f0', fontFamily: 'var(--font-mono)' }}>
+          <span style={{ fontSize: '11.5px', fontWeight: '600', color: '#f0f6fc', fontFamily: 'var(--font-mono)' }}>
             {runtime.latencyP50}
           </span>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#73849c', fontSize: '11.5px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#8b949e', fontSize: '11.5px' }}>
             <Clock size={14} />
             <span>Execution Time</span>
           </div>
-          <span style={{ fontSize: '11.5px', fontWeight: '600', color: '#e2e8f0', fontFamily: 'var(--font-mono)' }}>
+          <span style={{ fontSize: '11.5px', fontWeight: '600', color: '#f0f6fc', fontFamily: 'var(--font-mono)' }}>
             {runtime.executionTime}
           </span>
         </div>

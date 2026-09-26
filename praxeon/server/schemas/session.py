@@ -43,3 +43,16 @@ class SessionSnapshotResponse(BaseModel):
     created_at: datetime
     tree: Dict[str, Any]
     summary: SessionSummaryResponse
+
+
+class RunMissionRequest(BaseModel):
+    """Petición para iniciar interactivamente una misión supervisada en tiempo real."""
+    goal: str = Field(..., description="Prompt u objetivo inicial de la misión")
+    session_id: Optional[str] = Field(None, description="Identificador de sesión opcional")
+    agent_name: Optional[str] = Field("CodingAgent", description="Nombre del agente autónomo")
+    llm_provider: Optional[str] = Field("simulator", description="Proveedor del LLM ('simulator', 'groq', 'ollama', 'gemini', 'openai', 'openrouter')")
+    llm_model: Optional[str] = Field(None, description="Modelo específico de LLM")
+    supervisor: Optional[str] = Field("laya", description="Motor de supervisión ('laya', 'typesafe', 'cascade')")
+    max_steps: Optional[int] = Field(6, description="Límite máximo de pasos para la misión")
+    step_delay_ms: Optional[int] = Field(900, description="Retardo en ms entre pasos para visualización en tiempo real")
+

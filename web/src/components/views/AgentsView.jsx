@@ -87,11 +87,12 @@ export default function AgentsView({ onSelectSession }) {
                   width: '32px',
                   height: '32px',
                   borderRadius: '6px',
-                  backgroundColor: '#1a2436',
+                  backgroundColor: '#161c26',
+                  border: '1px solid #242c3b',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  color: '#38bdf8',
+                  color: '#f0f6fc',
                 }}>
                   <Bot size={18} />
                 </div>
