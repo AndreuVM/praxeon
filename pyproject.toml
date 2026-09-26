@@ -40,6 +40,7 @@ praxeon = "praxeon.cli:main"
 praxeon-live = "praxeon.live_agent:main"
 praxeon-dash = "praxeon.dashboard:main"
 praxeon-server = "praxeon.server.app:start"
+praxeon-web = "praxeon.server.app:launch_web"
 praxeon-mcp = "praxeon.integrations.mcp.server:main"
 # Legacy aliases
 jev-nav = "praxeon.cli:main"

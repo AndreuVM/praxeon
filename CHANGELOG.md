@@ -4,6 +4,30 @@ Todas las modificaciones notables de este proyecto están documentadas en este a
 
 ---
 
+## [1.0.0] — 2026-09-26
+
+### Añadido
+- **PRAXEON 1.0 Platform**:
+  - **Fase 1 (Hardening & Event Model)**:
+    - Tipos de eventos inmutables (`EventType`, `make_event`) con secuencia monótona estricta por sesión.
+    - `EventBus` persistente con SQLite WAL y recuperación de huecos (*gap recovery*).
+    - `DecisionTreeReducer` canónico para reconstruir el árbol jerárquico de decisiones en memoria a partir del log de eventos.
+    - NonceStore atómico `consume-once` y validación criptográfica HMAC-SHA256 en recibos de decisión.
+  - **Fase 2 (Web Server FastAPI & WebSocket Streaming)**:
+    - Servidor FastAPI modular en `praxeon/server/` con arquitectura de capas y separación estricta de autoridad.
+    - Endpoints REST completos: gestión de sesiones (`/v1/sessions`), evaluación de propuestas (`/v1/sessions/{id}/actions`), Decision Inspector en 4 pestañas (`/v1/decisions/{id}`), confirmación humana (`/v1/decisions/{id}/confirm`), ejecución en sandbox (`/v1/decisions/{id}/execute`), historial de eventos paginado (`/v1/sessions/{id}/events`), salud (`/v1/health`) y métricas (`/v1/metrics`).
+    - Canal dúplex WebSocket `/v1/sessions/{id}/stream` con protocolo de sincronización y reconexión sin pérdida.
+  - **Fase 3 (Frontend Web Application & Design System)**:
+    - SPA moderna construida con Vite + React en `web/` con estética dark mode técnica e idéntica al mockup de referencia.
+    - Componentes de alta fidelidad: `Header`, `Sidebar`, `SessionKPIs`, `DecisionTree` interactivo (zoom, pan, curvas Bézier SVG, estados dinámicos), `ConsolePanel` (terminal en vivo con coloreado de veredictos y timeline de eventos) y `DecisionInspector` (4 pestañas: Decision, Evidence, Policy, Receipt).
+    - Modal de proposición interactiva de acciones y conmutador de sesiones.
+  - **Fase 4 (Consolidación, Vistas Complementarias & E2E)**:
+    - Vistas completas de navegación: `SessionsView`, `DecisionsView`, `AgentsView`, `ProvidersView`, `SecurityView` y `SettingsView`.
+    - Streaming WebSocket reactivo conectado a la interfaz de usuario en tiempo real.
+    - Servidor integrado que sirve los estáticos compilados en `/` al ejecutar `praxeon-server` o `praxeon-web`.
+    - Entrypoint CLI `praxeon-web` con apertura automática de navegador.
+    - Suite de pruebas End-to-End (`tests/test_e2e_platform.py`) validando el ciclo de vida completo de 10 pasos con 233 tests pasando al 100%.
+
 ## [0.4.0] — 2026-09-25
 
 ### Cambiado

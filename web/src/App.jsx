@@ -8,6 +8,13 @@ import DecisionInspector from './components/DecisionInspector';
 import ProposeActionModal from './components/ProposeActionModal';
 import SessionsModal from './components/SessionsModal';
 
+import SessionsView from './components/views/SessionsView';
+import DecisionsView from './components/views/DecisionsView';
+import AgentsView from './components/views/AgentsView';
+import ProvidersView from './components/views/ProvidersView';
+import SecurityView from './components/views/SecurityView';
+import SettingsView from './components/views/SettingsView';
+
 import {
   INITIAL_SESSION,
   INITIAL_NODES,
@@ -40,7 +47,6 @@ export default function App() {
       const health = await api.fetchHealth();
       if (health?.data?.status === 'ok') {
         setRuntimeActive(true);
-        // Try fetching active sessions from backend
         const sList = await api.fetchSessions();
         if (sList?.data && sList.data.length > 0) {
           setSessionsList(sList.data);
@@ -50,16 +56,57 @@ export default function App() {
     initBackend();
   }, []);
 
+  // Real-time WebSocket connection to the active session stream
+  useEffect(() => {
+    if (!runtimeActive || !session.sessionId) return;
+
+    const stream = api.createWebSocketStream(
+      session.sessionId,
+      (msg) => {
+        if (msg.action === 'event' && msg.data) {
+          const ev = msg.data;
+          const timeStr = new Date(ev.timestamp || Date.now()).toTimeString().split(' ')[0];
+
+          // Add to structured events
+          setEvents((prev) => [
+            {
+              seq: ev.sequence,
+              type: ev.event_type,
+              time: timeStr,
+              detail: JSON.stringify(ev.payload || {}).slice(0, 100),
+            },
+            ...prev,
+          ]);
+
+          // Add to terminal logs
+          setLogs((prev) => [
+            ...prev,
+            {
+              time: timeStr,
+              level: ev.event_type.includes('error') ? 'ERROR' : ev.event_type.includes('warn') || ev.event_type === 'approval.requested' ? 'WARN' : 'INFO',
+              message: `[WS ${ev.event_type}] ${ev.node_id || ''} ${JSON.stringify(ev.payload || '')}`,
+            },
+          ]);
+        }
+      },
+      (status) => {
+        if (status === 'connected') {
+          setRuntimeActive(true);
+        }
+      }
+    );
+
+    return () => stream.close();
+  }, [session.sessionId, runtimeActive]);
+
   // Selected decision for the right inspector
   const currentDecision = decisionsMap[selectedNodeId] || decisionsMap['node-5'];
 
   // Handle selecting a node in the tree
   const handleSelectNode = (nodeId) => {
     setSelectedNodeId(nodeId);
-    // Find node details if in decisionsMap
     const found = decisionsMap[nodeId];
     if (found) {
-      // Add inspection log
       const timeStr = new Date().toTimeString().split(' ')[0];
       setLogs((prev) => [
         ...prev,
@@ -74,7 +121,6 @@ export default function App() {
     const newSeq = nodes.length + 1;
     const newNodeId = `node-${newSeq}`;
 
-    // Add log immediately
     setLogs((prev) => [
       ...prev,
       { time: timeStr, level: 'INFO', message: `Proposing action: ${proposal.operation || proposal.tool}` },
@@ -92,7 +138,6 @@ export default function App() {
     const isReview = decisionData?.status === 'REVIEW' || proposal.tool === 'run_command';
     const status = isAllow ? 'ALLOW' : isReview ? 'REVIEW' : 'BLOCK';
 
-    // Position new node below current parent
     const lastNode = nodes[nodes.length - 1] || { x: 420, y: 340 };
     const newNode = {
       id: newNodeId,
@@ -109,7 +154,6 @@ export default function App() {
     setNodes((prev) => [...prev, newNode]);
     setSelectedNodeId(newNodeId);
 
-    // Record decision in decision inspector map
     const newDecisionRecord = {
       decisionId: decisionData?.decision_id || `d_${session.sessionId}-${newSeq}`,
       sequence: newSeq,
@@ -166,7 +210,6 @@ export default function App() {
       [newNodeId]: newDecisionRecord,
     }));
 
-    // Update KPI counts
     setSession((prev) => ({
       ...prev,
       metrics: {
@@ -178,7 +221,6 @@ export default function App() {
       },
     }));
 
-    // Update logs
     setLogs((prev) => [
       ...prev,
       {
@@ -213,12 +255,10 @@ export default function App() {
       return { ...prev, [selectedNodeId]: target };
     });
 
-    // Update node in tree
     setNodes((prev) =>
       prev.map((n) => (n.id === selectedNodeId ? { ...n, status: 'ALLOW' } : n))
     );
 
-    // Update KPIs
     setSession((prev) => ({
       ...prev,
       metrics: {
@@ -315,6 +355,7 @@ export default function App() {
       { id: 'start', label: 'Start', type: 'start', status: 'SYSTEM', x: 420, y: 30, parentId: null },
     ]);
     setSelectedNodeId('start');
+    setActiveNav('live');
     setLogs([
       { time: new Date().toTimeString().split(' ')[0], level: 'INFO', message: `Session #${newId} initialized: ${goal}` },
     ]);
@@ -343,38 +384,79 @@ export default function App() {
         <Sidebar activeNav={activeNav} onNavSelect={setActiveNav} />
 
         {/* Central Supervision Canvas & Console Area */}
-        <main style={{
-          flex: 1,
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'hidden',
-          backgroundColor: '#0a0e16',
-        }}>
-          {/* Top Session KPIs Overview */}
-          <SessionKPIs session={session} />
+        {activeNav === 'live' && (
+          <>
+            <main style={{
+              flex: 1,
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden',
+              backgroundColor: '#0a0e16',
+            }}>
+              {/* Top Session KPIs Overview */}
+              <SessionKPIs session={session} />
 
-          {/* Interactive Decision Tree */}
-          <DecisionTree
-            nodes={nodes}
-            selectedNodeId={selectedNodeId}
-            onSelectNode={handleSelectNode}
+              {/* Interactive Decision Tree */}
+              <DecisionTree
+                nodes={nodes}
+                selectedNodeId={selectedNodeId}
+                onSelectNode={handleSelectNode}
+              />
+
+              {/* Bottom Console Panel (Terminal + Events + Telemetry) */}
+              <ConsolePanel
+                logs={logs}
+                events={events}
+                runtime={session.runtime}
+              />
+            </main>
+
+            {/* Right Decision Inspector (4 Tabs) */}
+            <DecisionInspector
+              decision={currentDecision}
+              onApprove={handleApprove}
+              onReject={handleReject}
+              onExecute={handleExecute}
+            />
+          </>
+        )}
+
+        {/* Supplementary Views */}
+        {activeNav === 'sessions' && (
+          <SessionsView
+            sessions={sessionsList}
+            currentSessionId={session.sessionId}
+            onSelectSession={(sid) => {
+              setSession((prev) => ({ ...prev, sessionId: sid }));
+              setActiveNav('live');
+            }}
+            onCreateSession={handleCreateSession}
           />
+        )}
 
-          {/* Bottom Console Panel (Terminal + Events + Telemetry) */}
-          <ConsolePanel
-            logs={logs}
-            events={events}
-            runtime={session.runtime}
+        {activeNav === 'decisions' && (
+          <DecisionsView
+            onSelectDecision={(nodeId) => {
+              setSelectedNodeId(nodeId);
+              setActiveNav('live');
+            }}
           />
-        </main>
+        )}
 
-        {/* Right Decision Inspector (4 Tabs) */}
-        <DecisionInspector
-          decision={currentDecision}
-          onApprove={handleApprove}
-          onReject={handleReject}
-          onExecute={handleExecute}
-        />
+        {activeNav === 'agents' && (
+          <AgentsView
+            onSelectSession={(sid) => {
+              setSession((prev) => ({ ...prev, sessionId: sid }));
+              setActiveNav('live');
+            }}
+          />
+        )}
+
+        {activeNav === 'providers' && <ProvidersView />}
+
+        {activeNav === 'security' && <SecurityView />}
+
+        {activeNav === 'settings' && <SettingsView />}
       </div>
 
       {/* Modals */}

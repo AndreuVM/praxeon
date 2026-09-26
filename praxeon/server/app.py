@@ -65,5 +65,31 @@ def start():
     uvicorn.run("praxeon.server.app:app", host=args.host, port=args.port, reload=args.reload)
 
 
+def launch_web():
+    """Lanzador interactivo de la aplicación web y servidor de supervisión PRAXEON."""
+    import threading
+    import webbrowser
+
+    parser = argparse.ArgumentParser(description="PRAXEON Web Supervisor & Application")
+    parser.add_argument("--host", default="127.0.0.1", help="Host de escucha")
+    parser.add_argument("--port", type=int, default=8000, help="Puerto HTTP")
+    parser.add_argument("--no-browser", action="store_true", help="No abrir el navegador automáticamente")
+    parser.add_argument("--reload", action="store_true", help="Recarga en caliente para desarrollo")
+    args = parser.parse_args()
+
+    url = f"http://{args.host}:{args.port}"
+    print("=" * 68)
+    print("⚡ PRAXEON 1.0 — Runtime Supervision for Autonomous AI Agents ⚡")
+    print(f"● Interfaz gráfica: {url}")
+    print(f"● API OpenAPI:     {url}/docs")
+    print("=" * 68)
+
+    if not args.no_browser:
+        threading.Timer(1.2, webbrowser.open, [url]).start()
+
+    uvicorn.run("praxeon.server.app:app", host=args.host, port=args.port, reload=args.reload)
+
+
 if __name__ == "__main__":
     start()
+
