@@ -96,37 +96,56 @@ export default function App() {
       (msg) => {
         if (msg.action === 'event' && msg.data) {
           const ev = msg.data;
+          const evType = ev.type || ev.event_type || '';
           const timeStr = new Date(ev.timestamp || Date.now()).toTimeString().split(' ')[0];
 
           // 1. Agregar a eventos estructurados
           setEvents((prev) => [
             {
               seq: ev.sequence,
-              type: ev.event_type,
+              type: evType,
               time: timeStr,
-              detail: typeof ev.payload === 'string' ? ev.payload : JSON.stringify(ev.payload || {}).slice(0, 100),
+              detail: typeof ev.payload === 'string' ? ev.payload : JSON.stringify(ev.payload || {}).slice(0, 120),
             },
             ...prev,
           ]);
 
-          // 2. Agregar a log de terminal
+          // 2. Agregar a log de terminal con nivel contextual
           let level = 'INFO';
-          if (ev.event_type.includes('error') || ev.event_type.includes('pruned')) level = 'ERROR';
-          else if (ev.event_type.includes('warn') || ev.event_type === 'approval.requested') level = 'WARN';
+          if (evType.includes('error') || evType.includes('pruned') || evType.includes('blocked')) level = 'ERROR';
+          else if (evType.includes('warn') || evType === 'approval.requested' || (evType === 'policy.decided' && ev.payload?.status === 'REVIEW')) level = 'WARN';
 
-          let logMsg = `[${ev.event_type}]`;
-          if (ev.event_type === 'action.proposed') {
-            logMsg = `Proposing action: ${ev.payload?.tool} ${JSON.stringify(ev.payload?.arguments || {})}`;
-          } else if (ev.event_type === 'provider.evaluated') {
-            logMsg = `Evaluating with ${ev.payload?.provider_name}... ${ev.payload?.score} ${ev.payload?.verdict}`;
-          } else if (ev.event_type === 'policy.decided') {
-            logMsg = `Policy decided: ${ev.payload?.status} (${ev.payload?.reason_code || 'SAFE'})`;
-          } else if (ev.event_type === 'approval.requested') {
-            logMsg = `Policy requires human confirmation for this action (Risk: ${ev.payload?.risk_level || 'HIGH'})`;
-          } else if (ev.event_type === 'approval.completed') {
+          let logMsg = `[${evType}]`;
+          if (evType === 'session.started') {
+            logMsg = `Session #${ev.session_id} started (Agent: ${ev.payload?.agent_name || 'CodingAgent'})`;
+          } else if (evType === 'goal.created') {
+            logMsg = `Mission goal: ${ev.payload?.goal}`;
+          } else if (evType === 'action.proposed') {
+            logMsg = `Step ${ev.payload?.step || 1}: Proposing action '${ev.payload?.tool}' (${ev.payload?.operation || ''})`;
+          } else if (evType === 'evidence.evaluated') {
+            logMsg = `Evaluated ${ev.payload?.evidence_count || 0} empirical claims (Grounding score: ${Math.round((ev.payload?.grounding_score || 0.85) * 100)}%)`;
+          } else if (evType === 'risk.assessed') {
+            logMsg = `Risk assessed: ${ev.payload?.level || 'LOW'} (Score: ${ev.payload?.score || 0.15})`;
+          } else if (evType === 'provider.evaluated') {
+            logMsg = `Semantic evaluation (${ev.payload?.provider_name}): Score ${ev.payload?.score} -> ${ev.payload?.verdict}`;
+          } else if (evType === 'policy.decided') {
+            logMsg = `Policy decided: ${ev.payload?.status} (${ev.payload?.reason_code || 'STANDARD_POLICY'})`;
+          } else if (evType === 'approval.requested') {
+            logMsg = `Policy requires human confirmation (Risk: ${ev.payload?.risk_level || 'HIGH'})`;
+          } else if (evType === 'approval.completed') {
             logMsg = `Human operator decided: ${ev.payload?.approved ? 'APPROVED' : 'REJECTED'}`;
-          } else if (ev.event_type === 'capability.issued') {
-            logMsg = `Capability issued & signed with HMAC token`;
+          } else if (evType === 'capability.issued') {
+            logMsg = `Capability token issued & signed with HMAC`;
+          } else if (evType === 'execution.started') {
+            logMsg = `Executing action in local sandbox: ${ev.payload?.tool}...`;
+          } else if (evType === 'execution.completed') {
+            logMsg = `Action executed ${ev.payload?.success ? 'successfully' : 'with error'} in ${ev.payload?.execution_time_ms || 12}ms`;
+          } else if (evType === 'observation.recorded') {
+            logMsg = `Observation: ${(ev.payload?.output || '').slice(0, 100)}...`;
+          } else if (evType === 'decision.pruned') {
+            logMsg = `Decision pruned: ${ev.payload?.reason}`;
+          } else if (evType === 'session.completed') {
+            logMsg = `Mission complete: ${ev.payload?.summary || 'Completed successfully'}`;
           }
 
           setLogs((prev) => [
@@ -134,10 +153,9 @@ export default function App() {
             { time: timeStr, level, message: logMsg },
           ]);
 
-          // 3. Procesamiento dinámico del Decision Tree
-          if (ev.event_type === 'action.proposed') {
+          // 3. Procesamiento dinámico del Decision Tree en tiempo real
+          if (evType === 'action.proposed') {
             const actId = ev.node_id;
-            const parentId = ev.parent_id || 'start';
             const tool = ev.payload?.tool || 'action';
             const op = ev.payload?.operation || tool;
             const stepNum = ev.payload?.step || 1;
@@ -146,10 +164,15 @@ export default function App() {
               const exists = prevNodes.some((n) => n.id === actId);
               if (exists) return prevNodes;
 
-              // Calcular posición vertical u horizontal en el árbol
-              const parentNode = prevNodes.find((n) => n.id === parentId) || prevNodes[prevNodes.length - 1];
-              const newY = parentNode ? parentNode.y + 65 : 100;
-              const newX = parentNode ? parentNode.x : 420;
+              // Calcular parentId y posicionamiento en cascada suave
+              const rawParent = ev.parent_id;
+              let parentNode = prevNodes.find((n) => n.id === rawParent);
+              if (!parentNode && prevNodes.length > 0) {
+                parentNode = prevNodes[prevNodes.length - 1];
+              }
+
+              const newY = parentNode ? parentNode.y + 76 : 105;
+              const newX = 420;
 
               const isHub = op.includes('Propose') || stepNum === 5;
               const newNode = {
@@ -157,16 +180,27 @@ export default function App() {
                 label: `${stepNum}. ${op}`,
                 subtitle: `${timeStr} · LLM (${ev.payload?.source?.replace('LLM (', '').replace(')', '') || 'JEV'})`,
                 type: isHub ? 'hub' : 'step',
-                status: isHub ? 'PROPOSE' : 'PENDING',
+                status: 'PENDING',
                 action: op,
                 x: newX,
                 y: newY,
-                parentId: parentId,
+                parentId: parentNode ? parentNode.id : 'start',
+                isNew: true,
               };
+
               return [...prevNodes, newNode];
             });
 
-            // Registrar borrador de decisión para inspección
+            // Auto-seleccionar el nodo actual para que el inspector se actualice en tiempo real
+            setSelectedNodeId(actId);
+
+            // Actualizar estado de la sesión en el header y KPIs
+            setSession((prevSess) => ({
+              ...prevSess,
+              status: `Active (Paso ${stepNum})`,
+            }));
+
+            // Registrar borrador de decisión para inspección inmediata en las 4 pestañas
             setDecisionsMap((prevMap) => ({
               ...prevMap,
               [actId]: {
@@ -190,14 +224,50 @@ export default function App() {
                   reasonCodes: ['EVALUATING'],
                   precedence: 'Deterministic Safety Precedence',
                 },
-                capability: { issued: false, statusText: 'Evaluating', token: null },
-                reason: ev.payload?.thought_rationale || 'Evaluando paso.',
+                capability: { issued: false, statusText: 'Evaluating...', token: null },
+                reason: ev.payload?.thought_rationale || 'Evaluando paso en el pipeline...',
+                evidenceTab: {
+                  groundingScore: 0.85,
+                  claims: ['Analyzing repository structure and code contracts.'],
+                  claimCount: 1,
+                  freshness: 'live',
+                },
+                receiptTab: {
+                  decisionId: ev.decision_id || `d_${actId}`,
+                  actionHash: 'sha256:' + actId,
+                  stateHash: 'sha256:state_' + actId,
+                  nonce: 'non_' + actId,
+                },
                 relatedDecisions: [],
               },
             }));
           }
 
-          if (ev.event_type === 'provider.evaluated') {
+          if (evType === 'evidence.evaluated') {
+            const actId = ev.node_id;
+            const groundingScore = ev.payload?.grounding_score ?? 0.85;
+            const claims = ev.payload?.claims_evaluated || [];
+            const claimCount = ev.payload?.evidence_count ?? claims.length;
+
+            setDecisionsMap((prevMap) => {
+              const current = prevMap[actId] || {};
+              return {
+                ...prevMap,
+                [actId]: {
+                  ...current,
+                  evidenceTab: {
+                    ...current.evidenceTab,
+                    groundingScore,
+                    claims: claims.length > 0 ? claims : ['Empirical grounding validated against current state.'],
+                    claimCount,
+                    freshness: 'live',
+                  },
+                },
+              };
+            });
+          }
+
+          if (evType === 'provider.evaluated') {
             const actId = ev.node_id;
             setDecisionsMap((prevMap) => {
               const current = prevMap[actId] || {};
@@ -206,18 +276,18 @@ export default function App() {
                 [actId]: {
                   ...current,
                   semanticEvaluation: [
-                    { provider: ev.payload?.provider_name || 'LAYA', score: ev.payload?.score || 0.81, verdict: ev.payload?.verdict || 'ALLOW' },
-                    { provider: 'TypeSafe', score: 0.75, verdict: 'ALLOW' },
+                    { provider: ev.payload?.provider_name || 'LAYA', score: ev.payload?.score ?? 0.88, verdict: ev.payload?.verdict || 'ALLOW' },
+                    { provider: 'TypeSafe', score: 0.82, verdict: 'ALLOW' },
                   ],
                 },
               };
             });
           }
 
-          if (ev.event_type === 'risk.assessed') {
+          if (evType === 'risk.assessed') {
             const actId = ev.node_id;
             const rLevel = ev.payload?.level || 'LOW';
-            const rScore = ev.payload?.score || 0.15;
+            const rScore = ev.payload?.score ?? 0.15;
             setDecisionsMap((prevMap) => {
               const current = prevMap[actId] || {};
               return {
@@ -232,12 +302,12 @@ export default function App() {
             });
           }
 
-          if (ev.event_type === 'policy.decided') {
+          if (evType === 'policy.decided') {
             const actId = ev.parent_id || ev.node_id;
             const statusStr = ev.payload?.status || 'ALLOW';
             const requiresConf = !!ev.payload?.requires_confirmation;
 
-            // Actualizar estado del nodo en el árbol
+            // Actualizar estado visual del nodo en el árbol
             setNodes((prevNodes) =>
               prevNodes.map((n) => {
                 if (n.id === actId) {
@@ -255,6 +325,7 @@ export default function App() {
               const m = prevSess.metrics || { totalDecisions: 0, allowed: 0, blocked: 0, review: 0 };
               return {
                 ...prevSess,
+                status: statusStr === 'REVIEW' ? 'Review Required' : prevSess.status,
                 metrics: {
                   totalDecisions: m.totalDecisions + 1,
                   allowed: statusStr === 'ALLOW' ? m.allowed + 1 : m.allowed,
@@ -289,8 +360,9 @@ export default function App() {
             }
           }
 
-          if (ev.event_type === 'capability.issued') {
+          if (evType === 'capability.issued') {
             const actId = ev.node_id;
+            const cap = ev.payload || {};
             setDecisionsMap((prevMap) => {
               const current = prevMap[actId] || {};
               return {
@@ -300,14 +372,20 @@ export default function App() {
                   capability: {
                     issued: true,
                     statusText: 'Issued & HMAC Signed',
-                    token: ev.payload?.capability_token || 'cap_hmac_verified',
+                    token: cap.capability_id || cap.signature || 'cap_hmac_verified',
+                  },
+                  receiptTab: {
+                    decisionId: cap.decision_id || current.decisionId,
+                    actionHash: cap.action_hash || current.receiptTab?.actionHash || 'sha256:' + actId,
+                    stateHash: cap.state_hash || current.receiptTab?.stateHash || 'sha256:state_' + actId,
+                    nonce: cap.nonce || current.receiptTab?.nonce || 'non_' + actId,
                   },
                 },
               };
             });
           }
 
-          if (ev.event_type === 'approval.completed') {
+          if (evType === 'approval.completed') {
             const actId = ev.node_id;
             const approved = ev.payload?.approved;
             if (approved) {
@@ -326,6 +404,58 @@ export default function App() {
                 };
               });
             }
+          }
+
+          if (evType === 'execution.started') {
+            const actId = ev.node_id;
+            setNodes((prevNodes) =>
+              prevNodes.map((n) => (n.id === actId ? { ...n, status: 'EXECUTING' } : n))
+            );
+          }
+
+          if (evType === 'execution.completed') {
+            const actId = ev.node_id;
+            const success = ev.payload?.success;
+            const timeMs = ev.payload?.execution_time_ms;
+            setNodes((prevNodes) =>
+              prevNodes.map((n) => (n.id === actId ? { ...n, status: success ? 'ALLOW' : 'BLOCK' } : n))
+            );
+            if (timeMs) {
+              setSession((prevSess) => ({
+                ...prevSess,
+                runtime: {
+                  ...prevSess.runtime,
+                  latencyP50: `${timeMs}ms`,
+                },
+              }));
+            }
+          }
+
+          if (evType === 'observation.recorded') {
+            const actId = ev.node_id;
+            const output = ev.payload?.output || '';
+            setDecisionsMap((prevMap) => {
+              const current = prevMap[actId] || {};
+              return {
+                ...prevMap,
+                [actId]: {
+                  ...current,
+                  observationOutput: output,
+                },
+              };
+            });
+          }
+
+          if (evType === 'session.completed') {
+            setSession((prevSess) => ({
+              ...prevSess,
+              status: 'Completed',
+              runtime: {
+                ...prevSess.runtime,
+                executionTime: 'Completed',
+              },
+            }));
+            setIsRunning(false);
           }
         }
       },

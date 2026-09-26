@@ -72,6 +72,7 @@ export default function DecisionInspector({
     evidenceTab = {},
     receiptTab = {},
     relatedDecisions = [],
+    observationOutput = null,
   } = decision;
 
   const handleCopyCommand = () => {
@@ -332,6 +333,35 @@ export default function DecisionInspector({
                 {reason}
               </p>
             </div>
+
+            {/* Execution Observation Output */}
+            {observationOutput && (
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span style={{ fontSize: '11px', color: '#38bdf8', fontWeight: '600' }}>
+                    Execution Observation
+                  </span>
+                  <span style={{ fontSize: '10px', color: '#64748b' }}>Live sandbox</span>
+                </div>
+                <pre style={{
+                  marginTop: '6px',
+                  padding: '9px 12px',
+                  backgroundColor: '#070a10',
+                  border: '1px solid #1e293b',
+                  borderRadius: '6px',
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: '11px',
+                  color: '#34d399',
+                  maxHeight: '130px',
+                  overflowY: 'auto',
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-all',
+                  lineHeight: '1.4',
+                }}>
+                  {observationOutput}
+                </pre>
+              </div>
+            )}
 
             {/* Action Buttons: Request Human Approval or Approve/Reject */}
             <div>

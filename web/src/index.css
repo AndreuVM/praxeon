@@ -104,6 +104,64 @@ html, body, #root {
   animation: softPulse 2.8s infinite ease-in-out;
 }
 
+/* Animaciones de entrada suave del árbol de decisiones (Real-time Node & Edge Joining) */
+@keyframes nodeSpawn {
+  0% {
+    opacity: 0;
+    transform: scale(0.65) translateY(-14px);
+    filter: brightness(1.6);
+  }
+  65% {
+    opacity: 1;
+    transform: scale(1.04) translateY(0);
+    filter: brightness(1.15);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+    filter: brightness(1);
+  }
+}
+
+.tree-node-enter {
+  animation: nodeSpawn 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes edgeDraw {
+  0% {
+    stroke-dashoffset: 350;
+    opacity: 0;
+  }
+  35% {
+    opacity: 1;
+  }
+  100% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+}
+
+.edge-path-animated {
+  stroke-dasharray: 350;
+  animation: edgeDraw 0.65s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes activeNodePulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(56, 189, 248, 0.65), 0 0 14px rgba(56, 189, 248, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  }
+  60% {
+    box-shadow: 0 0 0 10px rgba(56, 189, 248, 0), 0 0 8px rgba(56, 189, 248, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(56, 189, 248, 0), 0 0 4px rgba(56, 189, 248, 0), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  }
+}
+
+.tree-node-active-pulse {
+  animation: activeNodePulse 2.2s infinite ease-out;
+}
+
 /* Botones con estilo Flat Clay */
 .btn {
   display: inline-flex;

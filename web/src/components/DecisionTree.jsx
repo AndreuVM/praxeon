@@ -11,6 +11,7 @@ import {
   Clock,
   Sparkles,
   GitBranch,
+  RefreshCw,
 } from 'lucide-react';
 
 export default function DecisionTree({
@@ -51,6 +52,17 @@ export default function DecisionTree({
 
   const handleMouseUp = () => setIsDragging(false);
 
+  // Auto-scroll suave para centrar el nuevo nodo en el viewport
+  useEffect(() => {
+    if (!autoLayout || nodes.length <= 1) return;
+    const latestNode = nodes[nodes.length - 1];
+    if (latestNode && typeof latestNode.y === 'number') {
+      const viewportHeight = canvasRef.current?.clientHeight || 500;
+      const targetY = Math.min(20, Math.max(-1200, (viewportHeight * 0.35) - latestNode.y));
+      setPan((p) => ({ ...p, y: targetY }));
+    }
+  }, [nodes.length, autoLayout]);
+
   // Helper to find parent coordinates for bezier curves
   const nodeMap = React.useMemo(() => {
     const map = {};
@@ -67,7 +79,7 @@ export default function DecisionTree({
       const parent = nodeMap[node.parentId];
 
       const startX = parent.x + (parent.type === 'start' ? 40 : 100);
-      const startY = parent.y + (parent.type === 'start' ? 24 : 40);
+      const startY = parent.y + (parent.type === 'start' ? 28 : 42);
       const endX = node.x + (node.type === 'start' ? 40 : 100);
       const endY = node.y;
 
@@ -75,22 +87,50 @@ export default function DecisionTree({
       const pathData = `M ${startX} ${startY} C ${startX} ${midY}, ${endX} ${midY}, ${endX} ${endY}`;
 
       // Pick edge color based on target node status
-      let strokeColor = '#334155';
-      if (node.status === 'ALLOW') strokeColor = 'rgba(16, 185, 129, 0.45)';
-      else if (node.status === 'PROPOSE') strokeColor = 'rgba(139, 92, 246, 0.55)';
-      else if (node.status === 'REVIEW') strokeColor = 'rgba(245, 158, 11, 0.5)';
-      else if (node.status === 'BLOCK') strokeColor = 'rgba(239, 68, 68, 0.45)';
+      let strokeColor = '#3b4961';
+      let particleColor = '#60a5fa';
+      if (node.status === 'ALLOW') {
+        strokeColor = 'rgba(16, 185, 129, 0.7)';
+        particleColor = '#34d399';
+      } else if (node.status === 'PROPOSE') {
+        strokeColor = 'rgba(168, 85, 247, 0.7)';
+        particleColor = '#c084fc';
+      } else if (node.status === 'REVIEW') {
+        strokeColor = 'rgba(245, 158, 11, 0.75)';
+        particleColor = '#fbbf24';
+      } else if (node.status === 'BLOCK') {
+        strokeColor = 'rgba(239, 68, 68, 0.7)';
+        particleColor = '#f87171';
+      } else if (node.status === 'EXECUTING') {
+        strokeColor = 'rgba(56, 189, 248, 0.85)';
+        particleColor = '#38bdf8';
+      }
 
       return (
         <g key={`edge-${node.parentId}-${node.id}`}>
+          {/* Resplandor sutil del enlace */}
           <path
+            d={pathData}
+            fill="none"
+            stroke={strokeColor}
+            strokeWidth="3.5"
+            opacity="0.25"
+            filter="blur(1px)"
+          />
+          {/* Trazado principal animado al unirse al grafo */}
+          <path
+            className="edge-path-animated"
             d={pathData}
             fill="none"
             stroke={strokeColor}
             strokeWidth="2"
             strokeDasharray={node.status === 'REVIEW' ? '4 3' : 'none'}
           />
-          {/* Arrow head indicator */}
+          {/* Partícula en movimiento continuo indicando flujo de datos en tiempo real */}
+          <circle r="2.5" fill={particleColor} opacity="0.95">
+            <animateMotion dur="2.2s" repeatCount="indefinite" path={pathData} />
+          </circle>
+          {/* Punta de flecha indicadora */}
           <polygon
             points={`${endX},${endY} ${endX - 4},${endY - 6} ${endX + 4},${endY - 6}`}
             fill={strokeColor}
@@ -143,6 +183,13 @@ export default function DecisionTree({
       iconColor = '#94a3b8';
       borderColor = '#293548';
       bg = '#131a26';
+    } else if (node.status === 'EXECUTING') {
+      icon = RefreshCw;
+      iconBg = 'rgba(56, 189, 248, 0.2)';
+      iconBorder = 'rgba(56, 189, 248, 0.45)';
+      iconColor = '#38bdf8';
+      borderColor = 'rgba(56, 189, 248, 0.45)';
+      bg = '#0e1726';
     }
 
     if (isSelected) {
@@ -318,7 +365,7 @@ export default function DecisionTree({
             position: 'absolute',
             width: '1200px',
             height: '900px',
-            transition: isDragging ? 'none' : 'transform 0.08s ease-out',
+            transition: isDragging ? 'none' : 'transform 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
           }}
         >
           {/* SVG Connection Paths */}
@@ -336,8 +383,10 @@ export default function DecisionTree({
           </svg>
 
           {/* HTML Nodes */}
-          {nodes.map((node) => {
+          {nodes.map((node, idx) => {
             const isSelected = selectedNodeId === node.id;
+            const isLatest = idx === nodes.length - 1 && node.type !== 'start';
+            const isExecuting = node.status === 'EXECUTING';
             const visuals = getNodeVisuals(node, isSelected);
             const Icon = visuals.icon;
 
@@ -366,6 +415,7 @@ export default function DecisionTree({
                     cursor: 'pointer',
                     userSelect: 'none',
                     boxShadow: isSelected ? '0 0 12px rgba(56, 189, 248, 0.4)' : 'var(--shadow-sm)',
+                    transition: 'all 0.25s ease',
                   }}
                 >
                   <Play size={11} style={{ fill: '#e2e8f0' }} />
@@ -377,14 +427,14 @@ export default function DecisionTree({
             return (
               <div
                 key={node.id}
-                className="tree-node"
+                className={`tree-node ${node.isNew ? 'tree-node-enter' : ''} ${isLatest || isExecuting ? 'tree-node-active-pulse' : ''}`}
                 onClick={() => onSelectNode(node.id)}
                 style={{
                   position: 'absolute',
                   left: `${node.x}px`,
                   top: `${node.y}px`,
-                  width: '200px',
-                  height: '42px',
+                  width: '205px',
+                  height: '44px',
                   borderRadius: '8px',
                   backgroundColor: visuals.bg,
                   border: `1px solid ${visuals.borderColor}`,
@@ -394,17 +444,19 @@ export default function DecisionTree({
                   gap: '9px',
                   cursor: 'pointer',
                   userSelect: 'none',
-                  transition: 'all 0.18s ease',
+                  transition: 'all 0.22s ease',
                   boxShadow: isSelected
-                    ? '0 0 10px rgba(90, 104, 130, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.08)'
+                    ? '0 0 12px rgba(90, 104, 130, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.1)'
+                    : isLatest
+                    ? '0 0 12px rgba(56, 189, 248, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.08)'
                     : 'var(--shadow-clay-sm)',
                 }}
               >
                 {/* Node icon pill */}
                 <div
                   style={{
-                    width: '22px',
-                    height: '22px',
+                    width: '24px',
+                    height: '24px',
                     borderRadius: '50%',
                     backgroundColor: visuals.iconBg,
                     border: `1px solid ${visuals.iconBorder}`,
@@ -415,7 +467,7 @@ export default function DecisionTree({
                     flexShrink: 0,
                   }}
                 >
-                  <Icon size={12} strokeWidth={2.4} />
+                  <Icon size={12} strokeWidth={2.4} style={{ animation: isExecuting ? 'softPulse 1s infinite' : 'none' }} />
                 </div>
 
                 {/* Node Text labels */}

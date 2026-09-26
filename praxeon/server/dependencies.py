@@ -932,13 +932,26 @@ class RuntimeApplicationService:
                 # Si requiere confirmación humana (ej. REVIEW por git push), esperar a que sea autorizada
                 if resp.status == "REVIEW" or resp.policy.requires_confirmation:
                     wait_count = 0
-                    while wait_count < 60 and not mission.get("stopped"):
+                    while wait_count < 120 and not mission.get("stopped"):
                         time.sleep(0.5)
                         wait_count += 1
                         with self._lock:
                             dec = self._decisions.get(resp.decision_id)
                             if dec and dec.get("status") in ("ALLOW", "BLOCKED"):
                                 break
+                    with self._lock:
+                        dec = self._decisions.get(resp.decision_id)
+                        dec_status = dec.get("status") if dec else None
+                    if dec_status == "ALLOW":
+                        try:
+                            self.execute_decision(session_id=sid, decision_id=resp.decision_id)
+                        except Exception as ex:
+                            logger.debug("Execution note: %s", ex)
+                elif resp.status == "ALLOW":
+                    try:
+                        self.execute_decision(session_id=sid, decision_id=resp.decision_id)
+                    except Exception as ex:
+                        logger.debug("Execution note: %s", ex)
             except Exception as err:
                 logger.error(f"Error proponiendo paso {step_idx} en sesión {sid}: {err}")
 
@@ -947,6 +960,13 @@ class RuntimeApplicationService:
         with self._lock:
             if sid in self._sessions_meta:
                 self._sessions_meta[sid]["status"] = "Completed"
+
+        self.event_bus.emit(
+            session_id=sid,
+            event_type=EventType.SESSION_COMPLETED,
+            node_id=f"root_{sid}",
+            payload={"status": "completed", "summary": f"Misión '{goal}' finalizada exitosamente."},
+        )
 
 
 

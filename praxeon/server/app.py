@@ -60,8 +60,8 @@ def start():
     parser.add_argument("--reload", action="store_true", help="Recarga en caliente para desarrollo")
     args = parser.parse_args()
 
-    print(f"⚡ PRAXEON Web Server iniciando en http://{args.host}:{args.port}")
-    print(f"📖 Documentación OpenAPI disponible en http://{args.host}:{args.port}/docs")
+    print(f"[PRAXEON] Web Server iniciando en http://{args.host}:{args.port}")
+    print(f"[PRAXEON] Documentacion OpenAPI disponible en http://{args.host}:{args.port}/docs")
     uvicorn.run("praxeon.server.app:app", host=args.host, port=args.port, reload=args.reload)
 
 
@@ -79,9 +79,9 @@ def launch_web():
 
     url = f"http://{args.host}:{args.port}"
     print("=" * 68)
-    print("⚡ PRAXEON 1.0 — Runtime Supervision for Autonomous AI Agents ⚡")
-    print(f"● Interfaz gráfica: {url}")
-    print(f"● API OpenAPI:     {url}/docs")
+    print("PRAXEON 1.0 -- Runtime Supervision for Autonomous AI Agents")
+    print(f"* Interfaz grafica: {url}")
+    print(f"* API OpenAPI:     {url}/docs")
     print("=" * 68)
 
     if not args.no_browser:

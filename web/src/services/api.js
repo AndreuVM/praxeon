@@ -133,8 +133,8 @@ export function createWebSocketStream(sessionId, onMessage, onStatusChange) {
 
       ws.onopen = () => {
         onStatusChange?.('connected');
-        // Mensaje de inicialización / sync
-        ws.send(JSON.stringify({ type: 'sync', last_sequence: 0 }));
+        // Mensaje de inicialización / sync compatible con el servidor
+        ws.send(JSON.stringify({ action: 'sync', after_sequence: 0 }));
       };
 
       ws.onmessage = (event) => {
