@@ -24,6 +24,12 @@ Issues = "https://github.com/AndreuVM/praxeon/issues"
 dev = [
     "pytest>=9.1.1",
     "pytest-asyncio>=0.25.0",
+    "httpx>=0.27.0",
+]
+server = [
+    "fastapi>=0.115.0",
+    "uvicorn>=0.30.0",
+    "websockets>=12.0",
 ]
 laya = [
     "laya>=0.3.0",
@@ -33,6 +39,7 @@ laya = [
 praxeon = "praxeon.cli:main"
 praxeon-live = "praxeon.live_agent:main"
 praxeon-dash = "praxeon.dashboard:main"
+praxeon-server = "praxeon.server.app:start"
 praxeon-mcp = "praxeon.integrations.mcp.server:main"
 # Legacy aliases
 jev-nav = "praxeon.cli:main"

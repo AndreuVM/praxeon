@@ -34,6 +34,7 @@ ENV/
 .pytest_cache/
 .coverage
 htmlcov/
+.jev_cache/
 
 # Scratch & temporary test artifacts
 historia_tortuga.txt
