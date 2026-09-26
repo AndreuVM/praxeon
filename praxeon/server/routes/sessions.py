@@ -29,6 +29,8 @@ def run_mission(
         agent_name=req.agent_name or "CodingAgent",
         llm_provider=req.llm_provider or "simulator",
         llm_model=req.llm_model,
+        api_key=req.api_key,
+        base_url=req.base_url,
         supervisor=req.supervisor or "laya",
         max_steps=req.max_steps or 6,
         step_delay_ms=req.step_delay_ms or 900,

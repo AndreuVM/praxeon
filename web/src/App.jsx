@@ -483,7 +483,7 @@ export default function App() {
   };
 
   // Lanzar misión interactiva en tiempo real
-  const handleStartMission = async ({ goal, llm_provider, supervisor, max_steps }) => {
+  const handleStartMission = async ({ goal, llm_provider, supervisor, max_steps, llm_model, api_key, base_url }) => {
     setIsRunning(true);
     setIsPaused(false);
     const timeStr = new Date().toTimeString().split(' ')[0];
@@ -492,6 +492,9 @@ export default function App() {
       const res = await api.runMission({
         goal,
         llm_provider,
+        llm_model,
+        api_key,
+        base_url,
         supervisor,
         max_steps,
         step_delay_ms: 1000,

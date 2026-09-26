@@ -327,3 +327,45 @@ def test_websocket_handles_datetime_payload(client, test_service):
         assert msg["data"]["payload"]["issued_at"] == now_dt.isoformat()
         assert msg["data"]["payload"]["nested"]["created"] == now_dt.isoformat()
 
+
+def test_goal_tailored_step_generator_produces_distinct_trees():
+    """Valida que diferentes objetivos generen árboles de decisiones y pensamientos completamente diferenciados."""
+    from praxeon.server.dependencies import generate_goal_tailored_steps
+
+    steps_test = generate_goal_tailored_steps("Auditar y ejecutar suite de tests con pytest", max_steps=4)
+    steps_auth = generate_goal_tailored_steps("Fix authentication bug in the API and tokens", max_steps=4)
+    steps_net = generate_goal_tailored_steps("Inspeccionar contención de red y variables de entorno", max_steps=4)
+    steps_custom = generate_goal_tailored_steps("Refactorizar módulo de telemetría y métricas", max_steps=4)
+
+    # 1. Los pensamientos deben ser distintos y hablar del objetivo
+    assert "tests" in steps_test[0]["thought"].lower() or "pruebas" in steps_test[0]["thought"].lower()
+    assert "autenticación" in steps_auth[0]["thought"].lower() or "auth" in steps_auth[0]["thought"].lower()
+    assert "red" in steps_net[0]["thought"].lower() or "contención" in steps_net[0]["thought"].lower()
+    assert "telemetría" in steps_custom[0]["thought"].lower() or "refactorizar" in steps_custom[0]["thought"].lower()
+
+    # 2. Las operaciones y herramientas son contextuales
+    assert any("pytest" in str(s["arguments"]) for s in steps_test)
+    assert any("hmac" in str(s["arguments"]).lower() or "patch" in str(s["arguments"]).lower() for s in steps_auth)
+    assert any("isolation" in str(s["arguments"]).lower() or "socket" in str(s["arguments"]).lower() for s in steps_net)
+    assert any("telemetría" in str(s) or "telemetria" in str(s) for s in steps_custom)
+
+    # 3. No hay identidad estática entre ellos
+    assert steps_test != steps_auth
+    assert steps_auth != steps_net
+    assert steps_net != steps_custom
+
+
+def test_mission_with_llm_provider_offline_resilience(client):
+    """Verifica que POST /v1/sessions/run con un LLM online sin credenciales active el fallback contextual sin fallar."""
+    resp = client.post("/v1/sessions/run", json={
+        "goal": "Inspeccionar contención de red y variables de entorno",
+        "llm_provider": "groq",
+        "supervisor": "laya",
+        "max_steps": 2,
+        "step_delay_ms": 100,
+    })
+    assert resp.status_code == 201
+    data = resp.json()["data"]
+    assert data["goal"] == "Inspeccionar contención de red y variables de entorno"
+    assert data["status"] == "Active"
+

@@ -52,6 +52,8 @@ class RunMissionRequest(BaseModel):
     agent_name: Optional[str] = Field("CodingAgent", description="Nombre del agente autónomo")
     llm_provider: Optional[str] = Field("simulator", description="Proveedor del LLM ('simulator', 'groq', 'ollama', 'gemini', 'openai', 'openrouter')")
     llm_model: Optional[str] = Field(None, description="Modelo específico de LLM")
+    api_key: Optional[str] = Field(None, description="Clave de API opcional para el proveedor LLM")
+    base_url: Optional[str] = Field(None, description="URL base opcional para endpoints locales o personalizados")
     supervisor: Optional[str] = Field("laya", description="Motor de supervisión ('laya', 'typesafe', 'cascade')")
     max_steps: Optional[int] = Field(6, description="Límite máximo de pasos para la misión")
     step_delay_ms: Optional[int] = Field(900, description="Retardo en ms entre pasos para visualización en tiempo real")

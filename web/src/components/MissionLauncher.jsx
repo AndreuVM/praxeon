@@ -14,6 +14,10 @@ export default function MissionLauncher({
   const [llmProvider, setLlmProvider] = useState('simulator');
   const [supervisor, setSupervisor] = useState('laya');
   const [maxSteps, setMaxSteps] = useState(6);
+  const [apiKey, setApiKey] = useState('');
+  const [customModel, setCustomModel] = useState('');
+  const [baseUrl, setBaseUrl] = useState('');
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [isExpanded, setIsExpanded] = useState(true);
 
   const presetGoals = [
@@ -28,6 +32,9 @@ export default function MissionLauncher({
     onStartMission?.({
       goal: goal.trim(),
       llm_provider: llmProvider,
+      llm_model: customModel.trim() || undefined,
+      api_key: apiKey.trim() || undefined,
+      base_url: baseUrl.trim() || undefined,
       supervisor: supervisor,
       max_steps: Number(maxSteps),
     });
@@ -224,6 +231,26 @@ export default function MissionLauncher({
               </select>
             </div>
 
+            {/* Toggle Configuración Avanzada de LLM */}
+            <button
+              type="button"
+              onClick={() => setShowAdvanced(!showAdvanced)}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: showAdvanced ? '#58a6ff' : '#8b949e',
+                fontSize: '11px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+                padding: '4px 6px',
+              }}
+            >
+              <span>⚙</span>
+              <span>{showAdvanced ? 'Ocultar ajustes LLM' : 'Ajustes LLM / API Key'}</span>
+            </button>
+
             {/* Primary Action Button */}
             <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
               {!isRunning ? (
@@ -272,6 +299,118 @@ export default function MissionLauncher({
                 </>
               )}
             </div>
+          </div>
+
+          {/* Provider Info Banner & Advanced Config */}
+          <div
+            style={{
+              padding: '6px 10px',
+              borderRadius: '6px',
+              backgroundColor: '#121620',
+              border: '1px solid #1a2232',
+              fontSize: '11px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '8px',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ color: '#8b949e' }}>
+                {llmProvider === 'simulator' && '⚡ Modo Simulado Dinámico: Genera pasos y decisiones coherentes adaptadas estrictamente a tu prompt.'}
+                {llmProvider === 'ollama' && '🦙 Ollama Local: Ejecuta llamadas LLM reales offline hacia tu servidor local.'}
+                {llmProvider === 'groq' && '⚡ Groq Cloud: Ejecuta llamadas LLM reales de alta velocidad (usa GROQ_API_KEY o introduce tu clave abajo).'}
+                {llmProvider === 'openai' && '🧠 OpenAI Oficial: Ejecuta llamadas LLM reales a la API de OpenAI (usa OPENAI_API_KEY o introduce clave).'}
+                {llmProvider === 'gemini' && '✨ Google Gemini: Ejecuta llamadas LLM reales a la API de Gemini (usa GEMINI_API_KEY o introduce clave).'}
+                {llmProvider === 'openrouter' && '🌐 OpenRouter: Catálogo multimodelo con inferencia en la nube (usa OPENROUTER_API_KEY o introduce clave).'}
+              </span>
+            </div>
+
+            {showAdvanced && (
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                  gap: '8px',
+                  paddingTop: '6px',
+                  borderTop: '1px solid #1c2436',
+                }}
+              >
+                {llmProvider !== 'simulator' && llmProvider !== 'ollama' && (
+                  <div>
+                    <label style={{ display: 'block', fontSize: '10.5px', color: '#8b949e', marginBottom: '3px' }}>
+                      API Key {llmProvider.toUpperCase()}:
+                    </label>
+                    <input
+                      type="password"
+                      value={apiKey}
+                      onChange={(e) => setApiKey(e.target.value)}
+                      placeholder="sk-... (o dejar en blanco para usar .env)"
+                      style={{
+                        width: '100%',
+                        backgroundColor: '#0c0f14',
+                        border: '1px solid #202737',
+                        borderRadius: '4px',
+                        padding: '4px 8px',
+                        color: '#f0f6fc',
+                        fontSize: '11px',
+                        outline: 'none',
+                      }}
+                    />
+                  </div>
+                )}
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '10.5px', color: '#8b949e', marginBottom: '3px' }}>
+                    Modelo Específico (opcional):
+                  </label>
+                  <input
+                    type="text"
+                    value={customModel}
+                    onChange={(e) => setCustomModel(e.target.value)}
+                    placeholder={
+                      llmProvider === 'groq' ? 'llama-3.3-70b-versatile' :
+                      llmProvider === 'ollama' ? 'qwen2.5-coder:7b' :
+                      llmProvider === 'gemini' ? 'gemini-1.5-flash' :
+                      llmProvider === 'openai' ? 'gpt-4o-mini' : 'modelo personalizado'
+                    }
+                    style={{
+                      width: '100%',
+                      backgroundColor: '#0c0f14',
+                      border: '1px solid #202737',
+                      borderRadius: '4px',
+                      padding: '4px 8px',
+                      color: '#f0f6fc',
+                      fontSize: '11px',
+                      outline: 'none',
+                    }}
+                  />
+                </div>
+
+                {llmProvider === 'ollama' && (
+                  <div>
+                    <label style={{ display: 'block', fontSize: '10.5px', color: '#8b949e', marginBottom: '3px' }}>
+                      URL Base de Ollama:
+                    </label>
+                    <input
+                      type="text"
+                      value={baseUrl}
+                      onChange={(e) => setBaseUrl(e.target.value)}
+                      placeholder="http://localhost:11434"
+                      style={{
+                        width: '100%',
+                        backgroundColor: '#0c0f14',
+                        border: '1px solid #202737',
+                        borderRadius: '4px',
+                        padding: '4px 8px',
+                        color: '#f0f6fc',
+                        fontSize: '11px',
+                        outline: 'none',
+                      }}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </form>
       )}
