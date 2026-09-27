@@ -4,29 +4,39 @@ Todas las modificaciones notables de este proyecto están documentadas en este a
 
 ---
 
-## [1.0.0] — 2026-09-26
+## [1.0.0] — 2026-09-27
 
 ### Añadido
 - **PRAXEON 1.0 Platform**:
+  - **Runtime Semantics & Precedencia Operacional**:
+    - Motor de clasificación determinista `CommandClassifier` con 10 categorías canónicas (`inspection`, `build_test`, `package_management`, `local_mutation`, `network`, `process_control`, `privilege`, `destructive`, `remote_mutation`, `unknown`).
+    - Desacoplamiento estricto de la identidad de la herramienta frente a la semántica de la operación concreta: operaciones de solo lectura (`cat`, `wc`, `git status`, `ls`) ejecutadas vía `run_command` ya no sufren sobre-restricción estática.
+    - Precedencia formal de seguridad: Reglas críticas estáticas (`DESTRUCTIVE`, `PRIVILEGE`) > Restricciones de sesión > Riesgo contextual > Señal semántica > ALLOW.
+    - Manejo de incertidumbre sintáctica: comandos desconocidos en herramientas admisibles derivan a `REVIEW` (requieren confirmación auditada), nunca bloqueo ciego (`BLOCK`).
   - **Fase 1 (Hardening & Event Model)**:
-    - Tipos de eventos inmutables (`EventType`, `make_event`) con secuencia monótona estricta por sesión.
+    - Tipos de eventos inmutables (`EventType`, `make_event`) con secuencia monótona estricta por sesión y método `append_new()`.
     - `EventBus` persistente con SQLite WAL y recuperación de huecos (*gap recovery*).
     - `DecisionTreeReducer` canónico para reconstruir el árbol jerárquico de decisiones en memoria a partir del log de eventos.
-    - NonceStore atómico `consume-once` y validación criptográfica HMAC-SHA256 en recibos de decisión.
+    - NonceStore atómico `consume-once` y validación criptográfica HMAC-SHA256 en recibos de decisión con `execution_mode` ligado a la firma.
   - **Fase 2 (Web Server FastAPI & WebSocket Streaming)**:
     - Servidor FastAPI modular en `praxeon/server/` con arquitectura de capas y separación estricta de autoridad.
-    - Endpoints REST completos: gestión de sesiones (`/v1/sessions`), evaluación de propuestas (`/v1/sessions/{id}/actions`), Decision Inspector en 4 pestañas (`/v1/decisions/{id}`), confirmación humana (`/v1/decisions/{id}/confirm`), ejecución en sandbox (`/v1/decisions/{id}/execute`), historial de eventos paginado (`/v1/sessions/{id}/events`), salud (`/v1/health`) y métricas (`/v1/metrics`).
-    - Canal dúplex WebSocket `/v1/sessions/{id}/stream` con protocolo de sincronización y reconexión sin pérdida.
+    - Endpoints REST completos: gestión de sesiones (`/v1/sessions`), evaluación de propuestas (`/v1/sessions/{id}/actions`), Decision Inspector en 4 pestañas (`/v1/decisions/{id}`), confirmación humana (`/v1/decisions/{id}/confirm`), rechazo explícito auditado (`/v1/decisions/{id}/reject`), ejecución en sandbox (`/v1/decisions/{id}/execute`), historial de eventos paginado (`/v1/sessions/{id}/events`), salud (`/v1/health`) y métricas dinámicas (`/v1/metrics`).
+    - Canal dúplex WebSocket `/v1/sessions/{id}/stream` con parámetro `after_sequence` y supresión de eventos duplicados en reconexión.
   - **Fase 3 (Frontend Web Application & Design System)**:
     - SPA moderna construida con Vite + React en `web/` con estética dark mode técnica e idéntica al mockup de referencia.
     - Componentes de alta fidelidad: `Header`, `Sidebar`, `SessionKPIs`, `DecisionTree` interactivo (zoom, pan, curvas Bézier SVG, estados dinámicos), `ConsolePanel` (terminal en vivo con coloreado de veredictos y timeline de eventos) y `DecisionInspector` (4 pestañas: Decision, Evidence, Policy, Receipt).
-    - Modal de proposición interactiva de acciones y conmutador de sesiones.
-  - **Fase 4 (Consolidación, Vistas Complementarias & E2E)**:
+    - Command Classification Card con metadatos contextuales (categoría, read-only, reversibilidad, acceso a red, regla de preflight).
+    - Integración de gap recovery en stream WebSocket y rechazo auditado de decisiones.
+  - **Fase 4 (Consolidación, Vistas Complementarias & Benchmark de Sobre-restricción)**:
     - Vistas completas de navegación: `SessionsView`, `DecisionsView`, `AgentsView`, `ProvidersView`, `SecurityView` y `SettingsView`.
-    - Streaming WebSocket reactivo conectado a la interfaz de usuario en tiempo real.
-    - Servidor integrado que sirve los estáticos compilados en `/` al ejecutar `praxeon-server` o `praxeon-web`.
-    - Entrypoint CLI `praxeon-web` con apertura automática de navegador.
-    - Suite de pruebas End-to-End (`tests/test_e2e_platform.py`) validando el ciclo de vida completo de 10 pasos con 233 tests pasando al 100%.
+    - Suite normativa de Benchmark de Sobre-restricción (`tests/benchmarks/test_over_restriction_benchmark.py`) evaluando las 6 familias de la Sección 15 del PDF:
+      - Safe Known Operations: 100% de precisión, 0.0% de falsos bloqueos.
+      - Safe Uncommon Operations: 100% de precisión, 0.0% de falsos bloqueos.
+      - Ambiguous Operations: 100% ruteadas a revisión humana (REVIEW), 0 bloqueos ciegos.
+      - Dangerous Operations: 100% bloqueadas determinísticamente, 0.0% de falsos permisos.
+      - Context-Dependent Operations: Validación de fronteras de aislamiento en `ExecutionMode`.
+      - Adversarial Syntax: 100% bloqueadas mediante preflight estático y detección de wrappers.
+    - Suite de pruebas exhaustiva con 240+ tests unitarios, de integración y de seguridad pasando al 100%.
 
 ## [0.4.0] — 2026-09-25
 

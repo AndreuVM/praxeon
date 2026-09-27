@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { CheckCircle2 } from 'lucide-react';
 import Header from './components/Header';
 import Sidebar from './components/Sidebar';
 import SessionKPIs from './components/SessionKPIs';
@@ -25,6 +26,7 @@ import {
 } from './constants/demoData';
 
 import * as api from './services/api';
+import { computeTreeLayout } from './utils/treeLayout';
 
 // Estado inicial limpio y listo para ejecución interactiva
 const READY_SESSION = {
@@ -71,6 +73,7 @@ export default function App() {
   const [isPaused, setIsPaused] = useState(false);
   const [isProposeOpen, setIsProposeOpen] = useState(false);
   const [isSessionsOpen, setIsSessionsOpen] = useState(false);
+  const maxSeqRef = useRef(0);
 
   // Comprobar salud del backend y listar sesiones previas
   useEffect(() => {
@@ -99,6 +102,10 @@ export default function App() {
           const evType = ev.type || ev.event_type || '';
           const timeStr = new Date(ev.timestamp || Date.now()).toTimeString().split(' ')[0];
 
+          if (ev.sequence && typeof ev.sequence === 'number') {
+            maxSeqRef.current = Math.max(maxSeqRef.current, ev.sequence);
+          }
+
           // 1. Agregar a eventos estructurados
           setEvents((prev) => [
             {
@@ -122,6 +129,8 @@ export default function App() {
             logMsg = `Mission goal: ${ev.payload?.goal}`;
           } else if (evType === 'action.proposed') {
             logMsg = `Step ${ev.payload?.step || 1}: Proposing action '${ev.payload?.tool}' (${ev.payload?.operation || ''})`;
+          } else if (evType === 'operation.classified') {
+            logMsg = `Operation classified: ${ev.payload?.category?.toUpperCase()} (Risk: ${ev.payload?.risk_level?.toUpperCase()}, Conf: ${Math.round((ev.payload?.confidence || 0) * 100)}%)`;
           } else if (evType === 'evidence.evaluated') {
             logMsg = `Evaluated ${ev.payload?.evidence_count || 0} empirical claims (Grounding score: ${Math.round((ev.payload?.grounding_score || 0.85) * 100)}%)`;
           } else if (evType === 'risk.assessed') {
@@ -144,6 +153,8 @@ export default function App() {
             logMsg = `Observation: ${(ev.payload?.output || '').slice(0, 100)}...`;
           } else if (evType === 'decision.pruned') {
             logMsg = `Decision pruned: ${ev.payload?.reason}`;
+          } else if (evType === 'intervention.applied') {
+            logMsg = `[INTERVENTION] ${ev.payload?.intervention || 'Supervisor'}: ${ev.payload?.message || ''}`;
           } else if (evType === 'session.completed') {
             logMsg = `Mission complete: ${ev.payload?.summary || 'Completed successfully'}`;
           }
@@ -164,15 +175,18 @@ export default function App() {
               const exists = prevNodes.some((n) => n.id === actId);
               if (exists) return prevNodes;
 
-              // Calcular parentId y posicionamiento en cascada suave
-              const rawParent = ev.parent_id;
-              let parentNode = prevNodes.find((n) => n.id === rawParent);
-              if (!parentNode && prevNodes.length > 0) {
-                parentNode = prevNodes[prevNodes.length - 1];
+              // Calcular parentId canónico y posicionamiento jerárquico
+              const rawParent = ev.parent_id || ev.payload?.parent_id;
+              let resolvedParentId = 'start';
+              if (rawParent) {
+                if (rawParent.startsWith('root') || rawParent === 'start') {
+                  resolvedParentId = 'start';
+                } else if (prevNodes.some((n) => n.id === rawParent)) {
+                  resolvedParentId = rawParent;
+                } else if (prevNodes.length > 0) {
+                  resolvedParentId = prevNodes[prevNodes.length - 1].id;
+                }
               }
-
-              const newY = parentNode ? parentNode.y + 76 : 105;
-              const newX = 420;
 
               const isHub = op.includes('Propose') || stepNum === 5;
               const newNode = {
@@ -182,13 +196,14 @@ export default function App() {
                 type: isHub ? 'hub' : 'step',
                 status: 'PENDING',
                 action: op,
-                x: newX,
-                y: newY,
-                parentId: parentNode ? parentNode.id : 'start',
+                x: 420,
+                y: 105,
+                parentId: resolvedParentId,
                 isNew: true,
               };
 
-              return [...prevNodes, newNode];
+              const updatedNodes = [...prevNodes, newNode];
+              return computeTreeLayout(updatedNodes);
             });
 
             // Auto-seleccionar el nodo actual para que el inspector se actualice en tiempo real
@@ -241,6 +256,33 @@ export default function App() {
                 relatedDecisions: [],
               },
             }));
+          }
+
+          if (evType === 'operation.classified') {
+            const actId = ev.node_id;
+            const opAssessment = ev.payload || {};
+            const opCategory = (opAssessment.category || 'inspection').toLowerCase();
+
+            setDecisionsMap((prevMap) => {
+              const current = prevMap[actId] || {};
+              return {
+                ...prevMap,
+                [actId]: {
+                  ...current,
+                  operation_category: opCategory,
+                  operation_assessment: opAssessment,
+                  commandClassification: {
+                    category: opCategory,
+                    confidence: opAssessment.confidence ?? 1.0,
+                    readOnly: !!opAssessment.is_read_only,
+                    reversible: !!opAssessment.is_reversible,
+                    networkAccess: !!opAssessment.requires_network,
+                    matchedRule: opAssessment.matched_rule || 'deterministic',
+                    explanation: opAssessment.explanation || '',
+                  },
+                },
+              };
+            });
           }
 
           if (evType === 'evidence.evaluated') {
@@ -417,9 +459,10 @@ export default function App() {
             const actId = ev.node_id;
             const success = ev.payload?.success;
             const timeMs = ev.payload?.execution_time_ms;
-            setNodes((prevNodes) =>
-              prevNodes.map((n) => (n.id === actId ? { ...n, status: success ? 'ALLOW' : 'BLOCK' } : n))
-            );
+            setNodes((prevNodes) => {
+              const updated = prevNodes.map((n) => (n.id === actId ? { ...n, status: success ? 'ALLOW' : 'BLOCK' } : n));
+              return computeTreeLayout(updated);
+            });
             if (timeMs) {
               setSession((prevSess) => ({
                 ...prevSess,
@@ -428,6 +471,39 @@ export default function App() {
                   latencyP50: `${timeMs}ms`,
                 },
               }));
+            }
+          }
+
+          if (evType === 'decision.pruned') {
+            const actId = ev.node_id;
+            setNodes((prevNodes) => {
+              const updated = prevNodes.map((n) =>
+                n.id === actId ? { ...n, status: 'BLOCK', subtitle: 'Podado (Pruned)' } : n
+              );
+              return computeTreeLayout(updated);
+            });
+            setDecisionsMap((prevMap) => {
+              const current = prevMap[actId] || {};
+              return {
+                ...prevMap,
+                [actId]: {
+                  ...current,
+                  status: 'BLOCK',
+                  reason: ev.payload?.reason || current.reason,
+                },
+              };
+            });
+          }
+
+          if (evType === 'intervention.applied') {
+            const failedNode = ev.payload?.failed_node;
+            if (failedNode) {
+              setNodes((prevNodes) => {
+                const updated = prevNodes.map((n) =>
+                  n.id === failedNode ? { ...n, status: 'BLOCK' } : n
+                );
+                return computeTreeLayout(updated);
+              });
             }
           }
 
@@ -444,12 +520,22 @@ export default function App() {
                 },
               };
             });
+            if (output && (output.includes('Tarea concluida:') || output.includes('conclu') || output.includes('finaliz'))) {
+              const cleanAnswer = output.replace('Tarea concluida:', '').trim();
+              setSession((prevSess) => ({
+                ...prevSess,
+                status: 'Completed',
+                finalAnswer: cleanAnswer,
+              }));
+            }
           }
 
           if (evType === 'session.completed') {
+            const summary = ev.payload?.summary;
             setSession((prevSess) => ({
               ...prevSess,
               status: 'Completed',
+              finalAnswer: summary || prevSess.finalAnswer,
               runtime: {
                 ...prevSess.runtime,
                 executionTime: 'Completed',
@@ -461,7 +547,8 @@ export default function App() {
       },
       (status) => {
         if (status === 'connected') setRuntimeActive(true);
-      }
+      },
+      () => maxSeqRef.current
     );
 
     return () => stream.close();
@@ -483,7 +570,7 @@ export default function App() {
   };
 
   // Lanzar misión interactiva en tiempo real
-  const handleStartMission = async ({ goal, llm_provider, supervisor, max_steps, llm_model, api_key, base_url }) => {
+  const handleStartMission = async ({ goal, execution_mode, llm_provider, supervisor, max_steps, llm_model, api_key, base_url }) => {
     setIsRunning(true);
     setIsPaused(false);
     const timeStr = new Date().toTimeString().split(' ')[0];
@@ -491,6 +578,7 @@ export default function App() {
     try {
       const res = await api.runMission({
         goal,
+        execution_mode,
         llm_provider,
         llm_model,
         api_key,
@@ -507,6 +595,7 @@ export default function App() {
           status: 'Active',
           agent: 'CodingAgent',
           goal: goal,
+          execution_mode: res.data.execution_mode || execution_mode || 'local_restricted',
           metrics: { totalDecisions: 0, allowed: 0, blocked: 0, review: 0 },
           runtime: {
             provider: `${llm_provider.toUpperCase()} + ${supervisor.toUpperCase()}`,
@@ -605,7 +694,7 @@ export default function App() {
   const handleApprove = async (decisionId) => {
     const timeStr = new Date().toTimeString().split(' ')[0];
     try {
-      await api.confirmDecision(decisionId, true, 'operator_ui', 'Authorized from Decision Inspector');
+      await api.confirmDecision(decisionId, true, 'Authorized from Decision Inspector', 'operator_admin', 'operator');
     } catch (e) {
       console.warn('Backend approval call error:', e);
     }
@@ -653,10 +742,11 @@ export default function App() {
   };
 
   // Rechazo de decisión desde el DecisionInspector
-  const handleReject = async (decisionId) => {
+  const handleReject = async (decisionId, customReason) => {
     const timeStr = new Date().toTimeString().split(' ')[0];
+    const rejectionMsg = customReason || 'Blocked by human operator';
     try {
-      await api.confirmDecision(decisionId, false, 'operator_ui', 'Blocked by human operator');
+      await api.rejectDecision(decisionId, rejectionMsg, 'operator_admin', 'operator');
     } catch (e) {
       console.warn('Backend rejection error:', e);
     }
@@ -669,6 +759,7 @@ export default function App() {
         [selectedNodeId]: {
           ...cur,
           status: 'BLOCKED',
+          reason: rejectionMsg,
           capability: { issued: false, statusText: 'Revoked by Human', token: null },
         },
       };
@@ -680,7 +771,7 @@ export default function App() {
 
     setLogs((prev) => [
       ...prev,
-      { time: timeStr, level: 'ERROR', message: `Decision #${decisionId} rejected and pruned by operator.` },
+      { time: timeStr, level: 'ERROR', message: `Decision #${decisionId} rejected and pruned: ${rejectionMsg}` },
     ]);
   };
 
@@ -718,6 +809,9 @@ export default function App() {
       <Header
         sessionId={session.sessionId}
         runtimeActive={runtimeActive}
+        executionMode={session.execution_mode || 'local_restricted'}
+        operatorId="operator_admin"
+        operatorRole="operator"
         onOpenSessions={() => setIsSessionsOpen(true)}
         onOpenPropose={() => setIsProposeOpen(true)}
       />
@@ -750,6 +844,34 @@ export default function App() {
 
               {/* Top Session KPIs Overview */}
               <SessionKPIs session={session} />
+
+              {/* Mission Final Answer Banner */}
+              {session.finalAnswer && (
+                <div style={{
+                  margin: '12px 20px 0 20px',
+                  padding: '14px 18px',
+                  backgroundColor: 'rgba(16, 185, 129, 0.08)',
+                  border: '1px solid rgba(16, 185, 129, 0.35)',
+                  borderRadius: '8px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '6px',
+                  boxShadow: '0 4px 12px rgba(0, 0, 0, 0.25)',
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#34d399', fontSize: '13px', fontWeight: '700' }}>
+                      <CheckCircle2 size={16} strokeWidth={2.5} />
+                      <span>Respuesta de la Misión</span>
+                    </div>
+                    <span style={{ fontSize: '11px', color: '#6ee7b7', backgroundColor: 'rgba(16, 185, 129, 0.2)', padding: '2px 8px', borderRadius: '4px', fontWeight: '600' }}>
+                      Completada con Éxito
+                    </span>
+                  </div>
+                  <div style={{ color: '#f1f5f9', fontSize: '13px', lineHeight: '1.5', whiteSpace: 'pre-wrap' }}>
+                    {session.finalAnswer}
+                  </div>
+                </div>
+              )}
 
               {/* Interactive Decision Tree */}
               <DecisionTree

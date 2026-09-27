@@ -12,6 +12,7 @@ from praxeon.server.schemas.decision import (
     DecisionDetailResponse,
     ExecuteDecisionRequest,
     ExecuteDecisionResponse,
+    RejectDecisionRequest,
 )
 
 router = APIRouter(prefix="/v1/decisions", tags=["Decisions"])
@@ -45,6 +46,8 @@ def confirm_decision(
             approved=req.approved,
             reason=req.reason,
             actor=req.actor or "human_operator",
+            operator_id=req.operator_id or "operator_admin",
+            role=req.role or "operator",
         )
         return APIResponse(data=res)
     except KeyError:
@@ -52,10 +55,58 @@ def confirm_decision(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Decisión '{decision_id}' no encontrada.",
         )
+    except PermissionError as pe:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(pe),
+        )
+    except ValueError as ve:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(ve),
+        )
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Error procesando confirmación: {str(e)}",
+        )
+
+
+@router.post("/{decision_id}/reject", response_model=APIResponse[ConfirmDecisionResponse])
+def reject_decision(
+    decision_id: str,
+    req: RejectDecisionRequest,
+    service: RuntimeApplicationService = Depends(get_runtime_service),
+):
+    """Rechaza explícitamente una decisión en estado REVIEW con justificación obligatoria del operador."""
+    try:
+        res = service.reject_decision(
+            decision_id=decision_id,
+            reason=req.reason,
+            actor=req.actor or "human_operator",
+            operator_id=req.operator_id or "operator_admin",
+            role=req.role or "operator",
+        )
+        return APIResponse(data=res)
+    except KeyError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Decisión '{decision_id}' no encontrada.",
+        )
+    except PermissionError as pe:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(pe),
+        )
+    except ValueError as ve:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(ve),
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Error procesando rechazo: {str(e)}",
         )
 
 
@@ -67,13 +118,25 @@ def execute_decision(
 ):
     """Solicita la ejecución física de la acción autorizada dentro del sandbox."""
     cap_token = req.capability_token if req else None
+    operator_id = req.operator_id if req else None
+    role = req.role if req and req.role else "operator"
     try:
-        exec_res = service.execute_decision(decision_id, capability_token=cap_token)
+        exec_res = service.execute_decision(
+            decision_id,
+            capability_token=cap_token,
+            operator_id=operator_id,
+            role=role,
+        )
         return APIResponse(data=exec_res)
     except KeyError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Decisión '{decision_id}' no encontrada.",
+        )
+    except PermissionError as pe:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(pe),
         )
     except PolicyViolation as pv:
         raise HTTPException(

@@ -39,15 +39,21 @@ class RiskEngine:
 
     SAFE_SHELL_COMMANDS = {
         "dir", "ls", "grep", "cat", "findstr", "type", "echo",
-        "get-childitem", "get-content", "git status", "git diff", "git log",
-        "python --version", "pytest", "pytest -v", "uv --version",
+        "head", "tail", "wc", "pwd", "where", "which",
+        "get-childitem", "get-content",
+        "git status", "git diff", "git log", "git show", "git branch", "git tag",
+        "python --version", "pytest", "pytest -v", "uv --version", "npm --version", "node --version",
     }
 
     def __init__(self, registry: Optional[ToolRegistry] = None):
         self.registry = registry or ToolRegistry(register_defaults=True)
 
-    def assess_action_risk(self, action: ActionCandidate) -> RiskAssessment:
-        """Calcula el riesgo contextual completo analizando herramienta y argumentos."""
+    def assess_action_risk(
+        self,
+        action: ActionCandidate,
+        execution_mode: Optional[str] = None,
+    ) -> RiskAssessment:
+        """Calcula el riesgo contextual completo analizando herramienta, argumentos y modo de ejecución."""
         if not action.tool_call or not action.tool_call.tool_name:
             return RiskAssessment(
                 level=RiskLevel.LOW,
@@ -69,9 +75,19 @@ class RiskEngine:
         requires_conf = base_assessment.requires_confirmation
         executable = base_assessment.executable
 
-        # 2. Análisis contextual específico para run_command
-        if tool_name == "run_command":
-            cmd = str(args.get("command") or args.get("cmd") or "").strip()
+        # 2. Análisis contextual específico para run_command y herramientas de sistema/CLI
+        spec = self.registry.get_tool(tool_name)
+        is_cmd = (
+            tool_name == "run_command"
+            or (spec and spec.category in ("system", "network"))
+            or (hasattr(self.registry, "CLI_EXECUTABLES") and tool_name in self.registry.CLI_EXECUTABLES)
+        )
+        if is_cmd:
+            cmd = str(args.get("command") or args.get("cmd") or args.get("raw") or "").strip()
+            if not cmd and tool_name != "run_command":
+                cmd = tool_name
+            elif tool_name != "run_command":
+                cmd = f"{tool_name} {cmd}".strip()
             cmd_lower = cmd.lower()
 
             # A. Detección de comandos shell destructivos
@@ -85,11 +101,14 @@ class RiskEngine:
 
             # B. Detección de comandos de solo lectura inocuos
             is_purely_read_only = any(
-                cmd_lower == safe or cmd_lower.startswith(f"{safe} ")
+                cmd_lower == safe or cmd_lower.startswith(f"{safe} ") or cmd_lower.startswith(f"{safe}\t")
                 for safe in self.SAFE_SHELL_COMMANDS
+            ) or any(
+                cmd_lower.endswith(f" {flag}") for flag in ("--version", "-v", "--help", "-h")
             )
             if is_purely_read_only and current_level != RiskLevel.CRITICAL:
                 current_level = RiskLevel.LOW
+                requires_conf = False
                 reasons.append("Comando de inspección identificado como seguro.")
 
             # C. Detección de comandos con efectos externos o despliegues que exigen confirmación
@@ -119,6 +138,13 @@ class RiskEngine:
                             current_level = RiskLevel.HIGH
                             reasons.append(f"Lectura de recurso sensible: '{path}'")
                     break
+
+        # 4. Ajuste automático para modo Full Access
+        mode_val = str(execution_mode.value if hasattr(execution_mode, "value") else execution_mode or "").lower()
+        if mode_val == "full_access":
+            if current_level != RiskLevel.CRITICAL:
+                requires_conf = False
+                reasons.append("Modo Full Access: ejecución automática autorizada por consentimiento previo de sesión.")
 
         return RiskAssessment(
             level=current_level,

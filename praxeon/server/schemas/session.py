@@ -10,6 +10,10 @@ class CreateSessionRequest(BaseModel):
     goal: str = Field(..., description="Objetivo o tarea que el agente debe resolver")
     session_id: Optional[str] = Field(None, description="Identificador único opcional; se genera si no se suministra")
     agent_name: Optional[str] = Field("CodingAgent", description="Nombre del agente autónomo")
+    execution_mode: Optional[str] = Field("local_restricted", description="Modo de ejecución ('container', 'local_restricted', 'full_access')")
+    confirmation_required_for_full_access: bool = Field(True, description="Exige confirmación explícita para activar full_access")
+    workspace_root: Optional[str] = Field(None, description="Ruta raíz del espacio de trabajo")
+    network_policy: Optional[str] = Field("isolated", description="Política de red ('isolated', 'restricted', 'host')")
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Metadatos contextuales adicionales")
 
 
@@ -21,6 +25,8 @@ class SessionSummaryResponse(BaseModel):
     goal: str
     status: str = "Active"  # "Active", "Completed", "Paused"
     agent_name: str = "CodingAgent"
+    execution_mode: str = "local_restricted"
+    operator_approval_status: Optional[str] = "Normal"
     created_at: datetime
     updated_at: datetime
     total_decisions: int = 0
@@ -40,6 +46,7 @@ class SessionSnapshotResponse(BaseModel):
     goal: str
     status: str
     agent_name: str
+    execution_mode: str = "local_restricted"
     created_at: datetime
     tree: Dict[str, Any]
     summary: SessionSummaryResponse
@@ -50,6 +57,9 @@ class RunMissionRequest(BaseModel):
     goal: str = Field(..., description="Prompt u objetivo inicial de la misión")
     session_id: Optional[str] = Field(None, description="Identificador de sesión opcional")
     agent_name: Optional[str] = Field("CodingAgent", description="Nombre del agente autónomo")
+    execution_mode: Optional[str] = Field("local_restricted", description="Modo de ejecución física ('container', 'local_restricted', 'full_access')")
+    workspace_root: Optional[str] = Field(None, description="Ruta raíz del workspace para la misión")
+    network_policy: Optional[str] = Field("isolated", description="Política de red ('isolated', 'restricted', 'host')")
     llm_provider: Optional[str] = Field("simulator", description="Proveedor del LLM ('simulator', 'groq', 'ollama', 'gemini', 'openai', 'openrouter')")
     llm_model: Optional[str] = Field(None, description="Modelo específico de LLM")
     api_key: Optional[str] = Field(None, description="Clave de API opcional para el proveedor LLM")

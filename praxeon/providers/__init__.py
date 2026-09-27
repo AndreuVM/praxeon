@@ -1,4 +1,4 @@
-"""Capa de Proveedores de Razonamiento para PRAXEON (v0.4.0)."""
+"""Capa de Proveedores de Razonamiento para PRAXEON (v1.0.0)."""
 
 from praxeon.providers.base import BaseReasoningProvider
 from praxeon.providers.context import ProviderContext, ProviderContextBuilder

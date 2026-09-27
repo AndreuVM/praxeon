@@ -27,6 +27,7 @@ def run_mission(
         goal=req.goal,
         session_id=req.session_id,
         agent_name=req.agent_name or "CodingAgent",
+        execution_mode=req.execution_mode or "local_restricted",
         llm_provider=req.llm_provider or "simulator",
         llm_model=req.llm_model,
         api_key=req.api_key,
@@ -71,11 +72,21 @@ def create_session(
     service: RuntimeApplicationService = Depends(get_runtime_service),
 ):
     """Crea una nueva sesión de supervisión para un agente autónomo."""
+    metadata = dict(req.metadata or {})
+    if req.confirmation_required_for_full_access is not None:
+        metadata["confirmation_required_for_full_access"] = req.confirmation_required_for_full_access
+    if req.workspace_root is not None:
+        metadata["working_directory"] = req.workspace_root
+        metadata["workspace_root"] = req.workspace_root
+    if req.network_policy is not None:
+        metadata["network_policy"] = req.network_policy
+
     meta = service.create_session(
         goal=req.goal,
         session_id=req.session_id,
         agent_name=req.agent_name or "CodingAgent",
-        metadata=req.metadata,
+        execution_mode=req.execution_mode or "local_restricted",
+        metadata=metadata,
     )
     summary = service.get_session_summary(meta["session_id"])
     if not summary:
@@ -93,6 +104,7 @@ def list_sessions(
 
 
 @router.get("/{session_id}", response_model=APIResponse[SessionSnapshotResponse])
+@router.get("/{session_id}/snapshot", response_model=APIResponse[SessionSnapshotResponse])
 def get_session_snapshot(
     session_id: str,
     service: RuntimeApplicationService = Depends(get_runtime_service),

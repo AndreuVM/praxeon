@@ -26,10 +26,12 @@ from praxeon.domain.decision import (
     CapabilityPayload,
     DecisionReceipt,
     DecisionStatus,
+    ExecutionMode,
     PolicyDecision,
     compute_receipt_signature,
     compute_state_hash,
     sign_receipt,
+    verify_capability_signature,
     verify_receipt_signature,
 )
 from praxeon.domain.events import EventType, RuntimeEvent
@@ -46,8 +48,10 @@ from praxeon.policy.engine import PolicyEngine
 from praxeon.policy.registry import ToolRegistry
 from praxeon.providers.laya import LayaProvider
 from praxeon.providers.typesafe import TypeSafeAdapter
+from praxeon.reasoning.classifier import CommandClassifier
 from praxeon.reasoning.evidence import EvidenceEngine
 from praxeon.reasoning.risk import RiskEngine
+from praxeon.runtime.decision_store import SqliteDecisionRepository
 from praxeon.runtime.event_bus import EventBus, EventStore
 from praxeon.runtime.executor import PolicyViolation, SecureExecutor, ToolObservation
 from praxeon.runtime.nonce_store import NonceStore, SqliteNonceStore
@@ -75,6 +79,7 @@ class RuntimeApplicationService:
         event_bus: Optional[EventBus] = None,
         state_store: Optional[SqliteStateStore] = None,
         nonce_store: Optional[NonceStore] = None,
+        decision_repository: Optional[SqliteDecisionRepository] = None,
         config: Optional[JEVConfig] = None,
         db_dir: str = ".jev_cache",
     ):
@@ -91,6 +96,9 @@ class RuntimeApplicationService:
         self.nonce_store = nonce_store or SqliteNonceStore(
             db_path=os.path.join(db_dir, "nonces.db")
         )
+        self.decision_repository = decision_repository or SqliteDecisionRepository(
+            db_path=os.path.join(db_dir, "decisions.db")
+        )
 
         self.registry = ToolRegistry(register_defaults=True)
         self.policy_engine = PolicyEngine(
@@ -100,8 +108,10 @@ class RuntimeApplicationService:
             registry=self.registry,
             secret_key=self.policy_engine.secret_key,
             nonce_store=self.nonce_store,
+            allow_full_access=True,
         )
         self.risk_engine = RiskEngine()
+        self.command_classifier = CommandClassifier()
         self.evidence_engine = EvidenceEngine()
 
         # Configurar proveedor supervisor semántico
@@ -128,12 +138,21 @@ class RuntimeApplicationService:
         session_id: Optional[str] = None,
         agent_name: str = "CodingAgent",
         metadata: Optional[Dict[str, Any]] = None,
+        execution_mode: str = "local_restricted",
     ) -> Dict[str, Any]:
         """Crea formalmente una nueva sesión de supervisión y persiste su estado génesis."""
         sid = session_id or f"s-{uuid.uuid4().hex[:8]}"
         now = datetime.utcnow()
 
-        state = SessionState(session_id=sid, goal=Goal(objective=goal), metadata=metadata or {})
+        meta = dict(metadata or {})
+        mode_val = meta.get("execution_mode") or execution_mode
+        meta["execution_mode"] = mode_val
+        if "working_directory" not in meta:
+            meta["working_directory"] = os.getcwd()
+        meta["network_mode"] = "host" if mode_val == "full_access" else "isolated"
+        meta["created_by"] = meta.get("created_by", "system")
+
+        state = SessionState(session_id=sid, goal=Goal(objective=goal), metadata=meta)
         self.state_store.save_state(state)
 
         with self._lock:
@@ -142,9 +161,10 @@ class RuntimeApplicationService:
                 "goal": goal,
                 "agent_name": agent_name,
                 "status": "Active",
+                "execution_mode": mode_val,
                 "created_at": now,
                 "updated_at": now,
-                "metadata": metadata or {},
+                "metadata": meta,
             }
 
         # Emitir eventos canónicos iniciales
@@ -157,6 +177,7 @@ class RuntimeApplicationService:
                 "agent_name": agent_name,
                 "status": "Active",
                 "label": "Start",
+                "execution_mode": mode_val,
                 "created_at": now.isoformat(),
             },
         )
@@ -181,11 +202,13 @@ class RuntimeApplicationService:
         if not state:
             return None
 
+        mode_val = state.metadata.get("execution_mode", "local_restricted")
         meta = {
             "session_id": session_id,
             "goal": state.goal.objective,
             "agent_name": "CodingAgent",
             "status": "Active",
+            "execution_mode": mode_val,
             "created_at": datetime.utcnow(),
             "updated_at": datetime.utcnow(),
             "metadata": state.metadata,
@@ -224,12 +247,16 @@ class RuntimeApplicationService:
         waiting = sum(1 for e in events if e.type == EventType.APPROVAL_REQUESTED)
 
         tree = reduce_events_to_tree(events, session_id=session_id)
+        meta = sess.get("metadata", {})
+        execution_mode = sess.get("execution_mode") or meta.get("execution_mode", "local_restricted")
 
         return {
             "session_id": session_id,
             "goal": sess.get("goal", ""),
             "status": sess.get("status", "Active"),
             "agent_name": sess.get("agent_name", "CodingAgent"),
+            "execution_mode": execution_mode,
+            "operator_approval_status": "Review Required" if waiting > 0 else "Normal",
             "created_at": sess.get("created_at"),
             "updated_at": events[-1].timestamp if events else sess.get("updated_at"),
             "total_decisions": total_decisions,
@@ -252,12 +279,13 @@ class RuntimeApplicationService:
 
         return {
             "session_id": session_id,
-            "goal": summary["goal"],
-            "status": summary["status"],
-            "agent_name": summary["agent_name"],
-            "created_at": summary["created_at"],
+            "goal": summary.get("goal", ""),
+            "status": summary.get("status", "Active"),
+            "agent_name": summary.get("agent_name", "CodingAgent"),
+            "execution_mode": summary.get("execution_mode", "local_restricted"),
+            "created_at": summary.get("created_at"),
+            "tree": tree.model_dump(mode="json"),
             "summary": summary,
-            "tree": tree.to_dict(),
         }
 
     # =========================================================================
@@ -287,8 +315,16 @@ class RuntimeApplicationService:
             tool_call=ToolCall(tool_name=proposal.tool, arguments=proposal.arguments),
         )
 
-        # 1. Emitir evento: action.proposed
-        parent_id = f"act_{len(state.steps)}" if state.steps else f"root_{session_id}"
+        session_mode = "local_restricted"
+        with self._lock:
+            if session_id in self._sessions_meta:
+                session_mode = self._sessions_meta[session_id].get("execution_mode") or session_mode
+        if not session_mode or session_mode == "local_restricted":
+            if state and state.metadata:
+                session_mode = state.metadata.get("execution_mode", session_mode)
+
+        # 1. Emitir evento: action.proposed con parent_id respetado para bifurcaciones y retrocesos
+        parent_id = proposal.parent_id or (f"act_{len(state.steps)}" if state.steps else f"root_{session_id}")
         self.event_bus.emit(
             session_id=session_id,
             event_type=EventType.ACTION_PROPOSED,
@@ -297,6 +333,7 @@ class RuntimeApplicationService:
             decision_id=decision_id,
             payload={
                 "action_id": action_id,
+                "parent_id": parent_id,
                 "tool": proposal.tool,
                 "operation": proposal.operation or "",
                 "arguments": proposal.arguments,
@@ -304,6 +341,27 @@ class RuntimeApplicationService:
                 "step": proposal.provenance.get("step", 1),
                 "thought_rationale": proposal.thought_rationale,
             },
+        )
+
+        # 1.5. Clasificación contextual de la operación concreta (Sección 4)
+        op_string = (proposal.operation or "").strip()
+        if not op_string:
+            if proposal.arguments:
+                op_string = str(proposal.arguments.get("command") or proposal.arguments.get("cmd") or proposal.arguments.get("raw") or "").strip()
+        if not op_string:
+            op_string = proposal.tool or ""
+        elif proposal.tool and proposal.tool != "run_command" and not op_string.startswith(proposal.tool):
+            op_string = f"{proposal.tool} {op_string}".strip()
+
+        op_assessment = self.command_classifier.classify(
+            op_string, context={"goal": state.goal.objective, "session_id": session_id}
+        )
+        self.event_bus.emit(
+            session_id=session_id,
+            event_type=EventType.OPERATION_CLASSIFIED,
+            node_id=action_id,
+            decision_id=decision_id,
+            payload=op_assessment.model_dump(),
         )
 
         # 2. Evaluación de Evidencia Empírica
@@ -321,8 +379,8 @@ class RuntimeApplicationService:
             },
         )
 
-        # 3. Evaluación de Riesgo Operacional
-        risk_assessment = self.risk_engine.assess_action_risk(action)
+        # 3. Evaluación de Riesgo Operacional (sensible al modo de ejecución)
+        risk_assessment = self.risk_engine.assess_action_risk(action, execution_mode=session_mode)
         risk_level_str = (
             risk_assessment.level.value
             if hasattr(risk_assessment.level, "value")
@@ -381,23 +439,37 @@ class RuntimeApplicationService:
             available_evidence=state.evidence,
             forbidden_tools=state.forbidden_tools,
             risk_assessment=risk_assessment,
+            operation_assessment=op_assessment,
             session_id=session_id,
+            execution_mode=ExecutionMode(session_mode),
         )
 
-        # Mapear estado
-        status_str = decision.status.value.upper()
-        policy_decision_str = "ALLOW"
-        if decision.requires_confirmation:
-            status_str = "REVIEW"
-            policy_decision_str = "REQUIRE_HUMAN_CONFIRMATION"
-        elif decision.status == DecisionStatus.BLOCK:
+        # Mapear estado con precedencia determinista (BLOCK > FULL_ACCESS > REVIEW > ALLOW)
+        requires_conf = decision.requires_confirmation
+        mode_val = str(session_mode.value if hasattr(session_mode, "value") else session_mode or "").lower()
+
+        if decision.status == DecisionStatus.BLOCK or risk_assessment.level == RiskLevel.CRITICAL:
             status_str = "BLOCK"
             policy_decision_str = "BLOCK"
+        elif decision.status == DecisionStatus.REPLAN:
+            status_str = "REPLAN"
+            policy_decision_str = "REPLAN"
+        elif mode_val == "full_access":
+            # En modo Full Access, la sesión opera en automático por consentimiento previo del operador
+            requires_conf = False
+            status_str = "ALLOW"
+            policy_decision_str = "ALLOW"
+        elif requires_conf:
+            status_str = "REVIEW"
+            policy_decision_str = "REQUIRE_HUMAN_CONFIRMATION"
+        else:
+            status_str = decision.status.value.upper()
+            policy_decision_str = status_str
 
         policy_dto = PolicyDTO(
             decision=policy_decision_str,
             reason_codes=decision.reason_codes,
-            requires_confirmation=decision.requires_confirmation,
+            requires_confirmation=requires_conf,
         )
 
         policy_node_id = f"{action_id}_policy"
@@ -410,7 +482,8 @@ class RuntimeApplicationService:
             payload={
                 "status": status_str,
                 "reason_code": decision.reason_codes[0] if decision.reason_codes else "POLICY_EVALUATED",
-                "requires_confirmation": decision.requires_confirmation,
+                "requires_confirmation": requires_conf,
+                "execution_mode": session_mode,
             },
         )
 
@@ -420,9 +493,13 @@ class RuntimeApplicationService:
 
         if status_str == "ALLOW":
             expires_at = now + timedelta(minutes=5)
-            # Firmar recibo
+            # Firmar recibo con su execution_mode canónico
             receipt_with_exp = receipt.model_copy(
-                update={"decision_id": decision_id, "expires_at": expires_at}
+                update={
+                    "decision_id": decision_id,
+                    "expires_at": expires_at,
+                    "execution_mode": ExecutionMode(session_mode),
+                }
             )
             signed = sign_receipt(receipt_with_exp, self.policy_engine.secret_key)
             cap = signed.to_capability_payload(allowed_tools=[proposal.tool])
@@ -446,6 +523,7 @@ class RuntimeApplicationService:
                     "risk_level": risk_dto.level,
                     "reasons": risk_dto.reasons,
                     "reason_code": policy_dto.reason_codes,
+                    "execution_mode": session_mode,
                 },
             )
         elif status_str == "BLOCK":
@@ -457,13 +535,14 @@ class RuntimeApplicationService:
                 payload={"reason": ", ".join(decision.reason_codes)},
             )
 
-        # Guardar en registro de decisiones
+        # Guardar en registro durable de decisiones (SQLite WAL + memoria)
         decision_record = {
             "decision_id": decision_id,
             "session_id": session_id,
             "action_id": action_id,
             "action": action,
             "status": status_str,
+            "execution_mode": session_mode,
             "action_hash": receipt.action_hash,
             "risk": risk_dto,
             "providers": provider_dtos,
@@ -473,8 +552,11 @@ class RuntimeApplicationService:
             "receipt": receipt,
             "evidence": evidences,
             "grounding_score": grounding_score,
+            "operation_assessment": op_assessment.model_dump(),
+            "operation_category": op_assessment.category.value if hasattr(op_assessment.category, "value") else str(op_assessment.category),
             "created_at": now,
         }
+        self.decision_repository.save(decision_record)
         with self._lock:
             self._decisions[decision_id] = decision_record
 
@@ -486,8 +568,10 @@ class RuntimeApplicationService:
             risk=risk_dto,
             providers=provider_dtos,
             policy=policy_dto,
+            execution_mode=session_mode,
             capability=capability_data,
             expires_at=expires_at,
+            operation_assessment=op_assessment.model_dump(),
         )
 
     # =========================================================================
@@ -498,6 +582,31 @@ class RuntimeApplicationService:
         """Recupera los datos estructurados en las 4 pestañas requeridas por la Sección 6.3."""
         with self._lock:
             record = self._decisions.get(decision_id)
+
+        # Supervivencia a reinicios: recuperar de SQLite WAL
+        if not record:
+            record = self.decision_repository.get(decision_id)
+            if not record:
+                # Deterministic fallback: reconstruir desde EventStore
+                try:
+                    conn = self.event_bus.store._get_connection()
+                    cur = conn.cursor()
+                    cur.execute("SELECT session_id FROM runtime_events WHERE decision_id = ? LIMIT 1", (decision_id,))
+                    row = cur.fetchone()
+                    if row:
+                        found_sid = row[0]
+                        evs = self.event_bus.get_all_events(found_sid)
+                        reconstructed = self.decision_repository.reconstruct_from_events(found_sid, evs)
+                        if decision_id in reconstructed:
+                            record = reconstructed[decision_id]
+                            self.decision_repository.save(record)
+                except Exception as ex:
+                    logger.debug("Reconstrucción desde eventos falló para %s: %s", decision_id, ex)
+
+            if record:
+                with self._lock:
+                    self._decisions[decision_id] = record
+
         if not record:
             return None
 
@@ -506,6 +615,19 @@ class RuntimeApplicationService:
         risk: RiskDTO = record["risk"]
         policy: PolicyDTO = record["policy"]
         providers: List[ProviderEvaluationDTO] = record["providers"]
+
+        # Determinar atributos de ejecución para la subsección Execution
+        mode_val = record.get("execution_mode") or getattr(receipt, "execution_mode", "local_restricted")
+        if hasattr(mode_val, "value"):
+            mode_val = mode_val.value
+        state = self.state_store.load_state(record["session_id"])
+        working_dir = (state.metadata.get("working_directory") if state and state.metadata else None) or os.getcwd()
+        backend_name = (
+            "FullAccessExecutor" if mode_val == "full_access"
+            else ("DockerContainer" if mode_val == "container" else "LocalProcessSandbox")
+        )
+        isolation_str = "None (Host OS)" if mode_val == "full_access" else "Active"
+        network_str = "Host Direct" if mode_val == "full_access" else "Isolated (Restricted)"
 
         # 1. Pestaña: Decision
         decision_tab = {
@@ -521,6 +643,17 @@ class RuntimeApplicationService:
             "risk_score": risk.score,
             "semantic_score": providers[0].score if providers else 0.0,
             "reason": ", ".join(policy.reason_codes) or "Action assessed against runtime policy.",
+            "execution_mode": mode_val,
+            "isolation": isolation_str,
+            "working_directory": working_dir,
+            "network_mode": network_str,
+            "execution_backend": backend_name,
+            "operation_assessment": record.get("operation_assessment") or (
+                receipt.operation_assessment if hasattr(receipt, "operation_assessment") else None
+            ),
+            "operation_category": record.get("operation_category") or (
+                receipt.operation_category if hasattr(receipt, "operation_category") else None
+            ),
         }
 
         # 2. Pestaña: Evidence
@@ -539,15 +672,20 @@ class RuntimeApplicationService:
             "requires_confirmation": policy.requires_confirmation,
             "rules_activated": ["EgressPolicy", "PathContainment", "DoubleVerification"] if risk.level in ("HIGH", "CRITICAL") else ["StandardPolicy"],
             "precedence": "Deterministic Policy Precedence (Safety > Efficiency)",
+            "operation_category": record.get("operation_category") or (
+                receipt.operation_category if hasattr(receipt, "operation_category") else None
+            ),
         }
 
         # 4. Pestaña: Receipt
+        receipt_mode = getattr(receipt.execution_mode, "value", str(receipt.execution_mode)) if hasattr(receipt, "execution_mode") else mode_val
         receipt_tab = {
             "decision_id": receipt.decision_id,
             "session_id": receipt.session_id,
             "action_hash": receipt.action_hash,
             "state_hash": receipt.state_hash,
             "nonce": receipt.nonce,
+            "execution_mode": receipt_mode,
             "signature": receipt.signature or "unsigned",
             "has_valid_hmac": bool(receipt.signature and verify_receipt_signature(self.policy_engine.secret_key, receipt)),
             "expires_at": receipt.expires_at.isoformat() if receipt.expires_at else None,
@@ -567,22 +705,49 @@ class RuntimeApplicationService:
         )
 
     def list_decisions_for_session(self, session_id: str) -> List[Dict[str, Any]]:
-        """Lista cronológicamente las decisiones asociadas a una sesión."""
+        """Lista cronológicamente las decisiones asociadas a una sesión recuperando de SQLite."""
+        # 1. Recuperar del repositorio SQLite WAL
+        records = self.decision_repository.list_by_session(session_id)
+        if not records:
+            events = self.event_bus.get_all_events(session_id)
+            reconstructed = self.decision_repository.reconstruct_from_events(session_id, events)
+            records = list(reconstructed.values())
+
+        # 2. Combinar con caché en memoria
         with self._lock:
-            matching = [
-                {
-                    "decision_id": d["decision_id"],
-                    "session_id": d["session_id"],
-                    "action_id": d["action_id"],
-                    "tool": d["action"].tool_call.tool_name if d["action"].tool_call else None,
-                    "status": d["status"],
-                    "risk_level": d["risk"].level,
-                    "created_at": d["created_at"].isoformat(),
-                }
-                for d in self._decisions.values()
-                if d["session_id"] == session_id
-            ]
-        return sorted(matching, key=lambda x: x["created_at"])
+            for d in self._decisions.values():
+                if d.get("session_id") == session_id:
+                    if not any(r.get("decision_id") == d.get("decision_id") for r in records):
+                        records.append(d)
+
+        results = []
+        for d in records:
+            act = d.get("action")
+            tool_name = None
+            if act:
+                tool_name = act.tool_call.tool_name if hasattr(act, "tool_call") and act.tool_call else None
+                if not tool_name and isinstance(act, dict):
+                    tool_name = act.get("tool_call", {}).get("tool_name")
+
+            risk_dto = d.get("risk")
+            risk_level = risk_dto.level if hasattr(risk_dto, "level") else (risk_dto.get("level") if isinstance(risk_dto, dict) else "LOW")
+            created_at_val = d.get("created_at")
+            if isinstance(created_at_val, datetime):
+                created_at_str = created_at_val.isoformat()
+            else:
+                created_at_str = str(created_at_val or datetime.utcnow().isoformat())
+
+            results.append({
+                "decision_id": d["decision_id"],
+                "session_id": d["session_id"],
+                "action_id": d["action_id"],
+                "tool": tool_name,
+                "status": d.get("status", "ALLOW"),
+                "execution_mode": d.get("execution_mode", "local_restricted"),
+                "risk_level": risk_level,
+                "created_at": created_at_str,
+            })
+        return sorted(results, key=lambda x: x["created_at"])
 
     # =========================================================================
     # CONFIRMACIÓN Y EJECUCIÓN FÍSICA
@@ -594,23 +759,40 @@ class RuntimeApplicationService:
         approved: bool,
         reason: Optional[str] = None,
         actor: str = "human_operator",
+        operator_id: Optional[str] = None,
+        role: str = "operator",
     ) -> ConfirmDecisionResponse:
         """Autoriza o bloquea una decisión en espera de aprobación humana (REVIEW)."""
+        if role == "viewer":
+            raise PermissionError("El rol 'viewer' tiene permisos de solo lectura y no puede autorizar o rechazar decisiones.")
+
+        if not approved and not (reason and reason.strip()):
+            raise ValueError("Es obligatorio proporcionar un motivo justificado (reason) para rechazar una decisión en revisión.")
+
         with self._lock:
             record = self._decisions.get(decision_id)
         if not record:
-            raise KeyError(f"Decisión '{decision_id}' no encontrada.")
+            record = self.decision_repository.get(decision_id)
+            if not record:
+                raise KeyError(f"Decisión '{decision_id}' no encontrada.")
+            with self._lock:
+                self._decisions[decision_id] = record
 
         session_id = record["session_id"]
         action: ActionCandidate = record["action"]
         now = datetime.utcnow()
+        session_mode = record.get("execution_mode") or "local_restricted"
 
         if approved:
             new_status = "ALLOW"
             expires_at = now + timedelta(minutes=5)
             receipt: DecisionReceipt = record["receipt"]
             receipt_updated = receipt.model_copy(
-                update={"decision_status": DecisionStatus.ALLOW, "expires_at": expires_at}
+                update={
+                    "decision_status": DecisionStatus.ALLOW,
+                    "expires_at": expires_at,
+                    "execution_mode": ExecutionMode(session_mode),
+                }
             )
             signed = sign_receipt(receipt_updated, self.policy_engine.secret_key)
             cap = signed.to_capability_payload(allowed_tools=[action.tool_call.tool_name] if action.tool_call else [])
@@ -620,13 +802,17 @@ class RuntimeApplicationService:
             record["receipt"] = signed
             record["capability"] = capability_dict
             record["expires_at"] = expires_at
+            record["operator_id"] = operator_id
+            record["role"] = role
+
+            self.decision_repository.save(record)
 
             self.event_bus.emit(
                 session_id=session_id,
                 event_type=EventType.APPROVAL_COMPLETED,
                 node_id=record["action_id"],
                 decision_id=decision_id,
-                payload={"approved": True, "reason": reason, "actor": actor},
+                payload={"approved": True, "reason": reason, "actor": actor, "operator_id": operator_id, "role": role},
             )
             self.event_bus.emit(
                 session_id=session_id,
@@ -639,16 +825,24 @@ class RuntimeApplicationService:
                 decision_id=decision_id,
                 status="ALLOW",
                 message="Decisión autorizada por operador humano. Capability emitido.",
+                execution_mode=session_mode,
+                operator_id=operator_id,
+                role=role,
                 capability=capability_dict,
+                confirmed_at=now,
             )
         else:
             record["status"] = "BLOCKED"
+            record["operator_id"] = operator_id
+            record["role"] = role
+            self.decision_repository.save(record)
+
             self.event_bus.emit(
                 session_id=session_id,
                 event_type=EventType.APPROVAL_COMPLETED,
                 node_id=record["action_id"],
                 decision_id=decision_id,
-                payload={"approved": False, "reason": reason, "actor": actor},
+                payload={"approved": False, "reason": reason, "actor": actor, "operator_id": operator_id, "role": role},
             )
             self.event_bus.emit(
                 session_id=session_id,
@@ -661,24 +855,72 @@ class RuntimeApplicationService:
                 decision_id=decision_id,
                 status="BLOCKED",
                 message="Decisión rechazada por operador humano.",
+                execution_mode=session_mode,
+                operator_id=operator_id,
+                role=role,
                 capability=None,
+                confirmed_at=now,
             )
+
+    def reject_decision(
+        self,
+        decision_id: str,
+        reason: str,
+        actor: str = "human_operator",
+        operator_id: Optional[str] = None,
+        role: str = "operator",
+    ) -> ConfirmDecisionResponse:
+        """Rechaza formalmente una decisión en espera de aprobación humana (REVIEW)."""
+        return self.confirm_decision(
+            decision_id=decision_id,
+            approved=False,
+            reason=reason,
+            actor=actor,
+            operator_id=operator_id,
+            role=role,
+        )
 
     def execute_decision(
         self,
         decision_id: str,
         capability_token: Optional[Dict[str, Any]] = None,
+        operator_id: Optional[str] = None,
+        role: str = "operator",
     ) -> ExecuteDecisionResponse:
-        """Ejecuta físicamente en el sandbox la herramienta ligada al capability."""
+        """Ejecuta físicamente la herramienta autorizada en el sandbox o host."""
+        if role == "viewer":
+            raise PermissionError("El rol 'viewer' tiene permisos de solo lectura y no puede ejecutar decisiones.")
+
         with self._lock:
             record = self._decisions.get(decision_id)
         if not record:
-            raise KeyError(f"Decisión '{decision_id}' no encontrada.")
+            record = self.decision_repository.get(decision_id)
+            if not record:
+                raise KeyError(f"Decisión '{decision_id}' no encontrada.")
+            with self._lock:
+                self._decisions[decision_id] = record
 
         session_id = record["session_id"]
         action: ActionCandidate = record["action"]
         receipt: DecisionReceipt = record["receipt"]
         state = self.state_store.load_state(session_id) or SessionState(session_id=session_id, goal=Goal(objective="Task"))
+        session_mode = record.get("execution_mode") or state.metadata.get("execution_mode", "local_restricted")
+
+        # Regla 9: BLOCK decisions never reach execution
+        if record.get("status") != "ALLOW":
+            raise PolicyViolation(f"No se puede ejecutar una decisión en estado '{record.get('status')}'. Solo se permite la ejecución de decisiones 'ALLOW'.")
+
+        # Regla 10: Replay protection at decision receipt level
+        if receipt.is_executed:
+            raise PolicyViolation("Esta decisión ya ha sido ejecutada previamente. Violación de replay protection.")
+
+        # Regla 7: Validar capability_token si se proporciona externamente
+        if capability_token:
+            if not verify_capability_signature(self.policy_engine.secret_key, capability_token):
+                raise PolicyViolation("Firma HMAC del capability token inválida o manipulada.")
+            token_mode = capability_token.get("execution_mode")
+            if token_mode and token_mode != session_mode:
+                raise PolicyViolation(f"Adulteración de execution_mode: el token especifica '{token_mode}', pero la sesión requiere '{session_mode}'.")
 
         # Emitir evento: execution.started
         self.event_bus.emit(
@@ -689,6 +931,8 @@ class RuntimeApplicationService:
             payload={
                 "tool": action.tool_call.tool_name if action.tool_call else None,
                 "arguments": action.tool_call.arguments if action.tool_call else {},
+                "execution_mode": session_mode,
+                "operator_id": operator_id,
             },
         )
 
@@ -705,6 +949,7 @@ class RuntimeApplicationService:
                 update={"is_executed": True, "execution_timestamp": datetime.utcnow()}
             )
             record["receipt"] = updated_receipt
+            self.decision_repository.save(record)
 
             # Emitir eventos de culminación
             self.event_bus.emit(
@@ -716,6 +961,7 @@ class RuntimeApplicationService:
                     "success": observation.success,
                     "exit_code": getattr(observation, "exit_code", 0 if observation.success else 1),
                     "execution_time_ms": observation.execution_time_ms,
+                    "execution_mode": session_mode,
                 },
             )
             self.event_bus.emit(
@@ -726,17 +972,29 @@ class RuntimeApplicationService:
                 payload={"output": observation.output[:2000]},
             )
 
-            # Si es finish, emitir session.completed
-            if action.tool_call and action.tool_call.tool_name == "finish" and observation.success:
+            # Si es finish o herramienta de conclusión de ciclo de vida
+            if action.tool_call and action.tool_call.tool_name in ("finish", "complete_task", "done", "complete", "task_completed") and observation.success:
+                summary = (
+                    action.tool_call.arguments.get("summary")
+                    or action.tool_call.arguments.get("final_answer")
+                    or observation.output.replace("Tarea concluida: ", "")
+                    or "Misión finalizada exitosamente."
+                )
                 self.event_bus.emit(
                     session_id=session_id,
                     event_type=EventType.SESSION_COMPLETED,
                     node_id=f"root_{session_id}",
-                    payload={"status": "completed", "summary": action.tool_call.arguments.get("summary", "")},
+                    payload={"status": "completed", "summary": summary},
                 )
                 with self._lock:
                     if session_id in self._sessions_meta:
                         self._sessions_meta[session_id]["status"] = "Completed"
+                        self._sessions_meta[session_id]["final_answer"] = summary
+
+            tier_name = (
+                "full_access" if session_mode == "full_access"
+                else ("container" if session_mode == "container" else "local_process")
+            )
 
             return ExecuteDecisionResponse(
                 decision_id=decision_id,
@@ -745,7 +1003,8 @@ class RuntimeApplicationService:
                 success=observation.success,
                 exit_code=getattr(observation, "exit_code", 0 if observation.success else 1),
                 execution_time_ms=observation.execution_time_ms,
-                tier="local_process",
+                execution_mode=session_mode,
+                tier=tier_name,
                 fallback_occurred=False,
                 is_error=observation.is_error,
             )
@@ -768,6 +1027,7 @@ class RuntimeApplicationService:
         goal: str,
         session_id: Optional[str] = None,
         agent_name: str = "CodingAgent",
+        execution_mode: str = "local_restricted",
         llm_provider: str = "simulator",
         llm_model: Optional[str] = None,
         api_key: Optional[str] = None,
@@ -792,11 +1052,13 @@ class RuntimeApplicationService:
             goal=goal,
             session_id=sid,
             agent_name=agent_name,
+            execution_mode=execution_mode,
             metadata={
                 "llm_provider": llm_provider,
                 "llm_model": llm_model or "default",
                 "supervisor": supervisor,
                 "max_steps": max_steps,
+                "execution_mode": execution_mode,
             },
         )
 
@@ -804,6 +1066,7 @@ class RuntimeApplicationService:
             "session_id": sid,
             "goal": goal,
             "agent_name": agent_name,
+            "execution_mode": execution_mode,
             "llm_provider": llm_provider,
             "llm_model": llm_model,
             "api_key": api_key,
@@ -871,6 +1134,16 @@ class RuntimeApplicationService:
         max_steps = mission.get("max_steps", 6)
         delay_sec = max(0.2, mission.get("step_delay_ms", 900) / 1000.0)
 
+        # Resolver modo de ejecución de la sesión (Full Access vs Container vs Local Restricted)
+        session_mode = mission.get("execution_mode") or "local_restricted"
+        with self._lock:
+            if sid in self._sessions_meta:
+                session_mode = self._sessions_meta[sid].get("execution_mode") or session_mode
+        if not session_mode or session_mode == "local_restricted":
+            st = self.state_store.load_state(sid)
+            if st and st.metadata:
+                session_mode = st.metadata.get("execution_mode", session_mode)
+
         # Retardo inicial para dar tiempo al WebSocket a suscribirse
         time.sleep(0.4)
 
@@ -912,10 +1185,10 @@ class RuntimeApplicationService:
         # =========================================================================
         if use_real_llm and agent_llm is not None:
             system_prompt = (
-                "Eres un agente de software autónomo y riguroso supervisado en tiempo real por PRAXEON.\n"
+                "Eres un agente de software autónomo supervisado en tiempo real por PRAXEON.\n"
                 f"OBJETIVO: {goal}\n\n"
                 "En CADA turno debes emitir tu razonamiento y UNA acción concreta en este formato exacto:\n"
-                "Thought: <análisis y justificación concisa del paso en relación estricta a la tarea>\n"
+                "Thought: <análisis, justificación del paso o explicación de retroceso/bifurcación>\n"
                 "Action: <herramienta>(<argumentos_en_json_o_string>)\n\n"
                 "Herramientas disponibles:\n"
                 "- read_file(path: str)\n"
@@ -924,13 +1197,15 @@ class RuntimeApplicationService:
                 "- git(command: str)\n"
                 "- finish(summary: str)\n\n"
                 "REGLAS:\n"
-                "1. Trabaja paso a paso sobre el código real del proyecto. No inventes archivos ni alucines.\n"
+                "1. Trabaja paso a paso sobre el código real del proyecto. Si una acción falla, formula una alternativa (bifurcación).\n"
                 "2. Cuando hayas obtenido la información necesaria o completado el objetivo, concluye inmediatamente con Action: finish(summary=\"...\")."
             )
 
             conversation: List[Dict[str, str]] = [
                 {"role": "user", "content": f"Inicia la resolución de esta tarea: {goal}"}
             ]
+
+            active_parent_id = f"root_{sid}"
 
             while step_idx < max_steps:
                 if mission.get("stopped"):
@@ -968,9 +1243,11 @@ class RuntimeApplicationService:
                         thought = llm_output[:250].strip() or f"Paso {step_idx} propuesto para: '{goal}'."
 
                 operation = f"{step_idx}. {tool}"
+                action_node_id = f"act_{step_idx}"
 
                 req = ProposeActionRequest(
-                    action_id=f"act_{step_idx}",
+                    action_id=action_node_id,
+                    parent_id=active_parent_id,
                     tool=tool,
                     operation=operation,
                     arguments=args,
@@ -983,48 +1260,119 @@ class RuntimeApplicationService:
                 )
 
                 obs_output = ""
+                executed_successfully = False
                 try:
                     resp = self.propose_action(session_id=sid, proposal=req)
 
-                    # Si requiere confirmación humana (ej. REVIEW por git push), esperar a que sea autorizada
-                    if resp.status == "REVIEW" or resp.policy.requires_confirmation:
-                        wait_count = 0
-                        while wait_count < 120 and not mission.get("stopped"):
-                            time.sleep(0.5)
-                            wait_count += 1
+                    if resp.status == "BLOCK":
+                        executed_successfully = False
+                        obs_output = f"Acción clasificada como PELIGROSA o destructiva por seguridad: {', '.join(resp.policy.reason_codes or ['Veto operacional'])}"
+                    elif resp.status == "REPLAN":
+                        executed_successfully = False
+                        obs_output = f"Acción clasificada como INNECESARIA, desvío o bucle por el supervisor JEV-LAYA: {', '.join(resp.policy.reason_codes or ['Poda cognitiva'])}"
+                    # Si requiere confirmación humana (ej. REVIEW por git push)
+                    elif resp.status == "REVIEW" or resp.policy.requires_confirmation:
+                        if session_mode == "full_access":
+                            # Auto-confirmación en modo Full Access para ejecución autónoma
+                            logger.info("Auto-confirmando decisión %s en modo Full Access...", resp.decision_id)
+                            try:
+                                conf_res = self.confirm_decision(
+                                    decision_id=resp.decision_id,
+                                    approved=True,
+                                    reason="Auto-autorizado por consentimiento previo de sesión en modo Full Access",
+                                    operator_id="operator_full_access_auto",
+                                    role="operator",
+                                )
+                                if conf_res.status == "ALLOW":
+                                    exec_res = self.execute_decision(decision_id=resp.decision_id)
+                                    obs_output = exec_res.output or ""
+                                    executed_successfully = exec_res.success and not exec_res.is_error
+                            except Exception as ex:
+                                obs_output = f"Error en ejecución Full Access: {ex}"
+                                executed_successfully = False
+                        else:
+                            wait_count = 0
+                            while wait_count < 120 and not mission.get("stopped"):
+                                time.sleep(0.5)
+                                wait_count += 1
+                                with self._lock:
+                                    dec = self._decisions.get(resp.decision_id)
+                                    if dec and dec.get("status") in ("ALLOW", "BLOCKED"):
+                                        break
                             with self._lock:
                                 dec = self._decisions.get(resp.decision_id)
-                                if dec and dec.get("status") in ("ALLOW", "BLOCKED"):
-                                    break
-                        with self._lock:
-                            dec = self._decisions.get(resp.decision_id)
-                            dec_status = dec.get("status") if dec else None
-                        if dec_status == "ALLOW":
-                            try:
-                                exec_res = self.execute_decision(decision_id=resp.decision_id)
-                                obs_output = exec_res.observation.output if exec_res and exec_res.observation else ""
-                            except Exception as ex:
-                                logger.debug("Execution note: %s", ex)
+                                dec_status = dec.get("status") if dec else None
+                            if dec_status == "ALLOW":
+                                try:
+                                    exec_res = self.execute_decision(decision_id=resp.decision_id)
+                                    obs_output = exec_res.output or ""
+                                    executed_successfully = exec_res.success and not exec_res.is_error
+                                except Exception as ex:
+                                    logger.debug("Execution note: %s", ex)
+                                    obs_output = str(ex)
                     elif resp.status == "ALLOW":
                         try:
                             exec_res = self.execute_decision(decision_id=resp.decision_id)
-                            obs_output = exec_res.observation.output if exec_res and exec_res.observation else ""
+                            obs_output = exec_res.output or ""
+                            executed_successfully = exec_res.success and not exec_res.is_error
                         except Exception as ex:
                             logger.debug("Execution note: %s", ex)
+                            obs_output = str(ex)
                 except Exception as err:
                     logger.error(f"Error proponiendo paso {step_idx} en sesión {sid}: {err}")
+                    obs_output = str(err)
+                    executed_successfully = False
 
-                # Realimentar observación al contexto del LLM para el siguiente turno
-                conversation.append({
-                    "role": "assistant",
-                    "content": f"Thought: {thought}\nAction: {tool}({json.dumps(args, ensure_ascii=False)})",
-                })
-                conversation.append({
-                    "role": "user",
-                    "content": f"Observación de {tool}:\n{(obs_output or 'Acción ejecutada correctamente en sandbox.')[:1500]}",
-                })
+                if executed_successfully:
+                    # Acción exitosa: el cursor activo del árbol avanza
+                    active_parent_id = action_node_id
+                    conversation.append({
+                        "role": "assistant",
+                        "content": f"Thought: {thought}\nAction: {tool}({json.dumps(args, ensure_ascii=False)})",
+                    })
+                    conversation.append({
+                        "role": "user",
+                        "content": f"Observación de {tool}:\n{(obs_output or 'Acción ejecutada correctamente.')[:1500]}",
+                    })
+                else:
+                    # RETROCESO (BACKTRACK) Y BIFURCACIÓN:
+                    # active_parent_id permanece en el padre anterior para que el siguiente paso bifurque
+                    self.event_bus.emit(
+                        session_id=sid,
+                        event_type=EventType.INTERVENTION_APPLIED,
+                        node_id=action_node_id,
+                        parent_id=active_parent_id,
+                        payload={
+                            "intervention": "BACKTRACK_AND_BRANCH",
+                            "message": f"Fallo o veto en '{action_node_id}'. El supervisor realiza un retroceso a '{active_parent_id}' para bifurcar una hipótesis alternativa.",
+                            "backtrack_to": active_parent_id,
+                            "failed_node": action_node_id,
+                        },
+                    )
+                    conversation.append({
+                        "role": "assistant",
+                        "content": f"Thought: {thought}\nAction: {tool}({json.dumps(args, ensure_ascii=False)})",
+                    })
+                    conversation.append({
+                        "role": "user",
+                        "content": (
+                            f"[ALERTA SUPERVISOR PRAXEON]: La acción {tool} no tuvo éxito ({obs_output[:350]}).\n"
+                            f"El supervisor ha aplicado un RETROCESO (Backtrack) al nodo '{active_parent_id}'. "
+                            "Formula una HIPÓTESIS ALTERNATIVA (Bifurcación) para abordar el objetivo por otra vía. "
+                            "Explica tu retroceso en 'Thought:' y propone tu nueva 'Action:'."
+                        ),
+                    })
 
-                if tool == "finish":
+                if tool in ("finish", "complete_task", "done", "complete", "task_completed"):
+                    if executed_successfully:
+                        final_ans = (
+                            args.get("summary")
+                            or args.get("final_answer")
+                            or obs_output.replace("Tarea concluida: ", "")
+                        )
+                        with self._lock:
+                            if sid in self._sessions_meta:
+                                self._sessions_meta[sid]["final_answer"] = final_ans
                     break
 
                 time.sleep(delay_sec)
@@ -1034,6 +1382,7 @@ class RuntimeApplicationService:
         # =========================================================================
         else:
             steps_to_run = generate_goal_tailored_steps(goal=goal, max_steps=max_steps)
+            active_parent_id = f"root_{sid}"
 
             while step_idx < len(steps_to_run):
                 if mission.get("stopped"):
@@ -1046,8 +1395,13 @@ class RuntimeApplicationService:
                 step_idx += 1
                 mission["current_step"] = step_idx
 
+                # Usar parent_id explícito del plan o el active_parent_id actual
+                target_parent = step_data.get("parent_id") or active_parent_id
+                action_node_id = f"act_{step_idx}"
+
                 req = ProposeActionRequest(
-                    action_id=f"act_{step_idx}",
+                    action_id=action_node_id,
+                    parent_id=target_parent,
                     tool=step_data["tool"],
                     operation=step_data["operation"],
                     arguments=step_data["arguments"],
@@ -1059,34 +1413,83 @@ class RuntimeApplicationService:
                     context={"goal": goal},
                 )
 
+                executed_successfully = False
                 try:
                     resp = self.propose_action(session_id=sid, proposal=req)
 
                     # Si requiere confirmación humana (ej. REVIEW por git push), esperar a que sea autorizada
                     if resp.status == "REVIEW" or resp.policy.requires_confirmation:
-                        wait_count = 0
-                        while wait_count < 120 and not mission.get("stopped"):
-                            time.sleep(0.5)
-                            wait_count += 1
+                        if session_mode == "full_access":
+                            logger.info("Auto-confirmando en Full Access: %s", resp.decision_id)
+                            try:
+                                conf_res = self.confirm_decision(
+                                    decision_id=resp.decision_id,
+                                    approved=True,
+                                    reason="Auto-aprobado por sesión Full Access",
+                                    operator_id="operator_full_access_auto",
+                                    role="operator",
+                                )
+                                if conf_res.status == "ALLOW":
+                                    exec_res = self.execute_decision(decision_id=resp.decision_id)
+                                    executed_successfully = exec_res.success and not exec_res.is_error
+                            except Exception as ex:
+                                logger.warning("Error auto-confirmando en Full Access: %s", ex)
+                        else:
+                            wait_count = 0
+                            while wait_count < 120 and not mission.get("stopped"):
+                                time.sleep(0.5)
+                                wait_count += 1
+                                with self._lock:
+                                    dec = self._decisions.get(resp.decision_id)
+                                    if dec and dec.get("status") in ("ALLOW", "BLOCKED"):
+                                        break
                             with self._lock:
                                 dec = self._decisions.get(resp.decision_id)
-                                if dec and dec.get("status") in ("ALLOW", "BLOCKED"):
-                                    break
-                        with self._lock:
-                            dec = self._decisions.get(resp.decision_id)
-                            dec_status = dec.get("status") if dec else None
-                        if dec_status == "ALLOW":
-                            try:
-                                self.execute_decision(decision_id=resp.decision_id)
-                            except Exception as ex:
-                                logger.debug("Execution note: %s", ex)
+                                dec_status = dec.get("status") if dec else None
+                            if dec_status == "ALLOW":
+                                try:
+                                    exec_res = self.execute_decision(decision_id=resp.decision_id)
+                                    executed_successfully = exec_res.success and not exec_res.is_error
+                                except Exception as ex:
+                                    logger.debug("Execution note: %s", ex)
                     elif resp.status == "ALLOW":
                         try:
-                            self.execute_decision(decision_id=resp.decision_id)
+                            exec_res = self.execute_decision(decision_id=resp.decision_id)
+                            executed_successfully = exec_res.success and not exec_res.is_error
                         except Exception as ex:
                             logger.debug("Execution note: %s", ex)
                 except Exception as err:
                     logger.error(f"Error proponiendo paso {step_idx} en sesión {sid}: {err}")
+                    executed_successfully = False
+
+                if step_data.get("simulate_failure"):
+                    # Si el paso simulaba un fallo/veto para ilustrar poda y retroceso
+                    executed_successfully = False
+                    self.event_bus.emit(
+                        session_id=sid,
+                        event_type=EventType.DECISION_PRUNED,
+                        node_id=action_node_id,
+                        parent_id=target_parent,
+                        payload={"reason": "Poda del supervisor: rama heurística no óptima."},
+                    )
+                    self.event_bus.emit(
+                        session_id=sid,
+                        event_type=EventType.INTERVENTION_APPLIED,
+                        node_id=action_node_id,
+                        parent_id=target_parent,
+                        payload={
+                            "intervention": "BACKTRACK_AND_BRANCH",
+                            "message": f"Rama exploratoria '{action_node_id}' podada. Retrocediendo a '{target_parent}' para bifurcar hipótesis alternativa.",
+                            "backtrack_to": target_parent,
+                            "failed_node": action_node_id,
+                        },
+                    )
+
+                if executed_successfully:
+                    active_parent_id = action_node_id
+                else:
+                    # Retroceder al padre objetivo
+                    active_parent_id = target_parent
 
                 if step_data["tool"] == "finish":
                     break
@@ -1097,11 +1500,16 @@ class RuntimeApplicationService:
             if sid in self._sessions_meta:
                 self._sessions_meta[sid]["status"] = "Completed"
 
+        final_summary = None
+        with self._lock:
+            if sid in self._sessions_meta:
+                final_summary = self._sessions_meta[sid].get("final_answer")
+
         self.event_bus.emit(
             session_id=sid,
             event_type=EventType.SESSION_COMPLETED,
             node_id=f"root_{sid}",
-            payload={"status": "completed", "summary": f"Misión '{goal}' finalizada exitosamente."},
+            payload={"status": "completed", "summary": final_summary or f"Misión '{goal}' finalizada exitosamente."},
         )
 
 
@@ -1131,27 +1539,32 @@ def generate_goal_tailored_steps(goal: str, max_steps: int = 6) -> List[Dict[str
             },
             {
                 "tool": "run_command",
-                "operation": "2. Ejecutar pytest en modo conciso",
-                "arguments": {"command": "pytest tests/ -q"},
-                "thought": "Ejecutando la suite de pruebas completa con pytest para identificar fallos y validar aserciones.",
+                "operation": "2. Ejecutar suite global sin filtros (Hipótesis 1)",
+                "arguments": {"command": "pytest --maxfail=1 -q"},
+                "thought": "Hipótesis 1: Probar ejecución global rápida de pruebas.",
+                "parent_id": "act_1",
+                "simulate_failure": True,
             },
             {
                 "tool": "read_file",
-                "operation": "3. Verificar aserciones críticas",
+                "operation": "3. Inspeccionar aserciones específicas (Bifurcación)",
                 "arguments": {"path": "tests/test_policy_engine.py"},
-                "thought": "Inspeccionando pruebas de políticas y seguridad formal para asegurar cobertura de casos límite.",
+                "thought": "El supervisor podó la hipótesis 1 por sobrecarga de tiempo. Retrocediendo a act_1 para bifurcar hacia la inspección de aserciones críticas.",
+                "parent_id": "act_1",
             },
             {
                 "tool": "run_command",
                 "operation": "4. Validar suite de integración",
                 "arguments": {"command": f"pytest {target_test_file} -q"},
-                "thought": "Revalidando suite específica para confirmar que las aserciones se mantengan estables.",
+                "thought": "Ejecutando suite específica enfocada para confirmar estabilidad del runtime.",
+                "parent_id": "act_3",
             },
             {
                 "tool": "finish",
                 "operation": "5. Concluir auditoría de tests",
                 "arguments": {"summary": f"Auditoría y ejecución de pruebas para '{goal}' completada: suite ejecutada sin regresiones."},
                 "thought": "Todas las pruebas han sido evaluadas y verificadas con éxito por el supervisor.",
+                "parent_id": "act_4",
             },
         ]
 
@@ -1167,27 +1580,39 @@ def generate_goal_tailored_steps(goal: str, max_steps: int = 6) -> List[Dict[str
             },
             {
                 "tool": "run_command",
-                "operation": "2. Verificar motor criptográfico",
-                "arguments": {"command": "python -c \"import hashlib, hmac; print('HMAC Verification Engine Active')\""},
-                "thought": "Comprobando la integridad del motor criptográfico de tokens y firma de capabilities.",
-            },
-            {
-                "tool": "edit_file",
-                "operation": "3. Aplicar parche de seguridad",
-                "arguments": {"path": target_auth_file, "diff": "+ # Security patch: Enforce strict capability verification"},
-                "thought": "Aplicando endurecimiento de validación y verificación estricta de seguridad requerida.",
+                "operation": "2. Probar omisión rápida de verificación (Hipótesis 1)",
+                "arguments": {"command": "python -c \"import os; os.environ['BYPASS_AUTH']='1'; print('Bypass attempt')\""},
+                "thought": "Hipótesis 1: Intentar omisión temporal de verificación para diagnosticar la causa raíz del error.",
+                "parent_id": "act_1",
+                "simulate_failure": True,
             },
             {
                 "tool": "run_command",
-                "operation": "4. Validar flujo de autorización",
+                "operation": "3. Verificar motor criptográfico (Bifurcación)",
+                "arguments": {"command": "python -c \"import hashlib, hmac; print('HMAC Verification Engine Active')\""},
+                "thought": "El supervisor vetó y podó la hipótesis 1 por violación de políticas. Retrocediendo a act_1 para bifurcar con hipótesis 2: verificar integridad de firma HMAC.",
+                "parent_id": "act_1",
+            },
+            {
+                "tool": "edit_file",
+                "operation": "4. Aplicar parche formal de seguridad",
+                "arguments": {"path": target_auth_file, "diff": "+ # Security patch: Enforce strict capability verification"},
+                "thought": "Aplicando endurecimiento formal de validación y verificación criptográfica estricta.",
+                "parent_id": "act_3",
+            },
+            {
+                "tool": "run_command",
+                "operation": "5. Validar flujo de autorización",
                 "arguments": {"command": "pytest tests/test_web_server.py -k confirm -q"},
                 "thought": "Ejecutando pruebas de confirmación y autorización para comprobar la efectividad del parche.",
+                "parent_id": "act_4",
             },
             {
                 "tool": "finish",
-                "operation": "5. Concluir corrección de seguridad",
+                "operation": "6. Concluir corrección de seguridad",
                 "arguments": {"summary": f"Corrección de autenticación para '{goal}' aplicada y validada formalmente contra políticas."},
                 "thought": "Módulo de autenticación solventado y verificado conforme a la política formal.",
+                "parent_id": "act_5",
             },
         ]
 
@@ -1202,21 +1627,32 @@ def generate_goal_tailored_steps(goal: str, max_steps: int = 6) -> List[Dict[str
             },
             {
                 "tool": "run_command",
-                "operation": "2. Auditar aislamiento del entorno",
-                "arguments": {"command": "python -c \"import os, platform; print(f'OS: {platform.system()} | Process isolation: Active')\""},
-                "thought": "Auditando variables de entorno en el sandbox local para asegurar que secretos no sean expuestos.",
+                "operation": "2. Probar egreso a endpoint externo no listado (Hipótesis 1)",
+                "arguments": {"command": "python -c \"import urllib.request; urllib.request.urlopen('https://untrusted-api.net', timeout=2)\""},
+                "thought": "Hipótesis 1: Probar si las peticiones salientes no autorizadas son interceptadas.",
+                "parent_id": "act_1",
+                "simulate_failure": True,
             },
             {
                 "tool": "run_command",
-                "operation": "3. Validar contención de red",
+                "operation": "3. Auditar aislamiento del entorno (Bifurcación)",
+                "arguments": {"command": "python -c \"import os, platform; print(f'OS: {platform.system()} | Process isolation: Active')\""},
+                "thought": "El supervisor bloqueó el egreso no permitido. Retrocediendo a act_1 para bifurcar hacia la auditoría de aislamiento de variables de entorno locales.",
+                "parent_id": "act_1",
+            },
+            {
+                "tool": "run_command",
+                "operation": "4. Validar contención de loopback",
                 "arguments": {"command": "python -c \"import socket; print('Socket inspection complete: local loopback only')\""},
                 "thought": "Verificando políticas de egress de red y asegurando la contención de conexiones salientes.",
+                "parent_id": "act_3",
             },
             {
                 "tool": "finish",
-                "operation": "4. Concluir verificación de contención",
+                "operation": "5. Concluir verificación de contención",
                 "arguments": {"summary": f"Auditoría de red y contención para '{goal}' completada: sandbox aislado y entorno verificado."},
                 "thought": "Directivas de red y límites de aislamiento validados conforme a la política.",
+                "parent_id": "act_4",
             },
         ]
 
@@ -1231,22 +1667,33 @@ def generate_goal_tailored_steps(goal: str, max_steps: int = 6) -> List[Dict[str
                 "thought": f"Inspeccionando arquitectura de la interfaz de usuario y flujo de datos reactivos para: '{goal}'.",
             },
             {
+                "tool": "run_command",
+                "operation": "2. Probar empaquetador legacy webpack (Hipótesis 1)",
+                "arguments": {"command": "npx webpack --version || python -c \"print('Webpack legacy ausente')\""},
+                "thought": "Hipótesis 1: Probar si el proyecto utiliza empaquetador Webpack histórico.",
+                "parent_id": "act_1",
+                "simulate_failure": True,
+            },
+            {
                 "tool": "read_file",
-                "operation": "2. Revisar componentes de inspector",
+                "operation": "3. Revisar componentes de inspector (Bifurcación)",
                 "arguments": {"path": "web/src/components/DecisionInspector.jsx"},
-                "thought": "Revisando componentes del inspector de decisiones, estilos Flat Clay y visualización en tiempo real.",
+                "thought": "Hipótesis legacy descartada. Retrocediendo a act_1 para bifurcar hacia la inspección directa del árbol reactivo y componentes Flat Clay.",
+                "parent_id": "act_1",
             },
             {
                 "tool": "run_command",
-                "operation": "3. Validar entorno de build",
+                "operation": "4. Validar compilador Vite",
                 "arguments": {"command": "npm --version"},
                 "thought": "Comprobando entorno de ejecución de Node.js y compilador de frontend Vite.",
+                "parent_id": "act_3",
             },
             {
                 "tool": "finish",
-                "operation": "4. Concluir revisión frontend",
+                "operation": "5. Concluir revisión frontend",
                 "arguments": {"summary": f"Revisión y optimización de componentes frontend para '{goal}' completada con éxito."},
                 "thought": "Componentes de interfaz y diseño validados satisfactoriamente.",
+                "parent_id": "act_4",
             },
         ]
 
@@ -1261,21 +1708,32 @@ def generate_goal_tailored_steps(goal: str, max_steps: int = 6) -> List[Dict[str
             },
             {
                 "tool": "git",
-                "operation": "2. Inspeccionar commits recientes",
-                "arguments": {"command": "git log -n 3 --oneline"},
-                "thought": "Revisando el historial reciente de confirmaciones para garantizar una base de código limpia.",
+                "operation": "2. Proponer publicación directa a origin main (Hipótesis 1)",
+                "arguments": {"command": "git push --dry-run origin main"},
+                "thought": "Hipótesis 1: Proponer push inmediato de la rama principal.",
+                "parent_id": "act_1",
+                "simulate_failure": True,
             },
             {
                 "tool": "git",
-                "operation": "3. Inspeccionar diffs",
+                "operation": "3. Inspeccionar diffs locales (Bifurcación)",
                 "arguments": {"command": "git diff --stat"},
-                "thought": "Inspeccionando resumen de diferencias de archivos antes de proponer publicaciones.",
+                "thought": "El supervisor requirió confirmación y podó el push precipitado. Retrocediendo a act_1 para auditar primero los diffs locales.",
+                "parent_id": "act_1",
+            },
+            {
+                "tool": "git",
+                "operation": "4. Inspeccionar historial de commits",
+                "arguments": {"command": "git log -n 3 --oneline"},
+                "thought": "Revisando el historial reciente de confirmaciones para garantizar una base de código limpia.",
+                "parent_id": "act_3",
             },
             {
                 "tool": "finish",
-                "operation": "4. Concluir tarea de Git",
+                "operation": "5. Concluir tarea de Git",
                 "arguments": {"summary": f"Operaciones de Git y control de versiones para '{goal}' completadas satisfactoriamente."},
                 "thought": "Historial y estado de Git verificados y registrados.",
+                "parent_id": "act_4",
             },
         ]
 
@@ -1331,27 +1789,39 @@ def generate_goal_tailored_steps(goal: str, max_steps: int = 6) -> List[Dict[str
             },
             {
                 "tool": "read_file",
-                "operation": f"2. Explorar archivos ({target_file})",
+                "operation": f"2. Explorar ruta obsoleta config/{key_token}.json (Hipótesis 1)",
+                "arguments": {"path": f"config/{key_token}.json"},
+                "thought": "Hipótesis 1: Probar si existe un archivo de configuración específico en config/.",
+                "parent_id": "act_1",
+                "simulate_failure": True,
+            },
+            {
+                "tool": "read_file",
+                "operation": f"3. Explorar archivos del proyecto ({target_file}) (Bifurcación)",
                 "arguments": {"path": target_file},
-                "thought": f"Inspeccionando definiciones y dependencias relevantes para resolver el objetivo '{goal}'.",
+                "thought": "Archivo de configuración previo no localizado. Retroceso a act_1 para bifurcar hacia la inspección de dependencias y configuración central.",
+                "parent_id": "act_1",
             },
             {
                 "tool": "run_command",
-                "operation": f"3. Rastrear referencias de '{key_token}'",
+                "operation": f"4. Rastrear referencias de '{key_token}'",
                 "arguments": {"command": f"git grep -i \"{key_token}\" praxeon/ || python -c \"print('Búsqueda completada')\""},
                 "thought": f"Localizando referencias y lógica relacionada con '{key_token}' en el código fuente del proyecto.",
+                "parent_id": "act_3",
             },
             {
                 "tool": "edit_file",
-                "operation": f"4. Aplicar solución para '{key_token}'",
+                "operation": f"5. Aplicar solución para '{key_token}'",
                 "arguments": {"path": target_file, "diff": f"+ # Solution implemented for: {clean_goal_snippet}"},
                 "thought": f"Implementando la solución requerida para cumplir con: '{goal}'.",
+                "parent_id": "act_4",
             },
             {
                 "tool": "finish",
-                "operation": "5. Concluir tarea",
+                "operation": "6. Concluir tarea",
                 "arguments": {"summary": f"Misión '{goal}' analizada, implementada y supervisada exitosamente."},
                 "thought": f"Todos los requerimientos de la tarea han sido cumplidos y validados por el supervisor.",
+                "parent_id": "act_5",
             },
         ]
 

@@ -5,11 +5,18 @@ from enum import Enum
 import hashlib
 import hmac
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 import uuid
 from pydantic import BaseModel, ConfigDict, Field
 
-from praxeon.domain.assessment import ProviderAssessment, RiskAssessment
+from praxeon.domain.assessment import CommandCategory, CommandRiskAssessment, ProviderAssessment, RiskAssessment
+
+
+class ExecutionMode(str, Enum):
+    """Modos canónicos de ejecución física de PRAXEON 1.0 (Sección 7.2)."""
+    CONTAINER = "container"
+    LOCAL_RESTRICTED = "local_restricted"
+    FULL_ACCESS = "full_access"
 
 
 class DecisionStatus(str, Enum):
@@ -33,6 +40,7 @@ class PolicyDecision(BaseModel):
     provider: Optional[ProviderAssessment] = None
     grounding: Optional[float] = None
     risk: Optional[RiskAssessment] = None
+    operation_assessment: Optional[CommandRiskAssessment] = None
 
 
 class DecisionReceipt(BaseModel):
@@ -45,6 +53,8 @@ class DecisionReceipt(BaseModel):
     action_id: str
     state_hash: str
     action_hash: str
+    execution_mode: str = ExecutionMode.LOCAL_RESTRICTED.value
+    actor: Optional[str] = None
     nonce: str = Field(default_factory=lambda: uuid.uuid4().hex)
     signature: Optional[str] = None
     expires_at: Optional[datetime] = None
@@ -64,6 +74,8 @@ class DecisionReceipt(BaseModel):
     risk_level: Optional[str] = None
     risk_reasons: List[str] = Field(default_factory=list)
     destructive_potential: bool = False
+    operation_category: Optional[str] = None
+    operation_assessment: Optional[Dict[str, Any]] = None
 
     # 5. Política
     decision_status: DecisionStatus = DecisionStatus.ALLOW
@@ -106,12 +118,14 @@ class DecisionReceipt(BaseModel):
             action_id=self.action_id,
             action_hash=self.action_hash,
             state_hash=self.state_hash,
+            execution_mode=self.execution_mode,
             nonce=self.nonce,
             decision_status=self.decision_status,
             allowed_tools=allowed_tools or [],
             expires_at=self.expires_at,
             signature=self.signature,
             issued_at=self.timestamp,
+            actor=self.actor,
         )
 
 
@@ -125,12 +139,14 @@ class CapabilityPayload(BaseModel):
     action_id: str
     action_hash: str
     state_hash: str
+    execution_mode: str = ExecutionMode.LOCAL_RESTRICTED.value
     nonce: str
     decision_status: DecisionStatus
     allowed_tools: List[str] = Field(default_factory=list)
     expires_at: Optional[datetime] = None
     signature: Optional[str] = None
     issued_at: datetime = Field(default_factory=datetime.utcnow)
+    actor: Optional[str] = None
 
     def is_expired(self, now: Optional[datetime] = None) -> bool:
         """Determina si el capability ha superado su ventana temporal de validez."""
@@ -149,11 +165,13 @@ def compute_receipt_signature(
     nonce: str,
     decision_status: DecisionStatus,
     expires_at: Optional[datetime] = None,
+    execution_mode: str = ExecutionMode.LOCAL_RESTRICTED.value,
 ) -> str:
     """Calcula un HMAC-SHA256 para autenticar criptográficamente la emisión del capability por PolicyEngine."""
     exp_str = expires_at.isoformat() if expires_at else "none"
     status_val = decision_status.value if isinstance(decision_status, DecisionStatus) else str(decision_status)
-    payload = f"{decision_id}:{session_id}:{action_hash}:{state_hash}:{nonce}:{status_val}:{exp_str}"
+    mode_val = execution_mode.value if isinstance(execution_mode, ExecutionMode) else str(execution_mode)
+    payload = f"{decision_id}:{session_id}:{action_hash}:{state_hash}:{nonce}:{status_val}:{exp_str}:{mode_val}"
     return hmac.new(secret_key.encode("utf-8"), payload.encode("utf-8"), hashlib.sha256).hexdigest()
 
 
@@ -168,6 +186,7 @@ def sign_receipt(receipt: DecisionReceipt, secret_key: str) -> DecisionReceipt:
         nonce=receipt.nonce,
         decision_status=receipt.decision_status,
         expires_at=receipt.expires_at,
+        execution_mode=receipt.execution_mode,
     )
     return receipt.model_copy(update={"signature": sig})
 
@@ -185,8 +204,32 @@ def verify_receipt_signature(secret_key: str, receipt: DecisionReceipt) -> bool:
         nonce=receipt.nonce,
         decision_status=receipt.decision_status,
         expires_at=receipt.expires_at,
+        execution_mode=receipt.execution_mode,
     )
     return hmac.compare_digest(receipt.signature, expected)
+
+
+def verify_capability_signature(secret_key: str, capability: Union[CapabilityPayload, Dict[str, Any]]) -> bool:
+    """Verifica de forma inmune a ataques de temporización la autenticidad del capability token emitido."""
+    if isinstance(capability, dict):
+        try:
+            capability = CapabilityPayload(**capability)
+        except Exception:
+            return False
+    if not capability.signature:
+        return False
+    expected = compute_receipt_signature(
+        secret_key=secret_key,
+        decision_id=capability.decision_id,
+        session_id=capability.session_id,
+        action_hash=capability.action_hash,
+        state_hash=capability.state_hash,
+        nonce=capability.nonce,
+        decision_status=capability.decision_status,
+        expires_at=capability.expires_at,
+        execution_mode=capability.execution_mode,
+    )
+    return hmac.compare_digest(capability.signature, expected)
 
 
 def compute_state_hash(state_dict: Any) -> str:

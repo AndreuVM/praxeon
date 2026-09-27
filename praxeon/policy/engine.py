@@ -12,9 +12,12 @@ import uuid
 
 from praxeon.domain.models import (
     ActionCandidate,
+    CommandCategory,
+    CommandRiskAssessment,
     DecisionReceipt,
     DecisionStatus,
     Evidence,
+    ExecutionMode,
     PolicyDecision,
     ProviderAssessment,
     RiskAssessment,
@@ -26,6 +29,7 @@ from praxeon.domain.models import (
 from praxeon.policy.failsafe import FailSafePolicy
 from praxeon.policy.permissions import PermissionManager
 from praxeon.policy.registry import ToolRegistry
+from praxeon.reasoning.classifier import CommandClassifier
 
 
 class PolicyEngine:
@@ -41,10 +45,12 @@ class PolicyEngine:
         min_confidence_threshold: float = 0.40,
         secret_key: Optional[str] = None,
         receipt_ttl_seconds: float = 60.0,
+        classifier: Optional[CommandClassifier] = None,
     ):
         self.registry = registry or ToolRegistry(register_defaults=True)
         self.failsafe = failsafe or FailSafePolicy()
         self.permission_manager = permission_manager or PermissionManager(registry=self.registry)
+        self.classifier = classifier or CommandClassifier()
         self.loop_threshold = loop_threshold
         self.min_grounded_threshold = min_grounded_threshold
         self.min_confidence_threshold = min_confidence_threshold
@@ -60,7 +66,9 @@ class PolicyEngine:
         forbidden_tools: Optional[Set[str]] = None,
         completion_assessment: Optional[Any] = None,
         risk_assessment: Optional[RiskAssessment] = None,
+        operation_assessment: Optional[CommandRiskAssessment] = None,
         session_id: str = "default_session",
+        execution_mode: Optional[str] = None,
     ) -> Tuple[PolicyDecision, DecisionReceipt]:
         """Evalúa una acción candidata emitiendo una decisión formal y su recibo auditable."""
         start_time = time.perf_counter()
@@ -68,10 +76,52 @@ class PolicyEngine:
         available_evidence = available_evidence or []
         evidence_claims = {ev.claim.lower().strip() for ev in available_evidence}
 
+        resolved_mode = execution_mode
+        if resolved_mode is None:
+            if isinstance(state, dict):
+                resolved_mode = state.get("metadata", {}).get("execution_mode", "local_restricted")
+            elif hasattr(state, "metadata") and isinstance(state.metadata, dict):
+                resolved_mode = state.metadata.get("execution_mode", "local_restricted")
+            else:
+                resolved_mode = "local_restricted"
+
         tool_name = action.tool_call.tool_name if action.tool_call else None
         risk: RiskAssessment = risk_assessment or self.registry.assess_risk(tool_name)
         spec = self.registry.get_tool(tool_name) if tool_name else None
         is_read_only = bool(spec.read_only) if spec else True
+
+        # Clasificación contextual de la operación concreta si no fue provista externamente
+        if operation_assessment is None:
+            op_text = ""
+            if action.tool_call:
+                args = action.tool_call.arguments or {}
+                cmd = str(args.get("command") or args.get("cmd") or args.get("raw") or "").strip()
+                if not cmd:
+                    op_text = action.tool_call.tool_name
+                elif action.tool_call.tool_name != "run_command":
+                    op_text = f"{action.tool_call.tool_name} {cmd}".strip()
+                else:
+                    op_text = cmd
+            else:
+                op_text = action.description or ""
+            operation_assessment = self.classifier.classify(
+                op_text, context=state if isinstance(state, dict) else None
+            )
+
+        if operation_assessment is not None:
+            # Desacoplamiento de la identidad de la herramienta y la semántica de la operación
+            # Si la operación concreta es de inspección o build/test de bajo riesgo,
+            # el riesgo se refina con la semántica real de la operación.
+            if operation_assessment.category in (CommandCategory.INSPECTION, CommandCategory.BUILD_TEST):
+                is_read_only = operation_assessment.read_only
+                if risk_assessment is None:
+                    risk = RiskAssessment(
+                        level=operation_assessment.risk_level,
+                        requires_confirmation=False,
+                        executable=True,
+                        destructive_potential=False,
+                        reasons=[f"Operación concreta clasificada como '{operation_assessment.category.value}' ({operation_assessment.risk_level.value})."],
+                    )
 
         reason_codes: List[str] = []
         status: Optional[DecisionStatus] = None
@@ -85,6 +135,23 @@ class PolicyEngine:
         elif tool_name and not self.registry.is_known(tool_name):
             status = DecisionStatus.BLOCK
             reason_codes.append("UNKNOWN_TOOL_NOT_REGISTERED")
+
+        # 2.5. Enforcement determinista de barreras críticas (PRIVILEGE y DESTRUCTIVE)
+        elif operation_assessment is not None and (
+            operation_assessment.category == CommandCategory.PRIVILEGE or operation_assessment.privilege_escalation
+        ):
+            status = DecisionStatus.BLOCK
+            reason_codes.append("PRIVILEGE_ESCALATION_BLOCK")
+            reason_codes.append("CRITICAL_OPERATIONAL_RISK")
+
+        elif operation_assessment is not None and (
+            operation_assessment.category == CommandCategory.DESTRUCTIVE or operation_assessment.destructive
+        ):
+            status = DecisionStatus.BLOCK
+            reason_codes.append("DESTRUCTIVE_COMMAND_BLOCK")
+            reason_codes.append("CRITICAL_OPERATIONAL_RISK")
+            if provider_assessment is not None and not provider_assessment.available:
+                reason_codes.append("PROVIDER_UNAVAILABLE_DESTRUCTIVE_BLOCK")
 
         # 3. Verificación formal de evidencia requerida (Groundedness estricto)
         elif action.requires_evidence and any(req.lower().strip() not in evidence_claims for req in action.requires_evidence):
@@ -127,6 +194,14 @@ class PolicyEngine:
                     f"LOW_PROVIDER_CONFIDENCE_ESCALATE ({provider_assessment.confidence:.2f} < {self.min_confidence_threshold:.2f})"
                 )
 
+            # Clasificación de acción destructiva o peligrosa por LAYA
+            elif "LAYA_DESTRUCTIVE_BLOCK" in provider_assessment.reason_codes or (
+                isinstance(provider_assessment.metadata, dict)
+                and provider_assessment.metadata.get("choice", {}).get("label") == "BLOCK"
+            ):
+                status = DecisionStatus.BLOCK
+                reason_codes.append("SUPERVISOR_LAYA_DESTRUCTIVE_BLOCK")
+
             # Detección de bucle o degradación cíclica
             elif (
                 provider_assessment.loop_probability is not None
@@ -136,6 +211,14 @@ class PolicyEngine:
                 reason_codes.append(
                     f"HIGH_LOOP_PROBABILITY ({provider_assessment.loop_probability:.2f} >= {self.loop_threshold})"
                 )
+
+            # Clasificación de acción innecesaria o desvío por LAYA
+            elif "LAYA_UNNECESSARY_ACTION_REPLAN" in provider_assessment.reason_codes or (
+                isinstance(provider_assessment.metadata, dict)
+                and provider_assessment.metadata.get("choice", {}).get("label") == "REPLAN"
+            ):
+                status = DecisionStatus.REPLAN
+                reason_codes.append("SUPERVISOR_LAYA_UNNECESSARY_ACTION_REPLAN")
 
             # Detección de premisa no fundamentada o alucinación semántica
             elif (
@@ -147,14 +230,44 @@ class PolicyEngine:
                     f"LOW_GROUNDED_PROBABILITY ({provider_assessment.grounded_probability:.2f} < {self.min_grounded_threshold})"
                 )
 
-        # 6. Evaluación de riesgo operacional
+        # 6. Evaluación de riesgo operacional y semántica de operación
         action_hash = compute_action_hash(action)
         state_hash = compute_state_hash(state)
+        mode_str = str(
+            resolved_mode.value if hasattr(resolved_mode, "value") else resolved_mode or ""
+        ).lower()
 
         if status is None:
             if risk.level == RiskLevel.CRITICAL:
                 status = DecisionStatus.BLOCK
                 reason_codes.append("CRITICAL_OPERATIONAL_RISK")
+            elif (
+                operation_assessment is not None
+                and operation_assessment.category in (CommandCategory.REMOTE_MUTATION, CommandCategory.NETWORK)
+            ):
+                if mode_str == "full_access":
+                    status = DecisionStatus.ALLOW
+                    reason_codes.append(f"FULL_ACCESS_{operation_assessment.category.name}_AUTHORIZED")
+                elif self.permission_manager.is_action_confirmed(action.id, action_hash=action_hash):
+                    status = DecisionStatus.ALLOW
+                    reason_codes.append("HUMAN_CONFIRMED_ACTION")
+                else:
+                    status = DecisionStatus.ABSTAIN
+                    reason_codes.append(f"{operation_assessment.category.name}_REQUIRES_CONFIRMATION")
+            elif (
+                operation_assessment is not None
+                and operation_assessment.category == CommandCategory.UNKNOWN
+            ):
+                if mode_str == "full_access":
+                    status = DecisionStatus.ALLOW
+                    reason_codes.append("FULL_ACCESS_UNKNOWN_OPERATION_AUTHORIZED")
+                elif self.permission_manager.is_action_confirmed(action.id, action_hash=action_hash):
+                    status = DecisionStatus.ALLOW
+                    reason_codes.append("HUMAN_CONFIRMED_ACTION")
+                else:
+                    # Principio fundamental: Desconocido -> REVIEW / ABSTAIN, NUNCA BLOCK ciego
+                    status = DecisionStatus.ABSTAIN
+                    reason_codes.append("UNKNOWN_OPERATION_REVIEW")
             elif risk.requires_confirmation:
                 if self.permission_manager.is_action_confirmed(action.id, action_hash=action_hash):
                     status = DecisionStatus.ALLOW
@@ -171,15 +284,28 @@ class PolicyEngine:
         confidence = provider_assessment.confidence if provider_assessment else 1.0
         grounding = provider_assessment.grounded_probability if provider_assessment else 1.0
 
+        requires_confirmation = (
+            bool(risk.requires_confirmation)
+            or (status == DecisionStatus.ABSTAIN)
+            or (
+                operation_assessment is not None
+                and operation_assessment.category in (CommandCategory.REMOTE_MUTATION, CommandCategory.NETWORK, CommandCategory.UNKNOWN)
+                and mode_str != "full_access"
+            )
+        )
+        if mode_str == "full_access" and status != DecisionStatus.BLOCK:
+            requires_confirmation = False
+
         decision = PolicyDecision(
             status=status,
             reason_codes=reason_codes,
             confidence=confidence,
             forbidden_tools=list(forbidden_tools),
-            requires_confirmation=risk.requires_confirmation,
+            requires_confirmation=requires_confirmation,
             provider=provider_assessment,
             grounding=grounding,
             risk=risk,
+            operation_assessment=operation_assessment,
         )
 
         latency_ms = (time.perf_counter() - start_time) * 1000.0
@@ -198,6 +324,7 @@ class PolicyEngine:
             nonce=nonce,
             decision_status=status,
             expires_at=expires_at,
+            execution_mode=resolved_mode,
         )
 
         receipt = DecisionReceipt(
@@ -207,6 +334,7 @@ class PolicyEngine:
             action_id=action.id,
             state_hash=state_hash,
             action_hash=action_hash,
+            execution_mode=resolved_mode,
             nonce=nonce,
             signature=signature,
             expires_at=expires_at,
@@ -224,9 +352,15 @@ class PolicyEngine:
             ),
             novelty_score=provider_assessment.novelty_probability if provider_assessment else None,
             # Riesgo
-            risk_level=risk.level.value,
+            risk_level=risk.level.value if hasattr(risk.level, "value") else str(risk.level),
             risk_reasons=risk.reasons,
             destructive_potential=getattr(risk, "destructive_potential", False),
+            operation_category=(
+                operation_assessment.category.value
+                if (operation_assessment and hasattr(operation_assessment.category, "value"))
+                else (str(operation_assessment.category) if operation_assessment else None)
+            ),
+            operation_assessment=operation_assessment.model_dump() if operation_assessment else None,
             # Política
             decision_status=status,
             reason_codes=reason_codes,

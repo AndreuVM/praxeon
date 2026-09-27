@@ -1,12 +1,75 @@
 import React from 'react';
-import { ChevronDown, User, Layers, Cpu, Play } from 'lucide-react';
+import { ChevronDown, User, Layers, Cpu, Play, Shield, AlertTriangle, Box, Terminal } from 'lucide-react';
 
 export default function Header({
   sessionId = '7f3a2c',
   runtimeActive = true,
+  executionMode = 'local_restricted',
+  operatorId = 'operator_admin',
+  operatorRole = 'operator',
   onOpenSessions,
   onOpenPropose,
 }) {
+  const getModeBadge = () => {
+    const mode = (executionMode || '').toLowerCase();
+    if (mode === 'full_access') {
+      return (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '6px',
+          padding: '3px 10px',
+          borderRadius: '9999px',
+          backgroundColor: 'rgba(239, 68, 68, 0.15)',
+          border: '1px solid rgba(239, 68, 68, 0.35)',
+          fontSize: '11px',
+          fontWeight: '700',
+          color: '#f87171',
+          letterSpacing: '0.04em',
+        }} title="Modo Host sin contención de SO ni aislamiento de procesos">
+          <AlertTriangle size={12} />
+          <span>FULL ACCESS ⚠</span>
+        </div>
+      );
+    }
+    if (mode === 'container') {
+      return (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '6px',
+          padding: '3px 10px',
+          borderRadius: '9999px',
+          backgroundColor: 'rgba(56, 189, 248, 0.12)',
+          border: '1px solid rgba(56, 189, 248, 0.3)',
+          fontSize: '11px',
+          fontWeight: '600',
+          color: '#38bdf8',
+        }} title="Aislamiento en contenedor Docker OCI">
+          <Box size={12} />
+          <span>CONTAINER</span>
+        </div>
+      );
+    }
+    return (
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '6px',
+        padding: '3px 10px',
+        borderRadius: '9999px',
+        backgroundColor: 'rgba(167, 139, 250, 0.12)',
+        border: '1px solid rgba(167, 139, 250, 0.3)',
+        fontSize: '11px',
+        fontWeight: '600',
+        color: '#c084fc',
+      }} title="Sandbox local restringido con rutas limitadas">
+        <Shield size={12} />
+        <span>LOCAL RESTRICTED</span>
+      </div>
+    );
+  };
+
   return (
     <header style={{
       height: '52px',
@@ -20,8 +83,8 @@ export default function Header({
       zIndex: 20,
     }}>
       {/* Brand & Subtitle */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <span style={{
             fontSize: '15px',
             fontWeight: '800',
@@ -31,6 +94,17 @@ export default function Header({
           }}>
             PRAXEON
           </span>
+          <span style={{
+            fontSize: '10px',
+            fontWeight: '700',
+            color: '#58a6ff',
+            backgroundColor: 'rgba(88, 166, 255, 0.15)',
+            border: '1px solid rgba(88, 166, 255, 0.3)',
+            borderRadius: '4px',
+            padding: '1px 5px',
+          }}>
+            v1.0.0
+          </span>
         </div>
 
         <span style={{
@@ -39,7 +113,7 @@ export default function Header({
           fontWeight: '400',
           letterSpacing: '0.02em',
           borderLeft: '1px solid #202735',
-          paddingLeft: '18px',
+          paddingLeft: '16px',
           fontFamily: 'var(--font-mono)',
         }}>
           Runtime supervision for autonomous AI agents
@@ -47,17 +121,20 @@ export default function Header({
       </div>
 
       {/* Right Controls */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+        {/* Execution Mode Badge */}
+        {getModeBadge()}
+
         {/* Runtime Active Badge */}
         <div style={{
           display: 'flex',
           alignItems: 'center',
           gap: '7px',
-          padding: '4px 12px',
+          padding: '4px 10px',
           borderRadius: '9999px',
           backgroundColor: runtimeActive ? 'rgba(63, 185, 80, 0.12)' : 'rgba(248, 81, 73, 0.12)',
           border: `1px solid ${runtimeActive ? 'rgba(63, 185, 80, 0.28)' : 'rgba(248, 81, 73, 0.28)'}`,
-          fontSize: '11.5px',
+          fontSize: '11px',
           fontWeight: '500',
           color: runtimeActive ? '#3fb950' : '#f85149',
         }}>
@@ -74,13 +151,13 @@ export default function Header({
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: '8px',
-            padding: '5px 12px',
+            gap: '7px',
+            padding: '4px 11px',
             borderRadius: '9999px',
             backgroundColor: '#161c26',
             border: '1px solid #242c3b',
             color: '#c9d1d9',
-            fontSize: '11.5px',
+            fontSize: '11px',
             fontWeight: '500',
             cursor: 'pointer',
             transition: 'all 0.15s ease',
@@ -95,25 +172,35 @@ export default function Header({
             e.currentTarget.style.backgroundColor = '#161c26';
           }}
         >
-          <Cpu size={13} style={{ color: '#8b949e' }} />
+          <Cpu size={12} style={{ color: '#8b949e' }} />
           <span>Session #{sessionId}</span>
-          <ChevronDown size={13} style={{ color: '#8b949e' }} />
+          <ChevronDown size={12} style={{ color: '#8b949e' }} />
         </button>
 
-        {/* User Icon */}
+        {/* Operator Role / Profile */}
         <div style={{
-          width: '28px',
-          height: '28px',
-          borderRadius: '50%',
-          backgroundColor: '#161c26',
-          border: '1px solid #242c3b',
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'center',
+          gap: '6px',
+          padding: '4px 10px',
+          borderRadius: '9999px',
+          backgroundColor: '#161c26',
+          border: '1px solid #242c3b',
+          fontSize: '11px',
           color: '#8b949e',
-          boxShadow: 'var(--shadow-clay-sm)',
         }}>
-          <User size={14} />
+          <User size={12} style={{ color: '#58a6ff' }} />
+          <span style={{ color: '#c9d1d9', fontWeight: '500' }}>{operatorId}</span>
+          <span style={{
+            fontSize: '9.5px',
+            backgroundColor: '#21262d',
+            padding: '1px 5px',
+            borderRadius: '3px',
+            color: '#8b949e',
+            textTransform: 'uppercase',
+          }}>
+            {operatorRole}
+          </span>
         </div>
       </div>
     </header>

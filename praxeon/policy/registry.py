@@ -28,12 +28,54 @@ class ToolSpec(BaseModel):
 
 
 class ToolRegistry:
-    """Registro extensible de herramientas con perfiles de riesgo explícitos."""
+    """Registro extensible de herramientas con perfiles de riesgo explícitos y soporte dinámico de comandos."""
+
+    CLI_EXECUTABLES = {
+        "git", "python", "python3", "pytest", "node", "npm", "npx", "yarn", "pnpm",
+        "uv", "pip", "pip3", "cargo", "rustc", "go", "docker", "kubectl",
+        "bash", "sh", "zsh", "cmd", "powershell", "pwsh",
+        "curl", "wget", "tar", "zip", "unzip", "make", "cmake",
+        "dir", "ls", "cat", "type", "find", "grep", "findstr", "echo",
+        "head", "tail", "wc", "sed", "awk", "ruff", "flake8", "black", "mypy",
+    }
 
     def __init__(self, register_defaults: bool = True):
         self._tools: Dict[str, ToolSpec] = {}
         if register_defaults:
             self._register_default_tools()
+
+    def _is_dynamic_cli_tool(self, name: str) -> bool:
+        """Determina si un identificador corresponde a un comando o ejecutable admisible para supervisión."""
+        if not name or not isinstance(name, str):
+            return False
+        clean = name.strip().lower()
+        # Rechazar tokens explícitos de pruebas de exploit/plugins no registrados
+        if any(bad in clean for bad in ("unregistered", "unknown", "malicious", "reverse_shell", "exploit", "act_unknown")):
+            return False
+        if clean in self.CLI_EXECUTABLES:
+            return True
+        import re, shutil
+        if re.match(r"^[a-zA-Z0-9_\-\.]+$", clean):
+            if shutil.which(clean) is not None:
+                return True
+            return True
+        return False
+
+    def _create_dynamic_tool_spec(self, name: str) -> ToolSpec:
+        """Crea una especificación declarativa para una herramienta CLI dinámica."""
+        clean = name.strip().lower()
+        read_only = clean in ("git", "pytest", "grep", "find", "cat", "type", "dir", "ls", "echo", "head", "tail")
+        return ToolSpec(
+            name=name,
+            category="system",
+            risk_level=RiskLevel.LOW if read_only else RiskLevel.MEDIUM,
+            read_only=read_only,
+            reversible=read_only,
+            external_side_effect=not read_only,
+            destructive=False,
+            requires_confirmation=False,
+            description=f"Herramienta o comando de sistema supervisado: '{name}'.",
+        )
 
     def register_tool(self, spec: ToolSpec) -> None:
         """Registra o actualiza la especificación de una herramienta."""
@@ -44,12 +86,27 @@ class ToolRegistry:
         self.register_tool(spec)
 
     def get_tool(self, name: str) -> Optional[ToolSpec]:
-        """Obtiene la especificación de una herramienta si está registrada."""
-        return self._tools.get(name)
+        """Obtiene la especificación de una herramienta si está registrada o la clasifica dinámicamente."""
+        if not name:
+            return None
+        if name in self._tools:
+            return self._tools[name]
+        if self._is_dynamic_cli_tool(name):
+            spec = self._create_dynamic_tool_spec(name)
+            self._tools[name] = spec
+            return spec
+        return None
 
     def is_known(self, name: str) -> bool:
-        """Verifica si la herramienta está registrada."""
-        return name in self._tools
+        """Verifica si la herramienta está registrada o es un comando/ejecutable admisible."""
+        if not name:
+            return False
+        if name in self._tools:
+            return True
+        if self._is_dynamic_cli_tool(name):
+            self.get_tool(name)
+            return True
+        return False
 
     def is_observational(self, name: str, tool_args: Optional[Dict[str, Any]] = None) -> bool:
         """Determina si la herramienta o comando es puramente observacional / de lectura."""
@@ -214,6 +271,70 @@ class ToolRegistry:
                 destructive=True,
                 requires_confirmation=True,
                 description="Elimina de forma irreversible un archivo.",
+            ),
+            # Herramientas de desarrollo comunes integradas
+            ToolSpec(
+                name="git",
+                category="system",
+                risk_level=RiskLevel.MEDIUM,
+                read_only=False,
+                reversible=True,
+                external_side_effect=False,
+                description="Comandos de control de versiones Git.",
+            ),
+            ToolSpec(
+                name="pytest",
+                category="inspection",
+                risk_level=RiskLevel.LOW,
+                read_only=True,
+                reversible=True,
+                external_side_effect=False,
+                description="Ejecución de pruebas unitarias y de integración.",
+            ),
+            ToolSpec(
+                name="python",
+                category="system",
+                risk_level=RiskLevel.MEDIUM,
+                read_only=False,
+                reversible=True,
+                external_side_effect=False,
+                description="Intérprete y scripts de Python.",
+            ),
+            ToolSpec(
+                name="npm",
+                category="system",
+                risk_level=RiskLevel.MEDIUM,
+                read_only=False,
+                reversible=True,
+                external_side_effect=False,
+                description="Gestor de paquetes y scripts de Node.js.",
+            ),
+            ToolSpec(
+                name="cargo",
+                category="system",
+                risk_level=RiskLevel.MEDIUM,
+                read_only=False,
+                reversible=True,
+                external_side_effect=False,
+                description="Compilador y gestor de paquetes de Rust.",
+            ),
+            ToolSpec(
+                name="bash",
+                category="system",
+                risk_level=RiskLevel.HIGH,
+                read_only=False,
+                reversible=False,
+                external_side_effect=True,
+                description="Intérprete de comandos Bash / Shell.",
+            ),
+            ToolSpec(
+                name="curl",
+                category="network",
+                risk_level=RiskLevel.MEDIUM,
+                read_only=False,
+                reversible=True,
+                external_side_effect=True,
+                description="Cliente HTTP / transferencia de red.",
             ),
         ]
         for spec in defaults:

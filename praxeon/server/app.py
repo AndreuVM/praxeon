@@ -2,6 +2,7 @@
 
 import argparse
 import os
+from typing import List, Optional
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,8 +11,51 @@ from praxeon.server.routes import api_router
 from praxeon.server.websocket import ws_router
 
 
-def create_app() -> FastAPI:
+import logging
+
+logger = logging.getLogger("praxeon.server.app")
+
+
+def validate_security_profile(profile: Optional[str] = None) -> List[str]:
+    """Valida el perfil de seguridad del runtime conforme a la Sección 8 y Sección 18 (Criterio 11)."""
+    prof = (profile or os.environ.get("PRAXEON_PROFILE") or os.environ.get("PRAXEON_ENV") or "dev").lower().strip()
+
+    if prof == "production":
+        secret = os.environ.get("PRAXEON_SECRET_KEY", "")
+        insecure_defaults = {"", "praxeon_secret_hmac_key_v1", "default", "secret", "change_me"}
+        if secret in insecure_defaults or len(secret) < 32:
+            raise ValueError(
+                "Perfil de seguridad 'production' requiere que PRAXEON_SECRET_KEY esté configurada con al menos 32 caracteres y no use claves por defecto."
+            )
+
+        cors_env = os.environ.get("PRAXEON_CORS_ORIGINS", "")
+        if not cors_env or "*" in cors_env:
+            raise ValueError(
+                "El comodín '*' o lista vacía en CORS está prohibido en perfil 'production'. Configure dominios explícitos en PRAXEON_CORS_ORIGINS."
+            )
+        origins = [o.strip() for o in cors_env.split(",") if o.strip()]
+        if not origins or "*" in origins:
+            raise ValueError(
+                "Lista de orígenes CORS inválida para producción. Especifique dominios explícitos sin comodines."
+            )
+        return origins
+
+    cors_env = os.environ.get("PRAXEON_CORS_ORIGINS")
+    if cors_env:
+        return [o.strip() for o in cors_env.split(",") if o.strip()]
+    return [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "*",
+    ]
+
+
+def create_app(profile: Optional[str] = None) -> FastAPI:
     """Crea y configura la aplicación FastAPI con rutas y middleware."""
+    origins = validate_security_profile(profile)
+
     app = FastAPI(
         title="PRAXEON Web Server",
         version="1.0.0",
@@ -20,14 +64,6 @@ def create_app() -> FastAPI:
         redoc_url="/redoc",
     )
 
-    # Configuración de CORS para permitir conexión desde la aplicación frontend (Vite/React)
-    origins = [
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "*",
-    ]
     app.add_middleware(
         CORSMiddleware,
         allow_origins=origins,

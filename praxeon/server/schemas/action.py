@@ -9,6 +9,7 @@ class ProposeActionRequest(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     action_id: Optional[str] = Field(None, description="Identificador único de la acción propuesta")
+    parent_id: Optional[str] = Field(None, description="Identificador del nodo padre en el árbol de decisión para bifurcaciones y retrocesos")
     tool: str = Field(..., description="Nombre canónico de la herramienta propuesta (ej: 'git', 'read_file')")
     operation: Optional[str] = Field(None, description="Operación específica o descripción corta (ej: 'push')")
     arguments: Dict[str, Any] = Field(default_factory=dict, description="Argumentos estructurados de la herramienta")

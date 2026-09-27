@@ -43,8 +43,10 @@ class DecisionResponse(BaseModel):
     risk: RiskDTO
     providers: List[ProviderEvaluationDTO] = Field(default_factory=list)
     policy: PolicyDTO
+    execution_mode: str = "local_restricted"
     capability: Optional[Dict[str, Any]] = None
     expires_at: Optional[datetime] = None
+    operation_assessment: Optional[Dict[str, Any]] = None
 
 
 class DecisionDetailResponse(BaseModel):
@@ -71,8 +73,18 @@ class DecisionDetailResponse(BaseModel):
 class ConfirmDecisionRequest(BaseModel):
     """Petición humana para aprobar o rechazar una decisión en espera (REVIEW)."""
     approved: bool = Field(..., description="True para autorizar la acción; False para bloquearla")
-    reason: Optional[str] = Field(None, description="Justificación u observaciones del revisor humano")
+    reason: Optional[str] = Field(None, description="Justificación u observaciones del revisor humano (obligatorio al rechazar)")
     actor: Optional[str] = Field("human_operator", description="Identidad del supervisor humano")
+    operator_id: Optional[str] = Field("operator_admin", description="ID de usuario del operador humano")
+    role: Optional[str] = Field("operator", description="Rol de autorización: 'viewer', 'operator', 'admin'")
+
+
+class RejectDecisionRequest(BaseModel):
+    """Petición explícita para rechazar una decisión en espera (REVIEW) con justificación obligatoria."""
+    reason: str = Field(..., description="Justificación obligatoria del rechazo del operador")
+    actor: Optional[str] = Field("human_operator", description="Identidad del supervisor humano")
+    operator_id: Optional[str] = Field("operator_admin", description="ID de usuario del operador humano")
+    role: Optional[str] = Field("operator", description="Rol de autorización: 'viewer', 'operator', 'admin'")
 
 
 class ConfirmDecisionResponse(BaseModel):
@@ -82,17 +94,22 @@ class ConfirmDecisionResponse(BaseModel):
     decision_id: str
     status: str  # ALLOW o BLOCKED
     message: str
+    execution_mode: Optional[str] = "local_restricted"
+    operator_id: Optional[str] = None
+    role: Optional[str] = None
     capability: Optional[Dict[str, Any]] = None
     confirmed_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 class ExecuteDecisionRequest(BaseModel):
-    """Petición para invocar la ejecución física en sandbox con capability token."""
+    """Petición para invocar la ejecución física con capability token."""
     capability_token: Optional[Dict[str, Any]] = Field(None, description="Capability token firmado emitido por el runtime")
+    operator_id: Optional[str] = Field(None, description="Identificador del operador que dispara la ejecución")
+    role: Optional[str] = Field("operator", description="Rol de autorización ('viewer', 'operator', 'admin')")
 
 
 class ExecuteDecisionResponse(BaseModel):
-    """Resultado de la ejecución física de la herramienta en sandbox."""
+    """Resultado de la ejecución física de la herramienta en sandbox o host."""
     model_config = ConfigDict(frozen=True)
 
     decision_id: str
@@ -101,6 +118,7 @@ class ExecuteDecisionResponse(BaseModel):
     success: bool
     exit_code: int = 0
     execution_time_ms: float = 0.0
-    tier: str = "local_process"  # "container", "local_process", "dry_run"
+    execution_mode: str = "local_restricted"
+    tier: str = "local_process"  # "container", "local_process", "dry_run", "full_access"
     fallback_occurred: bool = False
     is_error: bool = False

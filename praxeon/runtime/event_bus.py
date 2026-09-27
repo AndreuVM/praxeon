@@ -91,26 +91,26 @@ class EventStore:
                 self._close_conn(conn)
 
     def append(self, event: RuntimeEvent) -> RuntimeEvent:
-        """Persiste un evento asignando secuencia si no está definida."""
+        """Persiste un evento asignando secuencia de forma estrictamente atómica dentro de la transacción."""
         with self._lock:
             conn = self._get_connection()
             try:
-                cur = conn.cursor()
-                seq = event.sequence
-                if seq <= 0:
-                    cur.execute(
-                        "SELECT COALESCE(MAX(sequence), 0) + 1 FROM runtime_events WHERE session_id = ?",
-                        (event.session_id,),
-                    )
-                    row = cur.fetchone()
-                    seq = int(row[0]) if row else 1
-
-                event_to_save = event.model_copy(update={"sequence": seq}) if seq != event.sequence else event
-                payload_json = json.dumps(event_to_save.payload, default=str)
-                type_val = event_to_save.type.value if isinstance(event_to_save.type, EventType) else str(event_to_save.type)
-                ts_str = event_to_save.timestamp.isoformat()
-
                 with conn:
+                    cur = conn.cursor()
+                    seq = event.sequence
+                    if seq <= 0:
+                        cur.execute(
+                            "SELECT COALESCE(MAX(sequence), 0) + 1 FROM runtime_events WHERE session_id = ?",
+                            (event.session_id,),
+                        )
+                        row = cur.fetchone()
+                        seq = int(row[0]) if row else 1
+
+                    event_to_save = event.model_copy(update={"sequence": seq}) if seq != event.sequence else event
+                    payload_json = json.dumps(event_to_save.payload, default=str)
+                    type_val = event_to_save.type.value if isinstance(event_to_save.type, EventType) else str(event_to_save.type)
+                    ts_str = event_to_save.timestamp.isoformat()
+
                     cur.execute(
                         """
                         INSERT INTO runtime_events (
@@ -133,6 +133,27 @@ class EventStore:
                 return event_to_save
             finally:
                 self._close_conn(conn)
+
+    def append_new(
+        self,
+        session_id: str,
+        type: EventType,
+        payload: Dict[str, Any],
+        parent_id: Optional[str] = None,
+        node_id: Optional[str] = None,
+        decision_id: Optional[str] = None,
+    ) -> RuntimeEvent:
+        """Crea y persiste un nuevo evento asignando sequence estrictamente atómico en la transacción (Sección 4.3)."""
+        ev = make_event(
+            session_id=session_id,
+            sequence=0,
+            event_type=type,
+            node_id=node_id,
+            parent_id=parent_id,
+            decision_id=decision_id,
+            payload=payload,
+        )
+        return self.append(ev)
 
     def get_events(
         self,
@@ -193,6 +214,15 @@ class EventStore:
             finally:
                 self._close_conn(conn)
 
+    def get_events_after(
+        self,
+        session_id: str,
+        after_sequence: int = 0,
+        limit: int = 500,
+    ) -> List[RuntimeEvent]:
+        """Alias explícito para recuperación de eventos posteriores a una secuencia (gap recovery)."""
+        return self.get_events(session_id, after_sequence=after_sequence, limit=limit)
+
     def get_all_events(self, session_id: str) -> List[RuntimeEvent]:
         """Devuelve el stream completo de eventos para una sesión."""
         return self.get_events(session_id, after_sequence=0, limit=100_000)
@@ -220,6 +250,7 @@ class EventBus:
         self._subscribers: Set[Callable[[RuntimeEvent], Any]] = set()
         self._session_subscribers: Dict[str, Set[Callable[[RuntimeEvent], Any]]] = {}
         self._async_queues: Set[asyncio.Queue] = set()
+        self._async_session_queues: Dict[str, Set[asyncio.Queue]] = {}
         self._lock = threading.Lock()
 
     @classmethod
@@ -257,13 +288,26 @@ class EventBus:
 
         return unsubscribe
 
-    def register_async_queue(self, queue: asyncio.Queue) -> Callable[[], None]:
-        """Registra una asyncio.Queue para streaming WebSocket o SSE."""
+    def register_async_queue(
+        self,
+        queue: asyncio.Queue,
+        session_id: Optional[str] = None,
+    ) -> Callable[[], None]:
+        """Registra una asyncio.Queue para streaming WebSocket o SSE con aislamiento por sesión."""
         with self._lock:
-            self._async_queues.add(queue)
+            if session_id:
+                if session_id not in self._async_session_queues:
+                    self._async_session_queues[session_id] = set()
+                self._async_session_queues[session_id].add(queue)
+            else:
+                self._async_queues.add(queue)
 
         def unregister():
             with self._lock:
+                if session_id and session_id in self._async_session_queues:
+                    self._async_session_queues[session_id].discard(queue)
+                    if not self._async_session_queues[session_id]:
+                        del self._async_session_queues[session_id]
                 self._async_queues.discard(queue)
 
         return unregister
@@ -277,11 +321,10 @@ class EventBus:
         decision_id: Optional[str] = None,
         payload: Optional[Dict[str, Any]] = None,
     ) -> RuntimeEvent:
-        """Crea, numera monótonamente, persiste y distribuye un nuevo evento."""
-        seq = self.store.next_sequence(session_id)
+        """Crea, numera atómicamente, persiste y distribuye un nuevo evento."""
         ev = make_event(
             session_id=session_id,
-            sequence=seq,
+            sequence=0,
             event_type=event_type,
             node_id=node_id,
             parent_id=parent_id,
@@ -292,7 +335,7 @@ class EventBus:
 
     def publish(self, event: RuntimeEvent) -> RuntimeEvent:
         """Persiste y despacha el evento a todos los suscriptores registrados."""
-        # 1. Persistencia durable
+        # 1. Persistencia durable (asigna sequence atómicamente si venía en 0)
         persisted_event = self.store.append(event)
 
         # 2. Despacho a callbacks en memoria
@@ -302,6 +345,8 @@ class EventBus:
             if persisted_event.session_id in self._session_subscribers:
                 targets.update(self._session_subscribers[persisted_event.session_id])
             async_queues = list(self._async_queues)
+            if persisted_event.session_id in self._async_session_queues:
+                async_queues.extend(self._async_session_queues[persisted_event.session_id])
 
         for cb in targets:
             try:
@@ -320,6 +365,10 @@ class EventBus:
 
     def get_events(self, session_id: str, after_sequence: int = 0, limit: int = 500) -> List[RuntimeEvent]:
         return self.store.get_events(session_id, after_sequence=after_sequence, limit=limit)
+
+    def get_events_after(self, session_id: str, after_sequence: int = 0, limit: int = 500) -> List[RuntimeEvent]:
+        """Recupera eventos para gap recovery tras reconexión."""
+        return self.store.get_events_after(session_id, after_sequence=after_sequence, limit=limit)
 
     def get_all_events(self, session_id: str) -> List[RuntimeEvent]:
         return self.store.get_all_events(session_id)

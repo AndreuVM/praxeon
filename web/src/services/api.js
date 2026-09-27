@@ -78,22 +78,42 @@ export async function fetchDecisionDetail(decisionId) {
   }
 }
 
-export async function confirmDecision(decisionId, approved = true, operatorId = 'operator_ui', notes = '') {
+export async function confirmDecision(decisionId, approved = true, reason = '', operatorId = 'operator_admin', role = 'operator') {
   const res = await fetch(`${API_BASE}/decisions/${decisionId}/confirm`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       approved,
+      reason: reason || (approved ? 'Authorized from Decision Inspector' : 'Rechazado por operador'),
       operator_id: operatorId,
-      notes: notes || (approved ? 'Authorized from Decision Inspector' : 'Rejected from Decision Inspector'),
+      role: role,
     }),
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
   return await res.json();
 }
 
-export async function executeDecision(decisionId, capability = null) {
-  const payload = capability ? { capability } : {};
+export async function rejectDecision(decisionId, reason = 'Rechazado por operador', operatorId = 'operator_admin', role = 'operator') {
+  const res = await fetch(`${API_BASE}/decisions/${decisionId}/reject`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      reason: reason || 'Rechazado por operador',
+      operator_id: operatorId,
+      role: role,
+    }),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+  return await res.json();
+}
+
+export async function executeDecision(decisionId, capability = null, operatorId = 'operator_admin', role = 'operator') {
+  const capToken = capability?.token || capability;
+  const payload = {
+    capability_token: capToken || undefined,
+    operator_id: operatorId,
+    role: role,
+  };
   const res = await fetch(`${API_BASE}/decisions/${decisionId}/execute`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -117,24 +137,25 @@ export async function fetchEvents(sessionId, page = 1, pageSize = 50, afterSeque
 
 /**
  * Establece conexión WebSocket con el canal de streaming de la sesión.
+ * Soporta gap recovery transparente pasando after_sequence.
  */
-export function createWebSocketStream(sessionId, onMessage, onStatusChange) {
+export function createWebSocketStream(sessionId, onMessage, onStatusChange, getLastSequence = () => 0) {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const wsUrl = `${protocol}//${window.location.host}/v1/sessions/${sessionId}/stream`;
-
   let ws = null;
   let isClosedManually = false;
   let reconnectTimer = null;
 
   function connect() {
     try {
+      const lastSeq = typeof getLastSequence === 'function' ? (getLastSequence() || 0) : (getLastSequence || 0);
+      const wsUrl = `${protocol}//${window.location.host}/v1/sessions/${sessionId}/stream?after_sequence=${lastSeq}`;
       ws = new WebSocket(wsUrl);
       onStatusChange?.('connecting');
 
       ws.onopen = () => {
         onStatusChange?.('connected');
         // Mensaje de inicialización / sync compatible con el servidor
-        ws.send(JSON.stringify({ action: 'sync', after_sequence: 0 }));
+        ws.send(JSON.stringify({ action: 'sync', after_sequence: lastSeq }));
       };
 
       ws.onmessage = (event) => {

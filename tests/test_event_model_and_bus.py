@@ -65,7 +65,8 @@ def test_fifteen_canonical_event_types():
         "session.completed",
     }
     actual_types = {e.value for e in EventType}
-    assert expected_types == actual_types
+    assert expected_types.issubset(actual_types)
+    assert EventType.INTERVENTION_APPLIED.value == "intervention.applied"
 
 
 def test_runtime_event_schema_and_serialization():
@@ -325,3 +326,50 @@ def test_proxy_middleware_event_bus_integration(tmp_path):
     tree = reduce_events_to_tree(events_after_exec, session_id=session_id)
     assert tree.node_count >= 3
     assert len(tree.edges) >= 2
+
+
+def test_event_store_high_concurrency_stress(tmp_path):
+    """Fase 1: Prueba de estrés de 300 a 400 eventos concurrentes con secuencias monótonas garantizadas."""
+    import concurrent.futures
+
+    db_file = str(tmp_path / "stress_events.db")
+    store = EventStore(db_path=db_file)
+    session_id = "s-stress-concurrent"
+    session_parallel = "s-stress-parallel"
+
+    total_events_main = 300
+    total_events_parallel = 100
+
+    def insert_event(sid: str, idx: int):
+        return store.append_new(
+            session_id=sid,
+            type=EventType.ACTION_PROPOSED,
+            node_id=f"act_{idx}",
+            payload={"index": idx},
+        )
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=16) as executor:
+        futures = []
+        for i in range(total_events_main):
+            futures.append(executor.submit(insert_event, session_id, i))
+        for j in range(total_events_parallel):
+            futures.append(executor.submit(insert_event, session_parallel, j))
+
+        for f in concurrent.futures.as_completed(futures):
+            ev = f.result()
+            assert ev is not None
+            assert ev.sequence > 0
+
+    # Verificar sesión principal: exactamente 300 eventos con secuencias 1..300 sin colisiones ni huecos
+    events_main = store.get_all_events(session_id)
+    assert len(events_main) == total_events_main
+    sequences_main = [e.sequence for e in events_main]
+    assert sequences_main == list(range(1, total_events_main + 1))
+    assert len(set(sequences_main)) == total_events_main
+
+    # Verificar sesión paralela: exactamente 100 eventos con secuencias 1..100 sin colisiones ni huecos
+    events_parallel = store.get_all_events(session_parallel)
+    assert len(events_parallel) == total_events_parallel
+    sequences_parallel = [e.sequence for e in events_parallel]
+    assert sequences_parallel == list(range(1, total_events_parallel + 1))
+    assert len(set(sequences_parallel)) == total_events_parallel

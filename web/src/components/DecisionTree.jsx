@@ -12,6 +12,7 @@ import {
   Sparkles,
   GitBranch,
   RefreshCw,
+  RotateCcw,
 } from 'lucide-react';
 
 export default function DecisionTree({
@@ -101,6 +102,9 @@ export default function DecisionTree({
       } else if (node.status === 'BLOCK') {
         strokeColor = 'rgba(239, 68, 68, 0.7)';
         particleColor = '#f87171';
+      } else if (node.status === 'REPLAN') {
+        strokeColor = 'rgba(168, 85, 247, 0.75)';
+        particleColor = '#c084fc';
       } else if (node.status === 'EXECUTING') {
         strokeColor = 'rgba(56, 189, 248, 0.85)';
         particleColor = '#38bdf8';
@@ -176,6 +180,13 @@ export default function DecisionTree({
       iconColor = '#fbbf24';
       borderColor = 'rgba(245, 158, 11, 0.28)';
       bg = '#1c1b18';
+    } else if (node.status === 'REPLAN') {
+      icon = RotateCcw;
+      iconBg = 'rgba(168, 85, 247, 0.2)';
+      iconBorder = 'rgba(168, 85, 247, 0.4)';
+      iconColor = '#c084fc';
+      borderColor = 'rgba(168, 85, 247, 0.35)';
+      bg = '#181424';
     } else if (node.status === 'PENDING') {
       icon = Clock;
       iconBg = 'rgba(100, 116, 139, 0.2)';

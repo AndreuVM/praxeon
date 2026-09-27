@@ -37,12 +37,13 @@ def serialize_payload_value(val: Any) -> Any:
 
 
 class EventType(str, Enum):
-    """Los 15 tipos canónicos de eventos emitidos por el runtime PRAXEON (Sección 4.1)."""
+    """Tipos canónicos de eventos emitidos por el runtime PRAXEON (Sección 4.1) más intervenciones."""
     SESSION_STARTED = "session.started"
     GOAL_CREATED = "goal.created"
     ACTION_PROPOSED = "action.proposed"
     EVIDENCE_EVALUATED = "evidence.evaluated"
     RISK_ASSESSED = "risk.assessed"
+    OPERATION_CLASSIFIED = "operation.classified"
     PROVIDER_EVALUATED = "provider.evaluated"
     POLICY_DECIDED = "policy.decided"
     CAPABILITY_ISSUED = "capability.issued"
@@ -52,6 +53,7 @@ class EventType(str, Enum):
     APPROVAL_REQUESTED = "approval.requested"
     APPROVAL_COMPLETED = "approval.completed"
     DECISION_PRUNED = "decision.pruned"
+    INTERVENTION_APPLIED = "intervention.applied"
     SESSION_COMPLETED = "session.completed"
 
 

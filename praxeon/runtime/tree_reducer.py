@@ -52,7 +52,13 @@ class TreeReducer:
 
     def apply_event(self, event: RuntimeEvent) -> DecisionTree:
         """Aplica un evento individual al árbol de forma determinista."""
-        ev_type = event.type if isinstance(event.type, EventType) else EventType(event.type)
+        if isinstance(event.type, EventType):
+            ev_type = event.type
+        else:
+            try:
+                ev_type = EventType(event.type)
+            except Exception:
+                ev_type = str(event.type)
 
         if ev_type == EventType.SESSION_STARTED:
             self._handle_session_started(event)
@@ -82,6 +88,8 @@ class TreeReducer:
             self._handle_approval_completed(event)
         elif ev_type == EventType.DECISION_PRUNED:
             self._handle_decision_pruned(event)
+        elif ev_type == EventType.INTERVENTION_APPLIED or str(ev_type) == "intervention.applied":
+            self._handle_intervention_applied(event)
         elif ev_type == EventType.SESSION_COMPLETED:
             self._handle_session_completed(event)
 
@@ -119,7 +127,7 @@ class TreeReducer:
 
     def _handle_action_proposed(self, event: RuntimeEvent) -> None:
         node_id = event.node_id or f"node_{event.payload.get('action_id', event.sequence)}"
-        parent_id = event.parent_id or self._last_step_node_id or self.tree.root_id
+        parent_id = event.parent_id or event.payload.get("parent_id") or self._last_step_node_id or self.tree.root_id
 
         # Determinar etiqueta amigable adaptada a la demo
         tool = event.payload.get("tool") or ""
@@ -141,7 +149,13 @@ class TreeReducer:
         )
         self.tree.add_node(node)
         if parent_id and parent_id != node_id:
-            self.tree.add_edge(parent_id, node_id, edge_type="sequence")
+            # Detectar si el nodo padre ya tiene otros hijos (bifurcación en el árbol)
+            existing_children = [
+                edge.target_id for edge in self.tree.edges
+                if edge.source_id == parent_id
+            ]
+            edge_type = "branch" if len(existing_children) > 0 else "sequence"
+            self.tree.add_edge(parent_id, node_id, edge_type=edge_type)
 
         self._last_step_node_id = node_id
 
@@ -226,6 +240,11 @@ class TreeReducer:
                 ended_at=event.timestamp,
                 metadata={"execution": event.payload},
             )
+            # Si la ejecución falló, retroceder al padre para bifurcar en el siguiente paso
+            if not success:
+                pid = self.tree.nodes[target_id].parent_id
+                if pid:
+                    self._last_step_node_id = pid
 
     def _handle_observation_recorded(self, event: RuntimeEvent) -> None:
         target_id = event.node_id or self._last_step_node_id
@@ -253,6 +272,10 @@ class TreeReducer:
                 status=NodeStatus.ALLOW if approved else NodeStatus.BLOCKED,
                 metadata={"approval_completed": event.payload},
             )
+            if not approved:
+                pid = self.tree.nodes[target_id].parent_id
+                if pid:
+                    self._last_step_node_id = pid
 
     def _handle_decision_pruned(self, event: RuntimeEvent) -> None:
         target_id = event.node_id or self._last_step_node_id
@@ -262,6 +285,21 @@ class TreeReducer:
                 status=NodeStatus.PRUNED,
                 metadata={"prune_reason": event.payload.get("reason")},
             )
+            # En caso de poda, retroceder al padre del nodo podado para explorar rama alternativa
+            pid = self.tree.nodes[target_id].parent_id
+            if pid:
+                self._last_step_node_id = pid
+
+    def _handle_intervention_applied(self, event: RuntimeEvent) -> None:
+        target_id = event.node_id or self._last_step_node_id
+        backtrack_to = event.payload.get("backtrack_to")
+        if target_id and target_id in self.tree.nodes:
+            self.tree.update_node(
+                target_id,
+                metadata={"intervention": event.payload},
+            )
+        if backtrack_to and backtrack_to in self.tree.nodes:
+            self._last_step_node_id = backtrack_to
 
     def _handle_session_completed(self, event: RuntimeEvent) -> None:
         # Registrar finalización en metadata del árbol

@@ -4,15 +4,24 @@ Re-exporta todas las entidades puras e inmutables organizadas modularmente en el
 """
 
 from praxeon.domain.action import ActionCandidate, ToolCall, compute_action_hash
-from praxeon.domain.assessment import ProviderAssessment, RiskAssessment, RiskLevel
+from praxeon.domain.assessment import (
+    CommandCategory,
+    CommandRiskAssessment,
+    ProviderAssessment,
+    RiskAssessment,
+    RiskLevel,
+)
 from praxeon.domain.checkpoint import Checkpoint, ExecutionEnvironment
 from praxeon.domain.decision import (
+    CapabilityPayload,
     DecisionReceipt,
     DecisionStatus,
+    ExecutionMode,
     PolicyDecision,
     compute_receipt_signature,
     compute_state_hash,
     sign_receipt,
+    verify_capability_signature,
     verify_receipt_signature,
 )
 from praxeon.domain.evidence import Claim, Evidence
@@ -34,11 +43,16 @@ __all__ = [
     "ProviderAssessment",
     "RiskLevel",
     "RiskAssessment",
+    "CommandCategory",
+    "CommandRiskAssessment",
+    "ExecutionMode",
+    "CapabilityPayload",
     "DecisionStatus",
     "PolicyDecision",
     "DecisionReceipt",
     "compute_receipt_signature",
     "verify_receipt_signature",
+    "verify_capability_signature",
     "compute_state_hash",
     "Checkpoint",
     "ExecutionEnvironment",

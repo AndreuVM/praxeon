@@ -16,6 +16,7 @@ from praxeon.domain.decision import (
     compute_state_hash,
     DecisionReceipt,
     DecisionStatus,
+    ExecutionMode,
     PolicyDecision,
     verify_receipt_signature,
 )
@@ -23,8 +24,15 @@ from praxeon.domain.interfaces import Executor
 from praxeon.domain.models import ActionCandidate
 from praxeon.policy.risk import ToolRegistry
 from praxeon.policy.sanitizer import DataSanitizer
+from praxeon.runtime.full_access import FullAccessExecutor
 from praxeon.runtime.nonce_store import InMemoryNonceStore, NonceStore
-from praxeon.runtime.sandbox import DryRunSandbox, LocalProcessSandbox, SandboxAdapter
+from praxeon.runtime.sandbox import (
+    ContainerSandboxAdapter,
+    ContainerSandboxConfig,
+    DryRunSandbox,
+    LocalProcessSandbox,
+    SandboxAdapter,
+)
 from praxeon.runtime.state import SessionState
 
 
@@ -34,7 +42,7 @@ class PolicyViolation(Exception):
     def __init__(
         self,
         message: str,
-        action: ActionCandidate,
+        action: Optional[ActionCandidate] = None,
         decision: Optional[PolicyDecision] = None,
         receipt: Optional[DecisionReceipt] = None,
     ):
@@ -67,6 +75,8 @@ class SecureExecutor(Executor):
         strict_capability: bool = True,
         secret_key: Optional[str] = None,
         nonce_store: Optional[NonceStore] = None,
+        full_access_executor: Optional[FullAccessExecutor] = None,
+        allow_full_access: bool = True,
     ):
         self.registry = registry or ToolRegistry(register_defaults=True)
         self.dry_run = dry_run
@@ -78,6 +88,9 @@ class SecureExecutor(Executor):
         self.strict_capability = strict_capability
         self.secret_key = secret_key
         self.nonce_store = nonce_store if nonce_store is not None else InMemoryNonceStore()
+        self.full_access_executor = full_access_executor or FullAccessExecutor()
+        self.allow_full_access = allow_full_access
+        self.container_sandbox: Optional[ContainerSandboxAdapter] = None
         self._consumed_receipts: Set[str] = set()
         self._custom_handlers: Dict[str, Callable[[Dict[str, Any]], str]] = {}
 
@@ -207,6 +220,30 @@ class SecureExecutor(Executor):
                     receipt=receipt,
                 )
 
+            # Verificar modo de ejecución y ligadura contextual (PRAXEON 1.0 Sección 7 y 8)
+            receipt_mode = getattr(receipt, "execution_mode", ExecutionMode.LOCAL_RESTRICTED.value)
+            session_mode = state.metadata.get("execution_mode", ExecutionMode.LOCAL_RESTRICTED.value)
+            if receipt_mode != session_mode:
+                raise PolicyViolation(
+                    f"Ejecución física DENEGADA para '{tool_name}': Mismatch de ExecutionMode. "
+                    f"El capability fue firmado para '{receipt_mode}' pero la sesión requiere '{session_mode}'. "
+                    "Cualquier intento de elevación o alteración de entorno anula la autorización.",
+                    action=action,
+                    decision=decision,
+                    receipt=receipt,
+                )
+
+            # Gate de política para FULL_ACCESS
+            if receipt_mode == ExecutionMode.FULL_ACCESS.value:
+                if not self.allow_full_access:
+                    raise PolicyViolation(
+                        f"Ejecución física DENEGADA para '{tool_name}': El modo FULL_ACCESS está deshabilitado "
+                        "en este servidor/entorno por política de seguridad.",
+                        action=action,
+                        decision=decision,
+                        receipt=receipt,
+                    )
+
             # Registrar en conjunto local
             self._consumed_receipts.add(receipt.decision_id)
 
@@ -260,9 +297,33 @@ class SecureExecutor(Executor):
                     is_error=True,
                 )
 
-        # 6. Ejecución física contenida dentro del SandboxAdapter
+        # 6. Ejecución física según el ExecutionMode resuelto
         start_t = time.perf_counter()
-        raw_output, success, is_error = self._execute_builtin_tool_in_sandbox(tool_name, tool_args)
+        resolved_mode = (
+            getattr(receipt, "execution_mode", state.metadata.get("execution_mode", ExecutionMode.LOCAL_RESTRICTED.value))
+            if receipt
+            else state.metadata.get("execution_mode", ExecutionMode.LOCAL_RESTRICTED.value)
+        )
+
+        if resolved_mode == ExecutionMode.FULL_ACCESS.value:
+            fa_res = self.full_access_executor.execute_tool(
+                tool_name=tool_name,
+                arguments=tool_args,
+                context={
+                    "working_directory": state.metadata.get("working_directory"),
+                    "session_id": state.session_id,
+                },
+            )
+            raw_output, success, is_error = fa_res.output, fa_res.success, fa_res.is_error
+        elif resolved_mode == ExecutionMode.CONTAINER.value:
+            if self.container_sandbox is None:
+                self.container_sandbox = ContainerSandboxAdapter(
+                    config=ContainerSandboxConfig(fallback_to_local=False)
+                )
+            raw_output, success, is_error = self._execute_builtin_tool_in_container(tool_name, tool_args)
+        else:
+            raw_output, success, is_error = self._execute_builtin_tool_in_sandbox(tool_name, tool_args)
+
         elapsed = (time.perf_counter() - start_t) * 1000.0
 
         # Aplicar redacción de secretos y límite de payload configurado
@@ -295,8 +356,51 @@ class SecureExecutor(Executor):
             res = self.sandbox.execute_command(cmd)
             return res.output, res.success, res.is_error
 
-        elif tool_name == "finish":
-            summary = str(args.get("summary") or "Tarea completada.")
+        elif tool_name in ("finish", "complete_task", "done", "complete", "task_completed"):
+            summary = str(args.get("summary") or args.get("final_answer") or args.get("output") or "Tarea completada.").strip()
             return f"Tarea concluida: {summary}", True, False
 
+        # Herramientas o comandos de sistema autorizados (git, pytest, python, npm, etc.)
+        elif self.registry.is_known(tool_name):
+            cmd_args = str(args.get("command") or args.get("cmd") or args.get("raw") or "").strip()
+            full_cmd = f"{tool_name} {cmd_args}".strip() if cmd_args else tool_name
+            res = self.sandbox.execute_command(full_cmd)
+            return res.output, res.success, res.is_error
+
         return f"Herramienta '{tool_name}' sin controlador físico implementado en sandbox.", False, True
+
+    def _execute_builtin_tool_in_container(self, tool_name: str, args: Dict[str, Any]) -> tuple[str, bool, bool]:
+        """Ejecuta controladores en ContainerSandboxAdapter sin permitir fallback silencioso a Full Access."""
+        if self.container_sandbox is None:
+            self.container_sandbox = ContainerSandboxAdapter(
+                config=ContainerSandboxConfig(fallback_to_local=False)
+            )
+
+        if tool_name in ("read_file", "view_file"):
+            path = str(args.get("path") or args.get("file") or "").strip()
+            res = self.container_sandbox.read_file(path)
+            return res.output, res.success, res.is_error
+
+        elif tool_name == "edit_file":
+            path = str(args.get("path") or "").strip()
+            content = str(args.get("content") or "").strip()
+            res = self.container_sandbox.edit_file(path, content)
+            return res.output, res.success, res.is_error
+
+        elif tool_name == "run_command":
+            cmd = str(args.get("command") or args.get("cmd") or "").strip()
+            res = self.container_sandbox.execute_command(cmd)
+            return res.output, res.success, res.is_error
+
+        elif tool_name in ("finish", "complete_task", "done", "complete", "task_completed"):
+            summary = str(args.get("summary") or args.get("final_answer") or args.get("output") or "Tarea completada.").strip()
+            return f"Tarea concluida: {summary}", True, False
+
+        # Herramientas o comandos de sistema autorizados en container
+        elif self.registry.is_known(tool_name):
+            cmd_args = str(args.get("command") or args.get("cmd") or args.get("raw") or "").strip()
+            full_cmd = f"{tool_name} {cmd_args}".strip() if cmd_args else tool_name
+            res = self.container_sandbox.execute_command(full_cmd)
+            return res.output, res.success, res.is_error
+
+        return f"Herramienta '{tool_name}' sin controlador en container.", False, True

@@ -12,6 +12,7 @@ import {
   ExternalLink,
   ChevronRight,
   Play,
+  RotateCcw,
 } from 'lucide-react';
 
 export default function DecisionInspector({
@@ -23,6 +24,8 @@ export default function DecisionInspector({
   const [activeTab, setActiveTab] = useState('decision');
   const [copied, setCopied] = useState(false);
   const [isConfirming, setIsConfirming] = useState(false);
+  const [isRejecting, setIsRejecting] = useState(false);
+  const [rejectionReason, setRejectionReason] = useState('');
 
   if (!decision) {
     return (
@@ -71,9 +74,21 @@ export default function DecisionInspector({
     reason = 'High risk action requires confirmation according to policy rules.',
     evidenceTab = {},
     receiptTab = {},
+    decisionTab = {},
     relatedDecisions = [],
     observationOutput = null,
   } = decision;
+
+  const rawDecisionTab = decision.decisionTab || decision.decision_tab || {};
+  const opAssessment = rawDecisionTab.operation_assessment || decision.operation_assessment || decision.operationAssessment || null;
+  const opCategory = (rawDecisionTab.operation_category || decision.operation_category || opAssessment?.category || 'inspection').toLowerCase();
+  const executionMode = rawDecisionTab.execution_mode || decision.execution_mode || decision.executionMode || 'local_restricted';
+  const isolation = rawDecisionTab.isolation || (executionMode === 'full_access' ? 'None (Host OS)' : 'Active');
+  const workingDirectory = rawDecisionTab.working_directory || '/workspace';
+  const networkMode = rawDecisionTab.network_mode || (executionMode === 'full_access' ? 'Host Direct' : 'Isolated (Restricted)');
+  const executionBackend = rawDecisionTab.execution_backend || (
+    executionMode === 'full_access' ? 'FullAccessExecutor' : (executionMode === 'container' ? 'DockerContainer' : 'LocalProcessSandbox')
+  );
 
   const handleCopyCommand = () => {
     navigator.clipboard?.writeText(actionCommand);
@@ -95,6 +110,28 @@ export default function DecisionInspector({
         <span className="badge badge-warning">
           <AlertTriangle size={11} strokeWidth={2.3} />
           REVIEW
+        </span>
+      );
+    }
+    if (status === 'REPLAN') {
+      return (
+        <span
+          className="badge"
+          style={{
+            backgroundColor: 'rgba(168, 85, 247, 0.15)',
+            color: '#c084fc',
+            border: '1px solid rgba(168, 85, 247, 0.35)',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '4px',
+            padding: '2px 8px',
+            borderRadius: '4px',
+            fontSize: '11px',
+            fontWeight: 600,
+          }}
+        >
+          <RotateCcw size={11} strokeWidth={2.5} />
+          REPLAN (PODA)
         </span>
       );
     }
@@ -319,6 +356,110 @@ export default function DecisionInspector({
               </div>
             </div>
 
+            {/* Command Classification Card (Sección 4 y 5) */}
+            <div style={{
+              backgroundColor: opCategory === 'destructive' || opCategory === 'privilege'
+                ? 'rgba(239, 68, 68, 0.08)'
+                : (opCategory === 'unknown' ? 'rgba(245, 158, 11, 0.08)' : '#0f1520'),
+              borderRadius: '6px',
+              padding: '10px 12px',
+              border: `1px solid ${
+                opCategory === 'destructive' || opCategory === 'privilege'
+                  ? 'rgba(239, 68, 68, 0.35)'
+                  : (opCategory === 'unknown' ? 'rgba(245, 158, 11, 0.35)' : '#1a2434')
+              }`,
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                <span style={{ fontSize: '11px', color: '#8595a8', fontWeight: '700' }}>
+                  Command Classification
+                </span>
+                <span style={{
+                  fontSize: '9.5px',
+                  fontWeight: '700',
+                  padding: '2px 6px',
+                  borderRadius: '4px',
+                  backgroundColor: opCategory === 'destructive' || opCategory === 'privilege'
+                    ? '#ef4444'
+                    : (opCategory === 'unknown' ? '#f59e0b' : (opCategory === 'inspection' || opCategory === 'build_test' ? '#10b981' : '#38bdf8')),
+                  color: '#ffffff',
+                  textTransform: 'uppercase',
+                }}>
+                  {opCategory}
+                </span>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', fontSize: '11px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: '#64748b' }}>Read-only</span>
+                  <span style={{ color: opAssessment?.read_only ? '#34d399' : '#94a3b8', fontWeight: '600' }}>
+                    {opAssessment?.read_only ? 'Yes' : 'No'}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: '#64748b' }}>Reversible</span>
+                  <span style={{ color: opAssessment?.reversible ? '#34d399' : '#f87171', fontWeight: '600' }}>
+                    {opAssessment?.reversible ? 'Yes' : 'No'}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: '#64748b' }}>Network Access</span>
+                  <span style={{ color: opAssessment?.network_access ? '#fbbf24' : '#64748b' }}>
+                    {opAssessment?.network_access ? 'Required' : 'None'}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: '#64748b' }}>Confidence / Classifier</span>
+                  <span style={{ color: '#f0f6fc' }}>
+                    {opAssessment ? `${Math.round((opAssessment.confidence || 0) * 100)}% (${opAssessment.classifier || 'rule'})` : '100% (deterministic)'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Execution Environment Subsection */}
+            <div style={{
+              backgroundColor: executionMode === 'full_access' ? 'rgba(239, 68, 68, 0.08)' : '#0f1520',
+              borderRadius: '6px',
+              padding: '10px 12px',
+              border: `1px solid ${executionMode === 'full_access' ? 'rgba(239, 68, 68, 0.35)' : '#1a2434'}`,
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                <span style={{ fontSize: '11px', color: executionMode === 'full_access' ? '#f87171' : '#8595a8', fontWeight: '700' }}>
+                  Execution Environment
+                </span>
+                <span style={{
+                  fontSize: '9.5px',
+                  fontWeight: '700',
+                  padding: '1px 6px',
+                  borderRadius: '4px',
+                  backgroundColor: executionMode === 'full_access' ? '#ef4444' : (executionMode === 'container' ? '#38bdf8' : '#8b5cf6'),
+                  color: '#ffffff',
+                  textTransform: 'uppercase',
+                }}>
+                  {executionMode}
+                </span>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', fontSize: '11px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: '#64748b' }}>Isolation</span>
+                  <span style={{ color: executionMode === 'full_access' ? '#f87171' : '#34d399', fontWeight: '600' }}>{isolation}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: '#64748b' }}>Working Dir</span>
+                  <span style={{ color: '#c9d1d9', fontFamily: 'var(--font-mono)', fontSize: '10px' }} title={workingDirectory}>
+                    {workingDirectory.length > 25 ? '...' + workingDirectory.slice(-22) : workingDirectory}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: '#64748b' }}>Network Posture</span>
+                  <span style={{ color: executionMode === 'full_access' ? '#fbbf24' : '#34d399' }}>{networkMode}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: '#64748b' }}>Execution Backend</span>
+                  <span style={{ color: '#f0f6fc', fontWeight: '500' }}>{executionBackend}</span>
+                </div>
+              </div>
+            </div>
+
             {/* Reason */}
             <div>
               <span style={{ fontSize: '11px', color: '#73849c', fontWeight: '500' }}>
@@ -334,32 +475,34 @@ export default function DecisionInspector({
               </p>
             </div>
 
-            {/* Execution Observation Output */}
+            {/* Execution Observation Output / Final Answer */}
             {observationOutput && (
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span style={{ fontSize: '11px', color: '#38bdf8', fontWeight: '600' }}>
-                    Execution Observation
+                  <span style={{ fontSize: '11px', color: tool === 'finish' ? '#34d399' : '#38bdf8', fontWeight: '600' }}>
+                    {tool === 'finish' ? 'Respuesta / Conclusión Final' : 'Execution Observation'}
                   </span>
-                  <span style={{ fontSize: '10px', color: '#64748b' }}>Live sandbox</span>
+                  <span style={{ fontSize: '10px', color: '#64748b' }}>
+                    {tool === 'finish' ? 'Mission Completed' : (executionMode === 'full_access' ? 'Host OS' : 'Live sandbox')}
+                  </span>
                 </div>
-                <pre style={{
+                <div style={{
                   marginTop: '6px',
-                  padding: '9px 12px',
-                  backgroundColor: '#070a10',
-                  border: '1px solid #1e293b',
+                  padding: '10px 12px',
+                  backgroundColor: tool === 'finish' ? 'rgba(16, 185, 129, 0.08)' : '#070a10',
+                  border: tool === 'finish' ? '1px solid rgba(16, 185, 129, 0.35)' : '1px solid #1e293b',
                   borderRadius: '6px',
-                  fontFamily: 'var(--font-mono)',
-                  fontSize: '11px',
+                  fontFamily: tool === 'finish' ? 'inherit' : 'var(--font-mono)',
+                  fontSize: '11.5px',
                   color: '#34d399',
-                  maxHeight: '130px',
+                  maxHeight: '160px',
                   overflowY: 'auto',
                   whiteSpace: 'pre-wrap',
-                  wordBreak: 'break-all',
-                  lineHeight: '1.4',
+                  wordBreak: 'break-word',
+                  lineHeight: '1.45',
                 }}>
                   {observationOutput}
-                </pre>
+                </div>
               </div>
             )}
 
@@ -374,6 +517,52 @@ export default function DecisionInspector({
                   <Play size={13} />
                   Execute in Sandbox
                 </button>
+              ) : isRejecting ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <label style={{ fontSize: '11px', color: '#f87171', fontWeight: '600' }}>
+                    Motivo justificado de rechazo (obligatorio):
+                  </label>
+                  <input
+                    type="text"
+                    value={rejectionReason}
+                    onChange={(e) => setRejectionReason(e.target.value)}
+                    placeholder="Motivo de denegación..."
+                    style={{
+                      backgroundColor: '#0c0f14',
+                      border: '1px solid #ef4444',
+                      borderRadius: '4px',
+                      padding: '6px 8px',
+                      color: '#f0f6fc',
+                      fontSize: '11.5px',
+                      outline: 'none',
+                    }}
+                  />
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    <button
+                      onClick={() => {
+                        if (!rejectionReason.trim()) {
+                          alert('Es obligatorio ingresar un motivo de rechazo.');
+                          return;
+                        }
+                        onReject?.(decisionId, rejectionReason.trim());
+                        setIsRejecting(false);
+                        setIsConfirming(false);
+                        setRejectionReason('');
+                      }}
+                      className="btn btn-danger"
+                      style={{ flex: 1, padding: '7px' }}
+                    >
+                      Confirmar Rechazo
+                    </button>
+                    <button
+                      onClick={() => setIsRejecting(false)}
+                      className="btn btn-secondary"
+                      style={{ padding: '7px 10px' }}
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                </div>
               ) : isConfirming ? (
                 <div style={{ display: 'flex', gap: '8px' }}>
                   <button
@@ -388,15 +577,12 @@ export default function DecisionInspector({
                     Approve
                   </button>
                   <button
-                    onClick={() => {
-                      onReject?.(decisionId);
-                      setIsConfirming(false);
-                    }}
+                    onClick={() => setIsRejecting(true)}
                     className="btn btn-danger"
                     style={{ flex: 1, padding: '8px' }}
                   >
                     <X size={13} />
-                    Reject
+                    Reject...
                   </button>
                 </div>
               ) : (
@@ -586,6 +772,29 @@ export default function DecisionInspector({
               <span style={{ color: '#8b949e' }}>Nonce</span>
               <span style={{ fontFamily: 'var(--font-mono)', color: '#f0f6fc' }}>
                 {receiptTab.nonce || 'non_89a01f7c11'}
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <span style={{ color: '#8b949e' }}>Execution Mode (HMAC Bound)</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ fontFamily: 'var(--font-mono)', color: '#38bdf8', fontWeight: '600' }}>
+                  {receiptTab.execution_mode || receiptTab.executionMode || executionMode}
+                </span>
+                <span style={{ fontSize: '9.5px', color: '#34d399', backgroundColor: 'rgba(52, 211, 153, 0.1)', padding: '1px 5px', borderRadius: '3px' }}>
+                  HMAC BOUND
+                </span>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <span style={{ color: '#8b949e' }}>Replay Protection Status</span>
+              <span style={{
+                fontFamily: 'var(--font-mono)',
+                color: receiptTab.is_executed ? '#fbbf24' : '#34d399',
+                fontWeight: '600',
+              }}>
+                {receiptTab.is_executed ? 'CONSUMED (Single-Use Locked)' : 'AVAILABLE (Pending Execution)'}
               </span>
             </div>
 

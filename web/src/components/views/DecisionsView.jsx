@@ -158,7 +158,7 @@ export default function DecisionsView({
           border: '1px solid #1e293b',
           padding: '3px',
         }}>
-          {['ALL', 'ALLOW', 'REVIEW', 'BLOCKED'].map((st) => (
+          {['ALL', 'ALLOW', 'REVIEW', 'REPLAN', 'BLOCKED'].map((st) => (
             <button
               key={st}
               onClick={() => setStatusFilter(st)}
@@ -217,6 +217,21 @@ export default function DecisionsView({
                     <span className="badge badge-success">ALLOW</span>
                   ) : d.status === 'REVIEW' ? (
                     <span className="badge badge-warning">REVIEW</span>
+                  ) : d.status === 'REPLAN' ? (
+                    <span
+                      className="badge"
+                      style={{
+                        backgroundColor: 'rgba(168, 85, 247, 0.15)',
+                        color: '#c084fc',
+                        border: '1px solid rgba(168, 85, 247, 0.35)',
+                        padding: '2px 8px',
+                        borderRadius: '4px',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                      }}
+                    >
+                      REPLAN
+                    </span>
                   ) : (
                     <span className="badge badge-danger">BLOCKED</span>
                   )}

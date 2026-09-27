@@ -135,7 +135,7 @@ class LayaProvider(BaseReasoningProvider):
 
         headers = {
             "Content-Type": "application/json",
-            "User-Agent": "Praxeon/0.4.0",
+            "User-Agent": "Praxeon/1.0.0",
         }
         if self.auth_token:
             headers["Authorization"] = f"Bearer {self.auth_token}"
@@ -211,11 +211,21 @@ class LayaProvider(BaseReasoningProvider):
         recent_tools = [h.get("tool") for h in ctx.history_window if h.get("tool")]
         repetition_count = recent_tools.count(tool_name) if tool_name else 0
 
+        cmd_str = str(args.get("command") or args.get("cmd") or args.get("raw") or desc).strip().lower()
+
         is_loop = 0.05
         if repetition_count >= 3:
             is_loop = 0.88
         elif repetition_count >= 2:
             is_loop = 0.65
+
+        # Detección de repetición del mismo comando exacto
+        recent_commands = [
+            str(h.get("arguments", {}).get("command") or h.get("operation") or "").strip().lower()
+            for h in ctx.history_window if isinstance(h, dict)
+        ]
+        if cmd_str and recent_commands.count(cmd_str) >= 2:
+            is_loop = max(is_loop, 0.85)
 
         if any(w in desc for w in ("reintentar", "mismo comando", "bucle", "repetir")):
             is_loop = max(is_loop, 0.85)
@@ -229,37 +239,44 @@ class LayaProvider(BaseReasoningProvider):
 
         # 3. Comprobación de peligrosidad / acciones destructivas
         is_destructive = any(
-            dest in str(args).lower() or dest in desc
-            for dest in ("rm -rf", "drop table", "truncate", "delete from", "format c:", "mkfs")
+            dest in str(args).lower() or dest in desc or dest in cmd_str
+            for dest in ("rm -rf", "drop table", "truncate", "delete from", "format c:", "mkfs", "kill -9")
         )
 
+        # 3.5. Detección de comandos innecesarios, ociosos o distractores
+        idle_or_deviant_patterns = [
+            "sleep ", "timeout ", "ping -t", "nmap", "wireshark",
+            "cat /dev/urandom", "cowsay", "sl ", "fortune", "banner"
+        ]
+        is_unnecessary = any(p in cmd_str for p in idle_or_deviant_patterns)
+
         # 4. Cálculo de Score de progreso (0.0 a 1.0)
-        if is_loop > 0.70:
-            score = 0.10
+        if is_destructive:
+            score = 0.05
+        elif is_loop > 0.70 or is_unnecessary:
+            score = 0.15
         elif is_grounded < 0.30:
             score = 0.20
-        elif is_destructive:
-            score = 0.05
         else:
-            score = 0.85
+            score = 0.88
 
         # 5. Determinación de Choice y distribución de probabilidades calibrada
         if is_destructive:
             label = "BLOCK"
-            probs = {"BLOCK": 0.92, "ALLOW": 0.02, "REPLAN": 0.04, "ABSTAIN": 0.02}
-            confidence = 0.92
-        elif is_loop >= 0.70 or is_grounded < 0.30:
+            probs = {"BLOCK": 0.94, "ALLOW": 0.01, "REPLAN": 0.03, "ABSTAIN": 0.02}
+            confidence = 0.94
+        elif is_loop >= 0.70 or is_unnecessary or is_grounded < 0.30:
             label = "REPLAN"
-            probs = {"REPLAN": 0.86, "ALLOW": 0.06, "BLOCK": 0.03, "ABSTAIN": 0.05}
-            confidence = 0.86
+            probs = {"REPLAN": 0.88, "ALLOW": 0.05, "BLOCK": 0.02, "ABSTAIN": 0.05}
+            confidence = 0.88
         elif any(w in desc for w in ("incierto", "desconocido", "duda", "ambiguo")):
             label = "ABSTAIN"
-            probs = {"ABSTAIN": 0.40, "ALLOW": 0.30, "REPLAN": 0.20, "BLOCK": 0.10}
-            confidence = 0.35  # Baja confianza para disparar escalado
+            probs = {"ABSTAIN": 0.45, "ALLOW": 0.25, "REPLAN": 0.20, "BLOCK": 0.10}
+            confidence = 0.40  # Baja confianza para disparar escalado
         else:
             label = "ALLOW"
-            probs = {"ALLOW": 0.90, "REPLAN": 0.05, "BLOCK": 0.02, "ABSTAIN": 0.03}
-            confidence = 0.90
+            probs = {"ALLOW": 0.92, "REPLAN": 0.04, "BLOCK": 0.01, "ABSTAIN": 0.03}
+            confidence = 0.92
 
         return LayaDecisionPrimitives(
             choice={"label": label, "probabilities": probs, "confidence": confidence},
@@ -313,6 +330,12 @@ class LayaProvider(BaseReasoningProvider):
             analytical_jev = progress_prob * (1.0 - loop_prob) * grounded_prob
 
             reason_codes: List[str] = [f"LAYA_CHOICE_{choice_data.get('label', 'ALLOW')}"]
+            if choice_data.get("label") == "BLOCK":
+                reason_codes.append("LAYA_DESTRUCTIVE_BLOCK")
+            elif choice_data.get("label") == "REPLAN":
+                reason_codes.append("LAYA_UNNECESSARY_ACTION_REPLAN")
+            elif choice_data.get("label") == "ALLOW":
+                reason_codes.append("LAYA_PROGRESS_APPROVED")
             if loop_prob >= 0.70:
                 reason_codes.append("LAYA_LOOP_PREVENTED")
             if grounded_prob < 0.30:

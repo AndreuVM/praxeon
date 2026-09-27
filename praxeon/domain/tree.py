@@ -9,7 +9,7 @@ del stream de eventos del runtime.
 from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 
 class NodeKind(str, Enum):
@@ -106,10 +106,12 @@ class DecisionTree(BaseModel):
     nodes: Dict[str, TreeNode] = Field(default_factory=dict)
     edges: List[TreeEdge] = Field(default_factory=list)
 
+    @computed_field
     @property
     def node_count(self) -> int:
         return len(self.nodes)
 
+    @computed_field
     @property
     def edge_count(self) -> int:
         return len(self.edges)

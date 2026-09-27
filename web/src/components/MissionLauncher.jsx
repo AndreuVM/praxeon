@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Play, Pause, Square, Sparkles, Terminal, Cpu, Shield, RefreshCw } from 'lucide-react';
+import { Play, Pause, Square, Sparkles, Terminal, Cpu, Shield, RefreshCw, AlertTriangle, Box } from 'lucide-react';
 
 export default function MissionLauncher({
   isRunning = false,
@@ -11,6 +11,8 @@ export default function MissionLauncher({
   onLoadDemo,
 }) {
   const [goal, setGoal] = useState('Fix authentication bug in the API');
+  const [executionMode, setExecutionMode] = useState('local_restricted');
+  const [fullAccessConfirmed, setFullAccessConfirmed] = useState(false);
   const [llmProvider, setLlmProvider] = useState('simulator');
   const [supervisor, setSupervisor] = useState('laya');
   const [maxSteps, setMaxSteps] = useState(6);
@@ -29,8 +31,13 @@ export default function MissionLauncher({
   const handleSubmit = (e) => {
     e?.preventDefault();
     if (!goal.trim()) return;
+    if (executionMode === 'full_access' && !fullAccessConfirmed) {
+      alert('Debes confirmar que comprendes que el aislamiento de proceso del SO está deshabilitado para usar Full Access.');
+      return;
+    }
     onStartMission?.({
       goal: goal.trim(),
+      execution_mode: executionMode,
       llm_provider: llmProvider,
       llm_model: customModel.trim() || undefined,
       api_key: apiKey.trim() || undefined,
@@ -206,6 +213,35 @@ export default function MissionLauncher({
               </select>
             </div>
 
+            {/* Execution Environment Selector */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <Terminal size={13} style={{ color: executionMode === 'full_access' ? '#f87171' : '#8b949e' }} />
+              <label style={{ fontSize: '11px', color: '#8b949e', fontWeight: '500' }}>Entorno:</label>
+              <select
+                value={executionMode}
+                onChange={(e) => {
+                  setExecutionMode(e.target.value);
+                  if (e.target.value !== 'full_access') setFullAccessConfirmed(false);
+                }}
+                disabled={isRunning}
+                style={{
+                  backgroundColor: '#0c0f14',
+                  border: `1px solid ${executionMode === 'full_access' ? 'rgba(239, 68, 68, 0.5)' : '#202737'}`,
+                  borderRadius: '6px',
+                  padding: '5px 8px',
+                  color: executionMode === 'full_access' ? '#f87171' : '#f0f6fc',
+                  fontSize: '11.5px',
+                  cursor: 'pointer',
+                  outline: 'none',
+                  fontWeight: executionMode === 'full_access' ? '600' : 'normal',
+                }}
+              >
+                <option value="local_restricted">Local Restricted Sandbox (Defecto)</option>
+                <option value="container">Container Sandbox (Docker)</option>
+                <option value="full_access">Full Access (Host Direct) ⚠</option>
+              </select>
+            </div>
+
             {/* Steps limit */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <label style={{ fontSize: '11px', color: '#8b949e', fontWeight: '500' }}>Pasos:</label>
@@ -256,12 +292,15 @@ export default function MissionLauncher({
               {!isRunning ? (
                 <button
                   type="submit"
+                  disabled={executionMode === 'full_access' && !fullAccessConfirmed}
                   className="btn btn-primary"
                   style={{
                     padding: '6px 14px',
                     fontSize: '12px',
-                    backgroundColor: '#202837',
-                    borderColor: '#384558',
+                    backgroundColor: executionMode === 'full_access' && !fullAccessConfirmed ? '#3b1c1c' : '#202837',
+                    borderColor: executionMode === 'full_access' && !fullAccessConfirmed ? '#5c2222' : '#384558',
+                    cursor: executionMode === 'full_access' && !fullAccessConfirmed ? 'not-allowed' : 'pointer',
+                    opacity: executionMode === 'full_access' && !fullAccessConfirmed ? 0.6 : 1,
                   }}
                 >
                   <Play size={13} style={{ fill: '#f0f6fc' }} />
@@ -300,6 +339,36 @@ export default function MissionLauncher({
               )}
             </div>
           </div>
+
+          {/* Full Access Warning Banner & Confirmation */}
+          {executionMode === 'full_access' && (
+            <div style={{
+              backgroundColor: 'rgba(239, 68, 68, 0.08)',
+              border: '1px solid rgba(239, 68, 68, 0.35)',
+              borderRadius: '6px',
+              padding: '10px 14px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '6px',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#f87171', fontSize: '12px', fontWeight: '700' }}>
+                <AlertTriangle size={15} />
+                <span>ADVERTENCIA DE SEGURIDAD: Ejecución Host Direct (Full Access)</span>
+              </div>
+              <p style={{ margin: 0, fontSize: '11px', color: '#cbd5e1', lineHeight: '1.45' }}>
+                En este modo, el agente opera directamente sobre el sistema operativo anfitrión sin aislamiento de proceso ni chroot. Aunque la cadena de custodia formal de PRAXEON supervisa cada acción con capabilities criptográficas, <strong>no existe contención de red ni de sistema de archivos</strong>.
+              </p>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '11.5px', color: '#fca5a5', cursor: 'pointer', marginTop: '4px' }}>
+                <input
+                  type="checkbox"
+                  checked={fullAccessConfirmed}
+                  onChange={(e) => setFullAccessConfirmed(e.target.checked)}
+                  style={{ cursor: 'pointer', width: '14px', height: '14px' }}
+                />
+                <span style={{ fontWeight: '600' }}>Entiendo y acepto que el aislamiento de procesos del SO está deshabilitado.</span>
+              </label>
+            </div>
+          )}
 
           {/* Provider Info Banner & Advanced Config */}
           <div

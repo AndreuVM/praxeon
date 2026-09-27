@@ -6,8 +6,9 @@
 
 | Versión | Soportada | Estado de Mantenimiento |
 | :--- | :---: | :--- |
-| **0.4.x (v0.4.0)** | ✅ Sí | Versión activa y recomendada: Confidence-Aware Cascade Routing, System-1 LAYA, calibración ECE/Brier, selective risk y dual-uncertainty gating. |
-| < 0.4.0 | ❌ No | Deprecada. Se recomienda actualizar a v0.4.0. |
+| **1.0.x (v1.0.0)** | ✅ Sí | Versión activa y recomendada: Web Server FastAPI, WebSocket per-session streaming, Decision Tree durable, Execution Modes (Container, Local Restricted, Full Access) con capability binding criptográfico. |
+| **0.4.x** | ⚠️ Parcial | Mantenimiento legacy. |
+| < 0.4.0 | ❌ No | Deprecada. Se recomienda actualizar a v1.0.0. |
 
 ---
 
@@ -63,7 +64,33 @@ $$\text{LLM Proposal} \to \text{Evidence Grounding} \to \text{Risk Assessment} \
    - Fuga de secretos y sanitización de credenciales.
    - Inyección indirecta de prompts en observaciones y respuestas de herramientas.
    - Aislamiento de límites de seguridad en el servidor MCP.
-   - Prevalencia de políticas y prevención de finalizaciones prematuras.
+8. **Modos de Ejecución Formales y Límites de Full Access (PRAXEON 1.0):**
+   PRAXEON define tres modos explícitos de ejecución (`ExecutionMode`):
+   - `CONTAINER`: Aislamiento estricto de contenedor (cgroups, `--network=none`, raíz de solo lectura, `--pids-limit`).
+   - `LOCAL_RESTRICTED`: Sandbox de proceso local con depuración de variables de entorno y contención de rutas (jail path).
+   - `FULL_ACCESS`: Ejecución directa sobre el host sin aislamiento de sistema operativo.
+
+   **Invariante Central de Full Access:**
+   > **Full Access no es un bypass del runtime.**
+   > Cambiar el backend de ejecución no cambia quién tiene autoridad sobre la ejecución. Incluso en modo `FULL_ACCESS`, cada acción debe pasar obligatoriamente por la cadena de custodia completa:
+   > $$\text{Proposal} \to \text{Evidence} \to \text{Risk} \to \text{Provider} \to \text{Policy} \to \text{Capability} \to \text{SecureExecutor}$$
+   >
+   > **Límites no negociables:**
+   > - **No fallback implícito:** Si `CONTAINER` o `LOCAL_RESTRICTED` fallan, jamás se degrada automáticamente a `FULL_ACCESS`.
+   > - **Firma criptográfica vinculante:** El `execution_mode` forma parte del material firmado por HMAC del `CapabilityPayload`. Cualquier intento de ejecutar un capability firmado para sandbox en host es rechazado como violación de política.
+   > - **Revisión humana obligatoria:** Toda acción con riesgo High o Critical en `FULL_ACCESS` retiene el requerimiento ineludible de aprobación humana (REVIEW).
+   > - **Advertencia operacional:** `FULL_ACCESS` no ofrece aislamiento del host. Debe ser explícitamente habilitado y auditado.
+
+---
+
+9. **Precedencia de Seguridad Determinista y Clasificación de Comandos (Sección 13 y 15):**
+   PRAXEON implementa una jerarquía estricta e inmutable de precedencia decisional:
+   $$\text{Static Critical Barriers (PRIVILEGE / DESTRUCTIVE)} > \text{Session Restrictions} > \text{Contextual Operation Risk} > \text{Semantic Signal} > \text{ALLOW}$$
+
+   - **Barreras Críticas Ineludibles:** Comandos clasificados como `DESTRUCTIVE` (`rm -rf /`, `mkfs`, `DROP DATABASE`, fork bombs) o `PRIVILEGE` (`sudo`, `runas`, `chmod`, `chown`) se bloquean (`BLOCK`) de forma determinista y preventiva antes de que el modelo de lenguaje pueda sugerir su viabilidad.
+   - **Desacoplamiento de Identidad y Semántica:** Las herramientas no se evalúan por su nombre genérico (`run_command`), sino por la semántica real y los argumentos de la operación concreta clasificada a través de 10 categorías canónicas (`CommandClassifier`).
+   - **Enrutamiento por Incertidumbre:** Operaciones sintácticamente desconocidas o ambiguas en herramientas admisibles se enrutan obligatoriamente a revisión humana (`REVIEW` / `requires_confirmation = True`), eliminando el bloqueo ciego y evitando autorizaciones silenciosas sin supervisión.
+   - **Detección Preflight de Evasión:** Wrappers de subshell (`bash -c "rm -rf /"`, `sh -c`), encadenamiento de comandos (`&&`, `;`) y variables de entorno ofuscadas son interceptados en preflight estático.
 
 ---
 

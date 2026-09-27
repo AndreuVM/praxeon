@@ -1,11 +1,11 @@
-# PRAXEON v0.4.0
+# PRAXEON v1.0.0
 
 **Runtime supervision for autonomous AI agents**
 
 > **The model proposes. The runtime decides what gets executed.**
 
-[![Tests](https://img.shields.io/badge/tests-199%20passed-brightgreen.svg)](https://github.com/AndreuVM/praxeon)
-[![Version](https://img.shields.io/badge/version-v0.4.0-blue.svg)](https://github.com/AndreuVM/praxeon)
+[![Tests](https://img.shields.io/badge/tests-269%20passed-brightgreen.svg)](https://github.com/AndreuVM/praxeon)
+[![Version](https://img.shields.io/badge/version-v1.0.0-blue.svg)](https://github.com/AndreuVM/praxeon)
 [![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](https://github.com/AndreuVM/praxeon)
 [![Security](https://img.shields.io/badge/security-sandbox%20%26%20container%20hardened-green.svg)](https://github.com/AndreuVM/praxeon/blob/main/SECURITY.md)
 [![Providers](https://img.shields.io/badge/providers-TypeSafe%20%7C%20LAYA%20%7C%20CascadeRouter-purple.svg)](https://github.com/AndreuVM/praxeon)
@@ -193,7 +193,7 @@ praxeon/
 │   └── dashboard.py              # Monitor visual interactivo TUI en tiempo real
 ├── tests/                        # 199 pruebas automatizadas (unitarias, integración, seguridad)
 ├── SECURITY.md                   # Política de seguridad y modelo de amenazas formal
-├── pyproject.toml                # Metadatos del proyecto y dependencias (v0.4.0)
+├── pyproject.toml                # Metadatos del proyecto y dependencias (v1.0.0)
 └── README.md
 ```
 
@@ -332,7 +332,7 @@ Compatible con **Antigravity IDE**, **Claude Desktop** y **Cursor**:
 
 ---
 
-## 6. Uso Programático en Python (v0.4.0)
+## 6. Uso Programático en Python (v1.0.0)
 
 ```python
 from praxeon.domain import Goal, ActionCandidate, ToolCall
@@ -414,9 +414,9 @@ Evaluación experimental de 6 configuraciones arquitectónicas sobre el conjunto
 
 ---
 
-## 10. Comparativa Cuantitativa: Baseline Sin Supervisor vs PRAXEON v0.4.0
+## 10. Comparativa Cuantitativa: Baseline Sin Supervisor vs PRAXEON v1.0.0
 
-| Métrica Operacional y de Seguridad | Agente Sin Supervisor (Baseline) | PRAXEON v0.4.0 (Full Architecture) |
+| Métrica Operacional y de Seguridad | Agente Sin Supervisor (Baseline) | PRAXEON v1.0.0 (Full Architecture) |
 | :--- | :---: | :---: |
 | **Exactitud Decisional Global** | 54.0% | **100.0% (en suite evaluada)** |
 | **False Allow Rate (Métrica Crítica)** | 16.8% | **0.0% (en suite evaluada)** |
@@ -449,11 +449,11 @@ De acuerdo con las mejores prácticas de rigor científico y divulgación técni
 
 ## Verificación de la Suite de Pruebas e Invariantes
 
-La arquitectura de PRAXEON v0.4.0, los contratos de proveedores (`LayaProvider`, `TypeSafeAdapter`, `ReplayProvider`, `ConfidenceAwareRouter`), el acotamiento de contexto, las barreras de enforcement y la suite de evaluación están respaldados por **199 pruebas automatizadas pasando al 100%**:
+La arquitectura de PRAXEON v1.0.0, los contratos de proveedores (`LayaProvider`, `TypeSafeAdapter`, `ReplayProvider`, `ConfidenceAwareRouter`), el desacoplamiento de semántica de operaciones (`CommandClassifier`), el Benchmark de Sobre-restricción (Sección 15), las barreras de enforcement HMAC, el servidor FastAPI y la suite E2E están respaldados por **269 pruebas automatizadas pasando al 100%**:
 
 ```bash
 pytest -q
-# 199 passed, 1 skipped in 44.37s
+# 269 passed, 1 skipped in 56s
 ```
 
 ---

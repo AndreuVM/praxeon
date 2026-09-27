@@ -171,7 +171,7 @@ class OpenAICompatibleLLM(BaseAgentLLM):
 
         headers = {
             "Content-Type": "application/json",
-            "User-Agent": "Praxeon/0.4.0 (Autonomous Agent Runtime)",
+            "User-Agent": "Praxeon/1.0.0 (Autonomous Agent Runtime)",
         }
         if self._api_key and self._api_key != "none":
             headers["Authorization"] = f"Bearer {self._api_key}"
@@ -339,7 +339,7 @@ def is_ollama_online(host: str = "http://127.0.0.1:11434") -> bool:
     for h in hosts:
         try:
             url = f"{h.rstrip('/')}/api/tags"
-            req = urllib.request.Request(url, headers={"User-Agent": "Praxeon/0.4.0"})
+            req = urllib.request.Request(url, headers={"User-Agent": "Praxeon/1.0.0"})
             with urllib.request.urlopen(req, timeout=0.35) as resp:
                 if resp.status == 200:
                     return True
@@ -359,7 +359,7 @@ def get_ollama_installed_models(host: str = "http://127.0.0.1:11434") -> List[st
     for h in hosts:
         try:
             url = f"{h.rstrip('/')}/api/tags"
-            req = urllib.request.Request(url, headers={"User-Agent": "Praxeon/0.4.0"})
+            req = urllib.request.Request(url, headers={"User-Agent": "Praxeon/1.0.0"})
             with urllib.request.urlopen(req, timeout=0.6) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
                 models = [m.get("name") for m in data.get("models", []) if m.get("name")]

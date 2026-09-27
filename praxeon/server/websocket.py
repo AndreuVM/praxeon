@@ -12,7 +12,7 @@ from datetime import date, datetime
 from enum import Enum
 import json
 import logging
-from typing import Any, Dict, Set
+from typing import Any, Dict, Optional, Set
 import uuid
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
@@ -90,23 +90,45 @@ ws_manager = WebSocketConnectionManager()
 async def websocket_session_stream(
     websocket: WebSocket,
     session_id: str,
+    after_sequence: Optional[int] = None,
 ):
-    """Endpoint WebSocket para recibir en tiempo real los eventos de la sesión."""
+    """Endpoint WebSocket para recibir en tiempo real los eventos de la sesión con gap recovery."""
     service = get_runtime_service()
     await ws_manager.connect(session_id, websocket)
 
     queue: asyncio.Queue = asyncio.Queue(maxsize=1000)
-    unregister = service.event_bus.register_async_queue(queue)
+    unregister = service.event_bus.register_async_queue(queue, session_id=session_id)
+    sent_event_ids: Set[str] = set()
 
     try:
-        # 1. Mensaje de bienvenida con sincronización inicial
+        # 1. Determinar after_sequence inicial
+        after_seq_val: Optional[int] = after_sequence
+        if after_seq_val is None and "after_sequence" in websocket.query_params:
+            try:
+                after_seq_val = int(websocket.query_params["after_sequence"])
+            except Exception:
+                after_seq_val = None
+
         all_events = service.event_bus.get_all_events(session_id)
+        latest_seq = all_events[-1].sequence if all_events else 0
+
+        # Mensaje de bienvenida con sincronización inicial
         await send_ws_json(websocket, {
             "action": "connected",
             "session_id": session_id,
             "event_count": len(all_events),
-            "latest_sequence": all_events[-1].sequence if all_events else 0,
+            "latest_sequence": latest_seq,
         })
+
+        # Gap recovery inicial: si after_sequence fue especificado, enviar eventos posteriores
+        if after_seq_val is not None:
+            catchup_events = service.event_bus.get_events(session_id, after_sequence=after_seq_val)
+            for ev in catchup_events:
+                sent_event_ids.add(ev.event_id)
+                await send_ws_json(websocket, {
+                    "action": "event",
+                    "data": ev.to_dict(),
+                })
 
         # 2. Tarea concurrente para escuchar mensajes entrantes del cliente (sync / ping)
         async def client_listener():
@@ -119,10 +141,12 @@ async def websocket_session_stream(
                         after_seq = int(msg.get("after_sequence", 0))
                         missing = service.event_bus.get_events(session_id, after_sequence=after_seq)
                         for ev in missing:
-                            await send_ws_json(websocket, {
-                                "action": "event",
-                                "data": ev.to_dict(),
-                            })
+                            if ev.event_id not in sent_event_ids:
+                                sent_event_ids.add(ev.event_id)
+                                await send_ws_json(websocket, {
+                                    "action": "event",
+                                    "data": ev.to_dict(),
+                                })
                     elif action == "ping":
                         await send_ws_json(websocket, {"action": "pong"})
                 except (WebSocketDisconnect, asyncio.CancelledError):
@@ -139,7 +163,8 @@ async def websocket_session_stream(
                     break
 
                 try:
-                    if event.session_id == session_id:
+                    if event.session_id == session_id and event.event_id not in sent_event_ids:
+                        sent_event_ids.add(event.event_id)
                         await send_ws_json(websocket, {
                             "action": "event",
                             "data": event.to_dict(),
