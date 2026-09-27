@@ -56,7 +56,7 @@ from praxeon.runtime.event_bus import EventBus, EventStore
 from praxeon.runtime.executor import PolicyViolation, SecureExecutor, ToolObservation
 from praxeon.runtime.nonce_store import NonceStore, SqliteNonceStore
 from praxeon.runtime.sandbox import LocalProcessSandbox, SandboxExecutionResult, SandboxTier
-from praxeon.runtime.state import SessionState
+from praxeon.runtime.state import SessionState, StepRecord
 from praxeon.runtime.state_store import SqliteStateStore
 from praxeon.runtime.tree_reducer import TreeReducer, reduce_events_to_tree
 from praxeon.server.schemas.action import ProposeActionRequest
@@ -364,9 +364,33 @@ class RuntimeApplicationService:
             payload=op_assessment.model_dump(),
         )
 
-        # 2. Evaluación de Evidencia Empírica
+        # 2. Evaluación de Evidencia Empírica y Existencia de Recursos en Disco
+        is_missing_resource = False
+        missing_resource_name = ""
+        target_path = str(proposal.arguments.get("path") or proposal.arguments.get("file") or "").strip()
+        if proposal.tool in ("read_file", "view_file") and target_path:
+            full_target = target_path if os.path.isabs(target_path) else os.path.join(os.getcwd(), target_path)
+            if not os.path.exists(full_target):
+                is_missing_resource = True
+                missing_resource_name = target_path
+        elif proposal.tool in ("run_command", "run_script"):
+            cmd_raw = str(proposal.arguments.get("command") or proposal.arguments.get("cmd") or "").strip()
+            for runner in ("python ", "python3 ", "node ", "bash ", "sh "):
+                if cmd_raw.startswith(runner):
+                    script_part = cmd_raw[len(runner):].strip().split()[0].strip('"\'')
+                    if script_part.endswith((".py", ".js", ".sh", ".ts")):
+                        full_script = script_part if os.path.isabs(script_part) else os.path.join(os.getcwd(), script_part)
+                        if not os.path.exists(full_script):
+                            is_missing_resource = True
+                            missing_resource_name = script_part
+                    break
+
         evidences = self.evidence_engine.assess(state, action)
-        grounding_score = 0.85 if evidences else 0.40
+        if is_missing_resource:
+            grounding_score = 0.05
+        else:
+            grounding_score = 0.85 if evidences else 0.40
+
         self.event_bus.emit(
             session_id=session_id,
             event_type=EventType.EVIDENCE_EVALUATED,
@@ -376,6 +400,8 @@ class RuntimeApplicationService:
                 "evidence_count": len(evidences),
                 "grounding_score": grounding_score,
                 "claims_evaluated": [e.claim.statement for e in evidences],
+                "resource_missing": is_missing_resource,
+                "missing_resource": missing_resource_name if is_missing_resource else None,
             },
         )
 
@@ -411,6 +437,16 @@ class RuntimeApplicationService:
             grounded_probability=grounding_score,
             progress_probability=0.85,
         )
+        if is_missing_resource:
+            current_reasons = list(assessment.reason_codes or [])
+            if f"UNGROUNDED_FILE_NOT_FOUND ({missing_resource_name})" not in current_reasons:
+                current_reasons.append(f"UNGROUNDED_FILE_NOT_FOUND ({missing_resource_name})")
+            assessment = assessment.model_copy(
+                update={
+                    "grounded_probability": min(assessment.grounded_probability or 1.0, 0.05),
+                    "reason_codes": current_reasons,
+                }
+            )
 
         provider_dtos = [
             ProviderEvaluationDTO(
@@ -559,6 +595,20 @@ class RuntimeApplicationService:
         self.decision_repository.save(decision_record)
         with self._lock:
             self._decisions[decision_id] = decision_record
+
+        # Registrar decisiones terminales (REPLAN / BLOCK) en el estado de la sesión
+        # (Las decisiones ALLOW se registran en execute_decision tras verificar el hash criptográfico del estado)
+        if status_str in ("REPLAN", "BLOCK"):
+            mapped_status = DecisionStatus.BLOCK if status_str == "BLOCK" else DecisionStatus.REPLAN
+            state.add_step(
+                action=action,
+                decision=PolicyDecision(
+                    status=mapped_status,
+                    reason_codes=decision.reason_codes,
+                ),
+                observation=None,
+            )
+            self.state_store.save_state(state)
 
         return DecisionResponse(
             decision_id=decision_id,
@@ -951,6 +1001,21 @@ class RuntimeApplicationService:
             record["receipt"] = updated_receipt
             self.decision_repository.save(record)
 
+            # Actualizar observación en el estado de la sesión
+            current_state = self.state_store.load_state(session_id)
+            if current_state and current_state.steps:
+                last_step = current_state.steps[-1]
+                if last_step.id == record["action_id"]:
+                    current_state.steps[-1] = StepRecord(
+                        id=last_step.id,
+                        index=last_step.index,
+                        action=last_step.action,
+                        decision=last_step.decision,
+                        observation=observation.output[:500],
+                        timestamp=last_step.timestamp,
+                    )
+                    self.state_store.save_state(current_state)
+
             # Emitir eventos de culminación
             self.event_bus.emit(
                 session_id=session_id,
@@ -1206,6 +1271,8 @@ class RuntimeApplicationService:
             ]
 
             active_parent_id = f"root_{sid}"
+            consecutive_failures = 0
+            circuit_breaker_triggered = False
 
             while step_idx < max_steps:
                 if mission.get("stopped"):
@@ -1229,9 +1296,16 @@ class RuntimeApplicationService:
                 parsed_steps = parse_llm_steps(llm_output)
                 if parsed_steps:
                     st = parsed_steps[0]
-                    tool = st.get("tool_name") or "run_command"
-                    args = st.get("tool_args") or {}
-                    thought = st.get("thought_rationale") or f"Paso {step_idx} generado por {agent_llm.model_name} para '{goal}'."
+                    raw_tool = (st.get("tool_name") or "").strip().lower()
+                    if raw_tool in ("action", "undefined", "none", "null", "step", ""):
+                        # Degradación sintáctica del modelo
+                        tool = "run_command"
+                        args = {"command": "python -c \"print('Paso de inspección segura')\""}
+                        thought = "El modelo emitió una herramienta no especificada ('undefined'). El supervisor redirige a inspección segura."
+                    else:
+                        tool = raw_tool
+                        args = st.get("tool_args") or {}
+                        thought = st.get("thought_rationale") or f"Paso {step_idx} generado por {agent_llm.model_name} para '{goal}'."
                 else:
                     if any(w in llm_output.lower() for w in ("finish", "complet", "conclu", "finaliz", "resuelt")):
                         tool = "finish"
@@ -1325,6 +1399,7 @@ class RuntimeApplicationService:
 
                 if executed_successfully:
                     # Acción exitosa: el cursor activo del árbol avanza
+                    consecutive_failures = 0
                     active_parent_id = action_node_id
                     conversation.append({
                         "role": "assistant",
@@ -1344,8 +1419,9 @@ class RuntimeApplicationService:
                         "content": f"Observación de {tool}:\n{llm_obs}",
                     })
                 else:
+                    consecutive_failures += 1
+
                     # RETROCESO (BACKTRACK) Y BIFURCACIÓN:
-                    # active_parent_id permanece en el padre anterior para que el siguiente paso bifurque
                     self.event_bus.emit(
                         session_id=sid,
                         event_type=EventType.INTERVENTION_APPLIED,
@@ -1362,15 +1438,83 @@ class RuntimeApplicationService:
                         "role": "assistant",
                         "content": f"Thought: {thought}\nAction: {tool}({json.dumps(args, ensure_ascii=False)})",
                     })
-                    conversation.append({
-                        "role": "user",
-                        "content": (
-                            f"[ALERTA SUPERVISOR PRAXEON]: La acción {tool} no tuvo éxito ({obs_output[:350]}).\n"
-                            f"El supervisor ha aplicado un RETROCESO (Backtrack) al nodo '{active_parent_id}'. "
-                            "Formula una HIPÓTESIS ALTERNATIVA (Bifurcación) para abordar el objetivo por otra vía. "
-                            "Explica tu retroceso en 'Thought:' y propone tu nueva 'Action:'."
-                        ),
-                    })
+
+                    # CIRCUITO DE BLOQUEO Y DETECCIÓN DE BUCLE PERSISTENTE (JEV CIRCUIT BREAKER)
+                    if consecutive_failures >= 2 and not circuit_breaker_triggered:
+                        circuit_breaker_triggered = True
+                        cwd = os.getcwd()
+                        real_files = []
+                        try:
+                            real_files = [f for f in os.listdir(cwd) if not f.startswith(".")][:12]
+                        except Exception:
+                            real_files = ["praxeon", "web", "tests", "pyproject.toml", "README.md"]
+                        real_files_str = ", ".join(real_files)
+
+                        self.event_bus.emit(
+                            session_id=sid,
+                            event_type=EventType.INTERVENTION_APPLIED,
+                            node_id=action_node_id,
+                            parent_id=f"root_{sid}",
+                            payload={
+                                "intervention": "CIRCUIT_BREAKER_GROUNDING_INJECTION",
+                                "message": f"⚡ JEV CIRCUIT BREAKER: Bucle de alucinación/fallos consecutivos ({consecutive_failures}) intentando acceder a archivos/scripts inexistentes. El supervisor poda la rama, fuerza retroceso a la raíz e inyecta la estructura real del proyecto.",
+                                "real_files": real_files,
+                                "backtrack_to": f"root_{sid}",
+                            },
+                        )
+
+                        conversation.append({
+                            "role": "user",
+                            "content": (
+                                f"🚨 [INTERVENCIÓN JEV - CIRCUIT BREAKER ACTIVADO]:\n"
+                                f"Has acumulado {consecutive_failures} acciones fallidas o vetadas intentando acceder a archivos o scripts inexistentes.\n"
+                                f"El supervisor ha PODADO esa rama inválida y forzado un RETROCESO al nodo raíz.\n\n"
+                                f"ARCHIVOS Y CARPETAS REALES EN EL PROYECTO:\n"
+                                f"[{real_files_str}]\n\n"
+                                "DIRECTIVA ESTRICTA DEL SUPERVISOR:\n"
+                                "1. NO intentes inventar nombres de archivos ni scripts que no estén en la lista anterior.\n"
+                                "2. Trabaja EXCLUSIVAMENTE sobre los archivos o carpetas reales listados.\n"
+                                "3. Si ya dispones de la información suficiente, concluye inmediatamente con: Action: finish(summary=\"...\")."
+                            ),
+                        })
+                        active_parent_id = f"root_{sid}"
+                        time.sleep(delay_sec)
+                        continue
+
+                    elif consecutive_failures >= 4:
+                        logger.warning("Terminación preventiva por supervisor JEV en sesión %s tras 4 fallos continuos.", sid)
+                        summary_final = f"Misión concluida preventivamente por el supervisor JEV para detener bucle de alucinación tras {step_idx} turnos. El agente insistió repetidamente en recursos no fundamentados."
+                        self.event_bus.emit(
+                            session_id=sid,
+                            event_type=EventType.INTERVENTION_APPLIED,
+                            node_id=action_node_id,
+                            parent_id=f"root_{sid}",
+                            payload={
+                                "intervention": "SUPERVISOR_FORCED_TERMINATION",
+                                "message": "Supervisión JEV: Se cortó la ejecución para evitar un bucle de alucinación infinito. Misión concluida de forma segura.",
+                            },
+                        )
+                        self.event_bus.emit(
+                            session_id=sid,
+                            event_type=EventType.SESSION_COMPLETED,
+                            node_id=f"root_{sid}",
+                            payload={"status": "completed", "summary": summary_final},
+                        )
+                        with self._lock:
+                            if sid in self._sessions_meta:
+                                self._sessions_meta[sid]["status"] = "Completed"
+                                self._sessions_meta[sid]["final_answer"] = summary_final
+                        break
+                    else:
+                        conversation.append({
+                            "role": "user",
+                            "content": (
+                                f"[ALERTA SUPERVISOR PRAXEON]: La acción {tool} no tuvo éxito ({obs_output[:350]}).\n"
+                                f"El supervisor ha aplicado un RETROCESO (Backtrack) al nodo '{active_parent_id}'. "
+                                "Formula una HIPÓTESIS ALTERNATIVA (Bifurcación) para abordar el objetivo por otra vía. "
+                                "Explica tu retroceso en 'Thought:' y propone tu nueva 'Action:'."
+                            ),
+                        })
 
                 if tool in ("finish", "complete_task", "done", "complete", "task_completed"):
                     if executed_successfully:

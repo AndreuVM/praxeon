@@ -212,6 +212,7 @@ class LayaProvider(BaseReasoningProvider):
         repetition_count = recent_tools.count(tool_name) if tool_name else 0
 
         cmd_str = str(args.get("command") or args.get("cmd") or args.get("raw") or desc).strip().lower()
+        target_path = str(args.get("path") or args.get("file") or "").strip().lower()
 
         is_loop = 0.05
         if repetition_count >= 3:
@@ -227,15 +228,43 @@ class LayaProvider(BaseReasoningProvider):
         if cmd_str and recent_commands.count(cmd_str) >= 2:
             is_loop = max(is_loop, 0.85)
 
+        # Detección de repetición de la misma ruta de archivo
+        recent_paths = [
+            str(h.get("arguments", {}).get("path") or h.get("arguments", {}).get("file") or "").strip().lower()
+            for h in ctx.history_window if isinstance(h, dict) and h.get("arguments")
+        ]
+        if target_path and recent_paths.count(target_path) >= 1:
+            is_loop = max(is_loop, 0.88)
+
+        # Detección de estancamiento tras fallos consecutivos
+        recent_obs = [str(h.get("observation", "")).lower() for h in ctx.history_window[-3:] if isinstance(h, dict)]
+        recent_failures = [obs for obs in recent_obs if any(err in obs for err in ("no existe", "error", "failed", "fail", "not found"))]
+        if len(recent_failures) >= 2:
+            is_loop = max(is_loop, 0.85)
+
         if any(w in desc for w in ("reintentar", "mismo comando", "bucle", "repetir")):
             is_loop = max(is_loop, 0.85)
 
-        # 2. Comprobación de grounding (fundamentación)
+        # 2. Comprobación de grounding (fundamentación fáctica y verificación de recursos en disco)
         is_grounded = 0.95
+        if tool_name in ("read_file", "view_file") and target_path:
+            full_path = target_path if os.path.isabs(target_path) else os.path.join(os.getcwd(), target_path)
+            if not os.path.exists(full_path):
+                is_grounded = 0.05
+        elif tool_name in ("run_command", "run_script"):
+            for runner in ("python ", "python3 ", "node ", "bash ", "sh "):
+                if cmd_str.startswith(runner):
+                    script_part = cmd_str[len(runner):].strip().split()[0].strip('"\'')
+                    if script_part.endswith((".py", ".js", ".sh", ".ts")):
+                        full_script = script_part if os.path.isabs(script_part) else os.path.join(os.getcwd(), script_part)
+                        if not os.path.exists(full_script):
+                            is_grounded = 0.05
+                    break
+
         if req_evidence:
             missing = [r for r in req_evidence if r.lower().strip() not in evidence_lower]
             if missing:
-                is_grounded = 0.12
+                is_grounded = min(is_grounded, 0.12)
 
         # 3. Comprobación de peligrosidad / acciones destructivas
         is_destructive = any(

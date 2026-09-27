@@ -152,3 +152,49 @@ def test_runtime_service_proposes_dynamic_cli_tool_without_unknown_block():
     resp_test = service.propose_action(session_id=sid, proposal=req_test)
     assert resp_test.status == "ALLOW"
     assert "UNKNOWN_TOOL_NOT_REGISTERED" not in resp_test.policy.reason_codes
+
+
+def test_pre_execution_grounding_rejects_nonexistent_file_as_replan():
+    """Verifica que intentar leer un archivo que no existe en disco sea rechazado como REPLAN por falta de fundamentación empírica."""
+    service = RuntimeApplicationService(
+        state_store=InMemoryStateStore(),
+        event_bus=EventBus(),
+    )
+    sid = "sess_nonexistent_file_check"
+    service.create_session(
+        goal="Auditar código inexistente",
+        session_id=sid,
+        execution_mode="full_access",
+    )
+
+    req_missing = ProposeActionRequest(
+        tool="read_file",
+        arguments={"path": "completely_invented_file_that_does_not_exist_xyz.py"},
+        thought_rationale="Intentando leer archivo alucinado",
+    )
+    resp_missing = service.propose_action(session_id=sid, proposal=req_missing)
+    assert resp_missing.status == "REPLAN"
+    assert any("UNGROUNDED" in code or "LOW_GROUNDED" in code for code in resp_missing.policy.reason_codes)
+
+
+def test_loop_detection_flags_repeated_failing_attempts_as_replan():
+    """Verifica que LAYA detecte bucles cuando se repite la misma ruta de archivo o comando en el historial."""
+    laya = LayaProvider(backend="simulated")
+    ctx = ProviderContext(
+        session_id="sess_loop_test",
+        goal="Inspección de proyecto",
+        history_window=[
+            {"id": "step_1", "tool": "read_file", "arguments": {"path": "module_a.py"}, "observation": "Archivo 'module_a.py' no existe"},
+            {"id": "step_2", "tool": "read_file", "arguments": {"path": "module_a.py"}, "observation": "Archivo 'module_a.py' no existe"},
+        ],
+        active_evidence=[],
+        candidate_action={
+            "id": "act_repeat",
+            "tool_name": "read_file",
+            "arguments": {"path": "module_a.py"},
+            "description": "Reintentando leer module_a.py",
+        },
+    )
+    primitives = laya._infer_primitives_calibrated(ctx)
+    assert primitives.noul["is_loop"] >= 0.85
+    assert primitives.choice["label"] == "REPLAN"

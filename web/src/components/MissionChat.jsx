@@ -198,9 +198,9 @@ export default function MissionChat({
 
         thoughts.push({
           step: stepNum,
-          tool: payload.tool || 'action',
-          operation: payload.operation || `${stepNum}. ${payload.tool || 'action'}`,
-          thought: thoughtRationale || `Paso ${stepNum}: Proponiendo ${payload.tool}`,
+          tool: payload.tool && payload.tool !== 'action' ? payload.tool : (payload.operation || 'acción'),
+          operation: payload.operation || `${stepNum}. ${payload.tool || 'acción'}`,
+          thought: thoughtRationale || (payload.tool ? `Paso ${stepNum}: Proponiendo ${payload.tool}` : `Paso ${stepNum}: Proponiendo acción`),
           verdict: 'PENDING',
           source: payload.source || 'LLM',
         });
@@ -217,6 +217,10 @@ export default function MissionChat({
         const last = thoughts[thoughts.length - 1];
         last.executionOutput = ev.payload?.output;
         last.executionTimeMs = ev.payload?.execution_time_ms;
+      } else if (ev.type === 'intervention.applied' && thoughts.length > 0) {
+        const last = thoughts[thoughts.length - 1];
+        last.verdict = ev.payload?.intervention || 'BACKTRACK';
+        last.interventionMessage = ev.payload?.message;
       }
     }
 
@@ -666,6 +670,8 @@ export default function MissionChat({
                                 ? 'rgba(210, 153, 34, 0.15)'
                                 : latestThought.verdict === 'BLOCK'
                                 ? 'rgba(248, 81, 73, 0.15)'
+                                : latestThought.verdict === 'BACKTRACK' || latestThought.verdict === 'REPLAN' || String(latestThought.verdict).includes('CIRCUIT_BREAKER')
+                                ? 'rgba(168, 85, 247, 0.20)'
                                 : 'rgba(88, 166, 255, 0.15)',
                             color:
                               latestThought.verdict === 'ALLOW'
@@ -674,6 +680,8 @@ export default function MissionChat({
                                 ? '#d29922'
                                 : latestThought.verdict === 'BLOCK'
                                 ? '#f85149'
+                                : latestThought.verdict === 'BACKTRACK' || latestThought.verdict === 'REPLAN' || String(latestThought.verdict).includes('CIRCUIT_BREAKER')
+                                ? '#c084fc'
                                 : '#58a6ff',
                           }}
                         >
@@ -684,6 +692,20 @@ export default function MissionChat({
                       <div style={{ fontSize: '11.5px', color: '#c9d1d9', fontStyle: 'italic', lineHeight: '1.4' }}>
                         &ldquo;{latestThought.thought}&rdquo;
                       </div>
+
+                      {latestThought.interventionMessage && (
+                        <div style={{
+                          backgroundColor: 'rgba(168, 85, 247, 0.10)',
+                          border: '1px solid rgba(168, 85, 247, 0.35)',
+                          borderRadius: '4px',
+                          padding: '5px 8px',
+                          fontSize: '10.5px',
+                          color: '#d8b4fe',
+                          lineHeight: '1.4',
+                        }}>
+                          ⚡ {latestThought.interventionMessage}
+                        </div>
+                      )}
 
                       {latestThought.score !== undefined && (
                         <div style={{ display: 'flex', gap: '8px', fontSize: '10px', color: '#8b949e' }}>

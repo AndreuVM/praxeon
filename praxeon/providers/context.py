@@ -132,8 +132,10 @@ class ProviderContextBuilder:
         for step in window_steps:
             step_action = getattr(step, "action", None)
             tool_name = None
+            step_args = {}
             if step_action and getattr(step_action, "tool_call", None):
                 tool_name = step_action.tool_call.tool_name
+                step_args = getattr(step_action.tool_call, "arguments", {}) or {}
 
             raw_obs = getattr(step, "observation", "") or ""
             obs_str = str(raw_obs)
@@ -144,6 +146,8 @@ class ProviderContextBuilder:
             step_entry = {
                 "id": getattr(step, "step_id", getattr(step_action, "id", "step")),
                 "tool": tool_name,
+                "arguments": step_args,
+                "operation": getattr(step_action, "description", "") or "",
                 "observation": obs_str,
             }
             history_steps.append(step_entry)
