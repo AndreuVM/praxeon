@@ -81,7 +81,7 @@ export default function App() {
     supervisor: 'laya',
     executionMode: 'local_restricted',
     fullAccessConfirmed: false,
-    maxSteps: 6,
+    maxSteps: 25,
     customModel: '',
     apiKey: '',
     baseUrl: '',
@@ -966,7 +966,7 @@ export default function App() {
               setSession((prev) => ({ ...prev, sessionId: sid }));
               setActiveNav('live');
             }}
-            onCreateSession={({ goal }) => handleStartMission({ goal, llm_provider: 'simulator', supervisor: 'laya', max_steps: 6 })}
+            onCreateSession={({ goal }) => handleStartMission({ goal, llm_provider: 'simulator', supervisor: 'laya', max_steps: 25 })}
           />
         )}
 
@@ -1017,7 +1017,7 @@ export default function App() {
         onSelectSession={(sid) => {
           setSession((prev) => ({ ...prev, sessionId: sid }));
         }}
-        onCreateSession={({ goal }) => handleStartMission({ goal, llm_provider: 'simulator', supervisor: 'laya', max_steps: 6 })}
+        onCreateSession={({ goal }) => handleStartMission({ goal, llm_provider: 'simulator', supervisor: 'laya', max_steps: 25 })}
       />
     </div>
   );

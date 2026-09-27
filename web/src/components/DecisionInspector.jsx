@@ -15,6 +15,8 @@ import {
   RotateCcw,
   MessageSquare,
   Key,
+  Maximize2,
+  Minimize2,
 } from 'lucide-react';
 import MissionChat from './MissionChat';
 
@@ -44,9 +46,18 @@ export default function DecisionInspector({
   const setActiveTab = onTabChange || setInternalTab;
 
   const [copied, setCopied] = useState(false);
+  const [obsExpanded, setObsExpanded] = useState(false);
+  const [copiedObs, setCopiedObs] = useState(false);
   const [isConfirming, setIsConfirming] = useState(false);
   const [isRejecting, setIsRejecting] = useState(false);
   const [rejectionReason, setRejectionReason] = useState('');
+
+  const handleCopyObs = () => {
+    if (!observationOutput) return;
+    navigator.clipboard?.writeText(observationOutput);
+    setCopiedObs(true);
+    setTimeout(() => setCopiedObs(false), 2000);
+  };
 
   const {
     decisionId = 'd_unknown',
@@ -544,16 +555,68 @@ export default function DecisionInspector({
             {/* Execution Observation Output / Final Answer */}
             {observationOutput && (
               <div>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span style={{ fontSize: '11px', color: tool === 'finish' ? '#34d399' : '#38bdf8', fontWeight: '600' }}>
-                    {tool === 'finish' ? 'Respuesta / Conclusión Final' : 'Execution Observation'}
-                  </span>
-                  <span style={{ fontSize: '10px', color: '#64748b' }}>
-                    {tool === 'finish' ? 'Mission Completed' : (executionMode === 'full_access' ? 'Host OS' : 'Live sandbox')}
-                  </span>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ fontSize: '11px', color: tool === 'finish' ? '#34d399' : '#38bdf8', fontWeight: '600' }}>
+                      {tool === 'finish' ? 'Respuesta / Conclusión Final' : 'Execution Observation'}
+                    </span>
+                    <span style={{
+                      fontSize: '9.5px',
+                      color: '#64748b',
+                      backgroundColor: '#121722',
+                      border: '1px solid #1e2636',
+                      padding: '1px 5px',
+                      borderRadius: '3px',
+                      fontFamily: 'var(--font-mono)',
+                    }}>
+                      {(observationOutput.length >= 1024 ? `${(observationOutput.length / 1024).toFixed(1)} KB` : `${observationOutput.length} B`)} · {observationOutput.split('\n').length} lns
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ fontSize: '10px', color: '#64748b' }}>
+                      {tool === 'finish' ? 'Mission Completed' : (executionMode === 'full_access' ? 'Host OS' : 'Live sandbox')}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleCopyObs}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: copiedObs ? '#3fb950' : '#8b949e',
+                        cursor: 'pointer',
+                        padding: '2px 4px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '3px',
+                        fontSize: '10px',
+                      }}
+                      title="Copiar observación completa"
+                    >
+                      {copiedObs ? <Check size={11} /> : <Copy size={11} />}
+                      <span>{copiedObs ? 'Copiado' : 'Copiar'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setObsExpanded(!obsExpanded)}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: '#8b949e',
+                        cursor: 'pointer',
+                        padding: '2px 4px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '3px',
+                        fontSize: '10px',
+                      }}
+                      title={obsExpanded ? 'Compactar vista' : 'Ampliar vista completa'}
+                    >
+                      {obsExpanded ? <Minimize2 size={11} /> : <Maximize2 size={11} />}
+                      <span>{obsExpanded ? 'Compactar' : 'Ampliar'}</span>
+                    </button>
+                  </div>
                 </div>
                 <div style={{
-                  marginTop: '6px',
                   padding: '10px 12px',
                   backgroundColor: tool === 'finish' ? 'rgba(16, 185, 129, 0.08)' : '#070a10',
                   border: tool === 'finish' ? '1px solid rgba(16, 185, 129, 0.35)' : '1px solid #1e293b',
@@ -561,11 +624,12 @@ export default function DecisionInspector({
                   fontFamily: tool === 'finish' ? 'inherit' : 'var(--font-mono)',
                   fontSize: '11.5px',
                   color: '#34d399',
-                  maxHeight: '160px',
+                  maxHeight: obsExpanded ? '580px' : '260px',
                   overflowY: 'auto',
                   whiteSpace: 'pre-wrap',
                   wordBreak: 'break-word',
                   lineHeight: '1.45',
+                  transition: 'max-height 0.2s ease',
                 }}>
                   {observationOutput}
                 </div>

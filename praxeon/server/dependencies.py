@@ -969,7 +969,7 @@ class RuntimeApplicationService:
                 event_type=EventType.OBSERVATION_RECORDED,
                 node_id=record["action_id"],
                 decision_id=decision_id,
-                payload={"output": observation.output[:2000]},
+                payload={"output": observation.output[:100_000] if len(observation.output) > 100_000 else observation.output},
             )
 
             # Si es finish o herramienta de conclusión de ciclo de vida
@@ -1033,7 +1033,7 @@ class RuntimeApplicationService:
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
         supervisor: str = "laya",
-        max_steps: int = 6,
+        max_steps: int = 25,
         step_delay_ms: int = 900,
     ) -> Dict[str, Any]:
         """Inicia una misión interactiva supervisada en tiempo real."""
@@ -1131,7 +1131,7 @@ class RuntimeApplicationService:
         model_name = mission.get("llm_model")
         api_key = mission.get("api_key")
         base_url = mission.get("base_url")
-        max_steps = mission.get("max_steps", 6)
+        max_steps = mission.get("max_steps", 25)
         delay_sec = max(0.2, mission.get("step_delay_ms", 900) / 1000.0)
 
         # Resolver modo de ejecución de la sesión (Full Access vs Container vs Local Restricted)
@@ -1330,9 +1330,18 @@ class RuntimeApplicationService:
                         "role": "assistant",
                         "content": f"Thought: {thought}\nAction: {tool}({json.dumps(args, ensure_ascii=False)})",
                     })
+                    raw_obs = obs_output or "Acción ejecutada correctamente."
+                    if len(raw_obs) > 50_000:
+                        keep_h = 35_000
+                        keep_t = 15_000
+                        omitted = len(raw_obs) - 50_000
+                        llm_obs = f"{raw_obs[:keep_h]}\n\n[... Truncado: {omitted} caracteres intermedios omitidos por JEV para optimizar contexto del LLM ...]\n\n{raw_obs[-keep_t:]}"
+                    else:
+                        llm_obs = raw_obs
+
                     conversation.append({
                         "role": "user",
-                        "content": f"Observación de {tool}:\n{(obs_output or 'Acción ejecutada correctamente.')[:1500]}",
+                        "content": f"Observación de {tool}:\n{llm_obs}",
                     })
                 else:
                     # RETROCESO (BACKTRACK) Y BIFURCACIÓN:

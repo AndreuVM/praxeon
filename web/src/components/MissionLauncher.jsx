@@ -15,7 +15,7 @@ export default function MissionLauncher({
   const [fullAccessConfirmed, setFullAccessConfirmed] = useState(false);
   const [llmProvider, setLlmProvider] = useState('simulator');
   const [supervisor, setSupervisor] = useState('laya');
-  const [maxSteps, setMaxSteps] = useState(6);
+  const [maxSteps, setMaxSteps] = useState(25);
   const [apiKey, setApiKey] = useState('');
   const [customModel, setCustomModel] = useState('');
   const [baseUrl, setBaseUrl] = useState('');
@@ -260,10 +260,12 @@ export default function MissionLauncher({
                   outline: 'none',
                 }}
               >
-                <option value={4}>4 pasos</option>
-                <option value={6}>6 pasos</option>
-                <option value={8}>8 pasos</option>
-                <option value={12}>12 pasos</option>
+                <option value={10}>10 pasos</option>
+                <option value={20}>20 pasos</option>
+                <option value={25}>25 pasos</option>
+                <option value={35}>35 pasos</option>
+                <option value={50}>50 pasos</option>
+                <option value={100}>100 pasos</option>
               </select>
             </div>
 

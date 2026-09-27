@@ -91,9 +91,9 @@ class FullAccessExecutor:
                         execution_time_ms=round(elapsed, 2),
                     )
                 with open(path, "r", encoding="utf-8", errors="replace") as f:
-                    content = f.read(50_000)
-                    if len(content) >= 50_000:
-                        content += "\n\n[... Truncado a 50.000 bytes por límite de buffer ...]"
+                    content = f.read(100_000)
+                    if len(content) >= 100_000:
+                        content += "\n\n[... Truncado a 100.000 bytes por límite de buffer ...]"
                 elapsed = (time.perf_counter() - start_t) * 1000.0
                 return FullAccessResult(
                     output=f"[FULL_ACCESS] Contenido de '{path}':\n{content}",

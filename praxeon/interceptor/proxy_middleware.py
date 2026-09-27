@@ -480,7 +480,7 @@ class JEVProxyMiddleware:
                 event_type=EventType.OBSERVATION_RECORDED,
                 node_id=f"obs_{action_id}",
                 parent_id=f"exec_{action_id}",
-                payload={"output": observation.output[:2000]},
+                payload={"output": observation.output[:100_000] if len(observation.output) > 100_000 else observation.output},
             )
             if tool_name == "finish" and observation.success:
                 self.event_bus.emit(

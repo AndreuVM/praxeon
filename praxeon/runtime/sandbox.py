@@ -65,7 +65,7 @@ class SandboxAdapter(ABC):
         pass
 
     @abstractmethod
-    def read_file(self, path: str, max_bytes: int = 50_000) -> SandboxExecutionResult:
+    def read_file(self, path: str, max_bytes: int = 100_000) -> SandboxExecutionResult:
         """Lee un archivo comprobando contención de ruta (path containment)."""
         pass
 
@@ -290,7 +290,7 @@ class LocalProcessSandbox(SandboxAdapter):
                 sandboxed=True,
             )
 
-    def read_file(self, path: str, max_bytes: int = 50_000) -> SandboxExecutionResult:
+    def read_file(self, path: str, max_bytes: int = 100_000) -> SandboxExecutionResult:
         """Lee un archivo garantizando contención de ruta."""
         start_t = time.perf_counter()
         try:
@@ -395,7 +395,7 @@ class DryRunSandbox(SandboxAdapter):
             tier=SandboxTier.DRY_RUN,
         )
 
-    def read_file(self, path: str, max_bytes: int = 50_000) -> SandboxExecutionResult:
+    def read_file(self, path: str, max_bytes: int = 100_000) -> SandboxExecutionResult:
         return SandboxExecutionResult(
             output=f"[DRY-RUN] [SANDBOX] Lectura simulada de '{path}'.",
             success=True,
@@ -610,7 +610,7 @@ class ContainerSandboxAdapter(SandboxAdapter):
                 container_runtime=self.runtime_binary,
             )
 
-    def read_file(self, path: str, max_bytes: int = 50_000) -> SandboxExecutionResult:
+    def read_file(self, path: str, max_bytes: int = 100_000) -> SandboxExecutionResult:
         res = self._local_fallback.read_file(path, max_bytes)
         return res.model_copy(update={"tier": SandboxTier.LOCAL_PROCESS, "fallback_occurred": True})
 

@@ -33,7 +33,7 @@ def run_mission(
         api_key=req.api_key,
         base_url=req.base_url,
         supervisor=req.supervisor or "laya",
-        max_steps=req.max_steps or 6,
+        max_steps=req.max_steps or 25,
         step_delay_ms=req.step_delay_ms or 900,
     )
     summary = service.get_session_summary(meta["session_id"])

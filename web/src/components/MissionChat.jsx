@@ -45,7 +45,7 @@ export default function MissionChat({
     supervisor: 'laya',
     executionMode: 'local_restricted',
     fullAccessConfirmed: false,
-    maxSteps: 6,
+    maxSteps: 25,
     customModel: '',
     apiKey: '',
     baseUrl: '',
@@ -1054,27 +1054,58 @@ export default function MissionChat({
               />
             </div>
             <div>
-              <label style={{ fontSize: '10px', color: '#8b949e', display: 'block', marginBottom: '2px' }}>Pasos máximos:</label>
-              <select
-                value={maxSteps}
-                onChange={(e) => updateConfig({ maxSteps: Number(e.target.value) })}
-                disabled={isRunning}
-                style={{
-                  width: '100%',
-                  backgroundColor: '#121722',
-                  border: '1px solid #202737',
-                  borderRadius: '4px',
-                  padding: '4px 6px',
-                  color: '#f0f6fc',
-                  fontSize: '10.5px',
-                  outline: 'none',
-                }}
-              >
-                <option value={4}>4 pasos</option>
-                <option value={6}>6 pasos</option>
-                <option value={8}>8 pasos</option>
-                <option value={12}>12 pasos</option>
-              </select>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '3px' }}>
+                <label style={{ fontSize: '10px', color: '#8b949e' }}>Límite de pasos:</label>
+                <span style={{ fontSize: '10px', color: '#58a6ff', fontFamily: 'var(--font-mono)', fontWeight: '600' }}>
+                  {maxSteps} pasos
+                </span>
+              </div>
+              <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
+                <input
+                  type="number"
+                  min={1}
+                  max={200}
+                  value={maxSteps}
+                  onChange={(e) => updateConfig({ maxSteps: Math.max(1, Math.min(200, Number(e.target.value) || 1)) })}
+                  disabled={isRunning}
+                  style={{
+                    width: '64px',
+                    backgroundColor: '#121722',
+                    border: '1px solid #202737',
+                    borderRadius: '4px',
+                    padding: '4px 6px',
+                    color: '#f0f6fc',
+                    fontSize: '11px',
+                    fontFamily: 'var(--font-mono)',
+                    outline: 'none',
+                    textAlign: 'center',
+                  }}
+                />
+                <div style={{ display: 'flex', gap: '3px', flex: 1 }}>
+                  {[10, 25, 50, 100].map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => updateConfig({ maxSteps: preset })}
+                      disabled={isRunning}
+                      style={{
+                        flex: 1,
+                        padding: '3px 0',
+                        fontSize: '9.5px',
+                        fontWeight: '500',
+                        backgroundColor: maxSteps === preset ? '#1f6feb' : '#161b22',
+                        color: maxSteps === preset ? '#ffffff' : '#8b949e',
+                        border: `1px solid ${maxSteps === preset ? '#388bfd' : '#30363d'}`,
+                        borderRadius: '4px',
+                        cursor: isRunning ? 'not-allowed' : 'pointer',
+                        transition: 'all 0.15s ease',
+                      }}
+                    >
+                      {preset}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
         )}

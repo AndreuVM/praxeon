@@ -889,7 +889,7 @@ def _execute_single_live_task(
                                                 errors="replace",
                                             )
                                     output = (proc.stdout or proc.stderr or "Comando ejecutado sin salida").strip()
-                                    obs = output[:1500]
+                                    obs = output[:50_000]
                             else:
                                 proc = subprocess.run(
                                     cmd,
