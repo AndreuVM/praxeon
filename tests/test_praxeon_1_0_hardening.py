@@ -22,6 +22,7 @@ from datetime import datetime, timedelta
 import os
 import shutil
 import sqlite3
+import sys
 import tempfile
 import zipfile
 import pytest
@@ -431,10 +432,11 @@ def test_dod_12_full_access_custody_chain_e2e(client):
     assert sess_res.json()["data"]["execution_mode"] == "full_access"
 
     # 2. Proposal -> Evidence -> Risk -> Provider -> Policy -> Capability
+    cmd = f'"{sys.executable}" --version'
     prop_res = c.post(f"/v1/sessions/{sid}/actions", json={
         "tool": "run_command",
-        "operation": "python --version",
-        "arguments": {"command": "python --version"},
+        "operation": cmd,
+        "arguments": {"command": cmd},
         "thought_rationale": "Verificar runtime en host anfitrión",
     })
     assert prop_res.status_code == 200

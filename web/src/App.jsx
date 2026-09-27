@@ -75,6 +75,28 @@ export default function App() {
   const [inspectorTab, setInspectorTab] = useState('chat');
   const maxSeqRef = useRef(0);
 
+  // Estado persistente del Chat de Misión y configuración de modelos
+  const [missionConfig, setMissionConfig] = useState({
+    llmProvider: 'simulator',
+    supervisor: 'laya',
+    executionMode: 'local_restricted',
+    fullAccessConfirmed: false,
+    maxSteps: 6,
+    customModel: '',
+    apiKey: '',
+    baseUrl: '',
+  });
+
+  const [chatMessages, setChatMessages] = useState([
+    {
+      id: 'welcome',
+      role: 'assistant',
+      text: 'Hola, soy el asistente de supervisión de PRAXEON. Introduce una tarea para el agente autónomo. El supervisor evaluará cada acción en tiempo real, aplicando políticas deterministas, comprobación de evidencias y ejecución confinada en sandbox.',
+      time: 'Listo',
+      isWelcome: true,
+    },
+  ]);
+
   // Comprobar salud del backend y listar sesiones previas
   useEffect(() => {
     async function initBackend() {
@@ -691,6 +713,64 @@ export default function App() {
     setInspectorTab('chat');
     setLogs(INITIAL_LOGS);
     setEvents(INITIAL_EVENTS);
+    setChatMessages([
+      {
+        id: 'msg-demo-user',
+        role: 'user',
+        text: INITIAL_SESSION.goal || 'Fix authentication bug in the API',
+        time: '14:32:00',
+        config: {
+          llm_provider: 'JEV (Claude-3.5-sonnet)',
+          supervisor: 'LAYA System-1',
+          execution_mode: 'local_restricted',
+        },
+      },
+      {
+        id: 'msg-demo-assistant',
+        role: 'assistant',
+        status: 'completed',
+        time: '14:32:45',
+        thoughts: [
+          {
+            step: 1,
+            tool: 'analyze_codebase',
+            thought: 'Analizar el middleware de autenticación para comprobar la validación del token y los flujos de bypass reportados.',
+            verdict: 'ALLOW',
+            score: 0.92,
+          },
+          {
+            step: 2,
+            tool: 'create_remediation_plan',
+            thought: 'Formular un plan de remediación quirúrgico para corregir la cabecera X-API-Key y validar expiración de credenciales.',
+            verdict: 'ALLOW',
+            score: 0.89,
+          },
+          {
+            step: 3,
+            tool: 'read_file',
+            thought: 'Leer auth/middleware.py para inspeccionar la implementación actual de la firma HMAC y los nonces.',
+            verdict: 'ALLOW',
+            score: 0.95,
+          },
+          {
+            step: 4,
+            tool: 'edit_file',
+            thought: 'Aplicar parche de seguridad con validación estricta de capabilities y tiempo constante.',
+            verdict: 'ALLOW',
+            score: 0.85,
+          },
+          {
+            step: 5,
+            tool: 'git',
+            thought: 'Intentar git push origin main sin aprobación previa de seguridad.',
+            verdict: 'REVIEW',
+            score: 0.64,
+            reason: 'Acción de alto riesgo retenida para confirmación humana obligatoria.',
+          },
+        ],
+        finalAnswer: INITIAL_SESSION.finalAnswer || 'El parche de autenticación ha sido validado satisfactoriamente contra la suite de tests. El intento de push directo fue interceptado preventivamente por la política de precedencia estricta de PRAXEON.',
+      },
+    ]);
   };
 
   // Autorización humana desde el DecisionInspector
@@ -861,6 +941,10 @@ export default function App() {
               isRunning={isRunning}
               isPaused={isPaused}
               events={events}
+              chatMessages={chatMessages}
+              onMessagesChange={setChatMessages}
+              missionConfig={missionConfig}
+              onConfigChange={setMissionConfig}
               onStartMission={handleStartMission}
               onPauseMission={handlePauseMission}
               onResumeMission={handleResumeMission}

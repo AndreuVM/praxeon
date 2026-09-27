@@ -27,6 +27,10 @@ export default function MissionChat({
   isRunning = false,
   isPaused = false,
   events = [],
+  chatMessages,
+  onMessagesChange,
+  missionConfig = {},
+  onConfigChange,
   onStartMission,
   onPauseMission,
   onResumeMission,
@@ -34,20 +38,41 @@ export default function MissionChat({
   onLoadDemo,
 }) {
   const [inputText, setInputText] = useState('');
-  const [llmProvider, setLlmProvider] = useState('simulator');
-  const [supervisor, setSupervisor] = useState('laya');
-  const [executionMode, setExecutionMode] = useState('local_restricted');
-  const [fullAccessConfirmed, setFullAccessConfirmed] = useState(false);
-  const [maxSteps, setMaxSteps] = useState(6);
-  const [customModel, setCustomModel] = useState('');
-  const [apiKey, setApiKey] = useState('');
-  const [baseUrl, setBaseUrl] = useState('');
+
+  // Configuración persistente con fallback local
+  const [localConfig, setLocalConfig] = useState({
+    llmProvider: 'simulator',
+    supervisor: 'laya',
+    executionMode: 'local_restricted',
+    fullAccessConfirmed: false,
+    maxSteps: 6,
+    customModel: '',
+    apiKey: '',
+    baseUrl: '',
+  });
+
+  const effectiveConfig = { ...localConfig, ...missionConfig };
+
+  const updateConfig = (patch) => {
+    setLocalConfig((prev) => ({ ...prev, ...patch }));
+    onConfigChange?.({ ...effectiveConfig, ...patch });
+  };
+
+  const llmProvider = effectiveConfig.llmProvider;
+  const supervisor = effectiveConfig.supervisor;
+  const executionMode = effectiveConfig.executionMode;
+  const fullAccessConfirmed = effectiveConfig.fullAccessConfirmed;
+  const maxSteps = effectiveConfig.maxSteps;
+  const customModel = effectiveConfig.customModel;
+  const apiKey = effectiveConfig.apiKey;
+  const baseUrl = effectiveConfig.baseUrl;
+
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [copied, setCopied] = useState(false);
   const [showPastThoughts, setShowPastThoughts] = useState(false);
 
-  // Historial de mensajes en el chat
-  const [messages, setMessages] = useState([
+  // Historial de mensajes persistente con fallback local
+  const [localMessages, setLocalMessages] = useState([
     {
       id: 'welcome',
       role: 'assistant',
@@ -56,6 +81,14 @@ export default function MissionChat({
       isWelcome: true,
     },
   ]);
+
+  const messages = chatMessages !== undefined ? chatMessages : localMessages;
+  const setMessages = (updater) => {
+    if (onMessagesChange) {
+      onMessagesChange(updater);
+    }
+    setLocalMessages(updater);
+  };
 
   const messagesEndRef = useRef(null);
   const prevSessionIdRef = useRef(session.sessionId);
@@ -799,7 +832,7 @@ export default function MissionChat({
             <Cpu size={11} style={{ color: '#58a6ff', flexShrink: 0 }} />
             <select
               value={llmProvider}
-              onChange={(e) => setLlmProvider(e.target.value)}
+              onChange={(e) => updateConfig({ llmProvider: e.target.value })}
               disabled={isRunning}
               style={{
                 background: 'none',
@@ -837,7 +870,7 @@ export default function MissionChat({
             <Shield size={11} style={{ color: '#a371f7', flexShrink: 0 }} />
             <select
               value={supervisor}
-              onChange={(e) => setSupervisor(e.target.value)}
+              onChange={(e) => updateConfig({ supervisor: e.target.value })}
               disabled={isRunning}
               style={{
                 background: 'none',
@@ -873,8 +906,11 @@ export default function MissionChat({
             <select
               value={executionMode}
               onChange={(e) => {
-                setExecutionMode(e.target.value);
-                if (e.target.value !== 'full_access') setFullAccessConfirmed(false);
+                const val = e.target.value;
+                updateConfig({
+                  executionMode: val,
+                  ...(val !== 'full_access' ? { fullAccessConfirmed: false } : {}),
+                });
               }}
               disabled={isRunning}
               style={{
@@ -936,7 +972,7 @@ export default function MissionChat({
               <input
                 type="checkbox"
                 checked={fullAccessConfirmed}
-                onChange={(e) => setFullAccessConfirmed(e.target.checked)}
+                onChange={(e) => updateConfig({ fullAccessConfirmed: e.target.checked })}
                 disabled={isRunning}
               />
               <span>Confirmo ejecución directa sobre el host</span>
@@ -962,7 +998,7 @@ export default function MissionChat({
               <input
                 type="text"
                 value={customModel}
-                onChange={(e) => setCustomModel(e.target.value)}
+                onChange={(e) => updateConfig({ customModel: e.target.value })}
                 placeholder="ej. llama-3.3-70b-versatile"
                 disabled={isRunning}
                 style={{
@@ -982,7 +1018,7 @@ export default function MissionChat({
               <input
                 type="password"
                 value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
+                onChange={(e) => updateConfig({ apiKey: e.target.value })}
                 placeholder="gsk_... / sk-..."
                 disabled={isRunning}
                 style={{
@@ -1002,7 +1038,7 @@ export default function MissionChat({
               <input
                 type="text"
                 value={baseUrl}
-                onChange={(e) => setBaseUrl(e.target.value)}
+                onChange={(e) => updateConfig({ baseUrl: e.target.value })}
                 placeholder="http://localhost:11434"
                 disabled={isRunning}
                 style={{
@@ -1021,7 +1057,7 @@ export default function MissionChat({
               <label style={{ fontSize: '10px', color: '#8b949e', display: 'block', marginBottom: '2px' }}>Pasos máximos:</label>
               <select
                 value={maxSteps}
-                onChange={(e) => setMaxSteps(Number(e.target.value))}
+                onChange={(e) => updateConfig({ maxSteps: Number(e.target.value) })}
                 disabled={isRunning}
                 style={{
                   width: '100%',

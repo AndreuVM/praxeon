@@ -26,6 +26,10 @@ export default function DecisionInspector({
   isRunning = false,
   isPaused = false,
   events = [],
+  chatMessages,
+  onMessagesChange,
+  missionConfig,
+  onConfigChange,
   onStartMission,
   onPauseMission,
   onResumeMission,
@@ -203,62 +207,63 @@ export default function DecisionInspector({
         })}
       </div>
 
-      {/* Tab 1: Chat Interactivo de Misión */}
-      {activeTab === 'chat' && (
-        <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-          <MissionChat
-            session={session}
-            isRunning={isRunning}
-            isPaused={isPaused}
-            events={events}
-            onStartMission={onStartMission}
-            onPauseMission={onPauseMission}
-            onResumeMission={onResumeMission}
-            onStopMission={onStopMission}
-            onLoadDemo={onLoadDemo}
-          />
-        </div>
-      )}
+      {/* Tab 1: Chat Interactivo de Misión (Permanentemente montado con CSS toggle para retener historial y modelos) */}
+      <div style={{ flex: 1, overflow: 'hidden', display: activeTab === 'chat' ? 'flex' : 'none', flexDirection: 'column' }}>
+        <MissionChat
+          session={session}
+          isRunning={isRunning}
+          isPaused={isPaused}
+          events={events}
+          chatMessages={chatMessages}
+          onMessagesChange={onMessagesChange}
+          missionConfig={missionConfig}
+          onConfigChange={onConfigChange}
+          onStartMission={onStartMission}
+          onPauseMission={onPauseMission}
+          onResumeMission={onResumeMission}
+          onStopMission={onStopMission}
+          onLoadDemo={onLoadDemo}
+        />
+      </div>
 
-      {/* Tab 2, 3, 4, 5: Inspector de Nodos */}
-      {activeTab !== 'chat' && !decision && (
-        <div style={{
-          flex: 1,
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          textAlign: 'center',
-          padding: '30px',
-          color: '#64748b',
-          gap: '12px',
-        }}>
-          <Shield size={32} style={{ opacity: 0.35, color: '#58a6ff' }} />
-          <p style={{ margin: 0, fontSize: '12px', color: '#8b949e', lineHeight: '1.5' }}>
-            Selecciona un nodo del grafo en vivo para inspeccionar su trazabilidad formal, evaluación semántica y capability HMAC.
-          </p>
-          <button
-            type="button"
-            onClick={() => setActiveTab('chat')}
-            className="btn btn-secondary"
-            style={{ fontSize: '11.5px', marginTop: '6px', display: 'flex', alignItems: 'center', gap: '5px' }}
-          >
-            <MessageSquare size={12} />
-            <span>Ir al Chat de Misión</span>
-          </button>
-        </div>
-      )}
-
-      {activeTab !== 'chat' && decision && (
-        <div style={{
-        flex: 1,
-        overflowY: 'auto',
-        padding: '18px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '18px',
-        backgroundColor: '#0c0f14',
-      }}>
+      {/* Tabs 2, 3, 4, 5: Inspector de Nodos */}
+      <div style={{ flex: 1, overflow: 'hidden', display: activeTab !== 'chat' ? 'flex' : 'none', flexDirection: 'column' }}>
+        {!decision ? (
+          <div style={{
+            flex: 1,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            textAlign: 'center',
+            padding: '30px',
+            color: '#64748b',
+            gap: '12px',
+          }}>
+            <Shield size={32} style={{ opacity: 0.35, color: '#58a6ff' }} />
+            <p style={{ margin: 0, fontSize: '12px', color: '#8b949e', lineHeight: '1.5' }}>
+              Selecciona un nodo del grafo en vivo para inspeccionar su trazabilidad formal, evaluación semántica y capability HMAC.
+            </p>
+            <button
+              type="button"
+              onClick={() => setActiveTab('chat')}
+              className="btn btn-secondary"
+              style={{ fontSize: '11.5px', marginTop: '6px', display: 'flex', alignItems: 'center', gap: '5px' }}
+            >
+              <MessageSquare size={12} />
+              <span>Ir al Chat de Misión</span>
+            </button>
+          </div>
+        ) : (
+          <div style={{
+            flex: 1,
+            overflowY: 'auto',
+            padding: '18px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '18px',
+            backgroundColor: '#0c0f14',
+          }}>
         {activeTab === 'decision' && (
           <>
             {/* Status & Sequence */}
@@ -871,8 +876,9 @@ export default function DecisionInspector({
             </div>
           </div>
         )}
-        </div>
-      )}
+          </div>
+        )}
+      </div>
     </aside>
   );
 }
