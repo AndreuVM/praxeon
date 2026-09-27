@@ -6,7 +6,6 @@ import SessionKPIs from './components/SessionKPIs';
 import DecisionTree from './components/DecisionTree';
 import ConsolePanel from './components/ConsolePanel';
 import DecisionInspector from './components/DecisionInspector';
-import MissionLauncher from './components/MissionLauncher';
 import ProposeActionModal from './components/ProposeActionModal';
 import SessionsModal from './components/SessionsModal';
 
@@ -73,6 +72,7 @@ export default function App() {
   const [isPaused, setIsPaused] = useState(false);
   const [isProposeOpen, setIsProposeOpen] = useState(false);
   const [isSessionsOpen, setIsSessionsOpen] = useState(false);
+  const [inspectorTab, setInspectorTab] = useState('chat');
   const maxSeqRef = useRef(0);
 
   // Comprobar salud del backend y listar sesiones previas
@@ -559,6 +559,7 @@ export default function App() {
 
   const handleSelectNode = (nodeId) => {
     setSelectedNodeId(nodeId);
+    setInspectorTab('decision');
     const found = decisionsMap[nodeId];
     if (found) {
       const timeStr = new Date().toTimeString().split(' ')[0];
@@ -573,6 +574,7 @@ export default function App() {
   const handleStartMission = async ({ goal, execution_mode, llm_provider, supervisor, max_steps, llm_model, api_key, base_url }) => {
     setIsRunning(true);
     setIsPaused(false);
+    setInspectorTab('chat');
     const timeStr = new Date().toTimeString().split(' ')[0];
 
     try {
@@ -686,6 +688,7 @@ export default function App() {
     setNodes(INITIAL_NODES);
     setDecisionsMap(INITIAL_DECISIONS_MAP);
     setSelectedNodeId('node-5');
+    setInspectorTab('chat');
     setLogs(INITIAL_LOGS);
     setEvents(INITIAL_EVENTS);
   };
@@ -831,49 +834,10 @@ export default function App() {
               overflow: 'hidden',
               backgroundColor: '#0a0e16',
             }}>
-              {/* Interactive Mission Control Launcher */}
-              <MissionLauncher
-                isRunning={isRunning}
-                isPaused={isPaused}
-                onStartMission={handleStartMission}
-                onPauseMission={handlePauseMission}
-                onResumeMission={handleResumeMission}
-                onStopMission={handleStopMission}
-                onLoadDemo={handleLoadDemo}
-              />
-
               {/* Top Session KPIs Overview */}
               <SessionKPIs session={session} />
 
-              {/* Mission Final Answer Banner */}
-              {session.finalAnswer && (
-                <div style={{
-                  margin: '12px 20px 0 20px',
-                  padding: '14px 18px',
-                  backgroundColor: 'rgba(16, 185, 129, 0.08)',
-                  border: '1px solid rgba(16, 185, 129, 0.35)',
-                  borderRadius: '8px',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '6px',
-                  boxShadow: '0 4px 12px rgba(0, 0, 0, 0.25)',
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#34d399', fontSize: '13px', fontWeight: '700' }}>
-                      <CheckCircle2 size={16} strokeWidth={2.5} />
-                      <span>Respuesta de la Misión</span>
-                    </div>
-                    <span style={{ fontSize: '11px', color: '#6ee7b7', backgroundColor: 'rgba(16, 185, 129, 0.2)', padding: '2px 8px', borderRadius: '4px', fontWeight: '600' }}>
-                      Completada con Éxito
-                    </span>
-                  </div>
-                  <div style={{ color: '#f1f5f9', fontSize: '13px', lineHeight: '1.5', whiteSpace: 'pre-wrap' }}>
-                    {session.finalAnswer}
-                  </div>
-                </div>
-              )}
-
-              {/* Interactive Decision Tree */}
+              {/* Interactive Decision Tree (Maximizado en el canvas central) */}
               <DecisionTree
                 nodes={nodes}
                 selectedNodeId={selectedNodeId}
@@ -888,9 +852,20 @@ export default function App() {
               />
             </main>
 
-            {/* Right Decision Inspector (4 Tabs) */}
+            {/* Right Panel: Decision Inspector & Mission Chat (5 Tabs) */}
             <DecisionInspector
               decision={currentDecision}
+              activeTab={inspectorTab}
+              onTabChange={setInspectorTab}
+              session={session}
+              isRunning={isRunning}
+              isPaused={isPaused}
+              events={events}
+              onStartMission={handleStartMission}
+              onPauseMission={handlePauseMission}
+              onResumeMission={handleResumeMission}
+              onStopMission={handleStopMission}
+              onLoadDemo={handleLoadDemo}
               onApprove={handleApprove}
               onReject={handleReject}
               onExecute={handleExecute}

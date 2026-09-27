@@ -13,37 +13,36 @@ import {
   ChevronRight,
   Play,
   RotateCcw,
+  MessageSquare,
+  Key,
 } from 'lucide-react';
+import MissionChat from './MissionChat';
 
 export default function DecisionInspector({
   decision = null,
+  activeTab: activeTabProp,
+  onTabChange,
+  session = {},
+  isRunning = false,
+  isPaused = false,
+  events = [],
+  onStartMission,
+  onPauseMission,
+  onResumeMission,
+  onStopMission,
+  onLoadDemo,
   onApprove,
   onReject,
   onExecute,
 }) {
-  const [activeTab, setActiveTab] = useState('decision');
+  const [internalTab, setInternalTab] = useState('chat');
+  const activeTab = activeTabProp !== undefined ? activeTabProp : internalTab;
+  const setActiveTab = onTabChange || setInternalTab;
+
   const [copied, setCopied] = useState(false);
   const [isConfirming, setIsConfirming] = useState(false);
   const [isRejecting, setIsRejecting] = useState(false);
   const [rejectionReason, setRejectionReason] = useState('');
-
-  if (!decision) {
-    return (
-      <aside style={{
-        width: '330px',
-        backgroundColor: '#0c111a',
-        borderLeft: '1px solid #1a2333',
-        padding: '24px',
-        color: '#64748b',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        textAlign: 'center',
-      }}>
-        Selecciona un nodo del Decision Tree para inspeccionar su trazabilidad.
-      </aside>
-    );
-  }
 
   const {
     decisionId = 'd_unknown',
@@ -77,12 +76,12 @@ export default function DecisionInspector({
     decisionTab = {},
     relatedDecisions = [],
     observationOutput = null,
-  } = decision;
+  } = decision || {};
 
-  const rawDecisionTab = decision.decisionTab || decision.decision_tab || {};
-  const opAssessment = rawDecisionTab.operation_assessment || decision.operation_assessment || decision.operationAssessment || null;
-  const opCategory = (rawDecisionTab.operation_category || decision.operation_category || opAssessment?.category || 'inspection').toLowerCase();
-  const executionMode = rawDecisionTab.execution_mode || decision.execution_mode || decision.executionMode || 'local_restricted';
+  const rawDecisionTab = decision?.decisionTab || decision?.decision_tab || {};
+  const opAssessment = rawDecisionTab.operation_assessment || decision?.operation_assessment || decision?.operationAssessment || null;
+  const opCategory = (rawDecisionTab.operation_category || decision?.operation_category || opAssessment?.category || 'inspection').toLowerCase();
+  const executionMode = rawDecisionTab.execution_mode || decision?.execution_mode || decision?.executionMode || 'local_restricted';
   const isolation = rawDecisionTab.isolation || (executionMode === 'full_access' ? 'None (Host OS)' : 'Active');
   const workingDirectory = rawDecisionTab.working_directory || '/workspace';
   const networkMode = rawDecisionTab.network_mode || (executionMode === 'full_access' ? 'Host Direct' : 'Isolated (Restricted)');
@@ -143,53 +142,115 @@ export default function DecisionInspector({
     );
   };
 
+  const tabsConfig = [
+    { id: 'chat', label: 'Chat', icon: MessageSquare },
+    { id: 'decision', label: 'Decisión', icon: Shield },
+    { id: 'evidence', label: 'Evidencia', icon: FileCheck },
+    { id: 'policy', label: 'Política', icon: ShieldCheck },
+    { id: 'receipt', label: 'Recibo', icon: Key },
+  ];
+
   return (
     <aside style={{
-      width: '335px',
+      width: '400px',
+      minWidth: '380px',
+      maxWidth: '430px',
       backgroundColor: '#0c0f14',
       borderLeft: '1px solid #1a202c',
       display: 'flex',
       flexDirection: 'column',
       flexShrink: 0,
       userSelect: 'none',
+      height: '100%',
     }}>
-      {/* 4 Tabs Header */}
+      {/* 5 Tabs Header */}
       <div style={{
         height: '42px',
         backgroundColor: '#0c0f14',
         borderBottom: '1px solid #1a202c',
         display: 'flex',
         alignItems: 'center',
-        padding: '0 16px',
+        padding: '0 8px',
         justifyContent: 'space-between',
+        flexShrink: 0,
       }}>
-        {['decision', 'evidence', 'policy', 'receipt'].map((tab) => {
-          const isActive = activeTab === tab;
+        {tabsConfig.map((t) => {
+          const isActive = activeTab === t.id;
+          const IconComponent = t.icon;
           return (
             <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
+              key={t.id}
+              onClick={() => setActiveTab(t.id)}
               style={{
                 background: 'none',
                 border: 'none',
-                padding: '10px 0',
-                fontSize: '12px',
+                padding: '10px 6px',
+                fontSize: '11.5px',
                 fontWeight: isActive ? '600' : '400',
                 color: isActive ? '#f0f6fc' : '#8b949e',
                 cursor: 'pointer',
-                borderBottom: isActive ? '2px solid #f0f6fc' : '2px solid transparent',
-                textTransform: 'capitalize',
+                borderBottom: isActive ? '2px solid #58a6ff' : '2px solid transparent',
                 transition: 'all 0.15s ease',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
               }}
             >
-              {tab}
+              <IconComponent size={12} style={{ color: isActive ? '#58a6ff' : '#8b949e' }} />
+              <span>{t.label}</span>
             </button>
           );
         })}
       </div>
 
-      {/* Main Tab Content */}
-      <div style={{
+      {/* Tab 1: Chat Interactivo de Misión */}
+      {activeTab === 'chat' && (
+        <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+          <MissionChat
+            session={session}
+            isRunning={isRunning}
+            isPaused={isPaused}
+            events={events}
+            onStartMission={onStartMission}
+            onPauseMission={onPauseMission}
+            onResumeMission={onResumeMission}
+            onStopMission={onStopMission}
+            onLoadDemo={onLoadDemo}
+          />
+        </div>
+      )}
+
+      {/* Tab 2, 3, 4, 5: Inspector de Nodos */}
+      {activeTab !== 'chat' && !decision && (
+        <div style={{
+          flex: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          textAlign: 'center',
+          padding: '30px',
+          color: '#64748b',
+          gap: '12px',
+        }}>
+          <Shield size={32} style={{ opacity: 0.35, color: '#58a6ff' }} />
+          <p style={{ margin: 0, fontSize: '12px', color: '#8b949e', lineHeight: '1.5' }}>
+            Selecciona un nodo del grafo en vivo para inspeccionar su trazabilidad formal, evaluación semántica y capability HMAC.
+          </p>
+          <button
+            type="button"
+            onClick={() => setActiveTab('chat')}
+            className="btn btn-secondary"
+            style={{ fontSize: '11.5px', marginTop: '6px', display: 'flex', alignItems: 'center', gap: '5px' }}
+          >
+            <MessageSquare size={12} />
+            <span>Ir al Chat de Misión</span>
+          </button>
+        </div>
+      )}
+
+      {activeTab !== 'chat' && decision && (
+        <div style={{
         flex: 1,
         overflowY: 'auto',
         padding: '18px',
@@ -810,7 +871,8 @@ export default function DecisionInspector({
             </div>
           </div>
         )}
-      </div>
+        </div>
+      )}
     </aside>
   );
 }
