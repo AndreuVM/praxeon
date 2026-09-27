@@ -263,7 +263,7 @@ def run_benchmark_cli(
     count: Optional[int] = None,
     output_file: Optional[str] = None,
 ) -> None:
-    """Ejecuta y formatea en consola el benchmark formal de supervisión (v0.4.0)."""
+    """Ejecuta y formatea en consola el benchmark formal de supervisión (PRAXEON 1.0)."""
     from praxeon.evaluation import BenchmarkRunner, ScenarioCatalog
     from praxeon.evaluation.metrics import compute_navigator_economic_value
     from praxeon.runtime import Navigator, SecureExecutor
@@ -309,10 +309,11 @@ def run_benchmark_cli(
 
     if compare_v1:
         comp = runner.compare_v01_vs_v02(scenarios)
-        table = Table(title="🛡️ [bold white]Comparativa de Seguridad y Calidad: Baseline Sin Supervisor vs PRAXEON v0.4[/]", border_style="cyan")
+        table = Table(title="🛡️ [bold white]Comparativa de Seguridad y Calidad: Baseline Sin Supervisor vs PRAXEON 1.0[/]", border_style="cyan")
         table.add_column("Métrica", style="bold yellow")
         table.add_column("Baseline (Sin Supervisor / Permisivo)", style="red")
-        table.add_column("PRAXEON v0.4 (Full Architecture)", style="green")
+        table.add_column("PRAXEON 1.0 (Enterprise GA)", style="green")
+
 
         v1_data = comp["v0.1"]
         v2_data = comp["v0.2"]

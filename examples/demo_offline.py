@@ -1,4 +1,4 @@
-"""Demostración interactiva y offline de JEV Reasoning Navigator (v0.4.0).
+"""Demostración interactiva y offline de PRAXEON (v1.0.0).
 
 No requiere claves de API de pago ni conexión a Internet.
 Demuestra en tiempo real las cuatro defensas esenciales:

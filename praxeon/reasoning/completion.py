@@ -7,6 +7,7 @@ evitando el antipatrón de finalización prematura sin pruebas estructuradas de 
 
 from enum import Enum
 import os
+import re
 from typing import Any, Dict, List, Optional, Set, TYPE_CHECKING
 from pydantic import BaseModel, ConfigDict, Field
 from praxeon.domain.goal import CriterionType, Goal, SuccessCriterion
@@ -14,6 +15,28 @@ from praxeon.domain.models import ActionCandidate
 
 if TYPE_CHECKING:
     from praxeon.runtime.state import SessionState
+
+
+EXIT_CODE_ZERO_PATTERN = re.compile(
+    r"\b(?:exit_code|exit code|rc|status|returncode)\s*[:=]?\s*0\b|"
+    r"código de salida\s*[:=]?\s*0\b|"
+    r"\b0\s+errors\b|\b0\s+failed\b",
+    re.IGNORECASE,
+)
+
+EXIT_CODE_NONZERO_PATTERN = re.compile(
+    r"\b(?:exit_code|exit code|rc|status|returncode)\s*[:=]?\s*[1-9]\d*\b|"
+    r"código de salida\s*[:=]?\s*[1-9]\d*\b|"
+    r"\b[1-9]\d*\s+failed\b|\b[1-9]\d*\s+errors\b",
+    re.IGNORECASE,
+)
+
+TESTS_PASS_PATTERN = re.compile(
+    r"\b[1-9]\d*\s+passed\b",
+    re.IGNORECASE,
+)
+
+
 
 
 class CriterionStatus(str, Enum):
@@ -140,10 +163,12 @@ class CompletionVerifier:
                     cmd_text = str(s.action.tool_call.arguments.get("cmd") or s.action.tool_call.arguments.get("command") or "").lower()
                 
                 if "pytest" in cmd_text or "test" in cmd_text or "check" in cmd_text or "tests" in obs_text:
-                    if any(fail_word in obs_text for fail_word in ("failed", "failure", "error", "exit code 1", "exit_code=1")):
+                    if EXIT_CODE_NONZERO_PATTERN.search(obs_text) or any(re.search(rf"\b{re.escape(w)}\b", obs_text) for w in ("failed", "failure", "fail", "failures", "errors")):
                         has_failed_tests = True
-                    if any(pass_word in obs_text for pass_word in ("passed", "ok", "success", "100%", "exit code 0", "exit_code=0")):
-                        has_passed_tests = True
+                    if TESTS_PASS_PATTERN.search(obs_text) or EXIT_CODE_ZERO_PATTERN.search(obs_text) or any(re.search(rf"\b{re.escape(w)}\b", obs_text) for w in ("ok", "100%")):
+                        if not re.search(r"\bfailed to (?:verify|achieve|reach|find|run|pass)\b", obs_text):
+                            has_passed_tests = True
+
 
             if has_failed_tests and not has_passed_tests:
                 return CriterionEvaluation(
@@ -167,15 +192,15 @@ class CompletionVerifier:
             last_cmd_step = next((s for s in reversed(state.steps) if s.action.tool_call and s.action.tool_call.tool_name == "run_command"), None)
             if last_cmd_step and last_cmd_step.observation:
                 obs = last_cmd_step.observation.lower()
-                if "exit code 0" in obs or "código de salida 0" in obs or "exitoso" in obs:
+                if EXIT_CODE_ZERO_PATTERN.search(obs):
                     return CriterionEvaluation(
                         criterion_id=c_id,
                         description=desc,
                         criterion_type=c_type,
                         status=CriterionStatus.VERIFIED,
-                        rationale="Comando finalizado con código de salida 0.",
+                        rationale="Comando finalizado con código de salida 0 verificado por salida estructurada.",
                     )
-                if "exit code" in obs:
+                if EXIT_CODE_NONZERO_PATTERN.search(obs) or "exit code" in obs or "exit_code" in obs:
                     return CriterionEvaluation(
                         criterion_id=c_id,
                         description=desc,
@@ -183,6 +208,15 @@ class CompletionVerifier:
                         status=CriterionStatus.FAILED,
                         rationale="Comando finalizado con código de error distinto de 0.",
                     )
+                if "exitoso" in obs and not any(w in obs for w in ("fallo", "error", "no exitoso", "failed")):
+                    return CriterionEvaluation(
+                        criterion_id=c_id,
+                        description=desc,
+                        criterion_type=c_type,
+                        status=CriterionStatus.VERIFIED,
+                        rationale="Comando verificado como exitoso.",
+                    )
+
 
         # 4. Verificador CUSTOM / Coincidencia por claim empírico
         criterion_lower = desc.lower().strip()

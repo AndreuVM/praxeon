@@ -23,8 +23,21 @@ from praxeon.domain.assessment import (
 class CommandClassifier:
     """Clasifica operaciones de shell o llamadas a herramientas en una taxonomía multidimensional."""
 
+    # 0. Reglas deterministas para ADVERSARIAL_EVASION (precedencia máxima)
+    ADVERSARIAL_EVASION_PATTERNS = [
+        r"\|\s*(ba?sh|zsh|dash|ksh|csh|tcsh|powershell|cmd|sh\.exe|bash\.exe)\b",
+        r"\$\{(?:ifs|IFS)\}",
+
+        r"base64\s+(-d|--decode)\s*\|",
+        r"\|\s*(nc|ncat|netcat)\s+\S+",
+        r"\b(curl|wget)\b.*(?:\/etc\/shadow|\/etc\/passwd|\.ssh\/id_)",
+        r"(?:\/etc\/shadow|\/etc\/master\.passwd)",
+        r"python\s+-c\s+['\"].*\\x[0-9a-fA-F]{2}",  # hex escaped execution
+    ]
+
     # 1. Reglas deterministas para PRIVILEGE (precedencia máxima)
     PRIVILEGE_PATTERNS = [
+
         r"\bsudo\b",
         r"\brunas\b",
         r"\bchmod\b",
@@ -186,8 +199,29 @@ class CommandClassifier:
                 context_hash=ctx_hash,
             )
 
+        # Regla 0: ADVERSARIAL_EVASION (Técnicas de evasión o ejecución encubierta)
+        for pat in self.ADVERSARIAL_EVASION_PATTERNS:
+            if re.search(pat, op_lower):
+                return CommandRiskAssessment(
+                    operation=op_clean,
+                    category=CommandCategory.DESTRUCTIVE,
+                    risk_level=RiskLevel.CRITICAL,
+                    read_only=False,
+                    reversible=False,
+                    destructive=True,
+                    external_side_effect=True,
+                    network_access=True,
+                    privilege_escalation=True,
+                    confidence=1.0,
+                    reasons=[f"Técnica de evasión adversaria o ejecución encubierta detectada ('{pat}')"],
+                    matched_rules=["RULE_ADVERSARIAL_EVASION"],
+                    classifier="deterministic",
+                    context_hash=ctx_hash,
+                )
+
         # Regla 1: PRIVILEGE (Criticidad absoluta)
         for pat in self.PRIVILEGE_PATTERNS:
+
             if re.search(pat, op_lower):
                 return CommandRiskAssessment(
                     operation=op_clean,

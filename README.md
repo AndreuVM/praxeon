@@ -4,7 +4,7 @@
 
 > **The model proposes. The runtime decides what gets executed.**
 
-[![Tests](https://img.shields.io/badge/tests-269%20passed-brightgreen.svg)](https://github.com/AndreuVM/praxeon)
+[![Tests](https://img.shields.io/badge/tests-280%20passed-brightgreen.svg)](https://github.com/AndreuVM/praxeon)
 [![Version](https://img.shields.io/badge/version-v1.0.0-blue.svg)](https://github.com/AndreuVM/praxeon)
 [![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](https://github.com/AndreuVM/praxeon)
 [![Security](https://img.shields.io/badge/security-sandbox%20%26%20container%20hardened-green.svg)](https://github.com/AndreuVM/praxeon/blob/main/SECURITY.md)
@@ -183,6 +183,7 @@ praxeon/
 │   │   └── navigator.py          # Navigator (orquestador del pipeline completo)
 │   ├── integrations/             # Protocolos de interoperabilidad externa
 │   │   └── mcp/                  # Servidor Model Context Protocol nativo (stdio)
+│   ├── server/                   # Servidor FastAPI REST, WebSocket streaming y auth
 │   ├── evaluation/               # Framework de benchmarking y métricas de seguridad
 │   │   ├── scenarios.py          # ScenarioCatalog y generador procedural con ground truth
 │   │   ├── metrics.py            # Métricas decisionales, de ejecución física y económicas
@@ -191,8 +192,10 @@ praxeon/
 │   ├── cli.py                    # Consola interactiva CLI enriquecida con Rich
 │   ├── live_agent.py             # Agente autónomo con Gemini supervisado en tiempo real
 │   └── dashboard.py              # Monitor visual interactivo TUI en tiempo real
-├── tests/                        # 199 pruebas automatizadas (unitarias, integración, seguridad)
-├── SECURITY.md                   # Política de seguridad y modelo de amenazas formal
+├── docs/
+│   └── DAM_PROJECT_MEMO.md       # Memoria técnica formal para el ciclo DAM
+├── tests/                        # 280 pruebas automatizadas (unitarias, integración, seguridad, OOD)
+├── SECURITY.md                   # Política de seguridad y modelo de amenazas formal auditado
 ├── pyproject.toml                # Metadatos del proyecto y dependencias (v1.0.0)
 └── README.md
 ```
@@ -449,12 +452,22 @@ De acuerdo con las mejores prácticas de rigor científico y divulgación técni
 
 ## Verificación de la Suite de Pruebas e Invariantes
 
-La arquitectura de PRAXEON v1.0.0, los contratos de proveedores (`LayaProvider`, `TypeSafeAdapter`, `ReplayProvider`, `ConfidenceAwareRouter`), el desacoplamiento de semántica de operaciones (`CommandClassifier`), el Benchmark de Sobre-restricción (Sección 15), las barreras de enforcement HMAC, el servidor FastAPI y la suite E2E están respaldados por **269 pruebas automatizadas pasando al 100%**:
+La arquitectura de PRAXEON v1.0.0, los contratos de proveedores (`LayaProvider`, `TypeSafeAdapter`, `ReplayProvider`, `ConfidenceAwareRouter`), el desacoplamiento de semántica de operaciones (`CommandClassifier`), el Benchmark de Sobre-restricción, la detección de evasión Rule 0, la suite de concurrencia anti-replay (20 hilos), la autenticación de Web API / WebSocket, las barreras de enforcement HMAC, el servidor FastAPI y la suite E2E están respaldados por **280 pruebas automatizadas pasando al 100%**:
 
 ```bash
 pytest -q
-# 269 passed, 1 skipped in 56s
+# 280 passed, 1 skipped in ~60s
 ```
+
+---
+
+## Documentación y Memoria Académica (DAM)
+
+Para una exposición exhaustiva de los fundamentos teóricos, la arquitectura técnica, la justificación de diseño frente al currículo del Ciclo Formativo de Grado Superior en Desarrollo de Aplicaciones Multiplataforma (DAM) y el análisis de resultados empíricos, consulta:
+
+- 📄 **[Memoria Técnica Oficial del Proyecto (DAM_PROJECT_MEMO.md)](docs/DAM_PROJECT_MEMO.md)**
+- 🛡️ **[Política de Seguridad y Modelo de Amenazas (SECURITY.md)](SECURITY.md)**
+- 📊 **[Resumen Ejecutivo de Benchmarks](benchmark_results/SUMMARY.md)**
 
 ---
 

@@ -128,3 +128,109 @@ def test_complete_platform_lifecycle_e2e(test_app):
     assert "action.proposed" in event_types
     assert "capability.issued" in event_types
     assert "approval.completed" in event_types or "approval.requested" in event_types
+
+
+def test_e2e_critical_allowed_reaches_executor_and_blocked_never_touches_physical_handler(test_app):
+    """Prueba E2E Crítica Sección 10.1:
+    Demuestra de forma irrefutable que:
+    1. Una acción permitida (ALLOW) invoca el handler físico del sandbox y produce observación.
+    2. Una acción bloqueada por política (BLOCK) es rechazada con 403 y NUNCA toca el handler físico del ejecutor.
+    """
+    from unittest.mock import MagicMock
+
+    service = get_runtime_service()
+    assert service is not None
+
+    # Montar espías directamente sobre los handlers del ejecutor físico
+    original_executor_execute = service.executor.execute
+    mock_executor_execute = MagicMock(wraps=original_executor_execute)
+    service.executor.execute = mock_executor_execute
+
+    original_sandbox_dispatch = service.executor._execute_builtin_tool_in_sandbox
+    mock_sandbox_dispatch = MagicMock(wraps=original_sandbox_dispatch)
+    service.executor._execute_builtin_tool_in_sandbox = mock_sandbox_dispatch
+
+    session_id = "sess_e2e_sec_10_1"
+    create_res = test_app.post("/v1/sessions", json={
+        "goal": "Demostrar invariante fundamental de seguridad Sección 10.1",
+        "session_id": session_id,
+        "execution_mode": "local_restricted",
+    })
+    assert create_res.status_code == 201
+
+    # =========================================================================
+    # PARTE 1: Acción Permitida (ALLOW) -> Invoca Handler Físico
+    # =========================================================================
+    allow_prop = test_app.post(f"/v1/sessions/{session_id}/actions", json={
+        "tool": "read_file",
+        "operation": "pyproject.toml",
+        "arguments": {"path": "pyproject.toml"},
+        "thought_rationale": "Lectura segura de metadatos del proyecto",
+    })
+    assert allow_prop.status_code == 200
+    allow_data = allow_prop.json()["data"]
+    assert allow_data["status"] == "ALLOW"
+    assert allow_data["capability"] is not None
+    allow_dec_id = allow_data["decision_id"]
+
+    # Ejecutar en /execute
+    exec_allow_res = test_app.post(f"/v1/decisions/{allow_dec_id}/execute")
+    assert exec_allow_res.status_code == 200
+    assert exec_allow_res.json()["data"]["success"] is True
+
+    # Comprobar que el ejecutor y el sandbox fueron invocados exactamente 1 vez
+    assert mock_executor_execute.call_count == 1
+    assert mock_sandbox_dispatch.call_count == 1
+
+    # =========================================================================
+    # PARTE 2: Acción Destructiva Prohibida (BLOCK) -> NUNCA Toca Handler Físico
+    # =========================================================================
+    block_prop = test_app.post(f"/v1/sessions/{session_id}/actions", json={
+        "tool": "run_command",
+        "operation": "rm -rf / --no-preserve-root",
+        "arguments": {"command": "rm -rf / --no-preserve-root"},
+        "thought_rationale": "Intento de destrucción del sistema anfitrión",
+    })
+    assert block_prop.status_code == 200
+    block_data = block_prop.json()["data"]
+    assert block_data["status"] == "BLOCK"
+    assert block_data["capability"] is None
+    block_dec_id = block_data["decision_id"]
+
+    # Intento de forzar ejecución en /v1/decisions/{id}/execute
+    exec_block_res = test_app.post(f"/v1/decisions/{block_dec_id}/execute")
+    assert exec_block_res.status_code == 403
+    assert "Solo se permite la ejecución de decisiones 'ALLOW'" in exec_block_res.json()["detail"] or \
+           "denegada por política" in exec_block_res.json()["detail"]
+
+    # INVARIANTE CRÍTICA SECCIÓN 10.1:
+    # El handler físico no recibió NINGUNA invocación adicional (el contador permanece en 1)
+    assert mock_executor_execute.call_count == 1, (
+        f"Violación de invariante: executor.execute fue invocado {mock_executor_execute.call_count} veces "
+        "(se esperaba exactamente 1 por la acción permitida y 0 por la acción bloqueada)."
+    )
+    assert mock_sandbox_dispatch.call_count == 1, (
+        f"Violación de invariante: sandbox dispatch fue invocado {mock_sandbox_dispatch.call_count} veces "
+        "(se esperaba exactamente 1 por la acción permitida y 0 por la acción bloqueada)."
+    )
+
+    # =========================================================================
+    # PARTE 3: Verificación de Cadena de Custodia de Eventos
+    # =========================================================================
+    events_res = test_app.get(f"/v1/sessions/{session_id}/events?limit=100")
+    assert events_res.status_code == 200
+    events = events_res.json()["data"]["events"]
+
+    # Extraer eventos de la decisión bloqueada
+    block_events = [e for e in events if e.get("decision_id") == block_dec_id]
+    block_event_types = [e["type"] for e in block_events]
+
+    # Debe contener política evaluada como BLOCK
+    assert "policy.decided" in block_event_types
+    policy_ev = next(e for e in block_events if e["type"] == "policy.decided")
+    assert policy_ev["payload"]["status"] == "BLOCK"
+
+    # NUNCA debe contener execution.started ni execution.completed para la acción bloqueada
+    assert "execution.started" not in block_event_types
+    assert "execution.completed" not in block_event_types
+

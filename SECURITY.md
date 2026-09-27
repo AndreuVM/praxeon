@@ -6,9 +6,8 @@
 
 | Versión | Soportada | Estado de Mantenimiento |
 | :--- | :---: | :--- |
-| **1.0.x (v1.0.0)** | ✅ Sí | Versión activa y recomendada: Web Server FastAPI, WebSocket per-session streaming, Decision Tree durable, Execution Modes (Container, Local Restricted, Full Access) con capability binding criptográfico. |
-| **0.4.x** | ⚠️ Parcial | Mantenimiento legacy. |
-| < 0.4.0 | ❌ No | Deprecada. Se recomienda actualizar a v1.0.0. |
+| **1.0.x (v1.0.0)** | ✅ Sí | Versión activa, auditada y certificada para producción y defensa académica (DAM). Incluye Web API FastAPI con autenticación forzada, WebSocket streaming seguro, Decision Tree durable, Execution Modes (Container, Local Restricted, Full Access) con capability binding HMAC-SHA256 y fail-closed por defecto. |
+| < 1.0.0 | ❌ No | Deprecada y discontinuada. Se recomienda actualizar a v1.0.0. |
 
 ---
 
@@ -17,9 +16,10 @@
 PRAXEON asume un entorno de adversarios hostiles donde el modelo de lenguaje (LLM) está sujeto a:
 - **Inyección indirecta de prompts** a través de observaciones del entorno (archivos, páginas web, APIs externas).
 - **Alucinación de herramientas y parámetros** (invocaciones no fundamentadas empíricamente).
-- **Tentativas de manipulación de estado o replay attacks** (reutilización de autorizaciones pasadas).
+- **Tentativas de manipulación de estado o replay attacks** (reutilización de autorizaciones pasadas y carreras concurrentes).
 - **Evasión de límites del filesystem y ejecución arbitraria en el host**.
 - **Exfiltración o llamadas de red no autorizadas (Network Egress y SSRF a metadatos cloud)**.
+- **Evasión sintáctica y ofuscación de subshell** (`${IFS}`, base64 pipelines, pipes a intérpretes).
 
 Para mitigar estas amenazas, el runtime establece una **cadena formal de custodia de autorización**:
 
@@ -30,9 +30,9 @@ $$\text{LLM Proposal} \to \text{Evidence Grounding} \to \text{Risk Assessment} \
    $$\text{Semantic Judgment (JEV/LAYA)} \neq \text{Operational Policy (PolicyEngine)} \neq \text{Physical Execution (SecureExecutor)}$$
    $$\text{Policy Enforcement} \neq \text{Host Isolation}$$
    El runtime impone verificación determinista y denegación por defecto (fail-safe) a nivel de aplicación. Para contención a nivel de sistema operativo y kernel, el framework soporta:
-   - `ContainerSandboxAdapter`: Ejecución contenida en contenedores OCI (Docker/Podman) con `--read-only`, aislamiento de red (`--network=none`), límites estrictos de CPU/memoria y descarte de privilegios (`--cap-drop=ALL`).
-   - `LocalProcessSandbox`: Confinamiento local de procesos hijos con desreferenciación real de symlinks, purga de entorno y fallback ordenado.
-2. **Capabilities Ligados Criptográficamente (DecisionReceipt con HMAC-SHA256) y NonceStore Durable:**
+   - `ContainerSandboxAdapter`: Ejecución contenida en contenedores OCI (Docker/Podman) con `--read-only`, aislamiento de red (`--network=none`), límites estrictos de CPU/memoria y descarte de privilegios (`--cap-drop=ALL`). **Fail-Closed por Defecto:** `fallback_to_local: bool = False`. Si el motor de contenedores falla o no está disponible, el runtime bloquea la acción físicamente en lugar de degradar silenciosamente a ejecución local desprotegida.
+   - `LocalProcessSandbox`: Confinamiento local de procesos hijos con desreferenciación real de symlinks (`os.path.realpath`), purga de entorno y fallback ordenado.
+2. **Capabilities Ligados Criptográficamente (DecisionReceipt con HMAC-SHA256) y NonceStore Atómico Concurrente:**
    `SecureExecutor` no ejecuta ninguna herramienta física sin recibir un capability emitido por la `PolicyEngine` con:
    - `decision_status == ALLOW`
    - `action_hash == SHA256(action)`
@@ -40,7 +40,7 @@ $$\text{LLM Proposal} \to \text{Evidence Grounding} \to \text{Risk Assessment} \
    - `session_id == active_session_id`
    - `signature == HMAC-SHA256(secret_key, payload)` verificado mediante comparación en tiempo constante (`hmac.compare_digest`) para mitigar ataques de temporización.
    - `is_expired() == False` validado contra la ventana de validez temporal (`expires_at` / TTL).
-   - `nonce` no consumido previamente verificado mediante `SqliteNonceStore` persistente en disco o `InMemoryNonceStore`, con poda automática de nonces expirados (`prune_expired`). Previene ataques de repetición a través de reinicios del proceso ejecutor.
+   - `nonce` no consumido previamente verificado mediante `SqliteNonceStore` persistente en disco o `InMemoryNonceStore`. **Resistencia a Condiciones de Carrera:** Probado bajo 20 hilos de ejecución concurrente paralela; la verificación y consumo del nonce ocurre en una transacción atómica serializada, garantizando que un recibo legítimo sea consumido exactamente una vez y todos los replays concurrentes sean rechazados con excepción de seguridad.
 3. **Persistencia Durable de Estados y Auditoría de Permisos:**
    - `SqliteStateStore`: Almacén transaccional en SQLite con modo WAL para sesiones y checkpoints versionados cronológicamente.
    - `PermissionManager`: Registro transaccional en disco (`audit_log_path`) en formato JSONL inmutable para todas las solicitudes, aprobaciones y rechazos de intervención humana (HITL).
@@ -55,15 +55,16 @@ $$\text{LLM Proposal} \to \text{Evidence Grounding} \to \text{Risk Assessment} \
 6. **Sanitización de Salidas (`DataSanitizer`):**
    Las observaciones retornadas por las herramientas son analizadas y enmascaradas (eliminando credenciales, tokens JWT y claves privadas) y envueltas en delimitadores de confianza antes de ser inyectadas en la memoria del agente.
 7. **Suite de Seguridad Dedicada (`tests/security/`):**
-   Más de 30 tests de seguridad que evalúan activamente vectores de ataque adversariales:
+   Suite formal de pruebas de seguridad que evalúan activamente vectores de ataque adversariales:
    - Forja y alteración de firmas de recibos HMAC.
-   - Ataques de replay intra-proceso y tras reinicio con almacenes SQLite.
+   - Ataques de replay intra-proceso, tras reinicio con SQLite y bajo carreras concurrentes de alta carga (20 workers).
    - Path traversal y escape por enlaces simbólicos.
-   - Inyección de comandos shell y subprocesos.
+   - Inyección de comandos shell, evasión por `${IFS}`, base64 y subprocesos.
    - Exfiltración de red y evasión de políticas de egress.
    - Fuga de secretos y sanitización de credenciales.
    - Inyección indirecta de prompts en observaciones y respuestas de herramientas.
-   - Aislamiento de límites de seguridad en el servidor MCP.
+   - Aislamiento de límites de seguridad en el servidor y cliente MCP.
+   - Autenticación Web API y WebSocket en perfiles de producción.
 8. **Modos de Ejecución Formales y Límites de Full Access (PRAXEON 1.0):**
    PRAXEON define tres modos explícitos de ejecución (`ExecutionMode`):
    - `CONTAINER`: Aislamiento estricto de contenedor (cgroups, `--network=none`, raíz de solo lectura, `--pids-limit`).
@@ -81,16 +82,22 @@ $$\text{LLM Proposal} \to \text{Evidence Grounding} \to \text{Risk Assessment} \
    > - **Revisión humana obligatoria:** Toda acción con riesgo High o Critical en `FULL_ACCESS` retiene el requerimiento ineludible de aprobación humana (REVIEW).
    > - **Advertencia operacional:** `FULL_ACCESS` no ofrece aislamiento del host. Debe ser explícitamente habilitado y auditado.
 
----
-
-9. **Precedencia de Seguridad Determinista y Clasificación de Comandos (Sección 13 y 15):**
+9. **Precedencia de Seguridad Determinista y Detección de Evasión (Rule 0):**
    PRAXEON implementa una jerarquía estricta e inmutable de precedencia decisional:
-   $$\text{Static Critical Barriers (PRIVILEGE / DESTRUCTIVE)} > \text{Session Restrictions} > \text{Contextual Operation Risk} > \text{Semantic Signal} > \text{ALLOW}$$
+   $$\text{Rule 0 (Adversarial Evasion)} > \text{Static Critical Barriers (PRIVILEGE / DESTRUCTIVE)} > \text{Session Restrictions} > \text{Contextual Risk} > \text{Semantic Signal} > \text{ALLOW}$$
 
-   - **Barreras Críticas Ineludibles:** Comandos clasificados como `DESTRUCTIVE` (`rm -rf /`, `mkfs`, `DROP DATABASE`, fork bombs) o `PRIVILEGE` (`sudo`, `runas`, `chmod`, `chown`) se bloquean (`BLOCK`) de forma determinista y preventiva antes de que el modelo de lenguaje pueda sugerir su viabilidad.
-   - **Desacoplamiento de Identidad y Semántica:** Las herramientas no se evalúan por su nombre genérico (`run_command`), sino por la semántica real y los argumentos de la operación concreta clasificada a través de 10 categorías canónicas (`CommandClassifier`).
-   - **Enrutamiento por Incertidumbre:** Operaciones sintácticamente desconocidas o ambiguas en herramientas admisibles se enrutan obligatoriamente a revisión humana (`REVIEW` / `requires_confirmation = True`), eliminando el bloqueo ciego y evitando autorizaciones silenciosas sin supervisión.
-   - **Detección Preflight de Evasión:** Wrappers de subshell (`bash -c "rm -rf /"`, `sh -c`), encadenamiento de comandos (`&&`, `;`) y variables de entorno ofuscadas son interceptados en preflight estático.
+   - **Regla 0 de Evasión Adversarial:** Se interceptan y bloquean de forma incondicional patrones de camuflaje tales como:
+     - Pipes directos a shells (`| sh`, `| bash`, `| python`, `| perl`).
+     - Evasión de separadores de espacios mediante variables shell (`${IFS}`, `$IFS`).
+     - Decodificación y ejecución de cargas útiles en Base64 (`base64 -d | sh`).
+     - Exfiltración a sockets crudos de red (`/dev/tcp/`, `/dev/udp/`).
+     - Acceso o alteración de ficheros de autenticación del sistema (`/etc/shadow`, `/etc/sudoers`).
+     - Inyección de cadenas hexadecimales arbitrarias hacia intérpretes (`python -c "...exec(bytes.fromhex...)"`).
+   - **Invariante de Cero Ejecución Física (Sección 10.1):** Ninguna acción clasificada como `BLOCK` llega jamás a tocar el handler de ejecución física (`SecureExecutor.execute` ni `_execute_builtin_tool_in_sandbox`). El pipeline aborta en la capa decisional con código HTTP 403 Forbidden y cero impacto en el sistema.
+
+10. **Seguridad de la Web API y Streaming WebSocket:**
+   - **Perfiles de Seguridad (`development`, `secure`, `production`):** En `production` y `secure`, el acceso a la API REST (`/api/v1/sessions`, `/decide`, `/events`) exige autenticación obligatoria mediante clave API (`X-API-Key` o `Authorization: Bearer <key>`), configurada a través de `PRAXEON_API_KEY`.
+   - **Autenticación WebSocket:** Los sockets en `/ws/events` y `/ws/{session_id}` exigen validación de token (parámetro query `?token=` o cabecera). Los intentos de conexión sin autenticación válida son rechazados inmediatamente con código de cierre WS 1008 (Policy Violation).
 
 ---
 

@@ -318,48 +318,10 @@ class MCPBridge:
             elif method == "tools/list":
                 res = {
                     "tools": [
-                        # Herramientas v0.1
+                        # Herramientas primarias PRAXEON 1.0
                         {
-                            "name": "jev_evaluate_next_step",
-                            "description": "Evalúa mediante JEV si la siguiente acción de razonamiento o llamada a herramienta es convergente o degenerativa (bucle).",
-                            "inputSchema": {
-                                "type": "object",
-                                "properties": {
-                                    "goal": {"type": "string"},
-                                    "history": {"type": "array", "items": {"type": "object"}},
-                                    "proposed_step": {"type": "object"},
-                                },
-                                "required": ["goal", "proposed_step"],
-                            },
-                        },
-                        {
-                            "name": "jev_evaluate_step_chunk",
-                            "description": "Evalúa en lote un bloque (chunk) de pasos candidatos para supervisión eficiente, prevención de alucinaciones y ahorro de peticiones.",
-                            "inputSchema": {
-                                "type": "object",
-                                "properties": {
-                                    "goal": {"type": "string"},
-                                    "history": {"type": "array", "items": {"type": "object"}},
-                                    "proposed_steps": {"type": "array", "items": {"type": "object"}},
-                                },
-                                "required": ["goal", "proposed_steps"],
-                            },
-                        },
-                        {
-                            "name": "jev_diagnose_trace",
-                            "description": "Diagnostica una traza completa de razonamiento en busca de bucles y estancamiento.",
-                            "inputSchema": {
-                                "type": "object",
-                                "properties": {
-                                    "trace_data": {"type": "object"},
-                                },
-                                "required": ["trace_data"],
-                            },
-                        },
-                        # Nuevas herramientas v0.2
-                        {
-                            "name": "jev_v2_start_session",
-                            "description": "Inicia una sesión de supervisión formal v0.2 con un objetivo y checkpoint génesis.",
+                            "name": "praxeon_start_session",
+                            "description": "Inicia una sesión de supervisión formal con un objetivo y checkpoint génesis.",
                             "inputSchema": {
                                 "type": "object",
                                 "properties": {
@@ -370,8 +332,8 @@ class MCPBridge:
                             },
                         },
                         {
-                            "name": "jev_v2_evaluate_action",
-                            "description": "Evalúa una acción candidata mediante el pipeline normativo v0.2 emitiendo decisión formal y recibo auditable.",
+                            "name": "praxeon_validate_action",
+                            "description": "Valida y evalúa una acción candidata mediante el pipeline normativo de supervisión PRAXEON emitiendo decisión formal y capability auditable.",
                             "inputSchema": {
                                 "type": "object",
                                 "properties": {
@@ -383,7 +345,20 @@ class MCPBridge:
                             },
                         },
                         {
-                            "name": "jev_v2_step_and_execute",
+                            "name": "praxeon_evaluate_action",
+                            "description": "Alias de praxeon_validate_action para evaluar una acción candidata frente a políticas y emitir capability.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "action": {"type": "object"},
+                                    "goal": {"type": ["string", "object"]},
+                                    "session_id": {"type": "string"},
+                                },
+                                "required": ["action"],
+                            },
+                        },
+                        {
+                            "name": "praxeon_step_and_execute",
                             "description": "Evalúa y ejecuta físicamente una acción autorizada con checkpoints automáticos e ingestión de evidencia.",
                             "inputSchema": {
                                 "type": "object",
@@ -396,7 +371,7 @@ class MCPBridge:
                             },
                         },
                         {
-                            "name": "jev_v2_rollback",
+                            "name": "praxeon_rollback",
                             "description": "Restaura el estado al último checkpoint seguro (o especificado) e invalida la herramienta reincidente.",
                             "inputSchema": {
                                 "type": "object",
@@ -408,7 +383,7 @@ class MCPBridge:
                             },
                         },
                         {
-                            "name": "jev_v2_get_session_state",
+                            "name": "praxeon_get_session_state",
                             "description": "Obtiene el estado serializado y el hash SHA-256 canónico de la sesión actual.",
                             "inputSchema": {
                                 "type": "object",
@@ -416,7 +391,7 @@ class MCPBridge:
                             },
                         },
                         {
-                            "name": "jev_v2_confirm_action",
+                            "name": "praxeon_confirm_action",
                             "description": "Confirma explícitamente una acción de alto riesgo o que requiere autorización humana (PermissionManager).",
                             "inputSchema": {
                                 "type": "object",
@@ -426,60 +401,204 @@ class MCPBridge:
                                 "required": ["action_id"],
                             },
                         },
+                        {
+                            "name": "praxeon_evaluate_next_step",
+                            "description": "Evalúa mediante JEV si la siguiente acción de razonamiento o llamada a herramienta es convergente o degenerativa (bucle).",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "goal": {"type": "string"},
+                                    "history": {"type": "array", "items": {"type": "object"}},
+                                    "proposed_step": {"type": "object"},
+                                },
+                                "required": ["goal", "proposed_step"],
+                            },
+                        },
+                        {
+                            "name": "praxeon_evaluate_step_chunk",
+                            "description": "Evalúa en lote un bloque (chunk) de pasos candidatos para supervisión eficiente, prevención de alucinaciones y ahorro de peticiones.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "goal": {"type": "string"},
+                                    "history": {"type": "array", "items": {"type": "object"}},
+                                    "proposed_steps": {"type": "array", "items": {"type": "object"}},
+                                },
+                                "required": ["goal", "proposed_steps"],
+                            },
+                        },
+                        {
+                            "name": "praxeon_diagnose_trace",
+                            "description": "Diagnostica una traza completa de razonamiento en busca de bucles y estancamiento.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "trace_data": {"type": "object"},
+                                },
+                                "required": ["trace_data"],
+                            },
+                        },
+                        # Alias secundarios de retrocompatibilidad
+                        {
+                            "name": "jev_v2_start_session",
+                            "description": "Alias legacy de praxeon_start_session.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "goal": {"type": ["string", "object"]},
+                                    "session_id": {"type": "string"},
+                                },
+                                "required": ["goal"],
+                            },
+                        },
+                        {
+                            "name": "jev_v2_evaluate_action",
+                            "description": "Alias legacy de praxeon_evaluate_action.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "action": {"type": "object"},
+                                    "goal": {"type": ["string", "object"]},
+                                    "session_id": {"type": "string"},
+                                },
+                                "required": ["action"],
+                            },
+                        },
+                        {
+                            "name": "jev_v2_step_and_execute",
+                            "description": "Alias legacy de praxeon_step_and_execute.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "action": {"type": "object"},
+                                    "goal": {"type": ["string", "object"]},
+                                    "auto_checkpoint": {"type": "boolean"},
+                                },
+                                "required": ["action"],
+                            },
+                        },
+                        {
+                            "name": "jev_v2_rollback",
+                            "description": "Alias legacy de praxeon_rollback.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "checkpoint_id": {"type": "string"},
+                                    "culprit_tool": {"type": "string"},
+                                    "reason": {"type": "string"},
+                                },
+                            },
+                        },
+                        {
+                            "name": "jev_v2_get_session_state",
+                            "description": "Alias legacy de praxeon_get_session_state.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {},
+                            },
+                        },
+                        {
+                            "name": "jev_v2_confirm_action",
+                            "description": "Alias legacy de praxeon_confirm_action.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "action_id": {"type": "string"},
+                                },
+                                "required": ["action_id"],
+                            },
+                        },
+                        {
+                            "name": "jev_evaluate_next_step",
+                            "description": "Alias legacy de praxeon_evaluate_next_step.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "goal": {"type": "string"},
+                                    "history": {"type": "array", "items": {"type": "object"}},
+                                    "proposed_step": {"type": "object"},
+                                },
+                                "required": ["goal", "proposed_step"],
+                            },
+                        },
+                        {
+                            "name": "jev_evaluate_step_chunk",
+                            "description": "Alias legacy de praxeon_evaluate_step_chunk.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "goal": {"type": "string"},
+                                    "history": {"type": "array", "items": {"type": "object"}},
+                                    "proposed_steps": {"type": "array", "items": {"type": "object"}},
+                                },
+                                "required": ["goal", "proposed_steps"],
+                            },
+                        },
+                        {
+                            "name": "jev_diagnose_trace",
+                            "description": "Alias legacy de praxeon_diagnose_trace.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "trace_data": {"type": "object"},
+                                },
+                                "required": ["trace_data"],
+                            },
+                        },
                     ]
                 }
                 out = {"jsonrpc": "2.0", "id": req_id, "result": res}
             elif method == "tools/call":
                 tool_name = params.get("name")
                 arguments = params.get("arguments", {})
-                if tool_name == "jev_evaluate_next_step":
+                if tool_name in ("praxeon_evaluate_next_step", "jev_evaluate_next_step"):
                     result = self.evaluate_next_step(
                         goal=arguments.get("goal", ""),
                         history=arguments.get("history", []),
                         proposed_step=arguments.get("proposed_step", {}),
                     )
                     out = {"jsonrpc": "2.0", "id": req_id, "result": {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}}
-                elif tool_name == "jev_evaluate_step_chunk":
+                elif tool_name in ("praxeon_evaluate_step_chunk", "jev_evaluate_step_chunk"):
                     result = self.evaluate_step_chunk(
                         goal=arguments.get("goal", ""),
                         history=arguments.get("history", []),
                         proposed_steps=arguments.get("proposed_steps", []),
                     )
                     out = {"jsonrpc": "2.0", "id": req_id, "result": {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}}
-                elif tool_name == "jev_diagnose_trace":
+                elif tool_name in ("praxeon_diagnose_trace", "jev_diagnose_trace"):
                     result = self.diagnose_trace(arguments.get("trace_data", {}))
                     out = {"jsonrpc": "2.0", "id": req_id, "result": {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}}
-                elif tool_name == "jev_v2_start_session":
+                elif tool_name in ("praxeon_start_session", "jev_v2_start_session"):
                     result = self.v2_start_session(
                         goal=arguments.get("goal"),
                         session_id=arguments.get("session_id"),
                     )
                     out = {"jsonrpc": "2.0", "id": req_id, "result": {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}}
-                elif tool_name == "jev_v2_evaluate_action":
+                elif tool_name in ("praxeon_validate_action", "praxeon_evaluate_action", "jev_v2_evaluate_action"):
                     result = self.v2_evaluate_action(
                         action=arguments.get("action", {}),
                         goal=arguments.get("goal"),
                         session_id=arguments.get("session_id"),
                     )
                     out = {"jsonrpc": "2.0", "id": req_id, "result": {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}}
-                elif tool_name == "jev_v2_step_and_execute":
+                elif tool_name in ("praxeon_step_and_execute", "jev_v2_step_and_execute"):
                     result = self.v2_step_and_execute(
                         action=arguments.get("action", {}),
                         goal=arguments.get("goal"),
                         auto_checkpoint=arguments.get("auto_checkpoint", True),
                     )
                     out = {"jsonrpc": "2.0", "id": req_id, "result": {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}}
-                elif tool_name == "jev_v2_rollback":
+                elif tool_name in ("praxeon_rollback", "jev_v2_rollback"):
                     result = self.v2_rollback(
                         checkpoint_id=arguments.get("checkpoint_id"),
                         culprit_tool=arguments.get("culprit_tool"),
                         reason=arguments.get("reason", "Rollback solicitado via MCP"),
                     )
                     out = {"jsonrpc": "2.0", "id": req_id, "result": {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}}
-                elif tool_name == "jev_v2_get_session_state":
+                elif tool_name in ("praxeon_get_session_state", "jev_v2_get_session_state"):
                     result = self.v2_get_session_state()
                     out = {"jsonrpc": "2.0", "id": req_id, "result": {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}}
-                elif tool_name == "jev_v2_confirm_action":
+                elif tool_name in ("praxeon_confirm_action", "jev_v2_confirm_action"):
                     result = self.v2_confirm_action(
                         action_id=arguments.get("action_id", ""),
                     )
@@ -488,6 +607,7 @@ class MCPBridge:
                     out = {"jsonrpc": "2.0", "id": req_id, "error": {"code": -32601, "message": "Method not found"}}
             else:
                 out = {"jsonrpc": "2.0", "id": req_id, "error": {"code": -32601, "message": f"Method {method} not handled"}}
+
 
             sys.stdout.write(json.dumps(out) + "\n")
 

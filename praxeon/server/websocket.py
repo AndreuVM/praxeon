@@ -16,11 +16,18 @@ from typing import Any, Dict, Optional, Set
 import uuid
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
+import os
+from starlette.status import WS_1008_POLICY_VIOLATION
 from praxeon.domain.events import RuntimeEvent
-from praxeon.server.dependencies import RuntimeApplicationService, get_runtime_service
+from praxeon.server.dependencies import (
+    RuntimeApplicationService,
+    get_runtime_service,
+    is_auth_required,
+)
 
 logger = logging.getLogger("praxeon.server.websocket")
 ws_router = APIRouter()
+
 
 
 def safe_json_dumps(data: Any) -> str:
@@ -87,14 +94,32 @@ ws_manager = WebSocketConnectionManager()
 
 
 @ws_router.websocket("/v1/sessions/{session_id}/stream")
+@ws_router.websocket("/ws/{session_id}")
 async def websocket_session_stream(
     websocket: WebSocket,
     session_id: str,
     after_sequence: Optional[int] = None,
+    token: Optional[str] = None,
 ):
     """Endpoint WebSocket para recibir en tiempo real los eventos de la sesión con gap recovery."""
+    # 0. Verificación de autenticación de WebSocket
+    if is_auth_required():
+        auth_token = token or websocket.query_params.get("token")
+        if not auth_token:
+            auth_hdr = websocket.headers.get("x-api-key") or websocket.headers.get("authorization")
+            if auth_hdr:
+                if auth_hdr.startswith("Bearer "):
+                    auth_token = auth_hdr[7:].strip()
+                else:
+                    auth_token = auth_hdr.strip()
+        expected_key = os.environ.get("PRAXEON_API_KEY") or os.environ.get("PRAXEON_SECRET_KEY")
+        if not auth_token or (expected_key and auth_token != expected_key):
+            await websocket.close(code=WS_1008_POLICY_VIOLATION, reason="Autenticacion requerida o token invalido.")
+            return
+
     service = get_runtime_service()
     await ws_manager.connect(session_id, websocket)
+
 
     queue: asyncio.Queue = asyncio.Queue(maxsize=1000)
     unregister = service.event_bus.register_async_queue(queue, session_id=session_id)

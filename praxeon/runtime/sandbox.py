@@ -431,7 +431,7 @@ class ContainerSandboxConfig(BaseModel):
     tmpfs_size: str = "64m"
     container_workspace: str = "/workspace"
     runtime_binary: str = "auto"  # "auto", "docker", "podman"
-    fallback_to_local: bool = True
+    fallback_to_local: bool = False
 
 
 class ContainerSandboxAdapter(SandboxAdapter):

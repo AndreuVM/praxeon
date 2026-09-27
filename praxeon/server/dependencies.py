@@ -1848,3 +1848,74 @@ def set_runtime_service(service: Optional[RuntimeApplicationService]) -> None:
     global _runtime_service_instance
     with _service_lock:
         _runtime_service_instance = service
+
+
+_warned_dev_auth = False
+
+
+def is_auth_required(profile: Optional[str] = None) -> bool:
+    """Determina si la autenticación por API key es obligatoria.
+    
+    Es obligatoria si:
+    1. PRAXEON_PROFILE == 'production' o PRAXEON_ENV == 'production'.
+    2. PRAXEON_REQUIRE_AUTH == '1' / 'true'.
+    3. PRAXEON_API_KEY está configurada explícitamente en el entorno.
+    """
+    prof = (profile or os.environ.get("PRAXEON_PROFILE") or os.environ.get("PRAXEON_ENV") or "dev").lower().strip()
+    if prof == "production":
+        return True
+    if os.environ.get("PRAXEON_REQUIRE_AUTH", "").strip().lower() in ("1", "true", "yes"):
+        return True
+    if bool(os.environ.get("PRAXEON_API_KEY", "").strip()):
+        return True
+    return False
+
+
+from fastapi import Header, HTTPException, status
+
+
+def verify_api_key(
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+    authorization: Optional[str] = Header(None, alias="Authorization"),
+) -> Optional[str]:
+    """Dependency de FastAPI para validar la presencia y autenticidad del API Key.
+    
+    Acepta 'X-API-Key' o 'Authorization: Bearer <key>'.
+    En modo desarrollo sin claves configuradas emite advertencia de seguridad y permite el paso.
+    En perfil de producción o con auth activa, deniega con HTTP 401 Unauthorized.
+    """
+    global _warned_dev_auth
+
+    required = is_auth_required()
+    expected_key = os.environ.get("PRAXEON_API_KEY") or os.environ.get("PRAXEON_SECRET_KEY")
+
+    if not required:
+        if not _warned_dev_auth:
+            logger.warning("WARNING: PRAXEON running without API key authentication. Do not use in production.")
+            _warned_dev_auth = True
+        return None
+
+    # Extraer token de cabeceras
+    token = x_api_key
+    if not token and authorization:
+        if authorization.startswith("Bearer "):
+            token = authorization[7:].strip()
+        else:
+            token = authorization.strip()
+
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Autenticación requerida: proporcione 'X-API-Key' o 'Authorization: Bearer <token>'.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    if expected_key and token != expected_key:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Credenciales inválidas: API key no coincide con la configurada en el servidor.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    return token
+

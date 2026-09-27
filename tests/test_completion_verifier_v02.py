@@ -182,3 +182,50 @@ def test_completion_verifier_blocks_on_forbidden_outcome():
     assessment = verifier.verify(goal, state, finish_action)
     assert assessment.is_complete is False
     assert any("archivo de producción borrado" in v for v in assessment.unverified_claims)
+
+
+def test_completion_verifier_avoids_false_positive_on_failed_log_containing_success_word():
+    """Verifica que un log con 'Failed to verify success condition' o returncode=1 no sea interpretado como exitoso."""
+    from praxeon.domain.goal import CriterionType, SuccessCriterion
+
+    verifier = CompletionVerifier()
+    goal = Goal(
+        objective="Ejecutar suite de tests",
+        criteria=[
+            SuccessCriterion(
+                id="c_tests",
+                description="Tests unitarios pasan",
+                criterion_type=CriterionType.TESTS_PASS,
+            ),
+            SuccessCriterion(
+                id="c_exit",
+                description="Comando finaliza con exit code 0",
+                criterion_type=CriterionType.EXIT_CODE_ZERO,
+            ),
+        ],
+    )
+    state = SessionState(session_id="s_fail_log", goal=goal)
+
+    # Observación de fallo que fortuitamente contiene la palabra "success"
+    state.add_step(
+        action=ActionCandidate(
+            id="s1",
+            description="run tests",
+            tool_call=ToolCall(tool_name="run_command", arguments={"command": "pytest"}),
+        ),
+        decision=PolicyDecision(status="allow"),
+        observation="FAILED: Failed to verify success condition. returncode=1. 2 failed, 0 passed.",
+    )
+
+    finish_action = ActionCandidate(
+        id="finish",
+        description="Finalizar tarea",
+        tool_call=ToolCall(tool_name="finish", arguments={}),
+    )
+
+    assessment = verifier.verify(goal, state, finish_action)
+    assert assessment.is_complete is False
+    # Ambos criterios deben haber fallado o no estar verificados
+    assert "c_tests" in assessment.missing_criteria or any(e.status.value == "failed" for e in assessment.evaluations if e.criterion_id == "c_tests")
+    assert "c_exit" in assessment.missing_criteria or any(e.status.value == "failed" for e in assessment.evaluations if e.criterion_id == "c_exit")
+
