@@ -385,8 +385,20 @@ class RuntimeApplicationService:
                             missing_resource_name = script_part
                     break
 
+        # Detección de conclusión prematura / evasiva (finish sin ninguna evidencia u observación previa)
+        is_premature_finish = False
+        if proposal.tool in ("finish", "complete_task", "done") and state:
+            goal_lower = state.goal.objective.lower()
+            is_investigation_goal = any(w in goal_lower for w in ("informe", "report", "analiza", "audita", "explica", "resume", "cómo funciona", "inspecciona", "investiga", "describe"))
+            successful_obs = [s for s in state.steps if s.observation and len(str(s.observation).strip()) > 20]
+            summary_text = str(proposal.arguments.get("summary") or proposal.arguments.get("final_answer") or "").strip()
+            
+            # Si es una tarea que requiere investigar/analizar y no ha leído ningún archivo y el resumen es corto o evasivo
+            if is_investigation_goal and len(successful_obs) == 0 and len(summary_text) < 250:
+                is_premature_finish = True
+
         evidences = self.evidence_engine.assess(state, action)
-        if is_missing_resource:
+        if is_missing_resource or is_premature_finish:
             grounding_score = 0.05
         else:
             grounding_score = 0.85 if evidences else 0.40
@@ -402,6 +414,7 @@ class RuntimeApplicationService:
                 "claims_evaluated": [e.claim.statement for e in evidences],
                 "resource_missing": is_missing_resource,
                 "missing_resource": missing_resource_name if is_missing_resource else None,
+                "premature_finish": is_premature_finish,
             },
         )
 
@@ -437,10 +450,12 @@ class RuntimeApplicationService:
             grounded_probability=grounding_score,
             progress_probability=0.85,
         )
-        if is_missing_resource:
+        if is_missing_resource or is_premature_finish:
             current_reasons = list(assessment.reason_codes or [])
-            if f"UNGROUNDED_FILE_NOT_FOUND ({missing_resource_name})" not in current_reasons:
+            if is_missing_resource and f"UNGROUNDED_FILE_NOT_FOUND ({missing_resource_name})" not in current_reasons:
                 current_reasons.append(f"UNGROUNDED_FILE_NOT_FOUND ({missing_resource_name})")
+            if is_premature_finish and "PREMATURE_COMPLETION_WITHOUT_EVIDENCE" not in current_reasons:
+                current_reasons.append("PREMATURE_COMPLETION_WITHOUT_EVIDENCE")
             assessment = assessment.model_copy(
                 update={
                     "grounded_probability": min(assessment.grounded_probability or 1.0, 0.05),
@@ -1249,25 +1264,41 @@ class RuntimeApplicationService:
         # MODO A: LLM REAL (Ollama, Groq, OpenRouter, OpenAI, Gemini)
         # =========================================================================
         if use_real_llm and agent_llm is not None:
+            # Recolectar información detallada del sistema operativo y espacio de trabajo real
+            from praxeon.core.session_context import SessionContextManager
+            ctx_mgr = SessionContextManager()
+            env_info = ctx_mgr.get_environment_info()
+
             system_prompt = (
-                "Eres un agente de software autónomo supervisado en tiempo real por PRAXEON.\n"
-                f"OBJETIVO: {goal}\n\n"
-                "En CADA turno debes emitir tu razonamiento y UNA acción concreta en este formato exacto:\n"
-                "Thought: <análisis, justificación del paso o explicación de retroceso/bifurcación>\n"
+                "Eres un agente de software autónomo supervisado cognitivamente en tiempo real por PRAXEON (JEV Reasoning Navigator).\n"
+                f"OBJETIVO DE LA TAREA: {goal}\n\n"
+                f"{env_info}\n\n"
+                "FORMATO DE RESPUESTA EN CADA TURNO (Estricto ReAct):\n"
+                "Thought: <análisis concreto, qué archivo real vas a leer o qué comando compatible vas a ejecutar y por qué>\n"
                 "Action: <herramienta>(<argumentos_en_json_o_string>)\n\n"
                 "Herramientas disponibles:\n"
-                "- read_file(path: str)\n"
-                "- edit_file(path: str, diff: str)\n"
-                "- run_command(command: str)\n"
-                "- git(command: str)\n"
-                "- finish(summary: str)\n\n"
-                "REGLAS:\n"
-                "1. Trabaja paso a paso sobre el código real del proyecto. Si una acción falla, formula una alternativa (bifurcación).\n"
-                "2. Cuando hayas obtenido la información necesaria o completado el objetivo, concluye inmediatamente con Action: finish(summary=\"...\")."
+                "- read_file(path: str) -> Lee el contenido real de un archivo existente.\n"
+                "- edit_file(path: str, diff: str) -> Aplica modificaciones a un archivo.\n"
+                "- run_command(command: str) -> Ejecuta un comando en la consola del SO (PowerShell en Windows, bash en Unix).\n"
+                "- git(command: str) -> Ejecuta comandos git en el repositorio (status, diff, log, etc.).\n"
+                "- finish(summary: str) -> Concluye la tarea entregando la respuesta, análisis o solución final completa.\n\n"
+                "REGLAS OPERATIVAS OBLIGATORIAS:\n"
+                "1. ESTRUCTURA REAL Y ANTI-ALUCINACIÓN: Trabaja EXCLUSIVAMENTE sobre los archivos o carpetas reales listados en la información de entorno. Queda TERMINANTEMENTE PROHIBIDO inventar nombres de archivo (como main.py, app.js o script.py si no están en el árbol real).\n"
+                "2. TAREAS DE INFORME O ANÁLISIS: Si la tarea solicita un informe, resumen o explicación del proyecto, inspecciona primero con 'read_file' los archivos fundamentales (como README.md, pyproject.toml o los módulos en praxeon/) para fundamentar empíricamente tu respuesta.\n"
+                "3. PROHIBICIÓN DE CONCLUSIÓN PREMATURA: Queda PROHIBIDO usar 'finish' como acción de planificación o con textos vacíos o evasivos ('pendiente', 'no se pudo'). 'finish' SOLO debe usarse para entregar el informe o conclusión definitiva una vez recopiladas las observaciones reales.\n"
+                "4. COMPATIBILIDAD DE SO: Estás ejecutándote en Windows. NO uses comandos Unix/Linux como 'ls', 'cat', 'grep'. Utiliza 'read_file(path)' para inspeccionar archivos o comandos compatibles en run_command.\n"
+                "5. RETROCESO: Si una acción falla o es vetada, el supervisor te devolverá un mensaje de retroceso. Explica tu alternativa en 'Thought:' y propone otra acción sobre los archivos reales."
             )
 
             conversation: List[Dict[str, str]] = [
-                {"role": "user", "content": f"Inicia la resolución de esta tarea: {goal}"}
+                {
+                    "role": "user",
+                    "content": (
+                        f"Inicia la resolución de esta tarea: {goal}\n\n"
+                        "Dispones de la estructura real del espacio de trabajo y del sistema operativo en tus instrucciones de sistema. "
+                        "Comienza inspeccionando los archivos reales del proyecto relevantes para resolver el objetivo."
+                    ),
+                }
             ]
 
             active_parent_id = f"root_{sid}"
@@ -1474,7 +1505,7 @@ class RuntimeApplicationService:
                                 "DIRECTIVA ESTRICTA DEL SUPERVISOR:\n"
                                 "1. NO intentes inventar nombres de archivos ni scripts que no estén en la lista anterior.\n"
                                 "2. Trabaja EXCLUSIVAMENTE sobre los archivos o carpetas reales listados.\n"
-                                "3. Si ya dispones de la información suficiente, concluye inmediatamente con: Action: finish(summary=\"...\")."
+                                "3. Utiliza 'read_file(path)' sobre alguno de los archivos clave listados arriba (como pyproject.toml o README.md) para comprender el proyecto y responder de forma fundamentada antes de concluir."
                             ),
                         })
                         active_parent_id = f"root_{sid}"

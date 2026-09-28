@@ -198,3 +198,26 @@ def test_loop_detection_flags_repeated_failing_attempts_as_replan():
     primitives = laya._infer_primitives_calibrated(ctx)
     assert primitives.noul["is_loop"] >= 0.85
     assert primitives.choice["label"] == "REPLAN"
+
+
+def test_premature_finish_without_observations_is_rejected_as_replan():
+    """Verifica que invocar 'finish' de forma prematura en una tarea de informe/análisis sin observaciones previas sea rechazado como REPLAN."""
+    service = RuntimeApplicationService(
+        state_store=InMemoryStateStore(),
+        event_bus=EventBus(),
+    )
+    sid = "sess_premature_finish_check"
+    service.create_session(
+        goal="Dame un informe del proyecto completo",
+        session_id=sid,
+        execution_mode="full_access",
+    )
+
+    req_premature = ProposeActionRequest(
+        tool="finish",
+        arguments={"summary": "El proyecto parece ser un asistente de IA."},
+        thought_rationale="Concluyendo sin leer ningún archivo",
+    )
+    resp = service.propose_action(session_id=sid, proposal=req_premature)
+    assert resp.status == "REPLAN"
+    assert "PREMATURE_COMPLETION_WITHOUT_EVIDENCE" in resp.policy.reason_codes

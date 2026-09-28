@@ -229,6 +229,10 @@ class PolicyEngine:
                 reason_codes.append(
                     f"LOW_GROUNDED_PROBABILITY ({provider_assessment.grounded_probability:.2f} < {self.min_grounded_threshold})"
                 )
+                if provider_assessment.reason_codes:
+                    for rc in provider_assessment.reason_codes:
+                        if rc not in reason_codes:
+                            reason_codes.append(rc)
 
         # 6. Evaluación de riesgo operacional y semántica de operación
         action_hash = compute_action_hash(action)
