@@ -785,14 +785,64 @@ class RuntimeApplicationService:
                     if not any(r.get("decision_id") == d.get("decision_id") for r in records):
                         records.append(d)
 
+        return self._format_decision_records(records)
+
+    def list_all_decisions(self, session_id: Optional[str] = None, limit: int = 150) -> List[Dict[str, Any]]:
+        """Lista cronológicamente o por recencia las decisiones del sistema."""
+        if session_id:
+            return self.list_decisions_for_session(session_id)
+
+        records = self.decision_repository.list_all(limit=limit)
+        with self._lock:
+            for d in self._decisions.values():
+                if not any(r.get("decision_id") == d.get("decision_id") for r in records):
+                    records.append(d)
+
+        return self._format_decision_records(records)
+
+    def _format_decision_records(self, records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Formatea registros de decisión para consumo por vistas de auditoría del frontend."""
         results = []
         for d in records:
             act = d.get("action")
             tool_name = None
+            args = {}
+            description = ""
             if act:
                 tool_name = act.tool_call.tool_name if hasattr(act, "tool_call") and act.tool_call else None
                 if not tool_name and isinstance(act, dict):
                     tool_name = act.get("tool_call", {}).get("tool_name")
+                if hasattr(act, "tool_call") and act.tool_call and hasattr(act.tool_call, "arguments"):
+                    args = act.tool_call.arguments or {}
+                elif isinstance(act, dict):
+                    args = act.get("tool_call", {}).get("arguments", {})
+                description = getattr(act, "description", "") or (act.get("description", "") if isinstance(act, dict) else "")
+
+            # Formatear un comando o acción legible
+            command = ""
+            if tool_name == "run_command":
+                command = args.get("command") or args.get("cmd") or description
+            elif tool_name in ("read_file", "write_file", "delete_file", "patch_file"):
+                target_p = args.get("path") or args.get("file_path") or ""
+                command = f"{tool_name}: {target_p}" if target_p else (description or tool_name)
+            elif tool_name == "search_web":
+                query_p = args.get("query") or args.get("q") or ""
+                command = f"search: {query_p}" if query_p else (description or "search_web")
+            else:
+                if description:
+                    command = description
+                elif tool_name:
+                    sample_args = ", ".join(f"{k}={v}" for k, v in list(args.items())[:2])
+                    command = f"{tool_name}({sample_args})"
+                else:
+                    command = d.get("action_id", "")
+
+            receipt = d.get("receipt")
+            receipt_sig = getattr(receipt, "signature", None) if receipt else None
+            action_hash = getattr(receipt, "action_hash", None) if receipt else None
+            if not receipt_sig and isinstance(receipt, dict):
+                receipt_sig = receipt.get("signature")
+                action_hash = receipt.get("action_hash")
 
             risk_dto = d.get("risk")
             risk_level = risk_dto.level if hasattr(risk_dto, "level") else (risk_dto.get("level") if isinstance(risk_dto, dict) else "LOW")
@@ -802,14 +852,33 @@ class RuntimeApplicationService:
             else:
                 created_at_str = str(created_at_val or datetime.utcnow().isoformat())
 
+            # Proveedor principal
+            providers = d.get("providers", [])
+            provider_str = "PolicyEngine"
+            if providers and len(providers) > 0:
+                first_p = providers[0]
+                p_name = getattr(first_p, "provider_name", None) or (first_p.get("provider_name") if isinstance(first_p, dict) else "Supervisor")
+                p_score = getattr(first_p, "confidence_score", None) or (first_p.get("confidence_score") if isinstance(first_p, dict) else None)
+                if p_score is not None:
+                    provider_str = f"{p_name} ({p_score:.2f})"
+                else:
+                    provider_str = str(p_name)
+
             results.append({
                 "decision_id": d["decision_id"],
                 "session_id": d["session_id"],
                 "action_id": d["action_id"],
-                "tool": tool_name,
+                "tool": tool_name or "system",
+                "command": command,
+                "description": description,
+                "arguments": args,
                 "status": d.get("status", "ALLOW"),
                 "execution_mode": d.get("execution_mode", "local_restricted"),
                 "risk_level": risk_level,
+                "grounding_score": d.get("grounding_score", 0.0),
+                "signature": receipt_sig,
+                "action_hash": action_hash,
+                "provider": provider_str,
                 "created_at": created_at_str,
             })
         return sorted(results, key=lambda x: x["created_at"])

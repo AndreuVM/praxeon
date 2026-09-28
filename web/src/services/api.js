@@ -78,6 +78,31 @@ export async function fetchDecisionDetail(decisionId) {
   }
 }
 
+export async function fetchDecisions(sessionId = null, limit = 150) {
+  try {
+    const url = sessionId
+      ? `${API_BASE}/decisions?session_id=${encodeURIComponent(sessionId)}&limit=${limit}`
+      : `${API_BASE}/decisions?limit=${limit}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+  } catch (err) {
+    console.warn('[PRAXEON API] Error fetching decisions:', err);
+    return null;
+  }
+}
+
+export async function fetchSessionDecisions(sessionId) {
+  try {
+    const res = await fetch(`${API_BASE}/sessions/${sessionId}/decisions`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+  } catch (err) {
+    console.warn('[PRAXEON API] Error fetching session decisions:', err);
+    return null;
+  }
+}
+
 export async function confirmDecision(decisionId, approved = true, reason = '', operatorId = 'operator_admin', role = 'operator') {
   const res = await fetch(`${API_BASE}/decisions/${decisionId}/confirm`, {
     method: 'POST',

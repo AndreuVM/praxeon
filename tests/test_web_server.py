@@ -369,3 +369,35 @@ def test_mission_with_llm_provider_offline_resilience(client):
     assert data["goal"] == "Inspeccionar contención de red y variables de entorno"
     assert data["status"] == "Active"
 
+
+def test_list_decisions_cross_session_endpoint(client):
+    """Verifica que GET /v1/decisions devuelva la lista de decisiones enriquecidas."""
+    s_resp = client.post("/v1/sessions", json={"goal": "Auditoría de decisiones cross-session"})
+    session_id = s_resp.json()["data"]["session_id"]
+
+    # Proponer una acción para que se genere una decisión
+    prop_resp = client.post(f"/v1/sessions/{session_id}/actions", json={
+        "tool": "read_file",
+        "arguments": {"path": "praxeon/config.py"},
+        "description": "Leer configuración del runtime",
+    })
+    assert prop_resp.status_code == 200
+
+    # Consultar GET /v1/decisions sin session_id (todas)
+    dec_all = client.get("/v1/decisions")
+    assert dec_all.status_code == 200
+    all_items = dec_all.json()["data"]
+    assert isinstance(all_items, list)
+    assert len(all_items) >= 1
+    found = next((d for d in all_items if d["session_id"] == session_id), None)
+    assert found is not None
+    assert found["tool"] == "read_file"
+    assert "praxeon/config.py" in str(found["command"])
+
+    # Consultar GET /v1/decisions con filtro session_id
+    dec_filtered = client.get(f"/v1/decisions?session_id={session_id}")
+    assert dec_filtered.status_code == 200
+    filtered_items = dec_filtered.json()["data"]
+    assert all(d["session_id"] == session_id for d in filtered_items)
+
+

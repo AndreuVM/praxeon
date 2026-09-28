@@ -1,6 +1,6 @@
 """Rutas REST para inspección, confirmación y ejecución de decisiones (praxeon/server/routes/decisions.py)."""
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from praxeon.runtime.executor import PolicyViolation
@@ -16,6 +16,17 @@ from praxeon.server.schemas.decision import (
 )
 
 router = APIRouter(prefix="/v1/decisions", tags=["Decisions"])
+
+
+@router.get("", response_model=APIResponse[List[Dict[str, Any]]])
+def list_decisions(
+    session_id: Optional[str] = None,
+    limit: int = 150,
+    service: RuntimeApplicationService = Depends(get_runtime_service),
+):
+    """Lista las decisiones emitidas (filtradas opcionalmente por sesión)."""
+    decisions = service.list_all_decisions(session_id=session_id, limit=limit)
+    return APIResponse(data=decisions)
 
 
 @router.get("/{decision_id}", response_model=APIResponse[DecisionDetailResponse])

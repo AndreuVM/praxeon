@@ -1,19 +1,112 @@
 import React, { useState } from 'react';
-import { FolderKanban, Plus, Clock, Cpu, Check, X, AlertTriangle, ArrowRight, Search } from 'lucide-react';
+import {
+  FolderKanban,
+  Plus,
+  Clock,
+  Cpu,
+  CheckCircle,
+  XCircle,
+  AlertTriangle,
+  ArrowRight,
+  Search,
+  RefreshCw,
+  Shield,
+  Bot,
+  Play,
+  Pause,
+  Terminal,
+  Layers,
+  Sparkles,
+  ExternalLink,
+} from 'lucide-react';
 
 export default function SessionsView({
   sessions = [],
   currentSessionId,
   onSelectSession,
   onCreateSession,
+  onRefreshSessions,
 }) {
   const [filter, setFilter] = useState('');
-  const [newGoal, setNewGoal] = useState('');
+  const [statusFilter, setStatusFilter] = useState('ALL');
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const filteredSessions = sessions.filter((s) =>
-    (s.goal || '').toLowerCase().includes(filter.toLowerCase()) ||
-    (s.session_id || '').toLowerCase().includes(filter.toLowerCase())
-  );
+  // New session form state
+  const [formData, setFormData] = useState({
+    goal: '',
+    agent_name: 'CodingAgent',
+    execution_mode: 'local_restricted',
+    llm_provider: 'simulator',
+    llm_model: 'qwen2.5-coder:7b',
+    supervisor: 'laya',
+    max_steps: 25,
+  });
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      if (onRefreshSessions) {
+        await onRefreshSessions();
+      }
+    } finally {
+      setTimeout(() => setIsRefreshing(false), 400);
+    }
+  };
+
+  const handleCreateSubmit = (e) => {
+    e.preventDefault();
+    if (!formData.goal.trim()) return;
+
+    onCreateSession?.({
+      goal: formData.goal.trim(),
+      agent_name: formData.agent_name,
+      execution_mode: formData.execution_mode,
+      llm_provider: formData.llm_provider,
+      llm_model: formData.llm_model,
+      supervisor: formData.supervisor,
+      max_steps: Number(formData.max_steps) || 25,
+    });
+
+    setIsModalOpen(false);
+    setFormData((prev) => ({ ...prev, goal: '' }));
+  };
+
+  const starterTemplates = [
+    {
+      title: 'Auditar vulnerabilidades de autenticación',
+      goal: 'Analizar middleware de autenticación, verificar que no existan bypasses ni tokens hardcodeados, y ejecutar suite de tests.',
+      provider: 'simulator',
+      mode: 'local_restricted',
+    },
+    {
+      title: 'Refactorizar consultas y evitar bucles',
+      goal: 'Identificar rutas de ejecución redundantes en el módulo de persistencia y proponer un plan de optimización determinista.',
+      provider: 'simulator',
+      mode: 'local_restricted',
+    },
+    {
+      title: 'Verificar contención de sandbox y variables de entorno',
+      goal: 'Probar que intentos de acceso a .env y rutas fuera del workspace sean interceptados por el PolicyEngine con recibos HMAC.',
+      provider: 'simulator',
+      mode: 'local_restricted',
+    },
+  ];
+
+  const filteredSessions = sessions.filter((s) => {
+    const text = filter.toLowerCase();
+    const matchesText =
+      (s.goal || '').toLowerCase().includes(text) ||
+      (s.session_id || '').toLowerCase().includes(text) ||
+      (s.agent_name || '').toLowerCase().includes(text) ||
+      (s.execution_mode || '').toLowerCase().includes(text);
+
+    const matchesStatus =
+      statusFilter === 'ALL' ||
+      (s.status || 'Active').toUpperCase() === statusFilter.toUpperCase();
+
+    return matchesText && matchesStatus;
+  });
 
   return (
     <div style={{
@@ -23,155 +116,631 @@ export default function SessionsView({
       backgroundColor: '#0a0e16',
       display: 'flex',
       flexDirection: 'column',
-      gap: '20px',
+      gap: '24px',
     }}>
       {/* View Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <div style={{
+        display: 'flex',
+        alignItems: 'flex-start',
+        justifyContent: 'space-between',
+        flexWrap: 'wrap',
+        gap: '16px',
+      }}>
         <div>
-          <h1 style={{ fontSize: '18px', fontWeight: '700', color: '#f8fafc' }}>
-            Sesiones de Supervisión
-          </h1>
-          <p style={{ fontSize: '12px', color: '#73849c', marginTop: '4px' }}>
-            Historial de sesiones activas e históricas auditadas por el runtime de PRAXEON.
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div style={{
+              width: '32px',
+              height: '32px',
+              borderRadius: '8px',
+              backgroundColor: '#161c28',
+              border: '1px solid #243044',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: '#58a6ff',
+            }}>
+              <FolderKanban size={18} />
+            </div>
+            <h1 style={{ fontSize: '18px', fontWeight: '700', color: '#f8fafc', letterSpacing: '-0.01em' }}>
+              Sesiones de Supervisión
+            </h1>
+          </div>
+          <p style={{ fontSize: '12px', color: '#73849c', marginTop: '6px' }}>
+            Gestión, aislamiento y trazabilidad inmutable de misiones de agentes autónomos auditadas por PRAXEON.
           </p>
         </div>
 
-        {/* Create Session Quick Form */}
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <input
-            type="text"
-            placeholder="Nuevo objetivo de supervisión..."
-            value={newGoal}
-            onChange={(e) => setNewGoal(e.target.value)}
-            style={{
-              width: '280px',
-              padding: '7px 12px',
-              borderRadius: '6px',
-              backgroundColor: '#121824',
-              border: '1px solid #1e293b',
-              color: '#f8fafc',
-              fontSize: '12px',
-              outline: 'none',
-            }}
-          />
+        {/* Action Buttons */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <button
-            onClick={() => {
-              if (newGoal.trim()) {
-                onCreateSession(newGoal.trim());
-                setNewGoal('');
-              }
-            }}
-            disabled={!newGoal.trim()}
+            onClick={handleRefresh}
+            className="btn btn-secondary"
+            title="Refrescar sesiones"
+            style={{ padding: '8px 12px', fontSize: '12px' }}
+          >
+            <RefreshCw size={13} className={isRefreshing ? 'spin' : ''} />
+            Actualizar
+          </button>
+
+          <button
+            onClick={() => setIsModalOpen(true)}
             className="btn btn-primary"
+            style={{ padding: '8px 16px', fontSize: '12px' }}
           >
             <Plus size={14} />
-            Nueva Sesión
+            Nueva Misión
           </button>
         </div>
       </div>
 
-      {/* Filter / Search Bar */}
+      {/* Filter and Status Tab Bar */}
       <div style={{
         display: 'flex',
         alignItems: 'center',
-        gap: '10px',
-        padding: '8px 14px',
-        backgroundColor: '#121824',
-        borderRadius: '8px',
-        border: '1px solid #1e293b',
-        maxWidth: '400px',
+        justifyContent: 'space-between',
+        flexWrap: 'wrap',
+        gap: '14px',
       }}>
-        <Search size={14} style={{ color: '#64748b' }} />
-        <input
-          type="text"
-          placeholder="Filtrar por ID u objetivo..."
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-          style={{
-            background: 'none',
-            border: 'none',
-            color: '#f1f5f9',
-            fontSize: '12px',
-            outline: 'none',
-            width: '100%',
-          }}
-        />
+        {/* Search */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '10px',
+          padding: '8px 14px',
+          backgroundColor: '#121824',
+          borderRadius: '8px',
+          border: '1px solid #1e293b',
+          flex: 1,
+          maxWidth: '420px',
+        }}>
+          <Search size={14} style={{ color: '#64748b' }} />
+          <input
+            type="text"
+            placeholder="Buscar por ID, objetivo, agente o sandbox..."
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: '#f1f5f9',
+              fontSize: '12px',
+              outline: 'none',
+              width: '100%',
+            }}
+          />
+        </div>
+
+        {/* Status Filters */}
+        <div style={{
+          display: 'flex',
+          backgroundColor: '#121824',
+          borderRadius: '8px',
+          border: '1px solid #1e293b',
+          padding: '3px',
+          gap: '2px',
+        }}>
+          {[
+            { id: 'ALL', label: 'Todas' },
+            { id: 'ACTIVE', label: 'Activas' },
+            { id: 'PAUSED', label: 'Pausadas' },
+            { id: 'COMPLETED', label: 'Completadas' },
+          ].map((st) => (
+            <button
+              key={st.id}
+              onClick={() => setStatusFilter(st.id)}
+              style={{
+                padding: '5px 12px',
+                borderRadius: '6px',
+                border: 'none',
+                background: statusFilter === st.id ? '#1e2a3c' : 'transparent',
+                color: statusFilter === st.id ? '#f8fafc' : '#73849c',
+                fontSize: '11px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+              }}
+            >
+              {st.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Sessions Grid */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
-        gap: '16px',
-      }}>
-        {filteredSessions.map((s) => {
-          const isSelected = s.session_id === currentSessionId;
-          return (
-            <div
-              key={s.session_id}
-              style={{
-                backgroundColor: '#141924',
-                border: `1px solid ${isSelected ? '#f0f6fc' : '#1e2636'}`,
-                borderRadius: '8px',
-                padding: '16px',
-                display: 'flex',
-                flexDirection: 'column',
-                justifyContent: 'space-between',
-                gap: '14px',
-                transition: 'all 0.18s ease',
-                boxShadow: isSelected ? '0 0 10px rgba(240, 246, 252, 0.12)' : 'var(--shadow-clay-sm)',
-              }}
-            >
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ fontSize: '13px', fontWeight: '700', color: '#f0f6fc', fontFamily: 'var(--font-mono)' }}>
-                      #{s.session_id}
+      {filteredSessions.length > 0 ? (
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))',
+          gap: '16px',
+        }}>
+          {filteredSessions.map((s) => {
+            const isSelected = s.session_id === currentSessionId;
+            const totalDecisions = s.total_decisions || s.steps_count || 0;
+            const allowed = s.allowed_count || (s.total_decisions ? Math.max(0, s.total_decisions - (s.blocked_count || 0) - (s.review_count || 0)) : 0);
+            const blocked = s.blocked_count || 0;
+            const inReview = s.review_count || 0;
+
+            const statusColor =
+              s.status === 'Active' ? '#3fb950' :
+              s.status === 'Paused' ? '#d29922' :
+              s.status === 'Completed' ? '#58a6ff' : '#8b949e';
+
+            return (
+              <div
+                key={s.session_id}
+                style={{
+                  backgroundColor: '#121824',
+                  border: `1px solid ${isSelected ? '#388bfd' : '#1e293b'}`,
+                  borderRadius: '10px',
+                  padding: '18px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'space-between',
+                  gap: '16px',
+                  transition: 'all 0.2s ease',
+                  boxShadow: isSelected
+                    ? '0 0 14px rgba(56, 139, 253, 0.18)'
+                    : 'var(--shadow-clay-sm)',
+                }}
+              >
+                <div>
+                  {/* Top line: ID, Status, Date */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{
+                        fontSize: '13px',
+                        fontWeight: '700',
+                        color: isSelected ? '#58a6ff' : '#f0f6fc',
+                        fontFamily: 'var(--font-mono)',
+                      }}>
+                        #{s.session_id}
+                      </span>
+                      <span
+                        style={{
+                          fontSize: '10.5px',
+                          fontWeight: '600',
+                          padding: '2px 8px',
+                          borderRadius: '12px',
+                          backgroundColor: `${statusColor}18`,
+                          color: statusColor,
+                          border: `1px solid ${statusColor}40`,
+                        }}
+                      >
+                        {s.status || 'Active'}
+                      </span>
+                    </div>
+
+                    <span style={{ fontSize: '11px', color: '#64748b' }}>
+                      {s.created_at ? new Date(s.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Reciente'}
                     </span>
-                    <span className="badge badge-success">{s.status || 'Active'}</span>
                   </div>
-                  <span style={{ fontSize: '11px', color: '#8b949e' }}>
-                    {s.created_at ? new Date(s.created_at).toLocaleTimeString() : 'En curso'}
-                  </span>
+
+                  {/* Goal Description */}
+                  <p style={{
+                    fontSize: '13px',
+                    color: '#e2e8f0',
+                    lineHeight: '1.45',
+                    marginBottom: '14px',
+                    display: '-webkit-box',
+                    WebkitLineClamp: 3,
+                    WebkitBoxOrient: 'vertical',
+                    overflow: 'hidden',
+                  }}>
+                    {s.goal || 'Sin objetivo especificado'}
+                  </p>
+
+                  {/* Agent and Sandbox Tags */}
+                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '12px' }}>
+                    <span style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      fontSize: '11px',
+                      color: '#94a3b8',
+                      backgroundColor: '#162030',
+                      border: '1px solid #1e2c40',
+                      borderRadius: '4px',
+                      padding: '2px 8px',
+                    }}>
+                      <Bot size={11} style={{ color: '#58a6ff' }} />
+                      {s.agent_name || 'CodingAgent'}
+                    </span>
+
+                    <span style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      fontSize: '11px',
+                      color: '#94a3b8',
+                      backgroundColor: '#162030',
+                      border: '1px solid #1e2c40',
+                      borderRadius: '4px',
+                      padding: '2px 8px',
+                    }}>
+                      <Shield size={11} style={{ color: s.execution_mode === 'full_access' ? '#f85149' : '#3fb950' }} />
+                      {s.execution_mode || 'local_restricted'}
+                    </span>
+                  </div>
                 </div>
 
-                <p style={{ fontSize: '12.5px', color: '#c9d1d9', lineHeight: '1.4' }}>
-                  {s.goal || 'Sin objetivo especificado'}
-                </p>
-              </div>
+                {/* Bottom Stats & Button */}
+                <div style={{
+                  borderTop: '1px solid #1a2434',
+                  paddingTop: '12px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                }}>
+                  {/* Decision breakdown */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '11px', color: '#64748b' }}>
+                    <span style={{ color: '#cbd5e1', fontWeight: '600' }}>
+                      {totalDecisions} dec.
+                    </span>
+                    <span>·</span>
+                    <span style={{ color: '#3fb950', fontWeight: '500' }}>
+                      {allowed} OK
+                    </span>
+                    {blocked > 0 && (
+                      <>
+                        <span>·</span>
+                        <span style={{ color: '#f85149', fontWeight: '500' }}>
+                          {blocked} Bloq.
+                        </span>
+                      </>
+                    )}
+                    {inReview > 0 && (
+                      <>
+                        <span>·</span>
+                        <span style={{ color: '#d29922', fontWeight: '500' }}>
+                          {inReview} Rev.
+                        </span>
+                      </>
+                    )}
+                  </div>
 
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                borderTop: '1px solid #1a202c',
-                paddingTop: '12px',
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: '11px', color: '#8b949e' }}>
-                  <span>{s.steps_count || 12} decisiones</span>
-                  <span>·</span>
-                  <span style={{ color: '#3fb950' }}>8 autorizadas</span>
+                  <button
+                    onClick={() => onSelectSession?.(s.session_id)}
+                    className="btn btn-secondary"
+                    style={{
+                      padding: '5px 12px',
+                      fontSize: '11.5px',
+                      backgroundColor: isSelected ? '#1e293b' : '#141c28',
+                      borderColor: isSelected ? '#58a6ff' : '#243248',
+                      color: isSelected ? '#58a6ff' : '#f0f6fc',
+                      fontWeight: '600',
+                    }}
+                  >
+                    {isSelected ? 'Inspeccionando' : 'Abrir en Live'}
+                    <ArrowRight size={12} />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        /* Empty State with Starter Templates */
+        <div style={{
+          backgroundColor: '#121824',
+          borderRadius: '12px',
+          border: '1px dashed #243248',
+          padding: '40px 24px',
+          textAlign: 'center',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: '20px',
+        }}>
+          <div style={{
+            width: '48px',
+            height: '48px',
+            borderRadius: '12px',
+            backgroundColor: '#162030',
+            border: '1px solid #24344d',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: '#58a6ff',
+          }}>
+            <FolderKanban size={24} />
+          </div>
+
+          <div>
+            <h3 style={{ fontSize: '15px', fontWeight: '700', color: '#f8fafc' }}>
+              No se encontraron sesiones {filter ? 'con ese criterio' : 'activas'}
+            </h3>
+            <p style={{ fontSize: '12px', color: '#73849c', marginTop: '6px', maxWidth: '460px' }}>
+              Puedes iniciar una nueva misión supervisada ingresando un objetivo o seleccionando una de las plantillas sugeridas a continuación.
+            </p>
+          </div>
+
+          {/* Starter Template Cards */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+            gap: '12px',
+            width: '100%',
+            maxWidth: '920px',
+            marginTop: '8px',
+            textAlign: 'left',
+          }}>
+            {starterTemplates.map((tmpl, idx) => (
+              <div
+                key={idx}
+                style={{
+                  backgroundColor: '#0c111a',
+                  border: '1px solid #1a2436',
+                  borderRadius: '8px',
+                  padding: '16px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'space-between',
+                  gap: '12px',
+                }}
+              >
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
+                    <Sparkles size={13} style={{ color: '#58a6ff' }} />
+                    <span style={{ fontSize: '12.5px', fontWeight: '600', color: '#f0f6fc' }}>
+                      {tmpl.title}
+                    </span>
+                  </div>
+                  <p style={{ fontSize: '11.5px', color: '#8b949e', lineHeight: '1.4' }}>
+                    {tmpl.goal}
+                  </p>
                 </div>
 
                 <button
-                  onClick={() => onSelectSession(s.session_id)}
-                  className="btn btn-secondary"
-                  style={{
-                    padding: '4px 10px',
-                    fontSize: '11.5px',
-                    backgroundColor: isSelected ? '#1c2432' : '#161c26',
-                    borderColor: isSelected ? '#f0f6fc' : '#242c3b',
-                    color: isSelected ? '#f0f6fc' : '#c9d1d9',
+                  onClick={() => {
+                    onCreateSession?.({
+                      goal: tmpl.goal,
+                      agent_name: 'CodingAgent',
+                      execution_mode: tmpl.mode,
+                      llm_provider: tmpl.provider,
+                      supervisor: 'laya',
+                      max_steps: 25,
+                    });
                   }}
+                  className="btn btn-secondary"
+                  style={{ alignSelf: 'flex-start', padding: '4px 10px', fontSize: '11px' }}
                 >
-                  {isSelected ? 'Inspeccionando' : 'Abrir'}
-                  <ArrowRight size={12} />
+                  <Play size={11} style={{ fill: 'currentColor' }} />
+                  Iniciar esta plantilla
                 </button>
               </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* New Mission Modal */}
+      {isModalOpen && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.75)',
+          backdropFilter: 'blur(4px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+          padding: '20px',
+        }}>
+          <div style={{
+            backgroundColor: '#111722',
+            border: '1px solid #233147',
+            borderRadius: '12px',
+            width: '100%',
+            maxWidth: '560px',
+            boxShadow: '0 20px 40px rgba(0, 0, 0, 0.6)',
+            overflow: 'hidden',
+          }}>
+            {/* Modal Header */}
+            <div style={{
+              padding: '18px 24px',
+              borderBottom: '1px solid #1a2436',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Bot size={18} style={{ color: '#58a6ff' }} />
+                <h3 style={{ fontSize: '15px', fontWeight: '700', color: '#f8fafc' }}>
+                  Lanzar Nueva Misión Supervisada
+                </h3>
+              </div>
+              <button
+                onClick={() => setIsModalOpen(false)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#64748b',
+                  cursor: 'pointer',
+                  fontSize: '18px',
+                  padding: '4px',
+                }}
+              >
+                ✕
+              </button>
             </div>
-          );
-        })}
-      </div>
+
+            {/* Modal Body Form */}
+            <form onSubmit={handleCreateSubmit} style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div>
+                <label style={{ fontSize: '12px', fontWeight: '600', color: '#cbd5e1', display: 'block', marginBottom: '6px' }}>
+                  Objetivo / Instrucción de la Misión *
+                </label>
+                <textarea
+                  rows={3}
+                  required
+                  placeholder="Ej: Analizar middleware de autenticación, solucionar vulnerabilidad de sesión y validar con tests unitarios..."
+                  value={formData.goal}
+                  onChange={(e) => setFormData({ ...formData, goal: e.target.value })}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    borderRadius: '8px',
+                    backgroundColor: '#0a0e16',
+                    border: '1px solid #1e293b',
+                    color: '#f8fafc',
+                    fontSize: '12px',
+                    lineHeight: '1.45',
+                    outline: 'none',
+                    resize: 'vertical',
+                  }}
+                />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                <div>
+                  <label style={{ fontSize: '11.5px', fontWeight: '600', color: '#cbd5e1', display: 'block', marginBottom: '5px' }}>
+                    Agente Autónomo
+                  </label>
+                  <select
+                    value={formData.agent_name}
+                    onChange={(e) => setFormData({ ...formData, agent_name: e.target.value })}
+                    style={{
+                      width: '100%',
+                      padding: '8px 10px',
+                      borderRadius: '6px',
+                      backgroundColor: '#0a0e16',
+                      border: '1px solid #1e293b',
+                      color: '#f8fafc',
+                      fontSize: '12px',
+                      outline: 'none',
+                    }}
+                  >
+                    <option value="CodingAgent">CodingAgent (ReAct + Tools)</option>
+                    <option value="SecurityAuditAgent">SecurityAuditAgent</option>
+                    <option value="ExplorerAgent">ExplorerAgent</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ fontSize: '11.5px', fontWeight: '600', color: '#cbd5e1', display: 'block', marginBottom: '5px' }}>
+                    Aislamiento Físico Sandbox
+                  </label>
+                  <select
+                    value={formData.execution_mode}
+                    onChange={(e) => setFormData({ ...formData, execution_mode: e.target.value })}
+                    style={{
+                      width: '100%',
+                      padding: '8px 10px',
+                      borderRadius: '6px',
+                      backgroundColor: '#0a0e16',
+                      border: '1px solid #1e293b',
+                      color: '#f8fafc',
+                      fontSize: '12px',
+                      outline: 'none',
+                    }}
+                  >
+                    <option value="local_restricted">Local Confinado (Recomendado)</option>
+                    <option value="container">Contenedor Docker</option>
+                    <option value="full_access">Direct Host (Requiere confirmación)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                <div>
+                  <label style={{ fontSize: '11.5px', fontWeight: '600', color: '#cbd5e1', display: 'block', marginBottom: '5px' }}>
+                    Proveedor de Inferencia LLM
+                  </label>
+                  <select
+                    value={formData.llm_provider}
+                    onChange={(e) => setFormData({ ...formData, llm_provider: e.target.value })}
+                    style={{
+                      width: '100%',
+                      padding: '8px 10px',
+                      borderRadius: '6px',
+                      backgroundColor: '#0a0e16',
+                      border: '1px solid #1e293b',
+                      color: '#f8fafc',
+                      fontSize: '12px',
+                      outline: 'none',
+                    }}
+                  >
+                    <option value="simulator">Simulador Determinista</option>
+                    <option value="ollama">Ollama Local (http://localhost:11434)</option>
+                    <option value="groq">Groq Cloud (Llama 3.3 / Qwen)</option>
+                    <option value="openai">OpenAI (GPT-4o)</option>
+                    <option value="gemini">Google Gemini</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ fontSize: '11.5px', fontWeight: '600', color: '#cbd5e1', display: 'block', marginBottom: '5px' }}>
+                    Supervisor Cognitivo
+                  </label>
+                  <select
+                    value={formData.supervisor}
+                    onChange={(e) => setFormData({ ...formData, supervisor: e.target.value })}
+                    style={{
+                      width: '100%',
+                      padding: '8px 10px',
+                      borderRadius: '6px',
+                      backgroundColor: '#0a0e16',
+                      border: '1px solid #1e293b',
+                      color: '#f8fafc',
+                      fontSize: '12px',
+                      outline: 'none',
+                    }}
+                  >
+                    <option value="laya">LAYA (Fast-Path System-1 Local)</option>
+                    <option value="typesafe">TypeSafe AI (Deep Escalation)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label style={{ fontSize: '11.5px', fontWeight: '600', color: '#cbd5e1', display: 'block', marginBottom: '5px' }}>
+                  Límite Máximo de Pasos ({formData.max_steps})
+                </label>
+                <input
+                  type="range"
+                  min="5"
+                  max="100"
+                  step="5"
+                  value={formData.max_steps}
+                  onChange={(e) => setFormData({ ...formData, max_steps: Number(e.target.value) })}
+                  style={{ width: '100%', accentColor: '#388bfd', cursor: 'pointer' }}
+                />
+              </div>
+
+              {/* Modal Footer */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'flex-end',
+                gap: '10px',
+                marginTop: '10px',
+                borderTop: '1px solid #1a2436',
+                paddingTop: '16px',
+              }}>
+                <button
+                  type="button"
+                  onClick={() => setIsModalOpen(false)}
+                  className="btn btn-secondary"
+                  style={{ padding: '8px 16px' }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  style={{ padding: '8px 20px' }}
+                >
+                  <Play size={13} style={{ fill: 'currentColor' }} />
+                  Iniciar Supervisión
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -214,6 +214,21 @@ class SqliteDecisionRepository:
             finally:
                 self._close_conn(conn)
 
+    def list_all(self, limit: int = 200) -> List[Dict[str, Any]]:
+        """Recupera la lista de decisiones más recientes de todas las sesiones ordenadas cronológicamente."""
+        with self._lock:
+            conn = self._get_connection()
+            try:
+                cur = conn.cursor()
+                cur.execute(
+                    "SELECT data_json FROM durable_decisions ORDER BY created_at DESC LIMIT ?",
+                    (limit,),
+                )
+                rows = cur.fetchall()
+                return [_deserialize_decision_record(r[0]) for r in rows]
+            finally:
+                self._close_conn(conn)
+
     def reconstruct_from_events(
         self,
         session_id: str,

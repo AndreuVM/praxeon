@@ -702,6 +702,115 @@ export default function App() {
     ]);
   };
 
+  // Refrescar lista de sesiones
+  const refreshSessionsList = async () => {
+    try {
+      const sList = await api.fetchSessions();
+      if (sList?.data) {
+        setSessionsList(sList.data);
+      }
+    } catch (e) {
+      console.warn('Error refreshing sessions:', e);
+    }
+  };
+
+  // Cargar sesión existente y su snapshot de árbol / decisiones
+  const handleLoadSession = async (sid) => {
+    setIsRunning(false);
+    setIsPaused(false);
+    const timeStr = new Date().toTimeString().split(' ')[0];
+
+    try {
+      const snap = await api.fetchSession(sid);
+      if (snap && snap.data) {
+        const d = snap.data;
+        const summary = d.summary || {};
+
+        setSession({
+          sessionId: d.session_id,
+          goal: d.goal,
+          status: d.status || 'Active',
+          agent: d.agent_name || 'CodingAgent',
+          agent_name: d.agent_name || 'CodingAgent',
+          execution_mode: d.execution_mode || 'local_restricted',
+          metrics: {
+            totalDecisions: summary.total_decisions || 0,
+            allowed: summary.allowed_count || 0,
+            blocked: summary.blocked_count || 0,
+            review: summary.review_count || 0,
+          },
+          kpis: {
+            totalDecisions: summary.total_decisions || 0,
+            allowedDecisions: summary.allowed_count || 0,
+            blockedDecisions: summary.blocked_count || 0,
+            reviewDecisions: summary.review_count || 0,
+          },
+          runtime: {
+            provider: 'JEV + LAYA',
+            version: 'v1.0.0',
+            latencyP50: '14ms',
+            executionTime: 'Histórico',
+          },
+        });
+
+        // Reconstruir árbol si el snapshot contiene nodos
+        if (d.tree && d.tree.nodes && Array.isArray(d.tree.nodes) && d.tree.nodes.length > 0) {
+          const loadedNodes = d.tree.nodes.map((n) => ({
+            id: n.id || n.decision_id,
+            label: n.title || n.label || n.tool || 'Paso',
+            title: n.title || n.tool,
+            subtitle: n.subtitle || (n.verdict ? `Veredicto: ${n.verdict}` : ''),
+            status: n.verdict || n.status || 'ALLOW',
+            verdict: n.verdict || n.status || 'ALLOW',
+            risk: n.risk || 'LOW',
+            type: n.type || 'action',
+            parentId: n.parentId || n.parent_id || null,
+            depth: n.depth || 1,
+            sequence: n.sequence || 1,
+            tool: n.tool,
+            command: n.command,
+            timestamp: n.timestamp,
+          }));
+          setNodes(computeTreeLayout(loadedNodes));
+          setSelectedNodeId(loadedNodes[0].id);
+        }
+
+        // Cargar decisiones asociadas
+        const decRes = await api.fetchSessionDecisions(sid);
+        if (decRes && decRes.data && Array.isArray(decRes.data)) {
+          const map = {};
+          decRes.data.forEach((item) => {
+            map[item.decision_id] = {
+              decisionId: item.decision_id,
+              status: item.status,
+              riskLevel: item.risk_level,
+              tool: item.tool,
+              command: item.command,
+              actionCommand: item.command,
+              reason: item.description,
+              groundingScore: item.grounding_score,
+              signature: item.signature,
+              actionHash: item.action_hash,
+            };
+          });
+          setDecisionsMap(map);
+        }
+
+        setLogs((prev) => [
+          ...prev,
+          { time: timeStr, level: 'INFO', message: `Sesión #${sid} cargada exitosamente.` },
+        ]);
+      } else {
+        setSession((prev) => ({ ...prev, sessionId: sid }));
+      }
+    } catch (err) {
+      console.warn('Error loading session snapshot:', err);
+      setSession((prev) => ({ ...prev, sessionId: sid }));
+    }
+
+    setActiveNav('live');
+  };
+
   // Cargar árbol de demostración visual (para comparar con la captura si se desea)
   const handleLoadDemo = () => {
     setIsRunning(false);
@@ -962,18 +1071,35 @@ export default function App() {
           <SessionsView
             sessions={sessionsList}
             currentSessionId={session.sessionId}
-            onSelectSession={(sid) => {
-              setSession((prev) => ({ ...prev, sessionId: sid }));
+            onSelectSession={handleLoadSession}
+            onCreateSession={(cfg) => {
+              handleStartMission(cfg);
               setActiveNav('live');
             }}
-            onCreateSession={({ goal }) => handleStartMission({ goal, llm_provider: 'simulator', supervisor: 'laya', max_steps: 25 })}
+            onRefreshSessions={refreshSessionsList}
           />
         )}
 
         {activeNav === 'decisions' && (
           <DecisionsView
-            onSelectDecision={(nodeId) => {
+            decisions={nodes.map((n) => ({
+              decision_id: n.id,
+              sequence: n.sequence,
+              session_id: session.sessionId,
+              tool: n.tool,
+              command: n.command || n.title,
+              status: n.verdict || n.status,
+              risk_level: n.risk,
+              created_at: n.timestamp,
+            }))}
+            currentSessionId={session.sessionId}
+            sessions={sessionsList}
+            onSelectDecision={(nodeId, sid) => {
+              if (sid && sid !== session.sessionId) {
+                handleLoadSession(sid);
+              }
               setSelectedNodeId(nodeId);
+              setInspectorTab('decision');
               setActiveNav('live');
             }}
           />
@@ -981,8 +1107,14 @@ export default function App() {
 
         {activeNav === 'agents' && (
           <AgentsView
-            onSelectSession={(sid) => {
-              setSession((prev) => ({ ...prev, sessionId: sid }));
+            session={session}
+            sessionsList={sessionsList}
+            missionConfig={missionConfig}
+            isRunning={isRunning}
+            isPaused={isPaused}
+            onSelectSession={handleLoadSession}
+            onLaunchAgentMission={(cfg) => {
+              handleStartMission(cfg);
               setActiveNav('live');
             }}
           />
@@ -990,9 +1122,28 @@ export default function App() {
 
         {activeNav === 'providers' && <ProvidersView />}
 
-        {activeNav === 'security' && <SecurityView />}
+        {activeNav === 'security' && (
+          <SecurityView
+            session={session}
+            sessionsList={sessionsList}
+            decisions={nodes.map((n) => ({
+              decision_id: n.id,
+              session_id: session.sessionId,
+              tool: n.tool,
+              command: n.command || n.title,
+              status: n.verdict || n.status,
+              risk_level: n.risk,
+              created_at: n.timestamp,
+            }))}
+          />
+        )}
 
-        {activeNav === 'settings' && <SettingsView />}
+        {activeNav === 'settings' && (
+          <SettingsView
+            missionConfig={missionConfig}
+            onConfigChange={setMissionConfig}
+          />
+        )}
       </div>
 
       {/* Modals */}
@@ -1015,9 +1166,13 @@ export default function App() {
         sessions={sessionsList}
         currentSessionId={session.sessionId}
         onSelectSession={(sid) => {
-          setSession((prev) => ({ ...prev, sessionId: sid }));
+          handleLoadSession(sid);
+          setIsSessionsOpen(false);
         }}
-        onCreateSession={({ goal }) => handleStartMission({ goal, llm_provider: 'simulator', supervisor: 'laya', max_steps: 25 })}
+        onCreateSession={(cfg) => {
+          handleStartMission(cfg);
+          setIsSessionsOpen(false);
+        }}
       />
     </div>
   );
