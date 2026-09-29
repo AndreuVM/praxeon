@@ -333,10 +333,35 @@ class EventBus:
         )
         return self.publish(ev)
 
-    def publish(self, event: RuntimeEvent) -> RuntimeEvent:
-        """Persiste y despacha el evento a todos los suscriptores registrados."""
+    def publish(self, event: Any) -> RuntimeEvent:
+        """Persiste y despacha el evento a todos los suscriptores registrados, con soporte para RuntimeEvent y TelemetryEvent."""
+        if not isinstance(event, RuntimeEvent):
+            ev_type_raw = getattr(event, "event_type", getattr(event, "type", "custom_event"))
+            try:
+                ev_type = EventType(ev_type_raw)
+            except Exception:
+                type_map = {
+                    "policy_decision": EventType.POLICY_DECIDED,
+                    "tool_execution": EventType.EXECUTION_COMPLETED,
+                    "observation_captured": EventType.OBSERVATION_RECORDED,
+                    "supervisor_intervention": EventType.INTERVENTION_APPLIED,
+                }
+                ev_type = type_map.get(str(ev_type_raw), EventType.ACTION_PROPOSED)
+
+            payload_dict = event.model_dump() if hasattr(event, "model_dump") else (event.__dict__ if hasattr(event, "__dict__") else {})
+            actual_event = make_event(
+                session_id=getattr(event, "session_id", "default_session"),
+                sequence=getattr(event, "sequence", 0),
+                event_type=ev_type,
+                node_id=getattr(event, "node_id", getattr(event, "action_id", None)),
+                decision_id=getattr(event, "decision_id", None),
+                payload=payload_dict,
+            )
+        else:
+            actual_event = event
+
         # 1. Persistencia durable (asigna sequence atómicamente si venía en 0)
-        persisted_event = self.store.append(event)
+        persisted_event = self.store.append(actual_event)
 
         # 2. Despacho a callbacks en memoria
         targets = set()

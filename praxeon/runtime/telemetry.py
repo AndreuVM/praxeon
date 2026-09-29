@@ -107,6 +107,24 @@ class EventBus:
             except Exception as e:
                 logger.error(f"Error en suscriptor de EventBus ({callback}): {e}")
 
+    def emit(
+        self,
+        session_id: str,
+        event_type: Any,
+        node_id: Optional[str] = None,
+        parent_id: Optional[str] = None,
+        decision_id: Optional[str] = None,
+        payload: Optional[Dict[str, Any]] = None,
+    ) -> TelemetryEvent:
+        """Crea y publica un evento básico de telemetría para compatibilidad con la interfaz emit()."""
+        ev_type_str = getattr(event_type, "value", str(event_type))
+        event = TelemetryEvent(
+            event_type=ev_type_str,
+            session_id=session_id,
+        )
+        self.publish(event)
+        return event
+
 
 # Bus global singleton por defecto
 global_event_bus = EventBus()

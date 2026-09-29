@@ -78,6 +78,8 @@ class Navigator:
         """Inicializa una nueva sesión de supervisión formal con checkpoint génesis."""
         sid = session_id or f"sess_{len(self.audit_receipts)}"
         self.state = SessionState(session_id=sid, goal=goal)
+        if hasattr(self.executor, "sandbox") and hasattr(self.executor.sandbox, "workspace_root"):
+            self.state.metadata["workspace_root"] = self.executor.sandbox.workspace_root
         self.checkpoint_manager.create_checkpoint(self.state, reason="Genesis checkpoint")
         return self.state
 

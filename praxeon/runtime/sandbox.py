@@ -75,6 +75,23 @@ class SandboxAdapter(ABC):
         pass
 
 
+def get_default_workspace_root() -> str:
+    """Retorna la ruta raíz predeterminada del workspace del proyecto."""
+    env_root = os.environ.get("PRAXEON_DEFAULT_WORKSPACE_ROOT") or os.environ.get("PRAXEON_WORKSPACE_ROOT")
+    if env_root and os.path.exists(env_root):
+        return os.path.abspath(env_root)
+    curr = os.getcwd()
+    check = curr
+    while True:
+        if os.path.exists(os.path.join(check, ".git")) or os.path.exists(os.path.join(check, "pyproject.toml")):
+            return os.path.abspath(check)
+        parent = os.path.dirname(check)
+        if parent == check:
+            break
+        check = parent
+    return os.path.abspath(curr)
+
+
 class LocalProcessSandbox(SandboxAdapter):
     """Sandbox de proceso local con depuración de entorno y contención de rutas."""
 
@@ -112,6 +129,11 @@ class LocalProcessSandbox(SandboxAdapter):
         "dig",
         "invoke-webrequest",
         "invoke-restmethod",
+        "iwr",
+        "irm",
+        "bitsadmin",
+        "certutil",
+        "tftp",
     }
 
     def __init__(
@@ -128,7 +150,8 @@ class LocalProcessSandbox(SandboxAdapter):
         self.egress_policy = egress_policy or EgressPolicy(
             mode=EgressMode.ALLOW_ALL if allow_network else EgressMode.BLOCK_ALL
         )
-        self.blocked_vars = self.BLOCKED_ENV_VARS.union(extra_blocked_vars or set())
+        self.extra_blocked_vars = set(extra_blocked_vars or set())
+        self.blocked_vars = self.BLOCKED_ENV_VARS.union(self.extra_blocked_vars)
 
     def _sanitize_environment(self, custom_env: Optional[Dict[str, str]] = None) -> Dict[str, str]:
         """Limpia las variables de entorno para que el proceso hijo no tenga acceso a claves privadas ni tokens."""
@@ -244,10 +267,10 @@ class LocalProcessSandbox(SandboxAdapter):
                     shell=False,
                 )
             else:
-                # En Unix se ejecuta tokenizado o en subshell sin variables heredadas sensibles
-                args = shlex.split(cmd_str)
+                # En Unix se ejecuta de forma segura en subshell /bin/sh sin variables heredadas sensibles
+                # para permitir pipelines (|), redirecciones (>) y encadenamiento (&&) manteniendo aislamiento.
                 proc = subprocess.run(
-                    args,
+                    ["/bin/sh", "-c", cmd_str],
                     cwd=target_cwd,
                     env=clean_env,
                     capture_output=True,
@@ -301,6 +324,18 @@ class LocalProcessSandbox(SandboxAdapter):
                     success=False,
                     is_error=True,
                     exit_code=1,
+                )
+            if os.path.isdir(safe_path):
+                entries = os.listdir(safe_path)[:60]
+                listing = "\n".join(f"- {e}" for e in entries) if entries else "(Directorio vacío)"
+                elapsed = (time.perf_counter() - start_t) * 1000.0
+                return SandboxExecutionResult(
+                    output=f"'{path}' es un DIRECTORIO dentro del workspace. Elementos ({len(entries)}):\n{listing}",
+                    success=True,
+                    is_error=False,
+                    exit_code=0,
+                    execution_time_ms=round(elapsed, 2),
+                    sandboxed=True,
                 )
             with open(safe_path, "r", encoding="utf-8", errors="replace") as f:
                 content = f.read(max_bytes)

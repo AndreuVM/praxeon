@@ -1,11 +1,11 @@
 {
-  "timestamp": 1790351514.101727,
+  "timestamp": 1790670416.1685846,
   "total_operations": 200,
-  "total_duration_sec": 0.0203,
-  "throughput_ops_sec": 9836.7,
-  "latency_p50_ms": 0.093,
-  "latency_p95_ms": 0.134,
-  "latency_p99_ms": 0.221,
-  "latency_mean_ms": 0.101,
-  "max_latency_ms": 0.272
+  "total_duration_sec": 0.0329,
+  "throughput_ops_sec": 6077.7,
+  "latency_p50_ms": 0.158,
+  "latency_p95_ms": 0.187,
+  "latency_p99_ms": 0.285,
+  "latency_mean_ms": 0.164,
+  "max_latency_ms": 0.329
 }

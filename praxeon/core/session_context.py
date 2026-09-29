@@ -135,11 +135,18 @@ class SessionContextManager:
             "node_modules", ".gemini", "scratch", ".idea", ".vscode"
         }
 
+        system_hidden = {
+            "$recycle.bin", "system volume information", "pagefile.sys",
+            "swapfile.sys", "hiberfil.sys", "dumpstack.log", "dumpstack.log.tmp"
+        }
+
         file_tree = []
         try:
             root_items = sorted(list(cwd.iterdir()), key=lambda p: (not p.is_dir(), p.name.lower()))
             for item in root_items:
                 if item.name.startswith(".") and item.name not in (".env", ".gitignore"):
+                    continue
+                if item.name.lower() in system_hidden or item.name.startswith("$"):
                     continue
                 if item.name in ignored_dirs:
                     continue
@@ -284,3 +291,41 @@ class SessionContextManager:
             title=f"🔗 [bold cyan]Memoria de Sesión Activa ({len(self.task_records)} tareas acumuladas)[/]",
             border_style="cyan",
         )
+
+    @staticmethod
+    def get_directory_tree(root_dir: str, max_files: int = 100) -> List[str]:
+        """Obtiene una lista representativa de archivos del directorio raíz respetando exclusiones estándar."""
+        root_path = Path(root_dir)
+        if not root_path.exists() or not root_path.is_dir():
+            return []
+
+        ignored = {".git", ".venv", "venv", "__pycache__", "node_modules", "dist", ".pytest_cache", ".eggs", "build"}
+        found_files: List[str] = []
+        try:
+            for root, dirs, filenames in os.walk(root_path):
+                dirs[:] = [d for d in dirs if d not in ignored and not d.startswith(".")]
+                for f in filenames:
+                    if f.startswith("."):
+                        continue
+                    rel = os.path.relpath(os.path.join(root, f), root_dir)
+                    found_files.append(rel.replace("\\", "/"))
+                    if len(found_files) >= max_files:
+                        return found_files
+        except Exception:
+            pass
+        return found_files
+
+
+def get_default_workspace_root() -> str:
+    """Retorna la ruta raíz predeterminada del workspace del proyecto."""
+    env_root = os.environ.get("PRAXEON_WORKSPACE_ROOT")
+    if env_root and os.path.exists(env_root):
+        return str(Path(env_root).resolve())
+
+    # Search for git or pyproject root from cwd
+    curr = Path.cwd().resolve()
+    for parent in [curr] + list(curr.parents):
+        if (parent / ".git").exists() or (parent / "pyproject.toml").exists():
+            return str(parent)
+    return str(curr)
+

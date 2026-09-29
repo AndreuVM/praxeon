@@ -17,6 +17,7 @@ import uuid
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 import os
+import secrets
 from starlette.status import WS_1008_POLICY_VIOLATION
 from praxeon.domain.events import RuntimeEvent
 from praxeon.server.dependencies import (
@@ -104,6 +105,12 @@ async def websocket_session_stream(
     """Endpoint WebSocket para recibir en tiempo real los eventos de la sesión con gap recovery."""
     # 0. Verificación de autenticación de WebSocket
     if is_auth_required():
+        expected_key = os.environ.get("PRAXEON_API_KEY") or os.environ.get("PRAXEON_SECRET_KEY")
+        if not expected_key:
+            logger.error("Fallo de seguridad evitado en WS: Autenticación requerida pero no hay PRAXEON_API_KEY configurada.")
+            await websocket.close(code=WS_1008_POLICY_VIOLATION, reason="Servidor sin clave configurada.")
+            return
+
         auth_token = token or websocket.query_params.get("token")
         if not auth_token:
             auth_hdr = websocket.headers.get("x-api-key") or websocket.headers.get("authorization")
@@ -112,8 +119,7 @@ async def websocket_session_stream(
                     auth_token = auth_hdr[7:].strip()
                 else:
                     auth_token = auth_hdr.strip()
-        expected_key = os.environ.get("PRAXEON_API_KEY") or os.environ.get("PRAXEON_SECRET_KEY")
-        if not auth_token or (expected_key and auth_token != expected_key):
+        if not auth_token or not secrets.compare_digest(auth_token, expected_key):
             await websocket.close(code=WS_1008_POLICY_VIOLATION, reason="Autenticacion requerida o token invalido.")
             return
 

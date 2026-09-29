@@ -55,7 +55,12 @@ from praxeon.runtime.decision_store import SqliteDecisionRepository
 from praxeon.runtime.event_bus import EventBus, EventStore
 from praxeon.runtime.executor import PolicyViolation, SecureExecutor, ToolObservation
 from praxeon.runtime.nonce_store import NonceStore, SqliteNonceStore
-from praxeon.runtime.sandbox import LocalProcessSandbox, SandboxExecutionResult, SandboxTier
+from praxeon.runtime.sandbox import (
+    LocalProcessSandbox,
+    SandboxExecutionResult,
+    SandboxTier,
+    get_default_workspace_root,
+)
 from praxeon.runtime.state import SessionState, StepRecord
 from praxeon.runtime.state_store import SqliteStateStore
 from praxeon.runtime.tree_reducer import TreeReducer, reduce_events_to_tree
@@ -139,6 +144,7 @@ class RuntimeApplicationService:
         agent_name: str = "CodingAgent",
         metadata: Optional[Dict[str, Any]] = None,
         execution_mode: str = "local_restricted",
+        workspace_root: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Crea formalmente una nueva sesión de supervisión y persiste su estado génesis."""
         sid = session_id or f"s-{uuid.uuid4().hex[:8]}"
@@ -147,8 +153,9 @@ class RuntimeApplicationService:
         meta = dict(metadata or {})
         mode_val = meta.get("execution_mode") or execution_mode
         meta["execution_mode"] = mode_val
-        if "working_directory" not in meta:
-            meta["working_directory"] = os.getcwd()
+        effective_ws = workspace_root or meta.get("workspace_root") or meta.get("working_directory") or get_default_workspace_root()
+        meta["workspace_root"] = effective_ws
+        meta["working_directory"] = effective_ws
         meta["network_mode"] = "host" if mode_val == "full_access" else "isolated"
         meta["created_by"] = meta.get("created_by", "system")
 
@@ -249,6 +256,7 @@ class RuntimeApplicationService:
         tree = reduce_events_to_tree(events, session_id=session_id)
         meta = sess.get("metadata", {})
         execution_mode = sess.get("execution_mode") or meta.get("execution_mode", "local_restricted")
+        ws_root = meta.get("workspace_root") or meta.get("working_directory") or get_default_workspace_root()
 
         return {
             "session_id": session_id,
@@ -256,6 +264,7 @@ class RuntimeApplicationService:
             "status": sess.get("status", "Active"),
             "agent_name": sess.get("agent_name", "CodingAgent"),
             "execution_mode": execution_mode,
+            "workspace_root": ws_root,
             "operator_approval_status": "Review Required" if waiting > 0 else "Normal",
             "created_at": sess.get("created_at"),
             "updated_at": events[-1].timestamp if events else sess.get("updated_at"),
@@ -369,7 +378,8 @@ class RuntimeApplicationService:
         missing_resource_name = ""
         target_path = str(proposal.arguments.get("path") or proposal.arguments.get("file") or "").strip()
         if proposal.tool in ("read_file", "view_file") and target_path:
-            full_target = target_path if os.path.isabs(target_path) else os.path.join(os.getcwd(), target_path)
+            norm_target = os.path.expanduser(os.path.expandvars(target_path))
+            full_target = norm_target if os.path.isabs(norm_target) else os.path.join(os.getcwd(), norm_target)
             if not os.path.exists(full_target):
                 is_missing_resource = True
                 missing_resource_name = target_path
@@ -1177,6 +1187,7 @@ class RuntimeApplicationService:
         session_id: Optional[str] = None,
         agent_name: str = "CodingAgent",
         execution_mode: str = "local_restricted",
+        workspace_root: Optional[str] = None,
         llm_provider: str = "simulator",
         llm_model: Optional[str] = None,
         api_key: Optional[str] = None,
@@ -1197,17 +1208,22 @@ class RuntimeApplicationService:
                 model_name=self.config.provider.model,
             )
 
+        effective_ws = workspace_root or get_default_workspace_root()
+
         meta = self.create_session(
             goal=goal,
             session_id=sid,
             agent_name=agent_name,
             execution_mode=execution_mode,
+            workspace_root=effective_ws,
             metadata={
                 "llm_provider": llm_provider,
                 "llm_model": llm_model or "default",
                 "supervisor": supervisor,
                 "max_steps": max_steps,
                 "execution_mode": execution_mode,
+                "workspace_root": effective_ws,
+                "working_directory": effective_ws,
             },
         )
 
@@ -1216,6 +1232,7 @@ class RuntimeApplicationService:
             "goal": goal,
             "agent_name": agent_name,
             "execution_mode": execution_mode,
+            "workspace_root": effective_ws,
             "llm_provider": llm_provider,
             "llm_model": llm_model,
             "api_key": api_key,
@@ -1302,12 +1319,13 @@ class RuntimeApplicationService:
 
         if provider_name not in ("simulator", "mock", "sim"):
             try:
+                llm_timeout = float(os.getenv("PRAXEON_LLM_TIMEOUT", "180.0"))
                 agent_llm = create_agent_llm(
                     provider=provider_name,
                     model=model_name,
                     api_key=api_key,
                     base_url=base_url,
-                    timeout=30.0,
+                    timeout=llm_timeout,
                 )
                 if not isinstance(agent_llm, SimulatedAgentLLM):
                     use_real_llm = True
@@ -1334,13 +1352,15 @@ class RuntimeApplicationService:
         # =========================================================================
         if use_real_llm and agent_llm is not None:
             # Recolectar información detallada del sistema operativo y espacio de trabajo real
+            ws_root = mission.get("workspace_root") or get_default_workspace_root()
             from praxeon.core.session_context import SessionContextManager
             ctx_mgr = SessionContextManager()
-            env_info = ctx_mgr.get_environment_info()
+            env_info = ctx_mgr.get_environment_info(root_dir=ws_root)
 
             system_prompt = (
                 "Eres un agente de software autónomo supervisado cognitivamente en tiempo real por PRAXEON (JEV Reasoning Navigator).\n"
-                f"OBJETIVO DE LA TAREA: {goal}\n\n"
+                f"OBJETIVO DE LA TAREA: {goal}\n"
+                f"DIRECTORIO DE TRABAJO BASE PARA ESTA SESIÓN: '{ws_root}'\n\n"
                 f"{env_info}\n\n"
                 "FORMATO DE RESPUESTA EN CADA TURNO (Estricto ReAct):\n"
                 "Thought: <análisis concreto, qué archivo real vas a leer o qué comando compatible vas a ejecutar y por qué>\n"
@@ -1355,7 +1375,7 @@ class RuntimeApplicationService:
                 "1. ESTRUCTURA REAL Y ANTI-ALUCINACIÓN: Trabaja EXCLUSIVAMENTE sobre los archivos o carpetas reales listados en la información de entorno. Queda TERMINANTEMENTE PROHIBIDO inventar nombres de archivo (como main.py, app.js o script.py si no están en el árbol real).\n"
                 "2. TAREAS DE INFORME O ANÁLISIS: Si la tarea solicita un informe, resumen o explicación del proyecto, inspecciona primero con 'read_file' los archivos fundamentales (como README.md, pyproject.toml o los módulos en praxeon/) para fundamentar empíricamente tu respuesta.\n"
                 "3. PROHIBICIÓN DE CONCLUSIÓN PREMATURA: Queda PROHIBIDO usar 'finish' como acción de planificación o con textos vacíos o evasivos ('pendiente', 'no se pudo'). 'finish' SOLO debe usarse para entregar el informe o conclusión definitiva una vez recopiladas las observaciones reales.\n"
-                "4. COMPATIBILIDAD DE SO: Estás ejecutándote en Windows. NO uses comandos Unix/Linux como 'ls', 'cat', 'grep'. Utiliza 'read_file(path)' para inspeccionar archivos o comandos compatibles en run_command.\n"
+                "4. COMPATIBILIDAD DE SO: En Windows, NO uses comandos Unix/Linux como 'ls', 'cat', 'grep'. Utiliza 'read_file(path)' para inspeccionar archivos o comandos compatibles en run_command.\n"
                 "5. RETROCESO: Si una acción falla o es vetada, el supervisor te devolverá un mensaje de retroceso. Explica tu alternativa en 'Thought:' y propone otra acción sobre los archivos reales."
             )
 
@@ -1364,7 +1384,7 @@ class RuntimeApplicationService:
                     "role": "user",
                     "content": (
                         f"Inicia la resolución de esta tarea: {goal}\n\n"
-                        "Dispones de la estructura real del espacio de trabajo y del sistema operativo en tus instrucciones de sistema. "
+                        f"Dispones de la estructura real del espacio de trabajo en '{ws_root}' y del sistema operativo en tus instrucciones de sistema. "
                         "Comienza inspeccionando los archivos reales del proyecto relevantes para resolver el objetivo."
                     ),
                 }
@@ -1390,7 +1410,22 @@ class RuntimeApplicationService:
                     llm_output = agent_llm.generate(conversation, system_prompt=system_prompt)
                 except Exception as gen_err:
                     logger.warning("Error durante generación con LLM '%s': %s", provider_name, gen_err)
-                    llm_output = f"Thought: Error comunicando con API de {provider_name} ({gen_err}). Concluyendo de forma segura.\nAction: finish(summary=\"Error de API en {provider_name}: {gen_err}\")"
+                    self.event_bus.emit(
+                        session_id=sid,
+                        event_type=EventType.INTERVENTION_APPLIED,
+                        node_id=f"root_{sid}",
+                        payload={
+                            "warning": f"Fallo temporal de LLM '{provider_name}' ({gen_err}). Activando contingencia contextual.",
+                        },
+                    )
+                    steps_backup = generate_goal_tailored_steps(goal=goal, max_steps=max_steps)
+                    backup_idx = min(step_idx - 1, len(steps_backup) - 1)
+                    b_step = steps_backup[backup_idx] if (steps_backup and backup_idx >= 0) else {
+                        "tool_name": "run_command",
+                        "tool_args": {"command": "python -c \"print('Paso de inspección segura')\""},
+                        "thought_rationale": "Paso de contingencia tras fallo del proveedor LLM.",
+                    }
+                    llm_output = f"Thought: [Contingencia por fallo temporal en {provider_name}]: {b_step.get('thought_rationale', '')}\nAction: {b_step.get('tool_name', 'run_command')}({json.dumps(b_step.get('tool_args', {}))})"
 
                 # Parsear Thought + Action
                 parsed_steps = parse_llm_steps(llm_output)
@@ -2124,6 +2159,7 @@ def is_auth_required(profile: Optional[str] = None) -> bool:
     return False
 
 
+import secrets
 from fastapi import Header, HTTPException, status
 
 
@@ -2135,7 +2171,7 @@ def verify_api_key(
     
     Acepta 'X-API-Key' o 'Authorization: Bearer <key>'.
     En modo desarrollo sin claves configuradas emite advertencia de seguridad y permite el paso.
-    En perfil de producción o con auth activa, deniega con HTTP 401 Unauthorized.
+    En perfil de producción o con auth activa, deniega con HTTP 401 Unauthorized o 500 si falta configuración.
     """
     global _warned_dev_auth
 
@@ -2147,6 +2183,13 @@ def verify_api_key(
             logger.warning("WARNING: PRAXEON running without API key authentication. Do not use in production.")
             _warned_dev_auth = True
         return None
+
+    if not expected_key:
+        logger.error("Fallo de seguridad evitado: Autenticación requerida pero no hay PRAXEON_API_KEY configurada.")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error de configuración del servidor: Autenticación requerida pero no se ha establecido PRAXEON_API_KEY.",
+        )
 
     # Extraer token de cabeceras
     token = x_api_key
@@ -2163,7 +2206,7 @@ def verify_api_key(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    if expected_key and token != expected_key:
+    if not secrets.compare_digest(token, expected_key):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Credenciales inválidas: API key no coincide con la configurada en el servidor.",

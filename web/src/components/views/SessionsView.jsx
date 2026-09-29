@@ -37,6 +37,7 @@ export default function SessionsView({
     goal: '',
     agent_name: 'CodingAgent',
     execution_mode: 'local_restricted',
+    workspace_root: '',
     llm_provider: 'simulator',
     llm_model: 'qwen2.5-coder:7b',
     supervisor: 'laya',
@@ -62,6 +63,7 @@ export default function SessionsView({
       goal: formData.goal.trim(),
       agent_name: formData.agent_name,
       execution_mode: formData.execution_mode,
+      workspace_root: formData.workspace_root.trim() || undefined,
       llm_provider: formData.llm_provider,
       llm_model: formData.llm_model,
       supervisor: formData.supervisor,
@@ -69,7 +71,7 @@ export default function SessionsView({
     });
 
     setIsModalOpen(false);
-    setFormData((prev) => ({ ...prev, goal: '' }));
+    setFormData((prev) => ({ ...prev, goal: '', workspace_root: '' }));
   };
 
   const starterTemplates = [
@@ -360,6 +362,27 @@ export default function SessionsView({
                       <Shield size={11} style={{ color: s.execution_mode === 'full_access' ? '#f85149' : '#3fb950' }} />
                       {s.execution_mode || 'local_restricted'}
                     </span>
+
+                    {s.workspace_root && (
+                      <span style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        fontSize: '11px',
+                        color: '#60a5fa',
+                        backgroundColor: '#131e33',
+                        border: '1px solid #1e3a5f',
+                        borderRadius: '4px',
+                        padding: '2px 8px',
+                        maxWidth: '200px',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }} title={s.workspace_root}>
+                        <FolderKanban size={10} />
+                        {s.workspace_root.split(/[\\/]/).pop() || s.workspace_root}
+                      </span>
+                    )}
                   </div>
                 </div>
 
@@ -642,6 +665,30 @@ export default function SessionsView({
                     <option value="full_access">Direct Host (Requiere confirmación)</option>
                   </select>
                 </div>
+              </div>
+
+              <div>
+                <label style={{ fontSize: '11.5px', fontWeight: '600', color: '#cbd5e1', display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
+                  <span>Ruta Raíz del Espacio de Trabajo (Workspace Root)</span>
+                  <span style={{ fontSize: '10px', color: '#64748b' }}>Opcional</span>
+                </label>
+                <input
+                  type="text"
+                  value={formData.workspace_root || ''}
+                  onChange={(e) => setFormData({ ...formData, workspace_root: e.target.value })}
+                  placeholder="Ruta base del proyecto (dejar vacío para auto-detectar)"
+                  style={{
+                    width: '100%',
+                    padding: '8px 10px',
+                    borderRadius: '6px',
+                    backgroundColor: '#0a0e16',
+                    border: '1px solid #1e293b',
+                    color: '#f8fafc',
+                    fontSize: '12px',
+                    fontFamily: 'var(--font-mono)',
+                    outline: 'none',
+                  }}
+                />
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>

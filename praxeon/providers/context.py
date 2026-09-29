@@ -25,6 +25,7 @@ class ProviderContext(BaseModel):
     truncated: bool = False
     max_context_tokens: int = 2048
     formatted_prompt: str = ""
+    metadata: Dict[str, Any] = Field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         """Serializa el contexto a un diccionario canónico."""
@@ -178,6 +179,7 @@ class ProviderContextBuilder:
             truncated = True
 
         token_est = self._estimate_tokens(prompt_text)
+        state_meta = getattr(state, "metadata", {}) or (state.get("metadata", {}) if isinstance(state, dict) else {})
 
         return ProviderContext(
             session_id=session_id,
@@ -190,4 +192,5 @@ class ProviderContextBuilder:
             truncated=truncated,
             max_context_tokens=budget_tokens,
             formatted_prompt=prompt_text,
+            metadata=dict(state_meta) if isinstance(state_meta, dict) else {},
         )

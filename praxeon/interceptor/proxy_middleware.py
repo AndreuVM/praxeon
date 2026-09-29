@@ -36,6 +36,7 @@ from praxeon.models.schema import (
     StepType,
     Trajectory,
 )
+from praxeon.policy.engine import PolicyEngine
 from praxeon.policy.registry import ToolRegistry
 from praxeon.reasoning.completion import CompletionVerifier
 from praxeon.runtime.executor import PolicyViolation, SecureExecutor, ToolObservation
@@ -51,6 +52,7 @@ class JEVProxyMiddleware:
         config: Optional[JEVConfig] = None,
         tool_registry: Optional[ToolRegistry] = None,
         executor: Optional[SecureExecutor] = None,
+        policy_engine: Optional[PolicyEngine] = None,
         event_bus: Optional[Any] = None,
         session_id: Optional[str] = None,
     ):
@@ -65,6 +67,10 @@ class JEVProxyMiddleware:
         self.policy = InterventionPolicy(self.graph, self.config)
         self.registry = tool_registry or ToolRegistry(register_defaults=True)
         self.executor = executor or SecureExecutor(registry=self.registry)
+        self.policy_engine = policy_engine or PolicyEngine(
+            registry=self.registry,
+            secret_key=self.executor.secret_key,
+        )
         self.completion_verifier = CompletionVerifier()
         self.session_state = SessionState(session_id=self.session_id, goal=self.domain_goal)
         self.event_bus = event_bus
@@ -429,7 +435,7 @@ class JEVProxyMiddleware:
         tool_args: Optional[Dict[str, Any]] = None,
         thought_rationale: str = "",
     ) -> ToolObservation:
-        """Ejecuta una herramienta de forma encapsulada tras la barrera de seguridad (Hallazgo 3.8)."""
+        """Ejecuta una herramienta de forma encapsulada tras la barrera de seguridad (Hallazgo 3.8 y Auditoría v1.0.0)."""
         step_idx = len(self.session_state.steps)
         action_id = f"act_{step_idx}"
         action = DomainAction(
@@ -445,24 +451,65 @@ class JEVProxyMiddleware:
                 parent_id=f"step_{step_idx}" if step_idx > 0 else f"root_{self.session_id}",
                 payload={"tool": tool_name, "tool_args": tool_args or {}},
             )
-        # Emitir capability receipt formal para autorizar la ejecución física
-        action_hash = compute_action_hash(action)
-        state_hash = self.session_state.compute_hash()
-        receipt = DecisionReceipt(
-            decision_id=f"dec_{action_id}",
+
+        # Evaluar formalmente la acción con PolicyEngine para evitar bypass de autorización (Sección 2.3)
+        decision, receipt = self.policy_engine.evaluate_action(
+            action=action,
+            state=self.session_state,
             session_id=self.session_id,
-            action_id=action_id,
-            state_hash=state_hash,
-            action_hash=action_hash,
-            decision_status=DecisionStatus.ALLOW,
         )
-        if self.executor.secret_key:
+
+        # Si el ejecutor posee clave secreta, asegurar firma válida con la clave del ejecutor
+        if self.executor.secret_key and not receipt.signature:
             receipt = sign_receipt(receipt, self.executor.secret_key)
+        elif self.executor.secret_key and receipt.signature:
+            if self.policy_engine.secret_key != self.executor.secret_key:
+                receipt = sign_receipt(receipt, self.executor.secret_key)
+
+        # Si la política deniega la ejecución, no despachar al ejecutor físico
+        if decision.status != DecisionStatus.ALLOW:
+            denial_msg = f"[PRAXEON Policy Violation] Acción '{tool_name}' denegada ({decision.status.value}): {decision.reason}"
+            observation = ToolObservation(
+                output=denial_msg,
+                success=False,
+                is_error=True,
+                exit_code=1,
+                execution_time_ms=0.0,
+            )
+            self.session_state.add_step(action=action, decision=decision, observation=denial_msg)
+            self.record_observation(denial_msg)
+            if self.event_bus:
+                self.event_bus.emit(
+                    session_id=self.session_id,
+                    event_type=EventType.POLICY_VIOLATED,
+                    node_id=f"policy_{action_id}",
+                    payload={"action_id": action_id, "status": decision.status.value, "reason": decision.reason},
+                )
+                self.event_bus.emit(
+                    session_id=self.session_id,
+                    event_type=EventType.EXECUTION_COMPLETED,
+                    node_id=f"exec_{action_id}",
+                    payload={"success": False, "exit_code": 1, "execution_time_ms": 0.0},
+                )
+            return observation
 
         # Ejecución delegada dentro del perímetro de seguridad
         observation = self.executor.execute(action, self.session_state, receipt=receipt)
-        # Registrar observación en el grafo
+
+        # Registrar el paso en el SessionState para avanzar el contador y evitar ataques de replay (BUG-01)
+        self.session_state.add_step(action=action, decision=decision, observation=observation.output)
+
+        # Registrar observación en el grafo y sincronizar la trayectoria
         self.record_observation(observation.output)
+        self.trajectory.steps.append(
+            Step(
+                id=f"step_{step_idx}",
+                step_type=StepType.TOOL_CALL,
+                content=thought_rationale,
+                tool_name=tool_name,
+                tool_args=tool_args,
+            )
+        )
 
         if self.event_bus:
             self.event_bus.emit(

@@ -251,3 +251,14 @@ export async function resumeMission(sessionId) {
   return await res.json();
 }
 
+export async function fetchContext(workspaceRoot = null) {
+  try {
+    const url = workspaceRoot ? `${API_BASE}/context?workspace_root=${encodeURIComponent(workspaceRoot)}` : `${API_BASE}/context`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+  } catch (err) {
+    return null;
+  }
+}
+

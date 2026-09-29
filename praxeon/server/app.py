@@ -38,6 +38,12 @@ def validate_security_profile(profile: Optional[str] = None) -> List[str]:
             raise ValueError(
                 "Lista de orígenes CORS inválida para producción. Especifique dominios explícitos sin comodines."
             )
+
+        api_key = os.environ.get("PRAXEON_API_KEY", "")
+        if api_key and (api_key in insecure_defaults or len(api_key) < 16):
+            raise ValueError(
+                "Perfil de seguridad 'production' requiere que PRAXEON_API_KEY esté configurada con al menos 16 caracteres y no use claves por defecto."
+            )
         return origins
 
     cors_env = os.environ.get("PRAXEON_CORS_ORIGINS")
@@ -48,7 +54,8 @@ def validate_security_profile(profile: Optional[str] = None) -> List[str]:
         "http://127.0.0.1:5173",
         "http://localhost:3000",
         "http://127.0.0.1:3000",
-        "*",
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
     ]
 
 
@@ -76,11 +83,18 @@ def create_app(profile: Optional[str] = None) -> FastAPI:
     app.include_router(api_router)
     app.include_router(ws_router)
 
-    # Servir interfaz web de supervisión si está construida
+    # Servir interfaz web de supervisión si está construida o empaquetada
+    static_packaged = os.path.abspath(os.path.join(os.path.dirname(__file__), "static"))
     frontend_dist = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "web", "dist"))
-    if os.path.isdir(frontend_dist):
+    target_static_dir = None
+    if os.path.isdir(static_packaged) and os.path.isfile(os.path.join(static_packaged, "index.html")):
+        target_static_dir = static_packaged
+    elif os.path.isdir(frontend_dist) and os.path.isfile(os.path.join(frontend_dist, "index.html")):
+        target_static_dir = frontend_dist
+
+    if target_static_dir:
         from fastapi.staticfiles import StaticFiles
-        app.mount("/", StaticFiles(directory=frontend_dist, html=True), name="frontend")
+        app.mount("/", StaticFiles(directory=target_static_dir, html=True), name="frontend")
 
     return app
 

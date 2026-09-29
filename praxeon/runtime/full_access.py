@@ -77,17 +77,29 @@ class FullAccessExecutor:
         start_t = time.perf_counter()
 
         if tool_name in ("read_file", "view_file"):
-            path = str(arguments.get("path") or arguments.get("file") or "").strip()
+            raw_path = str(arguments.get("path") or arguments.get("file") or "").strip()
+            path = os.path.expanduser(os.path.expandvars(raw_path))
             if not os.path.isabs(path):
                 path = os.path.join(cwd, path)
             try:
                 if not os.path.exists(path):
                     elapsed = (time.perf_counter() - start_t) * 1000.0
                     return FullAccessResult(
-                        output=f"[FULL_ACCESS] Archivo '{path}' no existe en el sistema.",
+                        output=f"[FULL_ACCESS] Archivo o ruta '{raw_path}' ({path}) no existe en el sistema.",
                         success=False,
                         is_error=True,
                         exit_code=1,
+                        execution_time_ms=round(elapsed, 2),
+                    )
+                if os.path.isdir(path):
+                    entries = os.listdir(path)[:60]
+                    listing = "\n".join(f"- {e}" for e in entries) if entries else "(Directorio vacío)"
+                    elapsed = (time.perf_counter() - start_t) * 1000.0
+                    return FullAccessResult(
+                        output=f"[FULL_ACCESS] '{raw_path}' es un DIRECTORIO en el sistema host. Se han listado {len(entries)} elementos:\n{listing}",
+                        success=True,
+                        is_error=False,
+                        exit_code=0,
                         execution_time_ms=round(elapsed, 2),
                     )
                 with open(path, "r", encoding="utf-8", errors="replace") as f:
@@ -113,7 +125,8 @@ class FullAccessExecutor:
                 )
 
         elif tool_name == "edit_file":
-            path = str(arguments.get("path") or "").strip()
+            raw_path = str(arguments.get("path") or "").strip()
+            path = os.path.expanduser(os.path.expandvars(raw_path))
             content = str(arguments.get("content") or "").strip()
             if not os.path.isabs(path):
                 path = os.path.join(cwd, path)

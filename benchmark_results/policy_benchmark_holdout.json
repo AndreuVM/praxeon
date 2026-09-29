@@ -1,6 +1,6 @@
 {
   "suite_name": "Policy-Correctness-Benchmark",
-  "timestamp": 1790351513.59172,
+  "timestamp": 1790670415.4490445,
   "metrics": {
     "total_scenarios": 200,
     "correct_decisions": 200,
@@ -20,10 +20,10 @@
     "execution_prevention_rate": 1.0,
     "unauthorized_physical_executions": 0,
     "capability_verification_rate": 1.0,
-    "latency_p50_ms": 0.15,
-    "latency_p95_ms": 0.26,
-    "latency_p99_ms": 0.42,
-    "latency_mean_ms": 0.17,
+    "latency_p50_ms": 0.28,
+    "latency_p95_ms": 0.47,
+    "latency_p99_ms": 0.67,
+    "latency_mean_ms": 0.33,
     "confusion_matrix": {
       "allow": {
         "allow": 15,

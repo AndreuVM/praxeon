@@ -26,6 +26,7 @@ class SessionSummaryResponse(BaseModel):
     status: str = "Active"  # "Active", "Completed", "Paused"
     agent_name: str = "CodingAgent"
     execution_mode: str = "local_restricted"
+    workspace_root: Optional[str] = None
     operator_approval_status: Optional[str] = "Normal"
     created_at: datetime
     updated_at: datetime

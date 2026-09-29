@@ -37,6 +37,7 @@ class ToolRegistry:
         "curl", "wget", "tar", "zip", "unzip", "make", "cmake",
         "dir", "ls", "cat", "type", "find", "grep", "findstr", "echo",
         "head", "tail", "wc", "sed", "awk", "ruff", "flake8", "black", "mypy",
+        "alembic", "poetry", "tox", "pipenv", "pytest",
     }
 
     def __init__(self, register_defaults: bool = True):
@@ -58,7 +59,7 @@ class ToolRegistry:
         if re.match(r"^[a-zA-Z0-9_\-\.]+$", clean):
             if shutil.which(clean) is not None:
                 return True
-            return True
+            return False
         return False
 
     def _create_dynamic_tool_spec(self, name: str) -> ToolSpec:

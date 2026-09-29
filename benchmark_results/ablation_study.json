@@ -1,10 +1,10 @@
 {
   "1. Policy Only (No JEV)": {
     "Total Escenarios": 200,
-    "Exactitud (Accuracy)": "54.0%",
-    "F1-Score": "0.636",
-    "Precision": "0.631",
-    "Recall": "0.642",
+    "Exactitud (Accuracy)": "62.0%",
+    "F1-Score": "0.673",
+    "Precision": "0.644",
+    "Recall": "0.704",
     "False Allow Rate (Cr\u00edtico)": "16.8%",
     "Destructive False Allows": 0,
     "False Block Rate": "0.0%",
@@ -14,16 +14,16 @@
     "Prevenci\u00f3n Ejecuci\u00f3n No Autorizada": "83.2%",
     "Ejecuciones F\u00edsicas No Autorizadas": 31,
     "Verificaci\u00f3n de Capabilities": "100.0%",
-    "Latencia p50": "0.11 ms",
-    "Latencia p95": "0.13 ms",
-    "Latencia Media": "0.11 ms"
+    "Latencia p50": "0.22 ms",
+    "Latencia p95": "0.29 ms",
+    "Latencia Media": "0.22 ms"
   },
   "2. JEV (No Evidence Engine)": {
     "Total Escenarios": 200,
-    "Exactitud (Accuracy)": "84.5%",
-    "F1-Score": "0.840",
-    "Precision": "0.790",
-    "Recall": "0.896",
+    "Exactitud (Accuracy)": "92.5%",
+    "F1-Score": "0.915",
+    "Precision": "0.875",
+    "Recall": "0.958",
     "False Allow Rate (Cr\u00edtico)": "8.1%",
     "Destructive False Allows": 0,
     "False Block Rate": "0.0%",
@@ -33,35 +33,35 @@
     "Prevenci\u00f3n Ejecuci\u00f3n No Autorizada": "91.9%",
     "Ejecuciones F\u00edsicas No Autorizadas": 15,
     "Verificaci\u00f3n de Capabilities": "100.0%",
-    "Latencia p50": "0.11 ms",
-    "Latencia p95": "0.14 ms",
-    "Latencia Media": "0.11 ms"
+    "Latencia p50": "0.22 ms",
+    "Latencia p95": "0.31 ms",
+    "Latencia Media": "0.23 ms"
   },
   "3. JEV + Evidence (No Risk Engine)": {
     "Total Escenarios": 200,
-    "Exactitud (Accuracy)": "68.5%",
-    "F1-Score": "0.747",
-    "Precision": "0.725",
-    "Recall": "0.771",
-    "False Allow Rate (Cr\u00edtico)": "25.4%",
-    "Destructive False Allows": 32,
+    "Exactitud (Accuracy)": "76.5%",
+    "F1-Score": "0.788",
+    "Precision": "0.748",
+    "Recall": "0.833",
+    "False Allow Rate (Cr\u00edtico)": "8.1%",
+    "Destructive False Allows": 0,
     "False Block Rate": "0.0%",
     "Precisi\u00f3n Bloqueo Justificado": "100.0%",
     "Fail-Safe Verification": "100.0%",
     "Tasa Terminaci\u00f3n Espuria Prevenida": "100.0%",
-    "Prevenci\u00f3n Ejecuci\u00f3n No Autorizada": "74.6%",
-    "Ejecuciones F\u00edsicas No Autorizadas": 47,
+    "Prevenci\u00f3n Ejecuci\u00f3n No Autorizada": "91.9%",
+    "Ejecuciones F\u00edsicas No Autorizadas": 15,
     "Verificaci\u00f3n de Capabilities": "100.0%",
-    "Latencia p50": "0.08 ms",
-    "Latencia p95": "0.22 ms",
-    "Latencia Media": "0.10 ms"
+    "Latencia p50": "0.17 ms",
+    "Latencia p95": "0.25 ms",
+    "Latencia Media": "0.18 ms"
   },
   "4. JEV + Evidence + Risk (No FailSafe)": {
     "Total Escenarios": 200,
-    "Exactitud (Accuracy)": "68.5%",
-    "F1-Score": "0.693",
-    "Precision": "0.681",
-    "Recall": "0.704",
+    "Exactitud (Accuracy)": "76.5%",
+    "F1-Score": "0.788",
+    "Precision": "0.810",
+    "Recall": "0.767",
     "False Allow Rate (Cr\u00edtico)": "25.4%",
     "Destructive False Allows": 16,
     "False Block Rate": "0.0%",
@@ -71,9 +71,9 @@
     "Prevenci\u00f3n Ejecuci\u00f3n No Autorizada": "74.6%",
     "Ejecuciones F\u00edsicas No Autorizadas": 47,
     "Verificaci\u00f3n de Capabilities": "100.0%",
-    "Latencia p50": "0.11 ms",
-    "Latencia p95": "0.21 ms",
-    "Latencia Media": "0.12 ms"
+    "Latencia p50": "0.22 ms",
+    "Latencia p95": "0.29 ms",
+    "Latencia Media": "0.22 ms"
   },
   "5. Full v0.2 Architecture": {
     "Total Escenarios": 200,
@@ -90,9 +90,9 @@
     "Prevenci\u00f3n Ejecuci\u00f3n No Autorizada": "100.0%",
     "Ejecuciones F\u00edsicas No Autorizadas": 0,
     "Verificaci\u00f3n de Capabilities": "100.0%",
-    "Latencia p50": "0.15 ms",
-    "Latencia p95": "0.25 ms",
-    "Latencia Media": "0.17 ms"
+    "Latencia p50": "0.26 ms",
+    "Latencia p95": "0.33 ms",
+    "Latencia Media": "0.27 ms"
   },
   "6. Full v0.4 Architecture (Confidence Router)": {
     "Total Escenarios": 200,
@@ -109,8 +109,8 @@
     "Prevenci\u00f3n Ejecuci\u00f3n No Autorizada": "100.0%",
     "Ejecuciones F\u00edsicas No Autorizadas": 0,
     "Verificaci\u00f3n de Capabilities": "100.0%",
-    "Latencia p50": "0.11 ms",
-    "Latencia p95": "0.17 ms",
-    "Latencia Media": "0.12 ms"
+    "Latencia p50": "0.21 ms",
+    "Latencia p95": "0.29 ms",
+    "Latencia Media": "0.22 ms"
   }
 }

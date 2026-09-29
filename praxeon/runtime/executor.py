@@ -8,6 +8,7 @@ Aplica los principios fundamentales:
    contra inyección de subshells, acceso no autorizado a archivos fuera del workspace y fugas de secretos.
 """
 
+import os
 import time
 from typing import Any, Callable, Dict, Optional, Set
 from pydantic import BaseModel, ConfigDict
@@ -32,6 +33,7 @@ from praxeon.runtime.sandbox import (
     DryRunSandbox,
     LocalProcessSandbox,
     SandboxAdapter,
+    get_default_workspace_root,
 )
 from praxeon.runtime.state import SessionState
 
@@ -306,11 +308,16 @@ class SecureExecutor(Executor):
         )
 
         if resolved_mode == ExecutionMode.FULL_ACCESS.value:
+            effective_dir = (
+                state.metadata.get("workspace_root")
+                or state.metadata.get("working_directory")
+                or get_default_workspace_root()
+            )
             fa_res = self.full_access_executor.execute_tool(
                 tool_name=tool_name,
                 arguments=tool_args,
                 context={
-                    "working_directory": state.metadata.get("working_directory"),
+                    "working_directory": effective_dir,
                     "session_id": state.session_id,
                 },
             )
@@ -322,7 +329,7 @@ class SecureExecutor(Executor):
                 )
             raw_output, success, is_error = self._execute_builtin_tool_in_container(tool_name, tool_args)
         else:
-            raw_output, success, is_error = self._execute_builtin_tool_in_sandbox(tool_name, tool_args)
+            raw_output, success, is_error = self._execute_builtin_tool_in_sandbox(tool_name, tool_args, state=state)
 
         elapsed = (time.perf_counter() - start_t) * 1000.0
 
@@ -338,22 +345,47 @@ class SecureExecutor(Executor):
             is_error=is_error,
         )
 
-    def _execute_builtin_tool_in_sandbox(self, tool_name: str, args: Dict[str, Any]) -> tuple[str, bool, bool]:
-        """Ejecuta controladores nativos seguros delegando en el SandboxAdapter."""
+    def _get_effective_sandbox(self, state: Optional[SessionState] = None) -> SandboxAdapter:
+        """Obtiene o instancia el SandboxAdapter adecuado según el workspace_root de la sesión."""
+        if state is None:
+            return self.sandbox
+        ws = (
+            state.metadata.get("workspace_root")
+            or state.metadata.get("working_directory")
+        )
+        if ws and isinstance(self.sandbox, LocalProcessSandbox):
+            resolved_ws = os.path.realpath(ws)
+            if self.sandbox.workspace_root != resolved_ws:
+                return LocalProcessSandbox(
+                    workspace_root=resolved_ws,
+                    allow_network=getattr(self.sandbox, "allow_network", False),
+                    egress_policy=getattr(self.sandbox, "egress_policy", None),
+                    allow_external_cwd=getattr(self.sandbox, "allow_external_cwd", False),
+                    extra_blocked_vars=getattr(self.sandbox, "extra_blocked_vars", None),
+                )
+        return self.sandbox
+
+    def _execute_builtin_tool_in_sandbox(
+        self, tool_name: str, args: Dict[str, Any], state: Optional[SessionState] = None
+    ) -> tuple[str, bool, bool]:
+        """Ejecuta controladores nativos seguros delegando en el SandboxAdapter efectivo."""
+        target_sb = self._get_effective_sandbox(state)
+
         if tool_name in ("read_file", "view_file"):
             path = str(args.get("path") or args.get("file") or "").strip()
-            res = self.sandbox.read_file(path)
+            res = target_sb.read_file(path)
             return res.output, res.success, res.is_error
 
         elif tool_name == "edit_file":
             path = str(args.get("path") or "").strip()
             content = str(args.get("content") or "").strip()
-            res = self.sandbox.edit_file(path, content)
+            res = target_sb.edit_file(path, content)
             return res.output, res.success, res.is_error
 
         elif tool_name == "run_command":
             cmd = str(args.get("command") or args.get("cmd") or "").strip()
-            res = self.sandbox.execute_command(cmd)
+            cwd_arg = args.get("cwd") or (state.metadata.get("working_directory") if state else None)
+            res = target_sb.execute_command(cmd, cwd=cwd_arg)
             return res.output, res.success, res.is_error
 
         elif tool_name in ("finish", "complete_task", "done", "complete", "task_completed"):
@@ -364,7 +396,8 @@ class SecureExecutor(Executor):
         elif self.registry.is_known(tool_name):
             cmd_args = str(args.get("command") or args.get("cmd") or args.get("raw") or "").strip()
             full_cmd = f"{tool_name} {cmd_args}".strip() if cmd_args else tool_name
-            res = self.sandbox.execute_command(full_cmd)
+            cwd_arg = args.get("cwd") or (state.metadata.get("working_directory") if state else None)
+            res = target_sb.execute_command(full_cmd, cwd=cwd_arg)
             return res.output, res.success, res.is_error
 
         return f"Herramienta '{tool_name}' sin controlador físico implementado en sandbox.", False, True

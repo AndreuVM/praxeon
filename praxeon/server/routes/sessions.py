@@ -28,6 +28,7 @@ def run_mission(
         session_id=req.session_id,
         agent_name=req.agent_name or "CodingAgent",
         execution_mode=req.execution_mode or "local_restricted",
+        workspace_root=req.workspace_root,
         llm_provider=req.llm_provider or "simulator",
         llm_model=req.llm_model,
         api_key=req.api_key,

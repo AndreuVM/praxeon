@@ -305,6 +305,7 @@ export default function MissionChat({
     onStartMission?.({
       goal: task,
       execution_mode: executionMode,
+      workspace_root: effectiveConfig.workspaceRoot?.trim() || undefined,
       llm_provider: llmProvider,
       llm_model: customModel.trim() || undefined,
       api_key: apiKey.trim() || undefined,
@@ -1015,6 +1016,30 @@ export default function MissionChat({
               gap: '6px',
             }}
           >
+            <div style={{ gridColumn: 'span 2' }}>
+              <label style={{ fontSize: '10px', color: '#8b949e', display: 'flex', justifyContent: 'space-between', marginBottom: '2px' }}>
+                <span>Espacio de Trabajo (Workspace Root):</span>
+                <span style={{ color: '#58a6ff', fontSize: '9.5px' }}>{effectiveConfig.workspaceRoot ? 'Personalizado' : 'Predeterminado del sistema'}</span>
+              </label>
+              <input
+                type="text"
+                value={effectiveConfig.workspaceRoot || ''}
+                onChange={(e) => updateConfig({ workspaceRoot: e.target.value })}
+                placeholder="Ruta absoluta del proyecto (dejar vacío para usar predeterminado)"
+                disabled={isRunning}
+                style={{
+                  width: '100%',
+                  backgroundColor: '#121722',
+                  border: '1px solid #202737',
+                  borderRadius: '4px',
+                  padding: '4px 6px',
+                  color: '#f0f6fc',
+                  fontSize: '10.5px',
+                  fontFamily: 'var(--font-mono)',
+                  outline: 'none',
+                }}
+              />
+            </div>
             <div>
               <label style={{ fontSize: '10px', color: '#8b949e', display: 'block', marginBottom: '2px' }}>Modelo custom:</label>
               <input

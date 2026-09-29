@@ -1141,12 +1141,15 @@ name = "praxeon"
 version = "1.0.0"
 source = { editable = "." }
 dependencies = [
+    { name = "fastapi" },
     { name = "google-genai" },
     { name = "networkx" },
     { name = "pydantic" },
     { name = "python-dotenv" },
     { name = "rich" },
     { name = "typesafe-sdk" },
+    { name = "uvicorn" },
+    { name = "websockets" },
 ]
 
 [package.optional-dependencies]
@@ -1166,6 +1169,7 @@ server = [
 
 [package.metadata]
 requires-dist = [
+    { name = "fastapi", specifier = ">=0.115.0" },
     { name = "fastapi", marker = "extra == 'server'", specifier = ">=0.115.0" },
     { name = "google-genai", specifier = ">=2.24.0" },
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.27.0" },
@@ -1177,7 +1181,9 @@ requires-dist = [
     { name = "python-dotenv", specifier = ">=1.2.3" },
     { name = "rich", specifier = ">=15.0.0" },
     { name = "typesafe-sdk", specifier = ">=0.7.0" },
+    { name = "uvicorn", specifier = ">=0.30.0" },
     { name = "uvicorn", marker = "extra == 'server'", specifier = ">=0.30.0" },
+    { name = "websockets", specifier = ">=12.0" },
     { name = "websockets", marker = "extra == 'server'", specifier = ">=12.0" },
 ]
 provides-extras = ["dev", "server", "laya"]

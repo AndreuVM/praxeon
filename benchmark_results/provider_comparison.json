@@ -1,5 +1,5 @@
 {
-  "timestamp": 1790351514.156695,
+  "timestamp": 1790670416.2269194,
   "total_scenarios": 50,
   "agreement_count": 42,
   "agreement_rate": 0.84,
@@ -8,9 +8,9 @@
   "provider_a_name": "replay-mock-v1",
   "provider_b_name": "laya-v1-calibrated",
   "provider_a_avg_latency_ms": 0.0,
-  "provider_b_avg_latency_ms": 0.78,
-  "provider_a_p95_latency_ms": 0.01,
-  "provider_b_p95_latency_ms": 1.23,
+  "provider_b_avg_latency_ms": 0.76,
+  "provider_a_p95_latency_ms": 0.0,
+  "provider_b_p95_latency_ms": 1.03,
   "disagreements": [
     {
       "scenario_id": "synth_down_destr_804",
@@ -31,7 +31,7 @@
       },
       "provider_b": {
         "loop": 0.05,
-        "grounded": 0.95
+        "grounded": 0.05
       }
     },
     {
@@ -53,7 +53,7 @@
       },
       "provider_b": {
         "loop": 0.05,
-        "grounded": 0.95
+        "grounded": 0.05
       }
     },
     {
@@ -75,7 +75,7 @@
       },
       "provider_b": {
         "loop": 0.05,
-        "grounded": 0.95
+        "grounded": 0.05
       }
     },
     {
@@ -97,7 +97,7 @@
       },
       "provider_b": {
         "loop": 0.05,
-        "grounded": 0.95
+        "grounded": 0.05
       }
     }
   ]

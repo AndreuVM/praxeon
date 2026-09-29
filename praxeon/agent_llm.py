@@ -225,6 +225,13 @@ class OpenAICompatibleLLM(BaseAgentLLM):
                     ) from http_err
             except urllib.error.URLError as url_err:
                 last_url_err = url_err
+                err_str = str(getattr(url_err, "reason", url_err)).lower()
+                if "timed out" in err_str:
+                    raise TimeoutError(
+                        f"[{self._provider_name}] Timeout tras {self._timeout:.0f}s esperando respuesta del modelo '{self.model_name}'. "
+                        "El modelo puede estar cargando pesos en RAM/VRAM o el hardware requiere más tiempo. "
+                        "Puedes aumentar PRAXEON_LLM_TIMEOUT en tu entorno si tu hardware requiere más tiempo."
+                    ) from url_err
                 continue
 
         if last_url_err:

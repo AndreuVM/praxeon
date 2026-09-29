@@ -247,17 +247,33 @@ class LayaProvider(BaseReasoningProvider):
 
         # 2. Comprobación de grounding (fundamentación fáctica y verificación de recursos en disco)
         is_grounded = 0.95
+        workspace_dir = (
+            (getattr(ctx, "metadata", None) or {}).get("workspace_root")
+            or (getattr(ctx, "metadata", None) or {}).get("working_directory")
+            or os.getcwd()
+        )
+        has_file_evidence = any(
+            target_path and (target_path in ev or os.path.basename(target_path) in ev)
+            for ev in evidence_lower
+        )
         if tool_name in ("read_file", "view_file") and target_path:
-            full_path = target_path if os.path.isabs(target_path) else os.path.join(os.getcwd(), target_path)
-            if not os.path.exists(full_path):
+            norm_target = os.path.expanduser(os.path.expandvars(target_path))
+            full_path = norm_target if os.path.isabs(norm_target) else os.path.join(workspace_dir, norm_target)
+            alt_path = norm_target if os.path.isabs(norm_target) else os.path.join(os.getcwd(), norm_target)
+            if not (os.path.exists(full_path) or os.path.exists(alt_path)) and not has_file_evidence:
                 is_grounded = 0.05
         elif tool_name in ("run_command", "run_script"):
             for runner in ("python ", "python3 ", "node ", "bash ", "sh "):
                 if cmd_str.startswith(runner):
                     script_part = cmd_str[len(runner):].strip().split()[0].strip('"\'')
                     if script_part.endswith((".py", ".js", ".sh", ".ts")):
-                        full_script = script_part if os.path.isabs(script_part) else os.path.join(os.getcwd(), script_part)
-                        if not os.path.exists(full_script):
+                        full_script = script_part if os.path.isabs(script_part) else os.path.join(workspace_dir, script_part)
+                        alt_script = script_part if os.path.isabs(script_part) else os.path.join(os.getcwd(), script_part)
+                        has_script_evidence = any(
+                            script_part in ev or os.path.basename(script_part) in ev
+                            for ev in evidence_lower
+                        )
+                        if not (os.path.exists(full_script) or os.path.exists(alt_script)) and not has_script_evidence:
                             is_grounded = 0.05
                     break
 

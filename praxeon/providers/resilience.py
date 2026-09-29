@@ -11,6 +11,7 @@ from enum import Enum
 import logging
 import random
 import re
+import threading
 import time
 from typing import Any, Callable, Dict, Optional, Tuple
 
@@ -25,7 +26,7 @@ class CircuitState(str, Enum):
 
 
 class CircuitBreaker:
-    """Implementa protección de circuito cerrado/abierto para llamadas a proveedores externos."""
+    """Implementa protección de circuito cerrado/abierto para llamadas a proveedores externos con sincronización thread-safe."""
 
     def __init__(
         self,
@@ -37,6 +38,7 @@ class CircuitBreaker:
         self.recovery_timeout = recovery_timeout
         self.half_open_max_trials = half_open_max_trials
 
+        self._lock = threading.Lock()
         self._state: CircuitState = CircuitState.CLOSED
         self._consecutive_failures: int = 0
         self._last_failure_time: float = 0.0
@@ -44,48 +46,60 @@ class CircuitBreaker:
 
     @property
     def state(self) -> CircuitState:
-        """Determina el estado actual del circuito considerando el temporizador de recuperación."""
-        now = time.time()
-        if self._state == CircuitState.OPEN:
-            if now - self._last_failure_time >= self.recovery_timeout:
-                logger.info("CircuitBreaker: tiempo de recuperación alcanzado. Transición de OPEN a HALF_OPEN.")
-                self._state = CircuitState.HALF_OPEN
-                self._half_open_trials = 0
-        return self._state
+        """Determina el estado actual del circuito considerando el temporizador de recuperación de forma thread-safe."""
+        with self._lock:
+            now = time.time()
+            if self._state == CircuitState.OPEN:
+                if now - self._last_failure_time >= self.recovery_timeout:
+                    logger.info("CircuitBreaker: tiempo de recuperación alcanzado. Transición de OPEN a HALF_OPEN.")
+                    self._state = CircuitState.HALF_OPEN
+                    self._half_open_trials = 0
+            return self._state
 
     def allow_request(self) -> bool:
-        """Indica si una nueva petición puede enviarse al proveedor externo."""
-        current_state = self.state
-        if current_state == CircuitState.CLOSED:
-            return True
-        if current_state == CircuitState.HALF_OPEN:
-            return self._half_open_trials < self.half_open_max_trials
-        return False
+        """Indica si una nueva petición puede enviarse al proveedor externo (thread-safe)."""
+        with self._lock:
+            now = time.time()
+            if self._state == CircuitState.OPEN:
+                if now - self._last_failure_time >= self.recovery_timeout:
+                    logger.info("CircuitBreaker: tiempo de recuperación alcanzado. Transición de OPEN a HALF_OPEN.")
+                    self._state = CircuitState.HALF_OPEN
+                    self._half_open_trials = 0
+            if self._state == CircuitState.CLOSED:
+                return True
+            if self._state == CircuitState.HALF_OPEN:
+                if self._half_open_trials < self.half_open_max_trials:
+                    self._half_open_trials += 1
+                    return True
+                return False
+            return False
 
     def record_success(self) -> None:
-        """Registra una respuesta exitosa del proveedor restableciendo el circuito a CLOSED."""
-        if self._state != CircuitState.CLOSED:
-            logger.info("CircuitBreaker: llamada exitosa confirmada. Circuito restablecido a CLOSED.")
-        self._state = CircuitState.CLOSED
-        self._consecutive_failures = 0
-        self._half_open_trials = 0
+        """Registra una respuesta exitosa del proveedor restableciendo el circuito a CLOSED (thread-safe)."""
+        with self._lock:
+            if self._state != CircuitState.CLOSED:
+                logger.info("CircuitBreaker: llamada exitosa confirmada. Circuito restablecido a CLOSED.")
+            self._state = CircuitState.CLOSED
+            self._consecutive_failures = 0
+            self._half_open_trials = 0
 
     def record_failure(self, error: Optional[Exception] = None) -> None:
-        """Registra un fallo del proveedor y transiciona a OPEN si supera el umbral."""
-        self._last_failure_time = time.time()
-        self._consecutive_failures += 1
+        """Registra un fallo del proveedor y transiciona a OPEN si supera el umbral (thread-safe)."""
+        with self._lock:
+            self._last_failure_time = time.time()
+            self._consecutive_failures += 1
 
-        if self._state == CircuitState.HALF_OPEN:
-            logger.warning("CircuitBreaker: fallo en estado HALF_OPEN. Regreso inmediato a OPEN.")
-            self._state = CircuitState.OPEN
-            return
+            if self._state == CircuitState.HALF_OPEN:
+                logger.warning("CircuitBreaker: fallo en estado HALF_OPEN. Regreso inmediato a OPEN.")
+                self._state = CircuitState.OPEN
+                return
 
-        if self._consecutive_failures >= self.failure_threshold and self._state == CircuitState.CLOSED:
-            logger.warning(
-                f"CircuitBreaker: {self._consecutive_failures} fallos consecutivos superan el umbral ({self.failure_threshold}). "
-                f"Transición a OPEN. Peticiones bloqueadas por {self.recovery_timeout}s."
-            )
-            self._state = CircuitState.OPEN
+            if self._consecutive_failures >= self.failure_threshold and self._state == CircuitState.CLOSED:
+                logger.warning(
+                    f"CircuitBreaker: {self._consecutive_failures} fallos consecutivos superan el umbral ({self.failure_threshold}). "
+                    f"Transición a OPEN. Peticiones bloqueadas por {self.recovery_timeout}s."
+                )
+                self._state = CircuitState.OPEN
 
 
 def parse_retry_after(error_message_or_header: str) -> Optional[float]:

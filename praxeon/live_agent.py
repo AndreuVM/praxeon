@@ -651,7 +651,7 @@ def main() -> None:
         "--provider",
         type=str,
         default="auto",
-        choices=["auto", "groq", "ollama", "openrouter", "lmstudio", "openai", "gemini", "simulator"],
+        choices=["auto", "groq", "ollama", "openrouter", "lmstudio", "openai", "gemini", "simulator", "simulated"],
         help="Proveedor del LLM del agente (auto, groq, ollama, openrouter, gemini, etc.)",
     )
     parser.add_argument("--base-url", type=str, default=None, help="URL base para servidor local (Ollama/LM Studio) o endpoint OpenAI-compatible")
@@ -791,7 +791,7 @@ def main() -> None:
         "--provider",
         type=str,
         default="auto",
-        choices=["auto", "groq", "ollama", "openrouter", "lmstudio", "openai", "gemini", "simulator"],
+        choices=["auto", "groq", "ollama", "openrouter", "lmstudio", "openai", "gemini", "simulator", "simulated"],
         help="Proveedor del LLM del agente (auto, groq, ollama, openrouter, gemini, etc.)",
     )
     parser.add_argument("--base-url", type=str, default=None, help="URL base para servidor local (Ollama/LM Studio) o endpoint OpenAI-compatible")
