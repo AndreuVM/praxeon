@@ -6,7 +6,7 @@ Desacopla formalmente dos capas:
 """
 
 from typing import List, Optional
-from praxeon.config import JEVConfig, default_config
+from praxeon.config import PraxeonConfig, default_config
 from praxeon.core.state_graph import StateGraph
 from praxeon.domain.models import DecisionStatus, PolicyDecision
 from praxeon.models.schema import (
@@ -127,7 +127,7 @@ class InterventionPlanner:
 class InterventionPolicy:
     """Coordinador de intervención que articula evaluación de políticas y síntesis discursiva."""
 
-    def __init__(self, state_graph: StateGraph, config: Optional[JEVConfig] = None):
+    def __init__(self, state_graph: StateGraph, config: Optional[PraxeonConfig] = None):
         self.graph = state_graph
         self.config = config or state_graph.config or default_config
         self.planner = InterventionPlanner()

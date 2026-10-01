@@ -2,7 +2,7 @@
 
 from unittest.mock import MagicMock
 import pytest
-from praxeon.config import JEVConfig
+
 from praxeon.core.jev_engine import JEVEngine
 from praxeon.core.state_graph import StateGraph
 from praxeon.models.schema import ActionCandidate, Step, StepType, Trajectory

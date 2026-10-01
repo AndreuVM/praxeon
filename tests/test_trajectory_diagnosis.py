@@ -2,7 +2,7 @@
 
 from unittest.mock import MagicMock
 import pytest
-from praxeon.config import JEVConfig
+from praxeon.config import PraxeonConfig
 from praxeon.core.jev_engine import JEVEngine
 from praxeon.core.state_graph import StateGraph
 from praxeon.core.typesafe_client import TypeSafeJEVClient
@@ -24,7 +24,7 @@ def sample_trajectory() -> Trajectory:
 
 def test_diagnose_trajectory_with_typesafe_detects_loop(sample_trajectory):
     """Verifica que diagnose_trajectory identifique bucles usando TypeSafe AI."""
-    cfg = JEVConfig(typesafe_api_key="mock_key", use_typesafe_api=True)
+    cfg = PraxeonConfig(typesafe_api_key="mock_key", use_typesafe_api=True)
     client = TypeSafeJEVClient(cfg)
     client._client = MagicMock()
 
@@ -65,7 +65,7 @@ def test_diagnose_trajectory_healthy_with_typesafe():
         ],
     )
 
-    cfg = JEVConfig(typesafe_api_key="mock_key", use_typesafe_api=True)
+    cfg = PraxeonConfig(typesafe_api_key="mock_key", use_typesafe_api=True)
     client = TypeSafeJEVClient(cfg)
     client._client = MagicMock()
 

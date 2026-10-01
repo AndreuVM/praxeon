@@ -14,7 +14,7 @@ api_router.include_router(sessions_router, dependencies=[Depends(verify_api_key)
 api_router.include_router(decisions_router, dependencies=[Depends(verify_api_key)])
 api_router.include_router(events_router, dependencies=[Depends(verify_api_key)])
 api_router.include_router(health_router)
-api_router.include_router(metrics_router)
+api_router.include_router(metrics_router, dependencies=[Depends(verify_api_key)])
 
 
 __all__ = ["api_router"]

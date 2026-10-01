@@ -509,10 +509,10 @@ def test_session_context_injects_environment_info():
 
 def test_laya_supervisor_middleware():
     """Verifica que JEVProxyMiddleware funcione con el supervisor LAYA System-1."""
-    from praxeon.config import JEVConfig, ProviderConfig
+    from praxeon.config import PraxeonConfig, ProviderConfig
     from praxeon.models.schema import BatchSemantics
 
-    cfg = JEVConfig(
+    cfg = PraxeonConfig(
         provider=ProviderConfig(
             name="laya",
             model="laya-v1-calibrated",
@@ -538,10 +538,10 @@ def test_laya_supervisor_middleware():
 
 def test_dashboard_laya_supervisor_header():
     """Verifica que el dashboard refleje LAYA System-1 cuando está activo."""
-    from praxeon.config import JEVConfig, ProviderConfig
+    from praxeon.config import PraxeonConfig, ProviderConfig
     from praxeon.dashboard import JEVDashboard
 
-    cfg = JEVConfig(
+    cfg = PraxeonConfig(
         provider=ProviderConfig(
             name="laya",
             model="laya-v1-calibrated",

@@ -3,7 +3,7 @@
 Implementa los requisitos de la Sección 23 de la Auditoría Técnica:
 - Segregación modular en sub-configuraciones Pydantic especializadas
 - Sin efectos secundarios en la importación de la biblioteca (load_dotenv() opcional y explícito)
-- Carga declarativa con JEVConfig.from_env()
+- Carga declarativa con PraxeonConfig.from_env()
 - Compatibilidad retroactiva total con la interfaz existente
 """
 

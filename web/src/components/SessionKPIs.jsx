@@ -8,197 +8,251 @@ export default function SessionKPIs({ session }) {
     agent = 'CodingAgent',
     goal = 'Fix authentication bug in the API',
     metrics = {
-      totalDecisions: 12,
-      allowed: 8,
-      blocked: 3,
-      review: 1,
+      totalDecisions: 0,
+      allowed: 0,
+      blocked: 0,
+      review: 0,
     },
   } = session || {};
 
-  return (
-    <div style={{
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      padding: '16px 20px',
-      backgroundColor: '#0d121c',
-      borderBottom: '1px solid #1a202c',
-    }}>
-      {/* Session Title & Subtitle */}
-      <div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <h1 style={{
-            fontSize: '17px',
-            fontWeight: '700',
-            color: '#f0f6fc',
-            fontFamily: 'var(--font-sans)',
-            letterSpacing: '-0.01em',
-          }}>
-            Session #{sessionId}
-          </h1>
-          <span style={{
-            fontSize: '11px',
-            fontWeight: '600',
-            padding: '2px 8px',
-            borderRadius: '9999px',
-            backgroundColor: 'rgba(63, 185, 80, 0.12)',
-            color: '#3fb950',
-            border: '1px solid rgba(63, 185, 80, 0.28)',
-          }}>
-            {status}
-          </span>
-        </div>
-        <p style={{
-          fontSize: '12px',
-          color: '#8b949e',
-          marginTop: '4px',
-        }}>
-          <span style={{ color: '#c9d1d9', fontWeight: '500' }}>{agent}</span>
-          <span style={{ margin: '0 7px', color: '#484f58' }}>·</span>
-          <span>{goal}</span>
-        </p>
-      </div>
+  const isReady = status.toLowerCase() === 'ready';
+  const isActive = status.toLowerCase().includes('active');
+  const isCompleted = status.toLowerCase().includes('completed');
+  const isReview = status.toLowerCase().includes('review');
 
-      {/* 4 Summary KPI Cards */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-        {/* Total Decisions */}
-        <div style={{
+  const getStatusBadgeStyle = () => {
+    if (isReady) {
+      return {
+        bg: 'rgba(56, 189, 248, 0.12)',
+        color: '#38bdf8',
+        border: '1px solid rgba(56, 189, 248, 0.3)',
+      };
+    }
+    if (isActive) {
+      return {
+        bg: 'rgba(63, 185, 80, 0.14)',
+        color: '#3fb950',
+        border: '1px solid rgba(63, 185, 80, 0.32)',
+      };
+    }
+    if (isReview) {
+      return {
+        bg: 'rgba(210, 153, 34, 0.14)',
+        color: '#d29922',
+        border: '1px solid rgba(210, 153, 34, 0.32)',
+      };
+    }
+    if (isCompleted) {
+      return {
+        bg: 'rgba(88, 166, 255, 0.14)',
+        color: '#58a6ff',
+        border: '1px solid rgba(88, 166, 255, 0.32)',
+      };
+    }
+    return {
+      bg: 'rgba(139, 148, 158, 0.14)',
+      color: '#8b949e',
+      border: '1px solid rgba(139, 148, 158, 0.25)',
+    };
+  };
+
+  const badgeStyle = getStatusBadgeStyle();
+
+  return (
+    <div
+      style={{
+        height: '34px',
+        minHeight: '34px',
+        maxHeight: '34px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '0 14px',
+        backgroundColor: '#0a0d14',
+        borderBottom: '1px solid #1a202c',
+        userSelect: 'none',
+        flexShrink: 0,
+        gap: '12px',
+      }}
+    >
+      {/* Left: Session ID, Status Badge & Goal Context */}
+      <div
+        style={{
           display: 'flex',
           alignItems: 'center',
-          gap: '12px',
-          padding: '8px 14px',
-          borderRadius: '8px',
-          backgroundColor: '#141924',
-          border: '1px solid #1e2636',
-          boxShadow: 'var(--shadow-clay-sm)',
-          minWidth: '130px',
-        }}>
-          <div style={{
-            width: '28px',
-            height: '28px',
-            borderRadius: '6px',
-            backgroundColor: '#1a2230',
-            border: '1px solid #283244',
+          gap: '8px',
+          minWidth: 0,
+          overflow: 'hidden',
+        }}
+      >
+        <span
+          style={{
+            fontSize: '12px',
+            fontWeight: '700',
+            color: '#f0f6fc',
+            fontFamily: 'var(--font-mono, monospace)',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          Session #{sessionId}
+        </span>
+
+        <span
+          style={{
+            fontSize: '10px',
+            fontWeight: '600',
+            padding: '1px 6px',
+            borderRadius: '9999px',
+            backgroundColor: badgeStyle.bg,
+            color: badgeStyle.color,
+            border: badgeStyle.border,
+            whiteSpace: 'nowrap',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '4px',
+          }}
+        >
+          {isActive && (
+            <span
+              style={{
+                width: '5px',
+                height: '5px',
+                borderRadius: '50%',
+                backgroundColor: '#3fb950',
+                display: 'inline-block',
+                boxShadow: '0 0 6px #3fb950',
+              }}
+            />
+          )}
+          {status}
+        </span>
+
+        <span style={{ color: '#30363d', fontSize: '12px' }}>|</span>
+
+        <div
+          style={{
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'center',
+            gap: '6px',
+            fontSize: '11.5px',
             color: '#8b949e',
-          }}>
-            <Layers size={14} />
-          </div>
-          <div>
-            <div style={{ fontSize: '15px', fontWeight: '700', color: '#f0f6fc', lineHeight: 1.1 }}>
-              {metrics.totalDecisions}
-            </div>
-            <div style={{ fontSize: '10.5px', color: '#8b949e', marginTop: '2px' }}>
-              Total decisions
-            </div>
-          </div>
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          <span style={{ color: '#c9d1d9', fontWeight: '500', whiteSpace: 'nowrap' }}>
+            {agent}
+          </span>
+          <span style={{ color: '#484f58' }}>·</span>
+          <span
+            style={{
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+            title={goal}
+          >
+            {goal}
+          </span>
+        </div>
+      </div>
+
+      {/* Right: Compact Inline Decision Metric Chips */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '6px',
+          flexShrink: 0,
+        }}
+      >
+        {/* Total Decisions */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '5px',
+            height: '22px',
+            padding: '0 7px',
+            borderRadius: '4px',
+            backgroundColor: 'rgba(255, 255, 255, 0.03)',
+            border: '1px solid #21262d',
+            fontSize: '11px',
+          }}
+          title="Total de decisiones evaluadas"
+        >
+          <Layers size={11} style={{ color: '#8b949e' }} />
+          <span style={{ color: '#8b949e', fontSize: '10.5px' }}>Total:</span>
+          <strong style={{ color: '#f0f6fc', fontWeight: '700', fontFamily: 'var(--font-mono)' }}>
+            {metrics.totalDecisions}
+          </strong>
         </div>
 
         {/* Allowed */}
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '12px',
-          padding: '8px 14px',
-          borderRadius: '8px',
-          backgroundColor: '#141924',
-          border: '1px solid #1e2636',
-          boxShadow: 'var(--shadow-clay-sm)',
-          minWidth: '115px',
-        }}>
-          <div style={{
-            width: '28px',
-            height: '28px',
-            borderRadius: '6px',
-            backgroundColor: '#13231b',
-            border: '1px solid #1e3a2b',
+        <div
+          style={{
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'center',
-            color: '#3fb950',
-          }}>
-            <Check size={14} strokeWidth={2.5} />
-          </div>
-          <div>
-            <div style={{ fontSize: '15px', fontWeight: '700', color: '#f0f6fc', lineHeight: 1.1 }}>
-              {metrics.allowed}
-            </div>
-            <div style={{ fontSize: '10.5px', color: '#8b949e', marginTop: '2px' }}>
-              Allowed
-            </div>
-          </div>
+            gap: '5px',
+            height: '22px',
+            padding: '0 7px',
+            borderRadius: '4px',
+            backgroundColor: 'rgba(63, 185, 80, 0.08)',
+            border: '1px solid rgba(63, 185, 80, 0.25)',
+            fontSize: '11px',
+          }}
+          title="Decisiones permitidas por política"
+        >
+          <Check size={11} strokeWidth={2.5} style={{ color: '#3fb950' }} />
+          <span style={{ color: '#8b949e', fontSize: '10.5px' }}>Allowed:</span>
+          <strong style={{ color: '#3fb950', fontWeight: '700', fontFamily: 'var(--font-mono)' }}>
+            {metrics.allowed}
+          </strong>
         </div>
 
         {/* Blocked */}
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '12px',
-          padding: '8px 14px',
-          borderRadius: '8px',
-          backgroundColor: '#141924',
-          border: '1px solid #1e2636',
-          boxShadow: 'var(--shadow-clay-sm)',
-          minWidth: '115px',
-        }}>
-          <div style={{
-            width: '28px',
-            height: '28px',
-            borderRadius: '6px',
-            backgroundColor: '#291418',
-            border: '1px solid #441e25',
+        <div
+          style={{
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'center',
-            color: '#f85149',
-          }}>
-            <X size={14} strokeWidth={2.5} />
-          </div>
-          <div>
-            <div style={{ fontSize: '15px', fontWeight: '700', color: '#f0f6fc', lineHeight: 1.1 }}>
-              {metrics.blocked}
-            </div>
-            <div style={{ fontSize: '10.5px', color: '#8b949e', marginTop: '2px' }}>
-              Blocked
-            </div>
-          </div>
+            gap: '5px',
+            height: '22px',
+            padding: '0 7px',
+            borderRadius: '4px',
+            backgroundColor: 'rgba(248, 81, 73, 0.08)',
+            border: '1px solid rgba(248, 81, 73, 0.25)',
+            fontSize: '11px',
+          }}
+          title="Decisiones bloqueadas o prevenidas"
+        >
+          <X size={11} strokeWidth={2.5} style={{ color: '#f85149' }} />
+          <span style={{ color: '#8b949e', fontSize: '10.5px' }}>Blocked:</span>
+          <strong style={{ color: '#f85149', fontWeight: '700', fontFamily: 'var(--font-mono)' }}>
+            {metrics.blocked}
+          </strong>
         </div>
 
         {/* Review */}
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '12px',
-          padding: '8px 14px',
-          borderRadius: '8px',
-          backgroundColor: '#141924',
-          border: '1px solid #1e2636',
-          boxShadow: 'var(--shadow-clay-sm)',
-          minWidth: '115px',
-        }}>
-          <div style={{
-            width: '28px',
-            height: '28px',
-            borderRadius: '6px',
-            backgroundColor: '#261d11',
-            border: '1px solid #3f2f1a',
+        <div
+          style={{
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'center',
-            color: '#d29922',
-          }}>
-            <AlertTriangle size={14} strokeWidth={2.3} />
-          </div>
-          <div>
-            <div style={{ fontSize: '15px', fontWeight: '700', color: '#f0f6fc', lineHeight: 1.1 }}>
-              {metrics.review}
-            </div>
-            <div style={{ fontSize: '10.5px', color: '#8b949e', marginTop: '2px' }}>
-              Review
-            </div>
-          </div>
+            gap: '5px',
+            height: '22px',
+            padding: '0 7px',
+            borderRadius: '4px',
+            backgroundColor: 'rgba(210, 153, 34, 0.08)',
+            border: '1px solid rgba(210, 153, 34, 0.25)',
+            fontSize: '11px',
+          }}
+          title="Decisiones requiriendo confirmación del operador"
+        >
+          <AlertTriangle size={11} strokeWidth={2.2} style={{ color: '#d29922' }} />
+          <span style={{ color: '#8b949e', fontSize: '10.5px' }}>Review:</span>
+          <strong style={{ color: '#d29922', fontWeight: '700', fontFamily: 'var(--font-mono)' }}>
+            {metrics.review}
+          </strong>
         </div>
       </div>
     </div>

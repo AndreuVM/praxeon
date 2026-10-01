@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { CheckCircle2 } from 'lucide-react';
 import Header from './components/Header';
-import Sidebar from './components/Sidebar';
+import TopNav from './components/TopNav';
 import SessionKPIs from './components/SessionKPIs';
 import DecisionTree from './components/DecisionTree';
 import ConsolePanel from './components/ConsolePanel';
@@ -1122,143 +1122,159 @@ export default function App() {
         onNewSession={handleNewCleanSession}
       />
 
-      {/* 2. Main 3-Column Work Area */}
+      {/* 2. Main Work Layout (Left: TopNav + Content; Right: DecisionInspector / MissionChat) */}
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-        {/* Left Navigation Sidebar */}
-        <Sidebar activeNav={activeNav} onNavSelect={setActiveNav} />
+        {/* Left Column: TopNav + Active View Content */}
+        <div style={{
+          display: 'flex',
+          flexDirection: 'column',
+          flex: 1,
+          overflow: 'hidden',
+          minWidth: 0,
+        }}>
+          {/* Top Window / View Selection Bar */}
+          <TopNav
+            activeNav={activeNav}
+            onNavSelect={setActiveNav}
+            currentDecisionCount={nodes.length}
+          />
 
-        {/* Central Supervision Canvas & Console Area */}
+          {/* Central Supervision Canvas & Console Area */}
+          <div style={{ display: 'flex', flex: 1, overflow: 'hidden', minWidth: 0 }}>
+            {activeNav === 'live' && (
+              <main style={{
+                flex: 1,
+                display: 'flex',
+                flexDirection: 'column',
+                overflow: 'hidden',
+                backgroundColor: '#0a0e16',
+                minWidth: 0,
+              }}>
+                {/* Top Session KPIs Overview (Compacto) */}
+                <SessionKPIs session={session} />
+
+                {/* Interactive Decision Tree (Maximizado en el canvas central) */}
+                <DecisionTree
+                  nodes={nodes}
+                  selectedNodeId={selectedNodeId}
+                  onSelectNode={handleSelectNode}
+                />
+
+                {/* Bottom Console Panel (Terminal + Events + Telemetry) */}
+                <ConsolePanel
+                  logs={logs}
+                  events={events}
+                  runtime={session.runtime}
+                />
+              </main>
+            )}
+
+            {/* Supplementary Views */}
+            {activeNav === 'sessions' && (
+              <SessionsView
+                sessions={sessionsList}
+                currentSessionId={session.sessionId}
+                onSelectSession={handleLoadSession}
+                onCreateSession={(cfg) => {
+                  handleStartMission(cfg);
+                  setActiveNav('live');
+                }}
+                onRefreshSessions={refreshSessionsList}
+                onDeleteSession={handleDeleteSession}
+                onClearOldSessions={handleClearOldSessions}
+                onNewCleanSession={handleNewCleanSession}
+              />
+            )}
+
+            {activeNav === 'decisions' && (
+              <DecisionsView
+                decisions={nodes.map((n) => ({
+                  decision_id: n.id,
+                  sequence: n.sequence,
+                  session_id: session.sessionId,
+                  tool: n.tool,
+                  command: n.command || n.title,
+                  status: n.verdict || n.status,
+                  risk_level: n.risk,
+                  created_at: n.timestamp,
+                }))}
+                currentSessionId={session.sessionId}
+                sessions={sessionsList}
+                onSelectDecision={(nodeId, sid) => {
+                  if (sid && sid !== session.sessionId) {
+                    handleLoadSession(sid);
+                  }
+                  setSelectedNodeId(nodeId);
+                  setInspectorTab('decision');
+                  setActiveNav('live');
+                }}
+              />
+            )}
+
+            {activeNav === 'agents' && (
+              <AgentsView
+                session={session}
+                sessionsList={sessionsList}
+                missionConfig={missionConfig}
+                isRunning={isRunning}
+                isPaused={isPaused}
+                onSelectSession={handleLoadSession}
+                onLaunchAgentMission={(cfg) => {
+                  handleStartMission(cfg);
+                  setActiveNav('live');
+                }}
+              />
+            )}
+
+            {activeNav === 'providers' && <ProvidersView />}
+
+            {activeNav === 'security' && (
+              <SecurityView
+                session={session}
+                sessionsList={sessionsList}
+                decisions={nodes.map((n) => ({
+                  decision_id: n.id,
+                  session_id: session.sessionId,
+                  tool: n.tool,
+                  command: n.command || n.title,
+                  status: n.verdict || n.status,
+                  risk_level: n.risk,
+                  created_at: n.timestamp,
+                }))}
+              />
+            )}
+
+            {activeNav === 'settings' && (
+              <SettingsView
+                missionConfig={missionConfig}
+                onConfigChange={setMissionConfig}
+              />
+            )}
+          </div>
+        </div>
+
+        {/* Right Panel: Decision Inspector & Mission Chat (Llega directamente bajo Header ocupando la esquina superior derecha) */}
         {activeNav === 'live' && (
-          <>
-            <main style={{
-              flex: 1,
-              display: 'flex',
-              flexDirection: 'column',
-              overflow: 'hidden',
-              backgroundColor: '#0a0e16',
-            }}>
-              {/* Top Session KPIs Overview */}
-              <SessionKPIs session={session} />
-
-              {/* Interactive Decision Tree (Maximizado en el canvas central) */}
-              <DecisionTree
-                nodes={nodes}
-                selectedNodeId={selectedNodeId}
-                onSelectNode={handleSelectNode}
-              />
-
-              {/* Bottom Console Panel (Terminal + Events + Telemetry) */}
-              <ConsolePanel
-                logs={logs}
-                events={events}
-                runtime={session.runtime}
-              />
-            </main>
-
-            {/* Right Panel: Decision Inspector & Mission Chat (5 Tabs) */}
-            <DecisionInspector
-              decision={currentDecision}
-              activeTab={inspectorTab}
-              onTabChange={setInspectorTab}
-              session={session}
-              isRunning={isRunning}
-              isPaused={isPaused}
-              events={events}
-              chatMessages={chatMessages}
-              onMessagesChange={setChatMessages}
-              missionConfig={missionConfig}
-              onConfigChange={setMissionConfig}
-              onStartMission={handleStartMission}
-              onPauseMission={handlePauseMission}
-              onResumeMission={handleResumeMission}
-              onStopMission={handleStopMission}
-              onLoadDemo={handleLoadDemo}
-              onApprove={handleApprove}
-              onReject={handleReject}
-              onExecute={handleExecute}
-            />
-          </>
-        )}
-
-        {/* Supplementary Views */}
-        {activeNav === 'sessions' && (
-          <SessionsView
-            sessions={sessionsList}
-            currentSessionId={session.sessionId}
-            onSelectSession={handleLoadSession}
-            onCreateSession={(cfg) => {
-              handleStartMission(cfg);
-              setActiveNav('live');
-            }}
-            onRefreshSessions={refreshSessionsList}
-            onDeleteSession={handleDeleteSession}
-            onClearOldSessions={handleClearOldSessions}
-            onNewCleanSession={handleNewCleanSession}
-          />
-        )}
-
-        {activeNav === 'decisions' && (
-          <DecisionsView
-            decisions={nodes.map((n) => ({
-              decision_id: n.id,
-              sequence: n.sequence,
-              session_id: session.sessionId,
-              tool: n.tool,
-              command: n.command || n.title,
-              status: n.verdict || n.status,
-              risk_level: n.risk,
-              created_at: n.timestamp,
-            }))}
-            currentSessionId={session.sessionId}
-            sessions={sessionsList}
-            onSelectDecision={(nodeId, sid) => {
-              if (sid && sid !== session.sessionId) {
-                handleLoadSession(sid);
-              }
-              setSelectedNodeId(nodeId);
-              setInspectorTab('decision');
-              setActiveNav('live');
-            }}
-          />
-        )}
-
-        {activeNav === 'agents' && (
-          <AgentsView
+          <DecisionInspector
+            decision={currentDecision}
+            activeTab={inspectorTab}
+            onTabChange={setInspectorTab}
             session={session}
-            sessionsList={sessionsList}
-            missionConfig={missionConfig}
             isRunning={isRunning}
             isPaused={isPaused}
-            onSelectSession={handleLoadSession}
-            onLaunchAgentMission={(cfg) => {
-              handleStartMission(cfg);
-              setActiveNav('live');
-            }}
-          />
-        )}
-
-        {activeNav === 'providers' && <ProvidersView />}
-
-        {activeNav === 'security' && (
-          <SecurityView
-            session={session}
-            sessionsList={sessionsList}
-            decisions={nodes.map((n) => ({
-              decision_id: n.id,
-              session_id: session.sessionId,
-              tool: n.tool,
-              command: n.command || n.title,
-              status: n.verdict || n.status,
-              risk_level: n.risk,
-              created_at: n.timestamp,
-            }))}
-          />
-        )}
-
-        {activeNav === 'settings' && (
-          <SettingsView
+            events={events}
+            chatMessages={chatMessages}
+            onMessagesChange={setChatMessages}
             missionConfig={missionConfig}
             onConfigChange={setMissionConfig}
+            onStartMission={handleStartMission}
+            onPauseMission={handlePauseMission}
+            onResumeMission={handleResumeMission}
+            onStopMission={handleStopMission}
+            onLoadDemo={handleLoadDemo}
+            onApprove={handleApprove}
+            onReject={handleReject}
+            onExecute={handleExecute}
           />
         )}
       </div>

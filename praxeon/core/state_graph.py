@@ -3,14 +3,14 @@
 from typing import Any, Dict, List, Optional
 import networkx as nx
 
-from praxeon.config import JEVConfig, default_config
+from praxeon.config import PraxeonConfig, default_config
 from praxeon.models.schema import Step, StepType, Trajectory
 
 
 class StateGraph:
     """Grafo de estados de razonamiento para modelar la trayectoria del LLM."""
 
-    def __init__(self, config: Optional[JEVConfig] = None):
+    def __init__(self, config: Optional[PraxeonConfig] = None):
         self.config = config or default_config
         self.graph: nx.DiGraph = nx.DiGraph()
         self.goal: str = ""

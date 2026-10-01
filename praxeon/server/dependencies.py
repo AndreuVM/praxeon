@@ -21,7 +21,7 @@ import uuid
 
 logger = logging.getLogger("praxeon.server.dependencies")
 
-from praxeon.config import PraxeonConfig, JEVConfig, default_config
+from praxeon.config import PraxeonConfig, default_config
 from praxeon.core.state_graph import StateGraph
 from praxeon.domain.action import compute_action_hash
 from praxeon.domain.decision import (
@@ -1207,6 +1207,12 @@ class RuntimeApplicationService:
         if receipt.is_executed:
             raise PolicyViolation("Esta decisión ya ha sido ejecutada previamente. Violación de replay protection.")
 
+        # Regla 8: Validación de expiración temporal del capability
+        if receipt.is_expired():
+            raise PolicyViolation(
+                f"Ejecución física DENEGADA: El capability ha expirado (expiró en: {receipt.expires_at.isoformat() if receipt.expires_at else 'N/A'})."
+            )
+
         # Regla 7: Validar capability_token si se proporciona externamente
         if capability_token:
             if not verify_capability_signature(self.policy_engine.secret_key, capability_token):
@@ -1214,6 +1220,23 @@ class RuntimeApplicationService:
             token_mode = capability_token.get("execution_mode")
             if token_mode and token_mode != session_mode:
                 raise PolicyViolation(f"Adulteración de execution_mode: el token especifica '{token_mode}', pero la sesión requiere '{session_mode}'.")
+            exp = capability_token.get("expires_at")
+            if exp:
+                try:
+                    exp_dt = datetime.fromisoformat(exp) if isinstance(exp, str) else exp
+                    if exp_dt and datetime.utcnow() > exp_dt:
+                        raise PolicyViolation(f"Ejecución física DENEGADA: El capability token ha expirado (expiró en: {exp_dt.isoformat()}).")
+                except PolicyViolation:
+                    raise
+                except Exception:
+                    pass
+
+        if session_mode == "full_access":
+            logger.warning(
+                "[SECURITY AUDIT] Full Access physical execution started: Session '%s', Action '%s' executed directly on Host OS (unconfined).",
+                session_id,
+                action.tool_call.tool_name if action.tool_call else "none",
+            )
 
         # Emitir evento: execution.started
         self.event_bus.emit(
@@ -1225,6 +1248,8 @@ class RuntimeApplicationService:
                 "tool": action.tool_call.tool_name if action.tool_call else None,
                 "arguments": action.tool_call.arguments if action.tool_call else {},
                 "execution_mode": session_mode,
+                "sandboxed": session_mode != "full_access",
+                "isolation": "None (Host OS)" if session_mode == "full_access" else "Active",
                 "operator_id": operator_id,
             },
         )
@@ -1246,18 +1271,31 @@ class RuntimeApplicationService:
 
             # Actualizar observación en el estado de la sesión
             current_state = self.state_store.load_state(session_id)
-            if current_state and current_state.steps:
-                last_step = current_state.steps[-1]
-                if last_step.id == record["action_id"]:
+            if current_state:
+                if current_state.steps and (
+                    current_state.steps[-1].id == record["action_id"]
+                    or (hasattr(current_state.steps[-1], "action") and current_state.steps[-1].action and current_state.steps[-1].action.id == record["action_id"])
+                ):
+                    last_step = current_state.steps[-1]
                     current_state.steps[-1] = StepRecord(
-                        id=last_step.id,
+                        id=record["action_id"],
                         index=last_step.index,
                         action=last_step.action,
                         decision=last_step.decision,
                         observation=observation.output[:500],
                         timestamp=last_step.timestamp,
                     )
-                    self.state_store.save_state(current_state)
+                else:
+                    current_state.steps.append(
+                        StepRecord(
+                            id=record["action_id"],
+                            index=len(current_state.steps),
+                            action=action,
+                            decision=PolicyDecision(status=DecisionStatus.ALLOW),
+                            observation=observation.output[:500],
+                        )
+                    )
+                self.state_store.save_state(current_state)
 
             # Emitir eventos de culminación
             self.event_bus.emit(
@@ -1270,6 +1308,7 @@ class RuntimeApplicationService:
                     "exit_code": getattr(observation, "exit_code", 0 if observation.success else 1),
                     "execution_time_ms": observation.execution_time_ms,
                     "execution_mode": session_mode,
+                    "sandboxed": session_mode != "full_access",
                 },
             )
             self.event_bus.emit(
@@ -2533,8 +2572,9 @@ _ACTIVE_SECURITY_PROFILE: Optional[str] = None
 
 def set_active_security_profile(profile: Optional[str]) -> None:
     """Establece el perfil de seguridad activo del runtime."""
-    global _ACTIVE_SECURITY_PROFILE
+    global _ACTIVE_SECURITY_PROFILE, _warned_dev_auth
     _ACTIVE_SECURITY_PROFILE = profile
+    _warned_dev_auth = False
 
 
 def get_active_security_profile() -> Optional[str]:

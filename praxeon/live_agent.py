@@ -21,7 +21,7 @@ from rich.panel import Panel
 from rich.prompt import Prompt
 from rich.table import Table
 
-from praxeon.config import JEVConfig, default_config
+from praxeon.config import PraxeonConfig, default_config
 from praxeon.core.session_context import SessionContextManager
 from praxeon.interceptor.proxy_middleware import JEVProxyMiddleware
 from praxeon.models.schema import InterventionLevel
@@ -233,7 +233,7 @@ def parse_llm_steps(llm_output: str) -> List[Dict[str, Any]]:
 def run_live_agent(
     task: str,
     max_steps: int = 15,
-    config: Optional[JEVConfig] = None,
+    config: Optional[PraxeonConfig] = None,
     gemini_api_key: Optional[str] = None,
     model_name: Optional[str] = None,
     session_context: Optional[SessionContextManager] = None,
@@ -668,7 +668,7 @@ def main() -> None:
 def run_live_session(
     initial_task: Optional[str] = None,
     max_steps: int = 15,
-    config: Optional[JEVConfig] = None,
+    config: Optional[PraxeonConfig] = None,
     api_key: Optional[str] = None,
     model_name: Optional[str] = None,
     once: bool = False,

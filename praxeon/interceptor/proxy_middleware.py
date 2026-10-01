@@ -10,7 +10,7 @@ Resuelve los hallazgos críticos de la auditoría:
 import json
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from praxeon.config import JEVConfig, default_config
+from praxeon.config import PraxeonConfig, default_config
 from praxeon.core.intervention_policy import InterventionPolicy
 from praxeon.core.jev_engine import JEVEngine
 from praxeon.core.state_graph import StateGraph
@@ -49,7 +49,7 @@ class JEVProxyMiddleware:
     def __init__(
         self,
         goal: str,
-        config: Optional[JEVConfig] = None,
+        config: Optional[PraxeonConfig] = None,
         tool_registry: Optional[ToolRegistry] = None,
         executor: Optional[SecureExecutor] = None,
         policy_engine: Optional[PolicyEngine] = None,

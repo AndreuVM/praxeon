@@ -113,12 +113,14 @@ app = create_app()
 
 
 def validate_network_binding(host: str) -> None:
-    """Valida que si el servidor se vincula a interfaces de red externas, se exija autenticación."""
+    """Valida que si el servidor se vincula a interfaces de red externas, se exija y esté configurada autenticación."""
     loopback_hosts = {"127.0.0.1", "localhost", "::1", "testclient"}
     normalized_host = (host or "").lower().strip()
     if normalized_host not in loopback_hosts:
-        from praxeon.server.dependencies import is_auth_required
-        if not is_auth_required():
+        api_key = os.environ.get("PRAXEON_API_KEY", "").strip()
+        secret_key = os.environ.get("PRAXEON_SECRET_KEY", "").strip()
+        has_auth = bool(api_key or secret_key)
+        if not has_auth:
             raise ValueError(
                 f"Fallo de seguridad: Vincular el servidor a la interfaz de red '{host}' sin autenticación "
                 "activa está prohibido. Configure PRAXEON_API_KEY o use 127.0.0.1."

@@ -8,7 +8,7 @@ Corrige los fallos basales identificados en la auditoría:
 
 from typing import Any, Dict, List, Optional, Tuple
 
-from praxeon.config import JEVConfig, default_config
+from praxeon.config import PraxeonConfig, default_config
 from praxeon.core.state_graph import StateGraph
 from praxeon.core.typesafe_client import TypeSafeJEVClient
 from praxeon.domain.models import ProviderAssessment
@@ -27,7 +27,7 @@ from praxeon.models.schema import (
 class JEVEngine:
     """Motor de evaluación cognitiva sin supuestos permisivos en caídas."""
 
-    def __init__(self, state_graph: StateGraph, config: Optional[JEVConfig] = None):
+    def __init__(self, state_graph: StateGraph, config: Optional[PraxeonConfig] = None):
         self.graph = state_graph
         self.config = config or state_graph.config or default_config
         self.supervisor_name = getattr(self.config.provider, "name", "typesafe").lower()

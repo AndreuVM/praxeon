@@ -25,7 +25,7 @@ from rich.text import Text
 from rich.tree import Tree
 from rich.prompt import Prompt
 
-from praxeon.config import JEVConfig, default_config
+from praxeon.config import PraxeonConfig, default_config
 from praxeon.core.session_context import SessionContextManager
 from praxeon.interceptor.proxy_middleware import JEVProxyMiddleware
 
@@ -58,7 +58,7 @@ def render_noul_bar(prob: float, width: int = 16) -> str:
 class JEVDashboard:
     """Gestor del visualizador CLI de supervisión cognitiva basado puramente en TypeSafe AI."""
 
-    def __init__(self, goal: str, model_name: str = "Gemini / Antigravity", config: Optional[JEVConfig] = None):
+    def __init__(self, goal: str, model_name: str = "Gemini / Antigravity", config: Optional[PraxeonConfig] = None):
         self.goal = goal
         self.model_name = model_name
         self.config = config or default_config
@@ -495,7 +495,7 @@ def _execute_single_live_task(
     goal: str,
     max_steps: int = 25,
     model_name: Optional[str] = None,
-    config: Optional[JEVConfig] = None,
+    config: Optional[PraxeonConfig] = None,
     session_context: Optional[SessionContextManager] = None,
     middleware: Optional[JEVProxyMiddleware] = None,
     provider: Optional[str] = None,
@@ -974,7 +974,7 @@ def run_visual_live(
     task: Optional[str] = None,
     max_steps: int = 25,
     model_name: Optional[str] = None,
-    config: Optional[JEVConfig] = None,
+    config: Optional[PraxeonConfig] = None,
     once: bool = False,
     provider: Optional[str] = None,
     base_url: Optional[str] = None,

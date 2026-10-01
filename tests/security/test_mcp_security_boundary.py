@@ -6,7 +6,7 @@ jamás alcanza el handler físico de ejecución ni genera mutaciones en el siste
 
 from unittest.mock import MagicMock
 import pytest
-from praxeon.config import JEVConfig
+
 from praxeon.domain.models import ActionCandidate, DecisionStatus, Goal, ToolCall
 from praxeon.interceptor.mcp_bridge import MCPBridge
 from praxeon.providers.replay import ReplayProvider

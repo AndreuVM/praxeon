@@ -5,7 +5,7 @@ import os
 import time
 from typing import Any, Dict, List, Optional
 
-from praxeon.config import JEVConfig, default_config
+from praxeon.config import PraxeonConfig, default_config
 from praxeon.models.schema import ActionCandidate, LoopType, Step, StepType
 
 logger = logging.getLogger("praxeon.typesafe")
@@ -14,7 +14,7 @@ logger = logging.getLogger("praxeon.typesafe")
 class TypeSafeJEVClient:
     """Cliente para evaluar razonamiento y decisiones usando el modelo Jev de TypeSafe AI."""
 
-    def __init__(self, config: Optional[JEVConfig] = None):
+    def __init__(self, config: Optional[PraxeonConfig] = None):
         self.config = config or default_config
         if self.config.typesafe_api_key is not None:
             self.api_key = self.config.typesafe_api_key

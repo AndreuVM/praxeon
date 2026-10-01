@@ -7,7 +7,7 @@ import sys
 from typing import Any, Dict, List, Optional
 
 from praxeon import __version__
-from praxeon.config import JEVConfig, default_config
+from praxeon.config import PraxeonConfig, default_config
 from praxeon.core.intervention_policy import InterventionPolicy
 from praxeon.core.jev_engine import JEVEngine
 from praxeon.core.state_graph import StateGraph
@@ -24,7 +24,7 @@ class MCPBridge:
 
     def __init__(
         self,
-        config: Optional[JEVConfig] = None,
+        config: Optional[PraxeonConfig] = None,
         navigator: Optional[Navigator] = None,
     ):
         self.config = config or default_config

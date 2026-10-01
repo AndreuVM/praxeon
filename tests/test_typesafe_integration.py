@@ -3,7 +3,7 @@
 from unittest.mock import MagicMock, patch
 import pytest
 
-from praxeon.config import JEVConfig
+from praxeon.config import PraxeonConfig
 from praxeon.core.jev_engine import JEVEngine
 from praxeon.core.state_graph import StateGraph
 from praxeon.core.typesafe_client import TypeSafeJEVClient
@@ -12,7 +12,7 @@ from praxeon.models.schema import ActionCandidate, Step, StepType, Trajectory
 
 def test_typesafe_client_unavailable_without_key():
     """Verifica que el cliente no está disponible si no hay API key."""
-    cfg = JEVConfig(typesafe_api_key=None, use_typesafe_api=False)
+    cfg = PraxeonConfig(typesafe_api_key=None, use_typesafe_api=False)
     client = TypeSafeJEVClient(cfg)
     assert client.is_available() is False
     assert client.evaluate_candidate("meta", [], ActionCandidate(id="c1", description="desc")) is None
@@ -20,7 +20,7 @@ def test_typesafe_client_unavailable_without_key():
 
 def test_typesafe_client_mock_evaluation():
     """Verifica que TypeSafeJEVClient procesa correctamente las respuestas tipadas de Jev."""
-    cfg = JEVConfig(typesafe_api_key="test_dummy_key", use_typesafe_api=True)
+    cfg = PraxeonConfig(typesafe_api_key="test_dummy_key", use_typesafe_api=True)
     client = TypeSafeJEVClient(cfg)
 
     mock_noul = MagicMock()
@@ -70,7 +70,7 @@ def test_typesafe_client_mock_evaluation():
 
 def test_jev_engine_integration_with_typesafe():
     """Verifica que JEVEngine use los resultados de TypeSafe AI cuando está habilitado."""
-    cfg = JEVConfig(typesafe_api_key="dummy_key", use_typesafe_api=True)
+    cfg = PraxeonConfig(typesafe_api_key="dummy_key", use_typesafe_api=True)
     graph = StateGraph(cfg)
     graph.load_trajectory(Trajectory(session_id="ts_test", goal="Optimizar", steps=[]))
 
@@ -101,7 +101,7 @@ def test_jev_engine_integration_with_typesafe():
 
 def test_typesafe_evaluate_step_chunk_clean():
     """Verifica que evaluate_step_chunk valide un bloque de pasos en una sola llamada a TypeSafe."""
-    cfg = JEVConfig(typesafe_api_key="test_dummy_key", use_typesafe_api=True)
+    cfg = PraxeonConfig(typesafe_api_key="test_dummy_key", use_typesafe_api=True)
     client = TypeSafeJEVClient(cfg)
 
     mock_noul = MagicMock()
@@ -154,7 +154,7 @@ def test_typesafe_evaluate_step_chunk_clean():
 
 def test_typesafe_evaluate_step_chunk_detects_hallucination():
     """Verifica que evaluate_step_chunk detecte alucinaciones y apunte al paso infractor."""
-    cfg = JEVConfig(typesafe_api_key="test_dummy_key", use_typesafe_api=True)
+    cfg = PraxeonConfig(typesafe_api_key="test_dummy_key", use_typesafe_api=True)
     client = TypeSafeJEVClient(cfg)
 
     mock_noul = MagicMock()

@@ -4,39 +4,46 @@ Todas las modificaciones notables de este proyecto están documentadas en este a
 
 ---
 
-## [1.0.0] — 2026-09-27
+## [1.0.0] — 2026-10-02
 
 ### Añadido
-- **PRAXEON 1.0 Platform**:
-  - **Runtime Semantics & Precedencia Operacional**:
-    - Motor de clasificación determinista `CommandClassifier` con 10 categorías canónicas (`inspection`, `build_test`, `package_management`, `local_mutation`, `network`, `process_control`, `privilege`, `destructive`, `remote_mutation`, `unknown`).
-    - Desacoplamiento estricto de la identidad de la herramienta frente a la semántica de la operación concreta: operaciones de solo lectura (`cat`, `wc`, `git status`, `ls`) ejecutadas vía `run_command` ya no sufren sobre-restricción estática.
-    - Precedencia formal de seguridad: Reglas críticas estáticas (`DESTRUCTIVE`, `PRIVILEGE`) > Restricciones de sesión > Riesgo contextual > Señal semántica > ALLOW.
-    - Manejo de incertidumbre sintáctica: comandos desconocidos en herramientas admisibles derivan a `REVIEW` (requieren confirmación auditada), nunca bloqueo ciego (`BLOCK`).
-  - **Fase 1 (Hardening & Event Model)**:
-    - Tipos de eventos inmutables (`EventType`, `make_event`) con secuencia monótona estricta por sesión y método `append_new()`.
-    - `EventBus` persistente con SQLite WAL y recuperación de huecos (*gap recovery*).
-    - `DecisionTreeReducer` canónico para reconstruir el árbol jerárquico de decisiones en memoria a partir del log de eventos.
-    - NonceStore atómico `consume-once` y validación criptográfica HMAC-SHA256 en recibos de decisión con `execution_mode` ligado a la firma.
-  - **Fase 2 (Web Server FastAPI & WebSocket Streaming)**:
-    - Servidor FastAPI modular en `praxeon/server/` con arquitectura de capas y separación estricta de autoridad.
-    - Endpoints REST completos: gestión de sesiones (`/v1/sessions`), evaluación de propuestas (`/v1/sessions/{id}/actions`), Decision Inspector en 4 pestañas (`/v1/decisions/{id}`), confirmación humana (`/v1/decisions/{id}/confirm`), rechazo explícito auditado (`/v1/decisions/{id}/reject`), ejecución en sandbox (`/v1/decisions/{id}/execute`), historial de eventos paginado (`/v1/sessions/{id}/events`), salud (`/v1/health`) y métricas dinámicas (`/v1/metrics`).
-    - Canal dúplex WebSocket `/v1/sessions/{id}/stream` con parámetro `after_sequence` y supresión de eventos duplicados en reconexión.
-  - **Fase 3 (Frontend Web Application & Design System)**:
-    - SPA moderna construida con Vite + React en `web/` con estética dark mode técnica e idéntica al mockup de referencia.
-    - Componentes de alta fidelidad: `Header`, `Sidebar`, `SessionKPIs`, `DecisionTree` interactivo (zoom, pan, curvas Bézier SVG, estados dinámicos), `ConsolePanel` (terminal en vivo con coloreado de veredictos y timeline de eventos) y `DecisionInspector` (4 pestañas: Decision, Evidence, Policy, Receipt).
-    - Command Classification Card con metadatos contextuales (categoría, read-only, reversibilidad, acceso a red, regla de preflight).
-    - Integración de gap recovery en stream WebSocket y rechazo auditado de decisiones.
-  - **Fase 4 (Consolidación, Vistas Complementarias & Benchmark de Sobre-restricción)**:
-    - Vistas completas de navegación: `SessionsView`, `DecisionsView`, `AgentsView`, `ProvidersView`, `SecurityView` y `SettingsView`.
-    - Suite normativa de Benchmark de Sobre-restricción (`tests/benchmarks/test_over_restriction_benchmark.py`) evaluando las 6 familias de la Sección 15 del PDF:
-      - Safe Known Operations: 100% de precisión, 0.0% de falsos bloqueos.
-      - Safe Uncommon Operations: 100% de precisión, 0.0% de falsos bloqueos.
-      - Ambiguous Operations: 100% ruteadas a revisión humana (REVIEW), 0 bloqueos ciegos.
-      - Dangerous Operations: 100% bloqueadas determinísticamente, 0.0% de falsos permisos.
-      - Context-Dependent Operations: Validación de fronteras de aislamiento en `ExecutionMode`.
-      - Adversarial Syntax: 100% bloqueadas mediante preflight estático y detección de wrappers.
-    - Suite de pruebas exhaustiva con 240+ tests unitarios, de integración y de seguridad pasando al 100%.
+- **Matriz Formal de Verificación de Release (REL-01 a REL-15)**:
+  - Suite exhaustiva de certificación en `tests/release/` con 151 tests dedicados pasando al 100%.
+  - **Seguridad y Hardening de Red (`REL-01`, `REL-02`)**:
+    - Autenticación fail-closed obligatoria en endpoints sensibles (rechazo 401/403 ante credenciales inválidas o ausentes).
+    - Prohibición de bindings de red no-loopback (`0.0.0.0`, IPs de LAN o hostnames públicos) sin API key configurada.
+    - Rechazo estricto de comodines CORS (`*`) y configuraciones de orígenes vacíos en perfil de producción.
+  - **Gobernanza y Políticas de Full Access (`REL-03`, `REL-04`, `REL-05`)**:
+    - Invariante `BLOCK Always Wins`: las reglas críticas y preflights estáticos jamás pueden ser sobreescritos por Full Access (0 ejecuciones físicas garantizadas).
+    - Conservación estricta de estados `REPLAN`, imposibilitando ejecuciones no deseadas durante la reformulación de trayectorias.
+    - Formalización de la política en `docs/FULL_ACCESS_POLICY.md`: retención de `REVIEW` en sesiones interactivas, requerimiento de delegación criptográfica de operador para modo autónomo y registro inmutable de auditoría en `EventStore`.
+  - **Ligaduras Criptográficas y Prevención de Replay (`REL-06` a `REL-09`)**:
+    - Ligadura multidimensional de capabilities con `session_id`, `action_hash` y `state_hash`.
+    - Expiración temporal rigurosa por TTL (`expires_at`) rechazada en `SecureExecutor` y en endpoints de la API.
+    - Validación matemática de integridad HMAC-SHA256 contra payloads alterados, secretos erróneos o firmas ausentes.
+    - Pruebas de estrés concurrente con 100 hilos simultáneos sobre el mismo capability con `NonceStore` atómico: exactamente 1 ejecución exitosa y 99 rechazos deterministas.
+  - **Persistencia Multi-BD y Crash Recovery (`REL-10`)**:
+    - Arquitectura transaccional de tres bases de datos SQLite en modo WAL (`praxeon_events.db`, `praxeon_state.db`, `praxeon_nonces.db`).
+    - Supervivencia y recuperación de decisiones en estado `REVIEW` tras reinicio abrupto del servidor.
+    - Persistencia de nonces ejecutados que imposibilitan cualquier repetición post-reinicio e inmutabilidad de veredictos `BLOCK`.
+  - **WebSocket Streaming Resiliente (`REL-11`, `REL-12`)**:
+    - Reanudación de stream con parámetro `after_sequence` y comando interactivo `sync` para recuperación de huecos (*gap recovery*) sin duplicados.
+    - Keepalive liveness mediante ping/pong periódico y cierre controlado.
+    - Difusión simultánea a múltiples clientes concurrentes sin pérdida de orden monótono y con aislamiento estricto de sesiones.
+  - **Supervisión Canónica y Smoke Test E2E (`REL-13`, `REL-14`)**:
+    - Invariantes canónicos de `ProviderAssessment`, fail-safe ante indisponibilidad y máquina de estados robusta de `CircuitBreaker` (`CLOSED` -> `OPEN` -> `HALF_OPEN` -> `CLOSED`).
+    - Smoke test E2E de agente en vivo con ciclo de 3 pasos (inspección -> mutación fundamentada -> finish terminal).
+    - Prevención estricta de finalización prematura (`PREMATURE_COMPLETION_WITHOUT_EVIDENCE`).
+  - **Reproducibilidad de Benchmarks (`REL-15`)**:
+    - Metadatos estandarizados de ejecución (`git_commit`, `timestamp`, `praxeon_version`, `model`, `seed`) inyectados automáticamente en `benchmark_run_metadata.json` y cabeceras de `SUMMARY.md`.
+    - Interfaz CLI completa en `scripts/run_benchmarks.py` con argumentos `--output-dir`, `--seed`, `--model` y `--quick`.
+- **Limpieza Arquitectural de Configuración**:
+  - Reemplazo y migración completa de `JEVConfig` a `PraxeonConfig` en todo el núcleo del runtime, servidor, CLI, dashboard, proxy interceptor y suite de pruebas.
+  - Alias retrocompatible de `JEVConfig` con `DeprecationWarning` controlado.
+  - Cero advertencias de obsolescencia activas en el runtime y aislamiento limpio de estados en pruebas.
+- **Regresión Completa de la Suite**:
+  - 518 tests pasando (0 fallos, 1 omitido) en toda la suite `pytest tests/`.
+
 
 ## [0.4.0] — 2026-09-25
 

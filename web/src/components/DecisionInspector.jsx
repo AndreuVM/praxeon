@@ -180,9 +180,9 @@ export default function DecisionInspector({
       userSelect: 'none',
       height: '100%',
     }}>
-      {/* 5 Tabs Header */}
+      {/* 5 Tabs Header (Alineado con los 38px de TopNav) */}
       <div style={{
-        height: '42px',
+        height: '38px',
         backgroundColor: '#0c0f14',
         borderBottom: '1px solid #1a202c',
         display: 'flex',
@@ -201,7 +201,8 @@ export default function DecisionInspector({
               style={{
                 background: 'none',
                 border: 'none',
-                padding: '10px 6px',
+                height: '100%',
+                padding: '0 6px',
                 fontSize: '11.5px',
                 fontWeight: isActive ? '600' : '400',
                 color: isActive ? '#f0f6fc' : '#8b949e',

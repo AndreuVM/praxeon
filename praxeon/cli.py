@@ -22,7 +22,7 @@ from rich.text import Text
 from rich.tree import Tree
 
 from praxeon import __version__
-from praxeon.config import JEVConfig, default_config
+from praxeon.config import PraxeonConfig, default_config
 from praxeon.core.intervention_policy import InterventionPolicy
 from praxeon.core.jev_engine import JEVEngine
 from praxeon.core.state_graph import StateGraph
@@ -42,7 +42,7 @@ from praxeon.models.trace import TraceParser
 console = Console(legacy_windows=False)
 
 
-def analyze_trace_file(file_path: str, config: Optional[JEVConfig] = None) -> None:
+def analyze_trace_file(file_path: str, config: Optional[PraxeonConfig] = None) -> None:
     """Carga y analiza detalladamente una traza de razonamiento mediante TypeSafe AI."""
     path = Path(file_path)
     if not path.exists():
@@ -189,7 +189,7 @@ def analyze_trace_file(file_path: str, config: Optional[JEVConfig] = None) -> No
         console.print("\n[bold green]✓ No se requiere ninguna intervención correctiva.[/]")
 
 
-def simulate_trace_execution(file_path: str, config: Optional[JEVConfig] = None) -> None:
+def simulate_trace_execution(file_path: str, config: Optional[PraxeonConfig] = None) -> None:
     """Simula la ejecución paso a paso de una traza interceptando bucles en tiempo real."""
     from rich.markup import escape
 

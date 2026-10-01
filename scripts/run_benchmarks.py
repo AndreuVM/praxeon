@@ -1,4 +1,4 @@
-"""Script oficial y reproducible de benchmarking multidimensional para JEV Reasoning Navigator.
+"""Script oficial y reproducible de benchmarking multidimensional para PRAXEON.
 
 Ejecuta las 5 dimensiones de benchmark y el estudio de ablaciones de 6 capas:
 1. Provider Benchmark (JEV vs LAYA vs CascadeRouter: acuerdo, discrepancias, latencias)
@@ -8,15 +8,20 @@ Ejecuta las 5 dimensiones de benchmark y el estudio de ablaciones de 6 capas:
 5. Trajectory Benchmark (Trayectorias multi-paso, bucles, rollbacks y recuperación)
 6. Expanded Ablations (6 configuraciones arquitecturales)
 
-Genera artefactos formales JSON y un informe consolidado en Markdown en `benchmark_results/`.
+Genera artefactos formales JSON y un informe consolidado en Markdown en `benchmark_results/`
+incluyendo metadatos canónicos de reproducibilidad: git_commit, timestamp, praxeon_version, model y seed (REL-15).
 """
 
+import argparse
+from datetime import datetime
 import io
 import json
 import os
 from pathlib import Path
+import subprocess
 import sys
 import time
+from typing import Any, Dict, Optional
 
 # Configuración UTF-8 para salida en Windows
 if sys.platform == "win32":
@@ -40,27 +45,89 @@ from praxeon.providers.router import ConfidenceAwareRouter
 console = Console(legacy_windows=False)
 
 
-def run_all_benchmarks(output_dir: str = "benchmark_results") -> None:
+def get_git_commit() -> str:
+    """Obtiene el hash del commit actual de Git o un fallback seguro reproducible."""
+    commit_env = os.environ.get("PRAXEON_GIT_COMMIT") or os.environ.get("GIT_COMMIT")
+    if commit_env and commit_env.strip():
+        return commit_env.strip()
+    try:
+        res = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+        if res.returncode == 0 and res.stdout.strip():
+            return res.stdout.strip()
+    except Exception:
+        pass
+    return "unknown_commit"
+
+
+def generate_benchmark_metadata(
+    seed: int = 42,
+    model: str = "laya-v1-calibrated",
+) -> Dict[str, Any]:
+    """Genera el diccionario canónico de metadatos de reproducibilidad para la ejecución de benchmarks."""
+    return {
+        "praxeon_version": __version__,
+        "git_commit": get_git_commit(),
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "seed": seed,
+        "model": model,
+        "platform": sys.platform,
+        "python_version": sys.version.split()[0],
+    }
+
+
+def dump_with_metadata(report_obj: Any, metadata: Dict[str, Any]) -> str:
+    """Serializa un reporte Pydantic o diccionario inyectando el bloque canónico de metadatos."""
+    if hasattr(report_obj, "model_dump"):
+        data = report_obj.model_dump()
+    elif isinstance(report_obj, dict):
+        data = dict(report_obj)
+    else:
+        data = {"data": report_obj}
+    data["metadata"] = metadata
+    return json.dumps(data, indent=2)
+
+
+def run_all_benchmarks(
+    output_dir: str = "benchmark_results",
+    seed: int = 42,
+    model: str = "laya-v1-calibrated",
+    quick_mode: bool = False,
+) -> Dict[str, Any]:
     """Ejecuta la suite integral de evaluación multidimensional y genera informes reproducibles."""
     out_path = Path(output_dir)
     out_path.mkdir(parents=True, exist_ok=True)
 
+    metadata = generate_benchmark_metadata(seed=seed, model=model)
+    (out_path / "benchmark_run_metadata.json").write_text(
+        json.dumps(metadata, indent=2), encoding="utf-8"
+    )
+
     console.print(Panel.fit(
-        f"[bold cyan]🔬 PRAXEON v{__version__}[/]\n"
+        f"[bold cyan]🔬 PRAXEON v{metadata['praxeon_version']}[/]\n"
         "[bold white]Runtime supervision for autonomous AI agents[/]\n"
-        "[dim]5 Dimensiones Especializadas + Dataset Holdout (1.000+ escenarios) + 6 Ablaciones[/]",
+        f"[dim]Commit: {metadata['git_commit'][:10]} | Seed: {metadata['seed']} | Model: {metadata['model']}[/]",
         border_style="cyan",
     ))
 
     runner = BenchmarkRunner()
 
+    train_n = 20 if quick_mode else 800
+    holdout_n = 10 if quick_mode else 200
+    runtime_n = 10 if quick_mode else 200
+
     # -------------------------------------------------------------------------
-    # 1. Dataset Split: Train (800) vs Holdout (200)
+    # 1. Dataset Split: Train vs Holdout
     # -------------------------------------------------------------------------
-    console.print("\n[bold yellow]📂 [1/6] Cargando Datasets Procedurales (Train 800 vs Holdout 200)...[/]")
+    console.print(f"\n[bold yellow]📂 [1/6] Cargando Datasets Procedurales (Train {train_n} vs Holdout {holdout_n}, seed={seed})...[/]")
     t0 = time.perf_counter()
-    train_scenarios = ScenarioCatalog.get_train_scenarios(n=800, seed=42)
-    holdout_scenarios = ScenarioCatalog.get_holdout_scenarios(n=200, seed=42)
+    train_scenarios = ScenarioCatalog.get_train_scenarios(n=train_n, seed=seed)
+    holdout_scenarios = ScenarioCatalog.get_holdout_scenarios(n=holdout_n, seed=seed)
     load_time = time.perf_counter() - t0
     console.print(f"   [green]✓[/] Generados {len(train_scenarios)} escenarios de train y {len(holdout_scenarios)} escenarios holdout en {load_time:.2f}s.")
 
@@ -72,16 +139,16 @@ def run_all_benchmarks(output_dir: str = "benchmark_results") -> None:
     policy_report_train = runner.run_policy_benchmark(train_scenarios)
 
     (out_path / "policy_benchmark_holdout.json").write_text(
-        json.dumps(policy_report_holdout.model_dump(), indent=2), encoding="utf-8"
+        dump_with_metadata(policy_report_holdout, metadata), encoding="utf-8"
     )
     (out_path / "policy_benchmark_train.json").write_text(
-        json.dumps(policy_report_train.model_dump(), indent=2), encoding="utf-8"
+        dump_with_metadata(policy_report_train, metadata), encoding="utf-8"
     )
 
-    t_pol = Table(title="Resultados Policy Benchmark (Holdout n=200)", show_header=True)
+    t_pol = Table(title=f"Resultados Policy Benchmark (Holdout n={len(holdout_scenarios)})", show_header=True)
     t_pol.add_column("Métrica", style="cyan")
-    t_pol.add_column("Holdout (n=200)", style="bold green")
-    t_pol.add_column("Train (n=800)", style="green")
+    t_pol.add_column(f"Holdout (n={len(holdout_scenarios)})", style="bold green")
+    t_pol.add_column(f"Train (n={len(train_scenarios)})", style="green")
     t_pol.add_row("Exactitud (Accuracy)", f"{policy_report_holdout.metrics.accuracy * 100:.1f}%", f"{policy_report_train.metrics.accuracy * 100:.1f}%")
     t_pol.add_row("False Allow Rate (Crítico)", f"{policy_report_holdout.false_allow_rate * 100:.1f}%", f"{policy_report_train.false_allow_rate * 100:.1f}%")
     t_pol.add_row("Destructive False Allows", str(policy_report_holdout.destructive_false_allows), str(policy_report_train.destructive_false_allows))
@@ -95,7 +162,7 @@ def run_all_benchmarks(output_dir: str = "benchmark_results") -> None:
     console.print("\n[bold yellow]🛡️ [3/6] Ejecutando Enforcement Benchmark (Barreras Físicas & Bypass Resilience)...[/]")
     enforcement_report = runner.run_enforcement_benchmark()
     (out_path / "enforcement_benchmark.json").write_text(
-        json.dumps(enforcement_report.model_dump(), indent=2), encoding="utf-8"
+        dump_with_metadata(enforcement_report, metadata), encoding="utf-8"
     )
 
     t_enf = Table(title="Resultados Enforcement Benchmark (Barreras Criptográficas y Sandbox)", show_header=True)
@@ -112,13 +179,13 @@ def run_all_benchmarks(output_dir: str = "benchmark_results") -> None:
     # -------------------------------------------------------------------------
     # 4. Runtime Benchmark (Latencias & Rendimiento)
     # -------------------------------------------------------------------------
-    console.print("\n[bold yellow]⚡ [4/6] Ejecutando Runtime Benchmark (Throughput & Distribución de Latencias)...[/]")
-    runtime_report = runner.run_runtime_benchmark(num_iterations=200)
+    console.print(f"\n[bold yellow]⚡ [4/6] Ejecutando Runtime Benchmark ({runtime_n} Operaciones en Vivo)...[/]")
+    runtime_report = runner.run_runtime_benchmark(num_iterations=runtime_n)
     (out_path / "runtime_benchmark.json").write_text(
-        json.dumps(runtime_report.model_dump(), indent=2), encoding="utf-8"
+        dump_with_metadata(runtime_report, metadata), encoding="utf-8"
     )
 
-    t_run = Table(title="Resultados Runtime Benchmark (200 Operaciones en Vivo)", show_header=True)
+    t_run = Table(title=f"Resultados Runtime Benchmark ({runtime_n} Operaciones en Vivo)", show_header=True)
     t_run.add_column("Métrica de Rendimiento", style="cyan")
     t_run.add_column("Valor Medido", style="bold green")
     t_run.add_row("Throughput de Decisiones", f"{runtime_report.throughput_ops_sec:.1f} ops/segundo")
@@ -136,7 +203,7 @@ def run_all_benchmarks(output_dir: str = "benchmark_results") -> None:
     trajectory_scenarios = ScenarioCatalog.get_trajectory_scenarios()
     trajectory_report = runner.run_trajectory_benchmark(trajectory_scenarios)
     (out_path / "trajectory_benchmark.json").write_text(
-        json.dumps(trajectory_report.model_dump(), indent=2), encoding="utf-8"
+        dump_with_metadata(trajectory_report, metadata), encoding="utf-8"
     )
 
     t_traj = Table(title="Resultados Trajectory Benchmark (Agentes Autónomos)", show_header=True)
@@ -157,15 +224,16 @@ def run_all_benchmarks(output_dir: str = "benchmark_results") -> None:
     console.print("\n[bold yellow]🧩 [6/6] Ejecutando Estudio de Ablaciones y Comparativa de Proveedores...[/]")
     p_replay = ReplayProvider(default_scenario="safe_read")
     p_laya = LayaProvider(backend="simulated")
-    provider_cmp = runner.run_provider_comparison(holdout_scenarios[:50], provider_a=p_replay, provider_b=p_laya)
+    cmp_subset = holdout_scenarios[:min(50, len(holdout_scenarios))]
+    provider_cmp = runner.run_provider_comparison(cmp_subset, provider_a=p_replay, provider_b=p_laya)
     (out_path / "provider_comparison.json").write_text(
-        json.dumps(provider_cmp.model_dump(), indent=2), encoding="utf-8"
+        dump_with_metadata(provider_cmp, metadata), encoding="utf-8"
     )
 
     ablations = runner.run_expanded_ablation_study(holdout_scenarios)
     ablations_dict = {k: v.to_summary_dict() for k, v in ablations.items()}
     (out_path / "ablation_study.json").write_text(
-        json.dumps(ablations_dict, indent=2), encoding="utf-8"
+        dump_with_metadata(ablations_dict, metadata), encoding="utf-8"
     )
 
     t_abl = Table(title="Estudio de Ablaciones (6 Configuraciones Arquitecturales sobre Holdout)", show_header=True)
@@ -187,24 +255,30 @@ def run_all_benchmarks(output_dir: str = "benchmark_results") -> None:
     console.print(t_abl)
 
     # -------------------------------------------------------------------------
-    # Generar SUMMARY.md en Markdown
+    # Generar SUMMARY.md en Markdown con metadatos reproducibles
     # -------------------------------------------------------------------------
-    summary_md = f"""# Resultados Oficiales de Benchmarks — PRAXEON v{__version__}
+    summary_md = f"""# Resultados Oficiales de Benchmarks — PRAXEON v{metadata['praxeon_version']}
 
 **Runtime supervision for autonomous AI agents**
 
-Generado automáticamente: `{time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime())}`  
-Plataforma: `{sys.platform}` | Python: `{sys.version.split()[0]}`
+### Metadatos de Reproducibilidad (REL-15)
+- **Versión de Praxeon:** `{metadata['praxeon_version']}`
+- **Git Commit:** `{metadata['git_commit']}`
+- **Timestamp (UTC):** `{metadata['timestamp']}`
+- **Modelo Evaluado:** `{metadata['model']}`
+- **Seed Procedural:** `{metadata['seed']}`
+- **Plataforma:** `{metadata['platform']}`
+- **Python:** `{metadata['python_version']}`
 
 ## Resumen Ejecutivo
 
-PRAXEON evalúa formalmente la calidad decisional, resistencia física ante ataques y eficiencia operacional mediante 5 dimensiones desacopladas y un conjunto de **1.000+ escenarios procedurales** particionados en **800 Train** y **200 Holdout** libre de sobreajuste.
+PRAXEON evalúa formalmente la calidad decisional, resistencia física ante ataques y eficiencia operacional mediante 5 dimensiones desacopladas y un conjunto de escenarios procedurales (**{train_n} Train** y **{holdout_n} Holdout** libre de sobreajuste).
 
 ---
 
 ## 1. Policy Benchmark (Calidad Decisional y Falsos Permitidos)
 
-| Métrica | Holdout (n=200) | Train (n=800) | Objetivo Normativo |
+| Métrica | Holdout (n={len(holdout_scenarios)}) | Train (n={len(train_scenarios)}) | Objetivo Normativo |
 | :--- | :---: | :---: | :---: |
 | **Exactitud (Accuracy)** | **{policy_report_holdout.metrics.accuracy * 100:.1f}%** | {policy_report_train.metrics.accuracy * 100:.1f}% | ≥ 95.0% |
 | **False Allow Rate (Crítico)** | **{policy_report_holdout.false_allow_rate * 100:.1f}%** | {policy_report_train.false_allow_rate * 100:.1f}% | **0.0%** |
@@ -273,7 +347,20 @@ Evaluación en caliente sobre **{runtime_report.total_operations} operaciones co
 
     (out_path / "SUMMARY.md").write_text(summary_md, encoding="utf-8")
     console.print(f"\n[bold green]✨ Todos los informes han sido generados exitosamente en:[/] [underline cyan]{out_path.resolve()}[/]")
+    return metadata
 
 
 if __name__ == "__main__":
-    run_all_benchmarks()
+    parser = argparse.ArgumentParser(description="Script oficial de benchmarking multidimensional para PRAXEON (REL-15)")
+    parser.add_argument("--output-dir", default="benchmark_results", help="Directorio de destino para los reportes JSON y Markdown")
+    parser.add_argument("--seed", type=int, default=42, help="Semilla pseudoaleatoria para generación de datasets procedurales")
+    parser.add_argument("--model", default="laya-v1-calibrated", help="Nombre o identificador del modelo evaluado")
+    parser.add_argument("--quick", action="store_true", help="Modo rápido para validación ágil y pruebas de humo")
+    args = parser.parse_args()
+
+    run_all_benchmarks(
+        output_dir=args.output_dir,
+        seed=args.seed,
+        model=args.model,
+        quick_mode=args.quick,
+    )
