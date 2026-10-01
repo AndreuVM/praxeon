@@ -238,6 +238,18 @@ class EventStore:
             finally:
                 self._close_conn(conn)
 
+    def delete_session_events(self, session_id: str) -> int:
+        """Elimina todos los eventos persistidos para una sesión."""
+        with self._lock:
+            conn = self._get_connection()
+            try:
+                with conn:
+                    cur = conn.cursor()
+                    cur.execute("DELETE FROM runtime_events WHERE session_id = ?", (session_id,))
+                    return cur.rowcount
+            finally:
+                self._close_conn(conn)
+
 
 class EventBus:
     """Bus reactivo en memoria con persistencia integrada y soporte síncrono/asíncrono."""
@@ -400,3 +412,12 @@ class EventBus:
 
     def list_sessions(self) -> List[str]:
         return self.store.list_sessions()
+
+    def delete_session(self, session_id: str) -> int:
+        """Purga todos los eventos de la sesión y desconecta observadores asociados."""
+        count = self.store.delete_session_events(session_id)
+        with self._lock:
+            self._session_subscribers.pop(session_id, None)
+            self._async_session_queues.pop(session_id, None)
+        return count
+

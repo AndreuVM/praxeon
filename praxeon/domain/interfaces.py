@@ -94,6 +94,9 @@ class StateStore(Protocol):
     def list_sessions(self) -> List[str]:
         ...
 
+    def delete_session(self, session_id: str) -> bool:
+        ...
+
 
 @runtime_checkable
 class PolicyEngineProtocol(Protocol):

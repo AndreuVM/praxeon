@@ -134,6 +134,7 @@ export default function App() {
               seq: ev.sequence,
               type: evType,
               time: timeStr,
+              payload: ev.payload,
               detail: typeof ev.payload === 'string' ? ev.payload : JSON.stringify(ev.payload || {}).slice(0, 120),
             },
             ...prev,
@@ -593,7 +594,18 @@ export default function App() {
   };
 
   // Lanzar misión interactiva en tiempo real
-  const handleStartMission = async ({ goal, execution_mode, llm_provider, supervisor, max_steps, llm_model, api_key, base_url }) => {
+  const handleStartMission = async ({
+    goal,
+    execution_mode,
+    llm_provider,
+    supervisor,
+    max_steps,
+    llm_model,
+    api_key,
+    base_url,
+    workspace_root,
+    chat_history,
+  }) => {
     setIsRunning(true);
     setIsPaused(false);
     setInspectorTab('chat');
@@ -610,6 +622,8 @@ export default function App() {
         supervisor,
         max_steps,
         step_delay_ms: 1000,
+        workspace_root,
+        chat_history,
       });
 
       if (res?.data) {
@@ -627,6 +641,7 @@ export default function App() {
             latencyP50: '92ms',
             executionTime: 'Live',
           },
+          finalAnswer: null,
         };
 
         setSession(newSess);
@@ -713,6 +728,104 @@ export default function App() {
       console.warn('Error refreshing sessions:', e);
     }
   };
+
+  // Crear una nueva sesión limpia (grafo y chat en blanco, sin memoria previa)
+  const handleNewCleanSession = () => {
+    setIsRunning(false);
+    setIsPaused(false);
+    const newSid = `s-${Math.random().toString(36).substring(2, 9)}`;
+    const timeStr = new Date().toTimeString().split(' ')[0];
+
+    setSession({
+      sessionId: newSid,
+      status: 'Ready',
+      agent: 'CodingAgent',
+      goal: 'Nueva sesión limpia. Introduce un prompt para iniciar la misión.',
+      execution_mode: missionConfig.executionMode || 'local_restricted',
+      metrics: { totalDecisions: 0, allowed: 0, blocked: 0, review: 0 },
+      kpis: { totalDecisions: 0, allowedDecisions: 0, blockedDecisions: 0, reviewDecisions: 0 },
+      runtime: {
+        provider: `${(missionConfig.llmProvider || 'SIMULATOR').toUpperCase()} + ${(missionConfig.supervisor || 'LAYA').toUpperCase()}`,
+        version: 'v1.0.0',
+        latencyP50: '—',
+        executionTime: 'Live',
+      },
+      finalAnswer: null,
+    });
+
+    setNodes([
+      { id: 'start', label: 'Start', type: 'start', status: 'SYSTEM', x: 420, y: 30, parentId: null },
+    ]);
+    setSelectedNodeId('start');
+    setDecisionsMap({});
+    setEvents([]);
+    setChatMessages([
+      {
+        id: 'welcome',
+        role: 'assistant',
+        text: 'Hola, soy el asistente de supervisión de PRAXEON. Introduce una tarea para el agente autónomo. El supervisor evaluará cada acción en tiempo real, aplicando políticas deterministas, comprobación de evidencias y ejecución confinada en sandbox.',
+        time: 'Listo',
+        isWelcome: true,
+      },
+    ]);
+    setInspectorTab('chat');
+    setLogs([
+      {
+        time: timeStr,
+        level: 'INFO',
+        message: `Nueva sesión limpia (#${newSid}) inicializada. Grafo y memoria reseteados.`,
+      },
+    ]);
+    setActiveNav('live');
+  };
+
+  // Eliminar una sesión individual
+  const handleDeleteSession = async (sessionId) => {
+    const timeStr = new Date().toTimeString().split(' ')[0];
+    try {
+      await api.deleteSession(sessionId);
+      setSessionsList((prev) => prev.filter((s) => s.session_id !== sessionId));
+      setLogs((prev) => [
+        ...prev,
+        { time: timeStr, level: 'INFO', message: `Sesión #${sessionId} eliminada y purgada exitosamente.` },
+      ]);
+
+      if (session.sessionId === sessionId) {
+        handleNewCleanSession();
+      }
+    } catch (err) {
+      console.error('Error eliminando sesión:', err);
+      setLogs((prev) => [
+        ...prev,
+        { time: timeStr, level: 'ERROR', message: `Error eliminando sesión #${sessionId}: ${err.message}` },
+      ]);
+    }
+  };
+
+  // Limpiar/purgar sesiones antiguas finalizadas
+  const handleClearOldSessions = async () => {
+    const timeStr = new Date().toTimeString().split(' ')[0];
+    try {
+      const res = await api.clearSessions(true, session.sessionId);
+      const count = res?.data?.deleted_count || 0;
+      await refreshSessionsList();
+      setLogs((prev) => [
+        ...prev,
+        {
+          time: timeStr,
+          level: 'INFO',
+          message: `Limpieza completada: se purgaron ${count} sesiones antiguas finalizadas.`,
+        },
+      ]);
+    } catch (err) {
+      console.error('Error purgando sesiones antiguas:', err);
+      setLogs((prev) => [
+        ...prev,
+        { time: timeStr, level: 'ERROR', message: `Error en limpieza de sesiones: ${err.message}` },
+      ]);
+    }
+  };
+
 
   // Cargar sesión existente y su snapshot de árbol / decisiones
   const handleLoadSession = async (sid) => {
@@ -1006,6 +1119,7 @@ export default function App() {
         operatorRole="operator"
         onOpenSessions={() => setIsSessionsOpen(true)}
         onOpenPropose={() => setIsProposeOpen(true)}
+        onNewSession={handleNewCleanSession}
       />
 
       {/* 2. Main 3-Column Work Area */}
@@ -1077,6 +1191,9 @@ export default function App() {
               setActiveNav('live');
             }}
             onRefreshSessions={refreshSessionsList}
+            onDeleteSession={handleDeleteSession}
+            onClearOldSessions={handleClearOldSessions}
+            onNewCleanSession={handleNewCleanSession}
           />
         )}
 
@@ -1173,6 +1290,8 @@ export default function App() {
           handleStartMission(cfg);
           setIsSessionsOpen(false);
         }}
+        onDeleteSession={handleDeleteSession}
+        onNewCleanSession={handleNewCleanSession}
       />
     </div>
   );

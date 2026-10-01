@@ -249,10 +249,7 @@ class PolicyEngine:
                 operation_assessment is not None
                 and operation_assessment.category in (CommandCategory.REMOTE_MUTATION, CommandCategory.NETWORK)
             ):
-                if mode_str == "full_access":
-                    status = DecisionStatus.ALLOW
-                    reason_codes.append(f"FULL_ACCESS_{operation_assessment.category.name}_AUTHORIZED")
-                elif self.permission_manager.is_action_confirmed(action.id, action_hash=action_hash):
+                if self.permission_manager.is_action_confirmed(action.id, action_hash=action_hash):
                     status = DecisionStatus.ALLOW
                     reason_codes.append("HUMAN_CONFIRMED_ACTION")
                 else:
@@ -262,10 +259,7 @@ class PolicyEngine:
                 operation_assessment is not None
                 and operation_assessment.category == CommandCategory.UNKNOWN
             ):
-                if mode_str == "full_access":
-                    status = DecisionStatus.ALLOW
-                    reason_codes.append("FULL_ACCESS_UNKNOWN_OPERATION_AUTHORIZED")
-                elif self.permission_manager.is_action_confirmed(action.id, action_hash=action_hash):
+                if self.permission_manager.is_action_confirmed(action.id, action_hash=action_hash):
                     status = DecisionStatus.ALLOW
                     reason_codes.append("HUMAN_CONFIRMED_ACTION")
                 else:
@@ -294,11 +288,8 @@ class PolicyEngine:
             or (
                 operation_assessment is not None
                 and operation_assessment.category in (CommandCategory.REMOTE_MUTATION, CommandCategory.NETWORK, CommandCategory.UNKNOWN)
-                and mode_str != "full_access"
             )
         )
-        if mode_str == "full_access" and status != DecisionStatus.BLOCK:
-            requires_confirmation = False
 
         decision = PolicyDecision(
             status=status,

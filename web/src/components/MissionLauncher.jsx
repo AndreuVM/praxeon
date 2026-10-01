@@ -19,6 +19,7 @@ export default function MissionLauncher({
   const [apiKey, setApiKey] = useState('');
   const [customModel, setCustomModel] = useState('');
   const [baseUrl, setBaseUrl] = useState('');
+  const [workspaceRoot, setWorkspaceRoot] = useState('');
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [isExpanded, setIsExpanded] = useState(true);
 
@@ -37,6 +38,7 @@ export default function MissionLauncher({
     }
     onStartMission?.({
       goal: goal.trim(),
+      workspace_root: workspaceRoot.trim() || undefined,
       execution_mode: executionMode,
       llm_provider: llmProvider,
       llm_model: customModel.trim() || undefined,
@@ -480,6 +482,28 @@ export default function MissionLauncher({
                     />
                   </div>
                 )}
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '10.5px', color: '#8b949e', marginBottom: '3px' }}>
+                    Workspace Root (opcional):
+                  </label>
+                  <input
+                    type="text"
+                    value={workspaceRoot}
+                    onChange={(e) => setWorkspaceRoot(e.target.value)}
+                    placeholder="Directorio de trabajo (ej. ./ o C:/path)"
+                    style={{
+                      width: '100%',
+                      backgroundColor: '#0c0f14',
+                      border: '1px solid #202737',
+                      borderRadius: '4px',
+                      padding: '4px 8px',
+                      color: '#f0f6fc',
+                      fontSize: '11px',
+                      outline: 'none',
+                    }}
+                  />
+                </div>
               </div>
             )}
           </div>

@@ -77,6 +77,7 @@ class ConfirmDecisionRequest(BaseModel):
     actor: Optional[str] = Field("human_operator", description="Identidad del supervisor humano")
     operator_id: Optional[str] = Field("operator_admin", description="ID de usuario del operador humano")
     role: Optional[str] = Field("operator", description="Rol de autorización: 'viewer', 'operator', 'admin'")
+    operator_token: Optional[str] = Field(None, description="Token o clave del operador para autenticación e integridad de confirmación (Finding 14)")
 
 
 class RejectDecisionRequest(BaseModel):
@@ -85,6 +86,7 @@ class RejectDecisionRequest(BaseModel):
     actor: Optional[str] = Field("human_operator", description="Identidad del supervisor humano")
     operator_id: Optional[str] = Field("operator_admin", description="ID de usuario del operador humano")
     role: Optional[str] = Field("operator", description="Rol de autorización: 'viewer', 'operator', 'admin'")
+    operator_token: Optional[str] = Field(None, description="Token o clave del operador para autenticación e integridad de confirmación (Finding 14)")
 
 
 class ConfirmDecisionResponse(BaseModel):

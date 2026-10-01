@@ -129,11 +129,18 @@ def prompt_model_recovery_menu(
 
 
 def _persist_api_key_to_env(new_key: str, key_name: str = "GEMINI_API_KEY", env_path: str = ".env") -> None:
-    """Actualiza una variable de API key en el archivo .env y en os.environ."""
+    """Actualiza una variable de API key en el archivo .env y en os.environ con permisos seguros 0600."""
     os.environ[key_name] = new_key
+    # Finding 17: Enforce 0600 permissions on .env file to prevent ambient secret reading by other local users
     if not os.path.exists(env_path):
-        with open(env_path, "w", encoding="utf-8") as f:
+        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+        fd = os.open(env_path, flags, 0o600)
+        with open(fd, "w", encoding="utf-8") as f:
             f.write(f"{key_name}={new_key}\n")
+        try:
+            os.chmod(env_path, 0o600)
+        except OSError:
+            pass
         return
 
     try:
@@ -153,7 +160,13 @@ def _persist_api_key_to_env(new_key: str, key_name: str = "GEMINI_API_KEY", env_
         if not key_found:
             new_lines.append(f"{key_name}={new_key}\n")
 
-        with open(env_path, "w", encoding="utf-8") as f:
+        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+        fd = os.open(env_path, flags, 0o600)
+        with open(fd, "w", encoding="utf-8") as f:
             f.writelines(new_lines)
+        try:
+            os.chmod(env_path, 0o600)
+        except OSError:
+            pass
     except Exception:
         pass

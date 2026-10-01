@@ -1,6 +1,8 @@
 """Servidor y Bridge Model Context Protocol (MCP) para conectar con agentes en tiempo real."""
 
+import hmac
 import json
+import os
 import sys
 from typing import Any, Dict, List, Optional
 
@@ -9,6 +11,7 @@ from praxeon.config import JEVConfig, default_config
 from praxeon.core.intervention_policy import InterventionPolicy
 from praxeon.core.jev_engine import JEVEngine
 from praxeon.core.state_graph import StateGraph
+from praxeon.domain.action import compute_action_hash
 from praxeon.domain.models import ActionCandidate, Goal, ToolCall
 from praxeon.models.schema import LoopReport, LoopType, Step, StepType, Trajectory
 from praxeon.models.trace import TraceParser
@@ -279,13 +282,56 @@ class MCPBridge:
             "state_hash": self.navigator.state.compute_hash(),
         }
 
-    def v2_confirm_action(self, action_id: str) -> Dict[str, Any]:
-        """Marca una acción sensible como confirmada formalmente por el operador humano."""
-        self.navigator.confirm_action(action_id)
+    def v2_confirm_action(
+        self,
+        action_id: str,
+        action_hash: Optional[str] = None,
+        operator_token: Optional[str] = None,
+        reason: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Marca una acción sensible como confirmada formalmente por el operador humano (Finding 7)."""
+        if self.navigator.state is None:
+            raise RuntimeError("No hay sesión activa para confirmar acción.")
+
+        expected_secret = (
+            os.getenv("PRAXEON_OPERATOR_KEY")
+            or os.getenv("PRAXEON_SECRET_KEY")
+            or os.getenv("PRAXEON_API_KEY")
+        )
+        if expected_secret:
+            if not operator_token or not hmac.compare_digest(str(operator_token).strip(), str(expected_secret).strip()):
+                raise PermissionError(
+                    "Acceso denegado: praxeon_confirm_action requiere un 'operator_token' autenticado del operador humano. "
+                    "El agente o cliente MCP no puede auto-aprobar sus propias acciones (Finding 7)."
+                )
+
+        if not action_hash or action_hash == "*":
+            # Si no se pasó hash, buscarlo en la acción pendiente del estado actual
+            target_hash = None
+            if self.navigator.state:
+                for step in self.navigator.state.steps:
+                    if step.action.id == action_id:
+                        target_hash = compute_action_hash(step.action)
+                        break
+            if target_hash:
+                action_hash = target_hash
+            else:
+                raise ValueError(
+                    "Acceso denegado: se requiere un 'action_hash' específico coincidente con la acción evaluada "
+                    "(no se admiten comodines '*' para confirmar vía MCP - Finding 7)."
+                )
+
+        self.navigator.confirm_action(
+            action_id=action_id,
+            action_hash=action_hash,
+            approver_id="authenticated_operator" if expected_secret else "mcp_operator",
+            reason=reason or "Confirmado por canal autenticado MCP",
+        )
         return {
             "action_id": action_id,
+            "action_hash": action_hash,
             "confirmed": True,
-            "message": f"Acción '{action_id}' confirmada formalmente para autorización por PolicyEngine.",
+            "message": f"Acción '{action_id}' (hash: {action_hash[:8]}...) confirmada formalmente para PolicyEngine.",
         }
 
     def _handle_request(self, req: Dict[str, Any]) -> None:
@@ -397,8 +443,11 @@ class MCPBridge:
                                 "type": "object",
                                 "properties": {
                                     "action_id": {"type": "string"},
+                                    "action_hash": {"type": "string", "description": "Hash SHA-256 de la acción a confirmar (requerido para evitar spoofing)"},
+                                    "operator_token": {"type": "string", "description": "Token secreto del operador humano para autorizar la confirmación"},
+                                    "reason": {"type": "string", "description": "Motivo u observaciones de la aprobación"},
                                 },
-                                "required": ["action_id"],
+                                "required": ["action_id", "action_hash", "operator_token"],
                             },
                         },
                         {
@@ -601,6 +650,9 @@ class MCPBridge:
                 elif tool_name in ("praxeon_confirm_action", "jev_v2_confirm_action"):
                     result = self.v2_confirm_action(
                         action_id=arguments.get("action_id", ""),
+                        action_hash=arguments.get("action_hash"),
+                        operator_token=arguments.get("operator_token"),
+                        reason=arguments.get("reason"),
                     )
                     out = {"jsonrpc": "2.0", "id": req_id, "result": {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}}
                 else:

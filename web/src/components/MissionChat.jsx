@@ -298,6 +298,15 @@ export default function MissionChat({
       finalAnswer: null,
     };
 
+    // Extraer historial conversacional previo para persistir memoria multi-turno
+    const history = messages
+      .filter((m) => !m.isWelcome && (m.role === 'user' || (m.role === 'assistant' && (m.finalAnswer || m.thoughts?.length > 0))))
+      .map((m) => ({
+        role: m.role,
+        content: m.role === 'user' ? m.text : (m.finalAnswer || (m.thoughts && m.thoughts[m.thoughts.length - 1]?.thought) || ''),
+      }))
+      .filter((m) => m.content && m.content.trim());
+
     setMessages((prev) => [...prev, userMsg, assistantMsg]);
     setInputText('');
 
@@ -312,6 +321,7 @@ export default function MissionChat({
       base_url: baseUrl.trim() || undefined,
       supervisor: supervisor,
       max_steps: Number(maxSteps),
+      chat_history: history.length > 0 ? history : undefined,
     });
   };
 

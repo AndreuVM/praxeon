@@ -1,5 +1,7 @@
 """Rutas REST para gestión de sesiones y propuestas de acción (praxeon/server/routes/sessions.py)."""
 
+import os
+import secrets
 from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 
@@ -36,6 +38,11 @@ def run_mission(
         supervisor=req.supervisor or "laya",
         max_steps=req.max_steps or 25,
         step_delay_ms=req.step_delay_ms or 900,
+        autonomous=bool(req.autonomous or req.allow_unattended_execution),
+        allow_unattended_execution=bool(req.autonomous or req.allow_unattended_execution),
+        llm_failure_policy=req.llm_failure_policy or "synthetic_fallback",
+        chat_history=req.chat_history,
+        metadata={"created_by": "api_client", "full_access_authorized_by_operator": False},
     )
     summary = service.get_session_summary(meta["session_id"])
     if not summary:
@@ -67,6 +74,35 @@ def resume_mission(
     return APIResponse(data={"session_id": session_id, "status": "Resumed"})
 
 
+@router.post("/{session_id}/stop", response_model=APIResponse[Dict[str, Any]])
+def stop_mission(
+    session_id: str,
+    service: RuntimeApplicationService = Depends(get_runtime_service),
+):
+    """Detiene definitivamente una misión en ejecución."""
+    ok = service.stop_mission(session_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail=f"Misión activa para sesión '{session_id}' no encontrada.")
+    return APIResponse(data={"session_id": session_id, "status": "Stopped"})
+
+
+@router.post("/{session_id}/rollback", response_model=APIResponse[Dict[str, Any]])
+def rollback_session(
+    session_id: str,
+    req: Optional[Dict[str, Any]] = None,
+    service: RuntimeApplicationService = Depends(get_runtime_service),
+):
+    """Revierte la sesión a un checkpoint de estado seguro."""
+    checkpoint_id = (req or {}).get("checkpoint_id")
+    try:
+        res = service.rollback_session(session_id, checkpoint_id=checkpoint_id)
+        return APIResponse(data=res)
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"Sesión '{session_id}' no encontrada.")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @router.post("", response_model=APIResponse[SessionSummaryResponse], status_code=status.HTTP_201_CREATED)
 def create_session(
     req: CreateSessionRequest,
@@ -74,8 +110,21 @@ def create_session(
 ):
     """Crea una nueva sesión de supervisión para un agente autónomo."""
     metadata = dict(req.metadata or {})
+    metadata["created_by"] = "api_client"
+    # Un llamante HTTP untrusted no puede auto-aprobarse full_access autónomo sin verificar credencial de operador
+    operator_token = metadata.get("operator_token") or metadata.get("operator_approval_token")
+    expected_secret = os.environ.get("PRAXEON_SECRET_KEY") or os.environ.get("PRAXEON_API_KEY")
+    if operator_token and expected_secret and secrets.compare_digest(str(operator_token), str(expected_secret)):
+        metadata["full_access_authorized_by_operator"] = True
+    else:
+        metadata["full_access_authorized_by_operator"] = False
+
     if req.confirmation_required_for_full_access is not None:
         metadata["confirmation_required_for_full_access"] = req.confirmation_required_for_full_access
+    if req.allow_unattended_execution is not None:
+        metadata["allow_unattended_execution"] = req.allow_unattended_execution
+    if req.autonomous is not None:
+        metadata["autonomous"] = req.autonomous
     if req.workspace_root is not None:
         metadata["working_directory"] = req.workspace_root
         metadata["workspace_root"] = req.workspace_root
@@ -142,4 +191,38 @@ def list_session_decisions(
     """Lista las decisiones emitidas en el contexto de una sesión."""
     decisions = service.list_decisions_for_session(session_id)
     return APIResponse(data=decisions)
+
+
+@router.delete("/{session_id}", response_model=APIResponse[Dict[str, Any]])
+@router.delete("/{session_id}/", response_model=APIResponse[Dict[str, Any]])
+@router.post("/{session_id}/delete", response_model=APIResponse[Dict[str, Any]])
+def delete_session(
+    session_id: str,
+    service: RuntimeApplicationService = Depends(get_runtime_service),
+):
+    """Elimina permanentemente una sesión y todos sus registros asociados."""
+    ok = service.delete_session(session_id)
+    if not ok:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Sesión '{session_id}' no encontrada.",
+        )
+    return APIResponse(data={"session_id": session_id, "deleted": True})
+
+
+@router.delete("", response_model=APIResponse[Dict[str, Any]])
+@router.delete("/", response_model=APIResponse[Dict[str, Any]])
+@router.post("/clear", response_model=APIResponse[Dict[str, Any]])
+def clear_old_sessions(
+    only_completed: bool = True,
+    exclude_session_id: Optional[str] = None,
+    service: RuntimeApplicationService = Depends(get_runtime_service),
+):
+    """Purga sesiones antiguas para liberar espacio acumulado."""
+    deleted_count = service.clear_old_sessions(
+        only_completed=only_completed,
+        exclude_session_id=exclude_session_id,
+    )
+    return APIResponse(data={"deleted_count": deleted_count})
+
 

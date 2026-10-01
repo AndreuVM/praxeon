@@ -60,8 +60,21 @@ class LayaProvider(BaseReasoningProvider):
     ):
         self.requested_backend = backend.lower()
         self.model_name = model_name
-        self.endpoint_url = endpoint_url or os.getenv("LAYA_ENDPOINT_URL")
-        self.auth_token = auth_token or os.getenv("LAYA_AUTH_TOKEN")
+
+        trusted_endpoint = os.getenv("LAYA_ENDPOINT_URL")
+        # Finding 8: Prevenir filtración de LAYA_AUTH_TOKEN del entorno a endpoints personalizados del llamador
+        if endpoint_url:
+            self.endpoint_url = endpoint_url
+            if auth_token:
+                self.auth_token = auth_token
+            elif trusted_endpoint and endpoint_url == trusted_endpoint:
+                self.auth_token = os.getenv("LAYA_AUTH_TOKEN")
+            else:
+                # Endpoint personalizado sin token explícito: no filtrar credenciales del servidor
+                self.auth_token = None
+        else:
+            self.endpoint_url = trusted_endpoint
+            self.auth_token = auth_token or os.getenv("LAYA_AUTH_TOKEN")
         self.context_builder = context_builder or ProviderContextBuilder(default_max_tokens=max_context_tokens)
         self.max_context_tokens = max_context_tokens
         self.timeout = timeout

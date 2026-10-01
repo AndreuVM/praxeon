@@ -1,7 +1,7 @@
 """Rutas REST para inspección, confirmación y ejecución de decisiones (praxeon/server/routes/decisions.py)."""
 
 from typing import Any, Dict, List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from praxeon.runtime.executor import PolicyViolation
 from praxeon.server.dependencies import RuntimeApplicationService, get_runtime_service
@@ -48,10 +48,16 @@ def get_decision_detail(
 def confirm_decision(
     decision_id: str,
     req: ConfirmDecisionRequest,
+    request: Request = None,
     service: RuntimeApplicationService = Depends(get_runtime_service),
 ):
     """Aprueba o deniega una decisión humana en estado REVIEW."""
     try:
+        op_token = req.operator_token or (request.headers.get("x-operator-token") if request else None)
+        prof = None
+        if request and hasattr(request, "app") and hasattr(request.app, "state"):
+            prof = getattr(request.app.state, "security_profile", None)
+
         res = service.confirm_decision(
             decision_id=decision_id,
             approved=req.approved,
@@ -59,6 +65,8 @@ def confirm_decision(
             actor=req.actor or "human_operator",
             operator_id=req.operator_id or "operator_admin",
             role=req.role or "operator",
+            operator_token=op_token,
+            security_profile=prof,
         )
         return APIResponse(data=res)
     except KeyError:
@@ -87,16 +95,24 @@ def confirm_decision(
 def reject_decision(
     decision_id: str,
     req: RejectDecisionRequest,
+    request: Request = None,
     service: RuntimeApplicationService = Depends(get_runtime_service),
 ):
     """Rechaza explícitamente una decisión en estado REVIEW con justificación obligatoria del operador."""
     try:
+        op_token = req.operator_token or (request.headers.get("x-operator-token") if request else None)
+        prof = None
+        if request and hasattr(request, "app") and hasattr(request.app, "state"):
+            prof = getattr(request.app.state, "security_profile", None)
+
         res = service.reject_decision(
             decision_id=decision_id,
             reason=req.reason,
             actor=req.actor or "human_operator",
             operator_id=req.operator_id or "operator_admin",
             role=req.role or "operator",
+            operator_token=op_token,
+            security_profile=prof,
         )
         return APIResponse(data=res)
     except KeyError:

@@ -12,6 +12,8 @@ class CreateSessionRequest(BaseModel):
     agent_name: Optional[str] = Field("CodingAgent", description="Nombre del agente autónomo")
     execution_mode: Optional[str] = Field("local_restricted", description="Modo de ejecución ('container', 'local_restricted', 'full_access')")
     confirmation_required_for_full_access: bool = Field(True, description="Exige confirmación explícita para activar full_access")
+    allow_unattended_execution: Optional[bool] = Field(False, description="Permite omitir confirmación humana interactiva en full_access (Modo Autónomo)")
+    autonomous: Optional[bool] = Field(False, description="Activa ejecución autónoma desatendida")
     workspace_root: Optional[str] = Field(None, description="Ruta raíz del espacio de trabajo")
     network_policy: Optional[str] = Field("isolated", description="Política de red ('isolated', 'restricted', 'host')")
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Metadatos contextuales adicionales")
@@ -68,4 +70,8 @@ class RunMissionRequest(BaseModel):
     supervisor: Optional[str] = Field("laya", description="Motor de supervisión ('laya', 'typesafe', 'cascade')")
     max_steps: Optional[int] = Field(25, ge=1, le=500, description="Límite máximo de pasos para la misión (por defecto 25, ampliable hasta 500)")
     step_delay_ms: Optional[int] = Field(900, description="Retardo en ms entre pasos para visualización en tiempo real")
+    allow_unattended_execution: Optional[bool] = Field(False, description="Permite omitir confirmación humana interactiva en full_access (Modo Autónomo)")
+    autonomous: Optional[bool] = Field(False, description="Activa ejecución autónoma desatendida")
+    llm_failure_policy: Optional[str] = Field("synthetic_fallback", description="Política ante fallos del LLM: 'fail_closed' o 'synthetic_fallback'")
+    chat_history: Optional[List[Dict[str, str]]] = Field(None, description="Historial previo de conversación para memoria multi-turno")
 

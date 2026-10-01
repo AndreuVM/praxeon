@@ -46,6 +46,8 @@ export default function DecisionInspector({
   const setActiveTab = onTabChange || setInternalTab;
 
   const [copied, setCopied] = useState(false);
+  const [actionWrapped, setActionWrapped] = useState(true);
+  const [actionExpanded, setActionExpanded] = useState(false);
   const [obsExpanded, setObsExpanded] = useState(false);
   const [copiedObs, setCopiedObs] = useState(false);
   const [isConfirming, setIsConfirming] = useState(false);
@@ -285,49 +287,136 @@ export default function DecisionInspector({
               </span>
             </div>
 
-            {/* Action Box */}
+            {/* Action Box (Scrollable & Traversable) */}
             <div>
-              <span style={{ fontSize: '11px', color: '#8b949e', fontWeight: '500' }}>
-                Action
-              </span>
               <div style={{
-                marginTop: '6px',
-                backgroundColor: '#121620',
-                borderRadius: '6px',
-                border: '1px solid #1e2636',
-                boxShadow: 'var(--shadow-clay-sm)',
-                padding: '9px 12px',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
+                marginBottom: '6px',
               }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span style={{ fontSize: '11px', color: '#8b949e', fontWeight: '600' }}>
+                    Action
+                  </span>
+                  {actionCommand && (
+                    <span style={{
+                      fontSize: '9.5px',
+                      color: '#64748b',
+                      backgroundColor: '#121620',
+                      border: '1px solid #1e2636',
+                      padding: '1px 5px',
+                      borderRadius: '3px',
+                      fontFamily: 'var(--font-mono)',
+                    }}>
+                      {actionCommand.length} carácteres
+                    </span>
+                  )}
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                  {/* Alternar ajuste de línea / scroll horizontal continuo */}
+                  <button
+                    type="button"
+                    onClick={() => setActionWrapped(!actionWrapped)}
+                    style={{
+                      background: actionWrapped ? 'rgba(88, 166, 255, 0.12)' : '#141a24',
+                      border: `1px solid ${actionWrapped ? 'rgba(88, 166, 255, 0.35)' : '#212a3a'}`,
+                      borderRadius: '4px',
+                      color: actionWrapped ? '#58a6ff' : '#8b949e',
+                      cursor: 'pointer',
+                      padding: '2px 7px',
+                      fontSize: '10px',
+                      fontWeight: '500',
+                      transition: 'all 0.15s ease',
+                    }}
+                    title={actionWrapped ? 'Modo actual: Ajustado. Clic para activar línea continua con scroll horizontal' : 'Modo actual: Continuo. Clic para activar ajuste automático de línea'}
+                  >
+                    {actionWrapped ? 'Ajustado' : 'Continuo'}
+                  </button>
+
+                  {/* Expandir / Compactar altura */}
+                  <button
+                    type="button"
+                    onClick={() => setActionExpanded(!actionExpanded)}
+                    style={{
+                      background: actionExpanded ? 'rgba(167, 139, 250, 0.12)' : '#141a24',
+                      border: `1px solid ${actionExpanded ? 'rgba(167, 139, 250, 0.35)' : '#212a3a'}`,
+                      borderRadius: '4px',
+                      color: actionExpanded ? '#c084fc' : '#8b949e',
+                      cursor: 'pointer',
+                      padding: '2px 6px',
+                      fontSize: '10px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '3px',
+                      transition: 'all 0.15s ease',
+                    }}
+                    title={actionExpanded ? 'Compactar caja de acción' : 'Expandir caja de acción'}
+                  >
+                    {actionExpanded ? <Minimize2 size={11} /> : <Maximize2 size={11} />}
+                    <span>{actionExpanded ? 'Reducir' : 'Expandir'}</span>
+                  </button>
+
+                  {/* Copiar */}
+                  <button
+                    type="button"
+                    onClick={handleCopyCommand}
+                    style={{
+                      background: copied ? 'rgba(63, 185, 80, 0.15)' : '#141a24',
+                      border: `1px solid ${copied ? 'rgba(63, 185, 80, 0.4)' : '#212a3a'}`,
+                      borderRadius: '4px',
+                      color: copied ? '#3fb950' : '#8b949e',
+                      cursor: 'pointer',
+                      padding: '2px 7px',
+                      fontSize: '10px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '3px',
+                      transition: 'all 0.15s ease',
+                    }}
+                    title="Copiar comando completo al portapapeles"
+                  >
+                    {copied ? <Check size={11} /> : <Copy size={11} />}
+                    <span>{copied ? 'Copiado' : 'Copiar'}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Contenedor desplazable de acción (permite recorrer todo el texto horizontal y verticalmente) */}
+              <div
+                style={{
+                  backgroundColor: '#0c1017',
+                  borderRadius: '6px',
+                  border: '1px solid #1e2636',
+                  boxShadow: 'var(--shadow-clay-sm)',
+                  padding: '10px 12px',
+                  maxHeight: actionExpanded ? '380px' : '150px',
+                  overflowX: 'auto',
+                  overflowY: 'auto',
+                  transition: 'max-height 0.2s ease',
+                }}
+              >
                 <div style={{
                   fontFamily: 'var(--font-mono)',
                   fontSize: '11.5px',
                   color: '#f0f6fc',
                   display: 'flex',
-                  alignItems: 'center',
+                  alignItems: 'flex-start',
                   gap: '8px',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
+                  lineHeight: '1.5',
+                  whiteSpace: actionWrapped ? 'pre-wrap' : 'pre',
+                  wordBreak: actionWrapped ? 'break-word' : 'normal',
+                  overflowWrap: actionWrapped ? 'anywhere' : 'normal',
+                  userSelect: 'text',
                 }}>
-                  <span style={{ color: '#8b949e' }}>&gt;_</span>
-                  <span>{actionCommand}</span>
+                  <span style={{ color: '#58a6ff', userSelect: 'none', flexShrink: 0, fontWeight: '700' }}>
+                    &gt;_
+                  </span>
+                  <span style={{ flex: 1, minWidth: 0, userSelect: 'text' }}>
+                    {actionCommand || '(Comando vacío)'}
+                  </span>
                 </div>
-                <button
-                  onClick={handleCopyCommand}
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    color: copied ? '#3fb950' : '#8b949e',
-                    cursor: 'pointer',
-                    padding: '2px',
-                  }}
-                  title="Copiar comando"
-                >
-                  {copied ? <Check size={13} /> : <Copy size={13} />}
-                </button>
               </div>
             </div>
 

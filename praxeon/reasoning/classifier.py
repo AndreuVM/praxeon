@@ -87,7 +87,8 @@ class CommandClassifier:
         r"^\s*(cat|head|tail|wc|type|more|less)(\s+.*)?$",
         r"^\s*(grep|rg|ag)(\s+.*)?$",
         r"^\s*.*(--version|-v|--help|-h)\s*$",
-        r"^\s*(get-childitem|get-content|get-command)(\s+.*)?$",
+        r"^\s*(get-childitem|get-content|get-command|get-item|get-process)(\s+.*)?$",
+        r"^\s*(sort-object|select-object|where-object|format-table|format-list|out-string|select-string|measure-object)(\s+.*)?$",
         r"^\s*read_file\b.*",
         r"^\s*view_file\b.*",
     ]
@@ -158,6 +159,141 @@ class CommandClassifier:
         r">>",     # redirección append
     ]
 
+    def _split_compound_command(self, cmd: str) -> List[str]:
+        """Divide un comando compuesto en subcomandos respetando comillas y delimitadores shell."""
+        if not any(sep in cmd for sep in ("&&", "||", ";", "\n", "|")):
+            return [cmd]
+
+        parts: List[str] = []
+        current: List[str] = []
+        in_single = False
+        in_double = False
+        i = 0
+        n = len(cmd)
+
+        while i < n:
+            c = cmd[i]
+            if c == "'" and not in_double:
+                in_single = not in_single
+                current.append(c)
+                i += 1
+            elif c == '"' and not in_single:
+                in_double = not in_double
+                current.append(c)
+                i += 1
+            elif not in_single and not in_double:
+                if cmd[i : i + 2] in ("&&", "||"):
+                    seg = "".join(current).strip()
+                    if seg:
+                        parts.append(seg)
+                    current = []
+                    i += 2
+                elif c in (";", "\n", "|"):
+                    seg = "".join(current).strip()
+                    if seg:
+                        parts.append(seg)
+                    current = []
+                    i += 1
+                else:
+                    current.append(c)
+                    i += 1
+            else:
+                current.append(c)
+                i += 1
+
+        rem = "".join(current).strip()
+        if rem:
+            parts.append(rem)
+
+        return parts if parts else [cmd]
+
+    def _classify_compound(
+        self,
+        sub_commands: List[str],
+        op_clean: str,
+        tool: Optional[str] = None,
+        context: Optional[Dict[str, Any]] = None,
+    ) -> CommandRiskAssessment:
+        """Agrega de forma segura y conservadora las evaluaciones de subcomandos encadenados."""
+        sub_assessments = [
+            self._classify_atomic(op_clean=sub, tool=tool, arguments=None, context=context)
+            for sub in sub_commands
+            if sub.strip()
+        ]
+        if not sub_assessments:
+            return self._classify_atomic(op_clean=op_clean, tool=tool, arguments=None, context=context)
+
+        level_order = {
+            RiskLevel.LOW: 1,
+            RiskLevel.MEDIUM: 2,
+            RiskLevel.HIGH: 3,
+            RiskLevel.CRITICAL: 4,
+        }
+        max_level_val = max(level_order.get(sub.risk_level, 2) for sub in sub_assessments)
+        val_to_level = {1: RiskLevel.LOW, 2: RiskLevel.MEDIUM, 3: RiskLevel.HIGH, 4: RiskLevel.CRITICAL}
+        overall_risk = val_to_level[max_level_val]
+
+        has_redirection = bool(re.search(r">\s*\S+", op_clean))
+
+        overall_read_only = all(sub.read_only for sub in sub_assessments) and not has_redirection
+        overall_destructive = any(sub.destructive for sub in sub_assessments)
+        overall_external_side_effect = any(sub.external_side_effect for sub in sub_assessments)
+        overall_network = any(sub.network_access for sub in sub_assessments)
+        overall_privilege = any(sub.privilege_escalation for sub in sub_assessments)
+        overall_reversible = all(sub.reversible for sub in sub_assessments)
+
+        cats = [sub.category for sub in sub_assessments]
+        if CommandCategory.DESTRUCTIVE in cats or overall_destructive:
+            overall_cat = CommandCategory.DESTRUCTIVE
+        elif CommandCategory.PRIVILEGE in cats or overall_privilege:
+            overall_cat = CommandCategory.PRIVILEGE
+        elif CommandCategory.REMOTE_MUTATION in cats:
+            overall_cat = CommandCategory.REMOTE_MUTATION
+        elif CommandCategory.PROCESS_CONTROL in cats:
+            overall_cat = CommandCategory.PROCESS_CONTROL
+        elif CommandCategory.PACKAGE_MANAGEMENT in cats:
+            overall_cat = CommandCategory.PACKAGE_MANAGEMENT
+        elif CommandCategory.LOCAL_MUTATION in cats or has_redirection:
+            overall_cat = CommandCategory.LOCAL_MUTATION
+        elif CommandCategory.NETWORK in cats:
+            overall_cat = CommandCategory.NETWORK
+        elif all(c == CommandCategory.INSPECTION for c in cats) and not has_redirection:
+            overall_cat = CommandCategory.INSPECTION
+        elif all(c in (CommandCategory.INSPECTION, CommandCategory.BUILD_TEST) for c in cats):
+            overall_cat = CommandCategory.BUILD_TEST
+        else:
+            overall_cat = CommandCategory.UNKNOWN
+
+        combined_reasons: List[str] = [
+            f"Comando encadenado/compuesto evaluado en {len(sub_assessments)} suboperaciones."
+        ]
+        for sub in sub_assessments:
+            combined_reasons.extend([f"[{sub.operation}]: {r}" for r in sub.reasons])
+        if has_redirection:
+            combined_reasons.append("Redirección de salida a archivo detectada (mutación local no de sólo lectura).")
+
+        matched_rules = list(dict.fromkeys(r for sub in sub_assessments for r in sub.matched_rules))
+        matched_rules.append("RULE_COMPOUND_COMMAND_EVALUATION")
+
+        ctx_hash = hashlib.sha256(f"{op_clean}|{str(context or {})}".encode("utf-8")).hexdigest()
+
+        return CommandRiskAssessment(
+            operation=op_clean,
+            category=overall_cat,
+            risk_level=overall_risk,
+            read_only=overall_read_only,
+            reversible=overall_reversible,
+            destructive=overall_destructive,
+            external_side_effect=overall_external_side_effect,
+            network_access=overall_network,
+            privilege_escalation=overall_privilege,
+            confidence=min(sub.confidence for sub in sub_assessments),
+            reasons=combined_reasons,
+            matched_rules=matched_rules,
+            classifier="deterministic_compound",
+            context_hash=ctx_hash,
+        )
+
     def classify(
         self,
         operation: str = "",
@@ -176,6 +312,34 @@ class CommandClassifier:
         elif tool and tool not in ("run_command", op_clean) and not op_clean.startswith(tool):
             op_clean = f"{tool} {op_clean}".strip()
 
+        # 1. Evaluar primero de forma atómica la sentencia completa.
+        # Si la regla de criticidad máxima (ej. DESTRUCTIVE / PRIVILEGE / EXFILTRATION / FORK_BOMB)
+        # detecta un ataque sobre el string completo, se respeta el veto determinista directo.
+        atomic_res = self._classify_atomic(op_clean=op_clean, tool=tool, arguments=arguments, context=context)
+        if atomic_res.risk_level == RiskLevel.CRITICAL or atomic_res.category in (
+            CommandCategory.DESTRUCTIVE,
+            CommandCategory.PRIVILEGE,
+        ):
+            return atomic_res
+
+        # 2. AUDITORÍA (Finding 1): Si contiene operadores shell o pipelines, descomponer y evaluar
+        # cada subcomando para evitar que comandos destructivos/mutantes encadenados se camuflen
+        # tras una regla permisiva (ej. cat archivo; rm -rf /).
+        sub_commands = self._split_compound_command(op_clean)
+        if len(sub_commands) > 1:
+            compound_res = self._classify_compound(sub_commands, op_clean=op_clean, tool=tool, context=context)
+            return compound_res
+
+        return atomic_res
+
+    def _classify_atomic(
+        self,
+        op_clean: str,
+        tool: Optional[str] = None,
+        arguments: Optional[Dict[str, Any]] = None,
+        context: Optional[Dict[str, Any]] = None,
+    ) -> CommandRiskAssessment:
+        """Clasifica un comando o subcomando individual."""
         op_lower = op_clean.lower()
         context_str = str(context or {})
         ctx_hash = hashlib.sha256(f"{op_clean}|{context_str}".encode("utf-8")).hexdigest()
@@ -198,6 +362,9 @@ class CommandClassifier:
                 classifier="deterministic",
                 context_hash=ctx_hash,
             )
+
+        # Comprobación de redirección de escritura
+        has_redirection = bool(re.search(r">\s*\S+", op_clean))
 
         # Regla 0: ADVERSARIAL_EVASION (Técnicas de evasión o ejecución encubierta)
         for pat in self.ADVERSARIAL_EVASION_PATTERNS:
@@ -281,29 +448,31 @@ class CommandClassifier:
                 )
 
         # Regla 4: INSPECTION (Lecturas puras y consultas de estado)
-        for pat in self.INSPECTION_PATTERNS:
-            if re.search(pat, op_lower):
-                return CommandRiskAssessment(
-                    operation=op_clean,
-                    category=CommandCategory.INSPECTION,
-                    risk_level=RiskLevel.LOW,
-                    read_only=True,
-                    reversible=True,
-                    destructive=False,
-                    external_side_effect=False,
-                    network_access=False,
-                    privilege_escalation=False,
-                    confidence=0.98,
-                    reasons=["Comando de inspección/observación inocuo de sólo lectura."],
-                    matched_rules=["RULE_SAFE_INSPECTION"],
-                    classifier="deterministic",
-                    context_hash=ctx_hash,
-                )
+        if not has_redirection:
+            for pat in self.INSPECTION_PATTERNS:
+                if re.search(pat, op_lower):
+                    return CommandRiskAssessment(
+                        operation=op_clean,
+                        category=CommandCategory.INSPECTION,
+                        risk_level=RiskLevel.LOW,
+                        read_only=True,
+                        reversible=True,
+                        destructive=False,
+                        external_side_effect=False,
+                        network_access=False,
+                        privilege_escalation=False,
+                        confidence=0.98,
+                        reasons=["Comando de inspección/observación inocuo de sólo lectura."],
+                        matched_rules=["RULE_SAFE_INSPECTION"],
+                        classifier="deterministic",
+                        context_hash=ctx_hash,
+                    )
 
         # Regla 5: BUILD_TEST (Ejecución de suites de prueba y compilación)
-        for pat in self.BUILD_TEST_PATTERNS:
-            if re.search(pat, op_lower):
-                return CommandRiskAssessment(
+        if not has_redirection:
+            for pat in self.BUILD_TEST_PATTERNS:
+                if re.search(pat, op_lower):
+                    return CommandRiskAssessment(
                     operation=op_clean,
                     category=CommandCategory.BUILD_TEST,
                     risk_level=RiskLevel.LOW,

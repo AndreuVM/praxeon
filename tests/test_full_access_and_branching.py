@@ -17,14 +17,15 @@ def test_full_access_auto_execution_policy():
         state_store=InMemoryStateStore(),
         event_bus=EventBus(),
     )
-    sid = "sess_full_access_auto"
+    sid = "sess_full_access_interactive"
     service.create_session(
-        goal="Tarea en modo full access autónomo",
+        goal="Tarea en modo full access interactivo",
         session_id=sid,
         execution_mode="full_access",
+        metadata={"autonomous": False, "allow_unattended_execution": False},
     )
 
-    # 1. Proponer un comando ordinario
+    # 1. Proponer un comando ordinario de baja criticidad
     req1 = ProposeActionRequest(
         tool="run_command",
         arguments={"command": "python --version"},
@@ -35,25 +36,37 @@ def test_full_access_auto_execution_policy():
     assert not resp1.policy.requires_confirmation
     assert resp1.capability is not None
 
-    # 2. Proponer comando con side-effects (ej. git push)
-    # En modo local_restricted exigiría confirmación (REVIEW), pero en full_access opera en automático
+    # 2. Proponer comando con side-effects (ej. git push) en modo FULL_ACCESS interactivo
+    # Debe retener obligatoriamente confirmación humana (REVIEW)
     req2 = ProposeActionRequest(
         tool="run_command",
         arguments={"command": "git push origin main"},
         thought_rationale="Publicación de cambios",
     )
     resp2 = service.propose_action(session_id=sid, proposal=req2)
-    assert resp2.status == "ALLOW"
-    assert not resp2.policy.requires_confirmation
-    assert resp2.capability is not None
+    assert resp2.status == "REVIEW"
+    assert resp2.policy.requires_confirmation is True
 
-    # 3. Comprobar que comandos destructivos CRÍTICOS siguen siendo bloqueados
+    # 3. En modo FULL_ACCESS + AUTONOMOUS (con consentimiento previo explícito), autoriza en automático
+    sid_auto = "sess_full_access_autonomous"
+    service.create_session(
+        goal="Tarea en modo full access autónomo explícito",
+        session_id=sid_auto,
+        execution_mode="full_access",
+        metadata={"autonomous": True, "allow_unattended_execution": True},
+    )
+    resp_auto = service.propose_action(session_id=sid_auto, proposal=req2)
+    assert resp_auto.status == "ALLOW"
+    assert not resp_auto.policy.requires_confirmation
+    assert resp_auto.capability is not None
+
+    # 4. Comprobar que comandos destructivos CRÍTICOS siguen siendo bloqueados incondicionalmente
     req_critical = ProposeActionRequest(
         tool="run_command",
         arguments={"command": "rm -rf /"},
         thought_rationale="Intento destructivo",
     )
-    resp_critical = service.propose_action(session_id=sid, proposal=req_critical)
+    resp_critical = service.propose_action(session_id=sid_auto, proposal=req_critical)
     assert resp_critical.status == "BLOCK"
     assert resp_critical.risk.level == "CRITICAL"
 

@@ -131,7 +131,42 @@ class JEVProxyMiddleware:
                 )
 
         # Evaluar bloque agrupado mediante TypeSafe AI
-        eval_results = self.engine.evaluate_step_chunk(candidate_steps, batch_semantics=batch_semantics)
+        try:
+            eval_results = self.engine.evaluate_step_chunk(candidate_steps, batch_semantics=batch_semantics)
+        except Exception as exc:
+            import logging
+            logging.getLogger("praxeon.interceptor.proxy_middleware").error(
+                "Error o indisponibilidad en el evaluador semántico: %s", exc
+            )
+            eval_results = []
+
+        # Finding 16: Política de fallo seguro (Fail-Closed) ante caída del proveedor semántico
+        if not eval_results and candidate_steps:
+            has_mutating = any(not self.registry.is_observational(s.tool_name or "", s.tool_args) for s in candidate_steps if s.tool_name)
+            if has_mutating:
+                loop_rep = LoopReport(
+                    loop_detected=True,
+                    loop_type=LoopType.SEMANTIC_FIXATION,
+                    severity=4,
+                    explanation="Proveedor semántico no disponible y el bloque contiene acciones mutantes. Política de seguridad: abstención estricta (fail-closed).",
+                    culprit_tool=candidate_steps[0].tool_name,
+                )
+                directive = InterventionDirective(
+                    level=InterventionLevel.LEVEL_3_ABSTRACTION_SHIFT,
+                    message=loop_rep.explanation,
+                    context_injection=f"[ALERTA DE SEGURIDAD] {loop_rep.explanation}",
+                )
+                return ChunkEvaluationResult(
+                    all_safe=False,
+                    valid_step_count=0,
+                    flagged_step_index=0,
+                    step_scores=[],
+                    directive=directive,
+                    loop_report=loop_rep,
+                    hallucination_detected=False,
+                    explanation=loop_rep.explanation,
+                )
+
         step_scores = [sc for _, sc, _ in eval_results]
 
         # Verificar convergencia y detectar anomalías
@@ -468,7 +503,8 @@ class JEVProxyMiddleware:
 
         # Si la política deniega la ejecución, no despachar al ejecutor físico
         if decision.status != DecisionStatus.ALLOW:
-            denial_msg = f"[PRAXEON Policy Violation] Acción '{tool_name}' denegada ({decision.status.value}): {decision.reason}"
+            reasons_str = ", ".join(decision.reason_codes) if decision.reason_codes else "Bloqueado por política de seguridad"
+            denial_msg = f"[PRAXEON Policy Violation] Acción '{tool_name}' denegada ({decision.status.value}): {reasons_str}"
             observation = ToolObservation(
                 output=denial_msg,
                 success=False,
@@ -483,7 +519,7 @@ class JEVProxyMiddleware:
                     session_id=self.session_id,
                     event_type=EventType.POLICY_VIOLATED,
                     node_id=f"policy_{action_id}",
-                    payload={"action_id": action_id, "status": decision.status.value, "reason": decision.reason},
+                    payload={"action_id": action_id, "status": decision.status.value, "reason": reasons_str},
                 )
                 self.event_bus.emit(
                     session_id=self.session_id,

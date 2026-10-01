@@ -446,10 +446,13 @@ export default function DecisionsView({
                           fontFamily: 'var(--font-mono)',
                           color: '#e2e8f0',
                           fontSize: '11.5px',
-                          maxWidth: '380px',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
+                          maxWidth: '420px',
+                          maxHeight: '65px',
+                          overflowX: 'auto',
+                          overflowY: 'auto',
+                          whiteSpace: 'pre-wrap',
+                          wordBreak: 'break-word',
+                          lineHeight: '1.4',
                         }}
                         title={d.command || d.description || ''}
                       >

@@ -8,7 +8,8 @@ Implementa los requisitos de la Sección 23 de la Auditoría Técnica:
 """
 
 import os
-from typing import Any, List, Optional, Set
+import warnings
+from typing import Any, List, Literal, Optional, Set
 from pydantic import BaseModel, Field, model_validator
 
 
@@ -20,6 +21,10 @@ class ProviderConfig(BaseModel):
     model: str = Field(default="jev-latest", description="Identificador del modelo de inferencia")
     base_url: Optional[str] = Field(default=None, description="URL base alternativa para el proveedor")
     laya_backend: str = Field(default="auto", description="Backend para LAYA (auto, local, simulated, hosted)")
+    llm_failure_policy: Literal["fail_closed", "synthetic_fallback"] = Field(
+        default="synthetic_fallback",
+        description="Política ante fallos críticos del LLM: 'fail_closed' o 'synthetic_fallback'",
+    )
 
 
 class DecisionConfig(BaseModel):
@@ -60,7 +65,8 @@ class RetryConfig(BaseModel):
     """Configuración de reintentos, Circuit Breaker y presupuestos de tiempo."""
     max_retries: int = Field(default=2, description="Número máximo de reintentos transitorios")
     timeout_seconds: float = Field(default=10.0, description="Timeout global por petición de evaluación")
-    circuit_breaker_failures: int = Field(default=3, description="Fallos consecutivos para abrir el circuito")
+    circuit_breaker_failures: int = Field(default=3, description="Fallos técnicos consecutivos para abrir el circuito técnico")
+    semantic_loop_threshold: int = Field(default=2, description="Repeticiones semánticas consecutivas para abrir circuito semántico y podar rama")
     circuit_recovery_seconds: float = Field(default=30.0, description="Tiempo de enfriamiento antes de probar recuperación")
 
 
@@ -79,8 +85,8 @@ class TelemetryConfig(BaseModel):
     log_file_path: Optional[str] = Field(default=None, description="Ruta para el archivo de logs de eventos")
 
 
-class JEVConfig(BaseModel):
-    """Configuración global compuesta para JEV Reasoning Navigator."""
+class PraxeonConfig(BaseModel):
+    """Configuración global compuesta para PRAXEON Runtime Platform."""
 
     provider: ProviderConfig = Field(default_factory=ProviderConfig)
     decision: DecisionConfig = Field(default_factory=DecisionConfig)
@@ -224,7 +230,7 @@ class JEVConfig(BaseModel):
         self.provider.laya_backend = value
 
     @classmethod
-    def from_env(cls, load_env_file: bool = False) -> "JEVConfig":
+    def from_env(cls, load_env_file: bool = False) -> "PraxeonConfig":
         """Instancia la configuración leyendo variables de entorno de forma explícita."""
         if load_env_file:
             try:
@@ -267,5 +273,17 @@ class JEVConfig(BaseModel):
         )
 
 
+class JEVConfig(PraxeonConfig):
+    """Alias retrocompatible con advertencia de obsolescencia (DeprecationWarning)."""
+
+    def __init__(self, **data: Any):
+        warnings.warn(
+            "JEVConfig está en desuso a partir de PRAXEON v1.0. Utilice PraxeonConfig.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        super().__init__(**data)
+
+
 # Instancia canónica por defecto cargando entorno local
-default_config = JEVConfig.from_env(load_env_file=True)
+default_config = PraxeonConfig.from_env(load_env_file=True)

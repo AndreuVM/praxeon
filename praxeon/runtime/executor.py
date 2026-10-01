@@ -323,11 +323,7 @@ class SecureExecutor(Executor):
             )
             raw_output, success, is_error = fa_res.output, fa_res.success, fa_res.is_error
         elif resolved_mode == ExecutionMode.CONTAINER.value:
-            if self.container_sandbox is None:
-                self.container_sandbox = ContainerSandboxAdapter(
-                    config=ContainerSandboxConfig(fallback_to_local=False)
-                )
-            raw_output, success, is_error = self._execute_builtin_tool_in_container(tool_name, tool_args)
+            raw_output, success, is_error = self._execute_builtin_tool_in_container(tool_name, tool_args, state=state)
         else:
             raw_output, success, is_error = self._execute_builtin_tool_in_sandbox(tool_name, tool_args, state=state)
 
@@ -402,27 +398,48 @@ class SecureExecutor(Executor):
 
         return f"Herramienta '{tool_name}' sin controlador físico implementado en sandbox.", False, True
 
-    def _execute_builtin_tool_in_container(self, tool_name: str, args: Dict[str, Any]) -> tuple[str, bool, bool]:
-        """Ejecuta controladores en ContainerSandboxAdapter sin permitir fallback silencioso a Full Access."""
-        if self.container_sandbox is None:
-            self.container_sandbox = ContainerSandboxAdapter(
-                config=ContainerSandboxConfig(fallback_to_local=False)
+    def _get_effective_container_sandbox(self, state: Optional[SessionState] = None) -> ContainerSandboxAdapter:
+        """Obtiene o instancia un ContainerSandboxAdapter vinculado estrictamente al workspace_root de la sesión (Finding 9)."""
+        ws = None
+        if state is not None:
+            ws = (
+                state.metadata.get("workspace_root")
+                or state.metadata.get("working_directory")
             )
+        resolved_ws = os.path.realpath(ws or get_default_workspace_root())
+
+        if self.container_sandbox is not None and getattr(self.container_sandbox, "workspace_root", None) == resolved_ws:
+            return self.container_sandbox
+
+        adapter = ContainerSandboxAdapter(
+            config=ContainerSandboxConfig(fallback_to_local=False),
+            workspace_root=resolved_ws,
+        )
+        if not ws:
+            self.container_sandbox = adapter
+        return adapter
+
+    def _execute_builtin_tool_in_container(
+        self, tool_name: str, args: Dict[str, Any], state: Optional[SessionState] = None
+    ) -> tuple[str, bool, bool]:
+        """Ejecuta controladores en ContainerSandboxAdapter vinculado estrictamente al workspace de la sesión (Finding 9)."""
+        target_container = self._get_effective_container_sandbox(state)
 
         if tool_name in ("read_file", "view_file"):
             path = str(args.get("path") or args.get("file") or "").strip()
-            res = self.container_sandbox.read_file(path)
+            res = target_container.read_file(path)
             return res.output, res.success, res.is_error
 
         elif tool_name == "edit_file":
             path = str(args.get("path") or "").strip()
             content = str(args.get("content") or "").strip()
-            res = self.container_sandbox.edit_file(path, content)
+            res = target_container.edit_file(path, content)
             return res.output, res.success, res.is_error
 
         elif tool_name == "run_command":
             cmd = str(args.get("command") or args.get("cmd") or "").strip()
-            res = self.container_sandbox.execute_command(cmd)
+            cwd_arg = args.get("cwd") or (state.metadata.get("working_directory") if state else None)
+            res = target_container.execute_command(cmd, cwd=cwd_arg)
             return res.output, res.success, res.is_error
 
         elif tool_name in ("finish", "complete_task", "done", "complete", "task_completed"):
@@ -433,7 +450,8 @@ class SecureExecutor(Executor):
         elif self.registry.is_known(tool_name):
             cmd_args = str(args.get("command") or args.get("cmd") or args.get("raw") or "").strip()
             full_cmd = f"{tool_name} {cmd_args}".strip() if cmd_args else tool_name
-            res = self.container_sandbox.execute_command(full_cmd)
+            cwd_arg = args.get("cwd") or (state.metadata.get("working_directory") if state else None)
+            res = target_container.execute_command(full_cmd, cwd=cwd_arg)
             return res.output, res.success, res.is_error
 
         return f"Herramienta '{tool_name}' sin controlador en container.", False, True

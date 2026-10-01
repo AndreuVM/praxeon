@@ -17,6 +17,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import threading
 import time
 from typing import Any, Dict, List, Optional, Set, Tuple
 from pydantic import BaseModel, ConfigDict, Field
@@ -190,8 +191,34 @@ class LocalProcessSandbox(SandboxAdapter):
 
         # Resolver enlaces simbólicos canónicos para prevenir symlink traversal
         candidate = os.path.join(self.workspace_root, path) if not os.path.isabs(path) else path
-        real_path = os.path.realpath(candidate)
         canon_workspace = os.path.realpath(self.workspace_root)
+
+        # Finding 11: Validar componentes intermedios contra enlaces simbólicos que apunten fuera del workspace
+        norm_candidate = os.path.abspath(candidate)
+        curr = norm_candidate
+        ancestors = []
+        while curr and curr != os.path.dirname(curr):
+            ancestors.append(curr)
+            curr = os.path.dirname(curr)
+
+        if not self.allow_external_cwd:
+            for ancestor in reversed(ancestors):
+                if os.path.islink(ancestor):
+                    real_target = os.path.realpath(ancestor)
+                    try:
+                        common_anc = os.path.commonpath([canon_workspace, real_target])
+                    except ValueError:
+                        raise SandboxViolation(
+                            f"Evasión de ruta por enlace simbólico detectada: '{ancestor}' apunta a '{real_target}', "
+                            f"fuera del workspace delimitado '{canon_workspace}'."
+                        )
+                    if common_anc != canon_workspace:
+                        raise SandboxViolation(
+                            f"Evasión de ruta por enlace simbólico detectada: '{ancestor}' apunta a '{real_target}', "
+                            f"fuera del workspace delimitado '{canon_workspace}'."
+                        )
+
+        real_path = os.path.realpath(candidate)
 
         if not self.allow_external_cwd:
             try:
@@ -220,6 +247,74 @@ class LocalProcessSandbox(SandboxAdapter):
         if "http://" in lowered or "https://" in lowered or "system.net.sockets" in lowered:
             return True
         return False
+
+    def _run_bounded_subprocess(
+        self,
+        args: List[str],
+        cwd: str,
+        env: Dict[str, str],
+        timeout: float,
+        max_bytes: int = 524288,
+    ) -> Tuple[int, str, bool]:
+        """Ejecuta un proceso hijo con captura de stream acotada para prevenir agotamiento de memoria (DoS)."""
+        proc = subprocess.Popen(
+            args,
+            cwd=cwd,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            shell=False,
+        )
+        stdout_chunks: List[bytes] = []
+        stderr_chunks: List[bytes] = []
+        total_bytes = [0]
+        overflow = [False]
+
+        def read_stream(pipe, chunks):
+            try:
+                while True:
+                    chunk = pipe.read(4096)
+                    if not chunk:
+                        break
+                    if total_bytes[0] < max_bytes:
+                        allowed = min(len(chunk), max_bytes - total_bytes[0])
+                        chunks.append(chunk[:allowed])
+                        total_bytes[0] += allowed
+                    else:
+                        overflow[0] = True
+            except Exception:
+                pass
+            finally:
+                try:
+                    pipe.close()
+                except Exception:
+                    pass
+
+        t_out = threading.Thread(target=read_stream, args=(proc.stdout, stdout_chunks), daemon=True)
+        t_err = threading.Thread(target=read_stream, args=(proc.stderr, stderr_chunks), daemon=True)
+        t_out.start()
+        t_err.start()
+
+        try:
+            exit_code = proc.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            try:
+                proc.kill()
+                proc.wait(timeout=2.0)
+            except Exception:
+                pass
+            raise
+        finally:
+            t_out.join(timeout=1.0)
+            t_err.join(timeout=1.0)
+
+        out_str = b"".join(stdout_chunks).decode("utf-8", errors="replace")
+        err_str = b"".join(stderr_chunks).decode("utf-8", errors="replace")
+        combined = (out_str or err_str or "Comando ejecutado sin salida").strip()
+        if overflow[0]:
+            combined += f"\n\n[... Truncado por protección DoS de memoria: salida excedió límite seguro de {max_bytes // 1024}KB ...]"
+
+        return exit_code, combined, overflow[0]
 
     def execute_command(
         self,
@@ -255,40 +350,27 @@ class LocalProcessSandbox(SandboxAdapter):
         try:
             if sys.platform == "win32":
                 # En Windows se aísla con PowerShell sin perfiles de usuario ni scripts globales
-                proc = subprocess.run(
-                    ["powershell", "-NoProfile", "-NonInteractive", "-Command", cmd_str],
-                    cwd=target_cwd,
-                    env=clean_env,
-                    capture_output=True,
-                    text=True,
-                    timeout=timeout,
-                    encoding="utf-8",
-                    errors="replace",
-                    shell=False,
-                )
+                cmd_args = ["powershell", "-NoProfile", "-NonInteractive", "-Command", cmd_str]
             else:
                 # En Unix se ejecuta de forma segura en subshell /bin/sh sin variables heredadas sensibles
                 # para permitir pipelines (|), redirecciones (>) y encadenamiento (&&) manteniendo aislamiento.
-                proc = subprocess.run(
-                    ["/bin/sh", "-c", cmd_str],
-                    cwd=target_cwd,
-                    env=clean_env,
-                    capture_output=True,
-                    text=True,
-                    timeout=timeout,
-                    encoding="utf-8",
-                    errors="replace",
-                    shell=False,
-                )
+                cmd_args = ["/bin/sh", "-c", cmd_str]
+
+            exit_code, out, is_overflow = self._run_bounded_subprocess(
+                args=cmd_args,
+                cwd=target_cwd,
+                env=clean_env,
+                timeout=timeout,
+                max_bytes=524288,
+            )
 
             elapsed = (time.perf_counter() - start_t) * 1000.0
-            out = (proc.stdout or proc.stderr or "Comando ejecutado sin salida").strip()
-            success = (proc.returncode == 0)
+            success = (exit_code == 0)
             return SandboxExecutionResult(
                 output=out[:20000],
                 success=success,
                 is_error=not success,
-                exit_code=proc.returncode,
+                exit_code=exit_code,
                 execution_time_ms=round(elapsed, 2),
                 sandboxed=True,
             )
@@ -337,10 +419,24 @@ class LocalProcessSandbox(SandboxAdapter):
                     execution_time_ms=round(elapsed, 2),
                     sandboxed=True,
                 )
-            with open(safe_path, "r", encoding="utf-8", errors="replace") as f:
-                content = f.read(max_bytes)
-                if len(content) >= max_bytes:
-                    content += f"\n\n[... Truncado a {max_bytes} bytes por política de sandbox ...]"
+            # Finding 10: Mitigación TOCTOU: apertura directa con descriptor y re-verificación
+            fd = os.open(safe_path, os.O_RDONLY)
+            try:
+                canon_workspace = os.path.realpath(self.workspace_root)
+                post_real = os.path.realpath(safe_path)
+                if not self.allow_external_cwd and os.path.commonpath([canon_workspace, post_real]) != canon_workspace:
+                    raise SandboxViolation(f"Condición de carrera TOCTOU detectada al leer '{path}'.")
+
+                with open(fd, "r", encoding="utf-8", errors="replace", closefd=False) as f:
+                    content = f.read(max_bytes)
+                    if len(content) >= max_bytes:
+                        content += f"\n\n[... Truncado a {max_bytes} bytes por política de sandbox ...]"
+            finally:
+                try:
+                    os.close(fd)
+                except OSError:
+                    pass
+
             elapsed = (time.perf_counter() - start_t) * 1000.0
             return SandboxExecutionResult(
                 output=f"Contenido de '{path}':\n{content}",
@@ -372,13 +468,31 @@ class LocalProcessSandbox(SandboxAdapter):
             )
 
     def edit_file(self, path: str, content: str) -> SandboxExecutionResult:
-        """Modifica un archivo verificando que se mantenga dentro del workspace."""
+        """Modifica un archivo verificando que se mantenga dentro del workspace con mitigación TOCTOU."""
         start_t = time.perf_counter()
         try:
             safe_path = self._validate_path_containment(path)
             os.makedirs(os.path.dirname(safe_path), exist_ok=True)
-            with open(safe_path, "w", encoding="utf-8") as f:
-                f.write(content)
+            canon_workspace = os.path.realpath(self.workspace_root)
+            parent_real = os.path.realpath(os.path.dirname(safe_path))
+            if not self.allow_external_cwd and os.path.commonpath([canon_workspace, parent_real]) != canon_workspace:
+                raise SandboxViolation("Evasión TOCTOU: el directorio padre resuelve fuera del workspace.")
+
+            # Finding 10: Apertura con descriptor y permisos 0600
+            flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+            fd = os.open(safe_path, flags, 0o600)
+            try:
+                post_real = os.path.realpath(safe_path)
+                if not self.allow_external_cwd and os.path.commonpath([canon_workspace, post_real]) != canon_workspace:
+                    raise SandboxViolation(f"Condición de carrera TOCTOU detectada al escribir '{path}'.")
+                with open(fd, "w", encoding="utf-8", closefd=False) as f:
+                    f.write(content)
+            finally:
+                try:
+                    os.close(fd)
+                except OSError:
+                    pass
+
             elapsed = (time.perf_counter() - start_t) * 1000.0
             return SandboxExecutionResult(
                 output=f"Archivo '{path}' modificado satisfactoriamente dentro del sandbox.",
@@ -568,7 +682,14 @@ class ContainerSandboxAdapter(SandboxAdapter):
             else f"{self.config.container_workspace}/{rel}".replace("\\", "/")
         )
 
-        net_mode = "none" if not self.allow_network else "bridge"
+        # Finding 12: Confinamiento de red en contenedores. El modo 'host' está estrictamente prohibido.
+        if self.config.network_mode == "host":
+            raise SandboxViolation("Violación de sandbox de contenedor: el modo de red 'host' está prohibido.")
+
+        net_mode = "none" if not self.allow_network else (self.config.network_mode if self.config.network_mode != "none" else "bridge")
+        if net_mode == "host":
+            raise SandboxViolation("Violación de sandbox de contenedor: el modo de red 'host' está prohibido.")
+
         args = [
             self.runtime_binary,
             "run",

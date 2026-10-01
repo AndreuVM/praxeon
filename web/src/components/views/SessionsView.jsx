@@ -18,6 +18,7 @@ import {
   Layers,
   Sparkles,
   ExternalLink,
+  Trash2,
 } from 'lucide-react';
 
 export default function SessionsView({
@@ -26,6 +27,9 @@ export default function SessionsView({
   onSelectSession,
   onCreateSession,
   onRefreshSessions,
+  onDeleteSession,
+  onClearOldSessions,
+  onNewCleanSession,
 }) {
   const [filter, setFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
@@ -52,6 +56,15 @@ export default function SessionsView({
       }
     } finally {
       setTimeout(() => setIsRefreshing(false), 400);
+    }
+  };
+
+  const handleClearOld = async () => {
+    if (!window.confirm('¿Deseas purgar todas las sesiones antiguas/finalizadas? Se eliminarán de base de datos, memoria y checkpoints para liberar espacio.')) {
+      return;
+    }
+    if (onClearOldSessions) {
+      await onClearOldSessions();
     }
   };
 
@@ -155,6 +168,22 @@ export default function SessionsView({
         {/* Action Buttons */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <button
+            onClick={handleClearOld}
+            className="btn btn-secondary"
+            title="Eliminar sesiones antiguas y finalizadas para liberar espacio"
+            style={{
+              padding: '8px 12px',
+              fontSize: '12px',
+              color: '#f87171',
+              borderColor: 'rgba(239, 68, 68, 0.35)',
+              backgroundColor: 'rgba(239, 68, 68, 0.08)',
+            }}
+          >
+            <Trash2 size={13} />
+            Limpiar antiguas
+          </button>
+
+          <button
             onClick={handleRefresh}
             className="btn btn-secondary"
             title="Refrescar sesiones"
@@ -163,6 +192,25 @@ export default function SessionsView({
             <RefreshCw size={13} className={isRefreshing ? 'spin' : ''} />
             Actualizar
           </button>
+
+          {onNewCleanSession && (
+            <button
+              onClick={onNewCleanSession}
+              className="btn btn-secondary"
+              title="Abrir directamente una nueva sesión limpia en Live"
+              style={{
+                padding: '8px 14px',
+                fontSize: '12px',
+                color: '#58a6ff',
+                borderColor: 'rgba(88, 166, 255, 0.4)',
+                backgroundColor: 'rgba(88, 166, 255, 0.1)',
+                fontWeight: '600',
+              }}
+            >
+              <Plus size={14} />
+              Sesión Limpia
+            </button>
+          )}
 
           <button
             onClick={() => setIsModalOpen(true)}
@@ -174,6 +222,7 @@ export default function SessionsView({
           </button>
         </div>
       </div>
+
 
       {/* Filter and Status Tab Bar */}
       <div style={{
@@ -421,21 +470,60 @@ export default function SessionsView({
                     )}
                   </div>
 
-                  <button
-                    onClick={() => onSelectSession?.(s.session_id)}
-                    className="btn btn-secondary"
-                    style={{
-                      padding: '5px 12px',
-                      fontSize: '11.5px',
-                      backgroundColor: isSelected ? '#1e293b' : '#141c28',
-                      borderColor: isSelected ? '#58a6ff' : '#243248',
-                      color: isSelected ? '#58a6ff' : '#f0f6fc',
-                      fontWeight: '600',
-                    }}
-                  >
-                    {isSelected ? 'Inspeccionando' : 'Abrir en Live'}
-                    <ArrowRight size={12} />
-                  </button>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    {onDeleteSession && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (window.confirm(`¿Eliminar permanentemente la sesión #${s.session_id}?`)) {
+                            onDeleteSession(s.session_id);
+                          }
+                        }}
+                        title="Eliminar esta sesión"
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          width: '28px',
+                          height: '28px',
+                          borderRadius: '6px',
+                          backgroundColor: '#161c26',
+                          border: '1px solid #2a3446',
+                          color: '#8b949e',
+                          cursor: 'pointer',
+                          transition: 'all 0.15s ease',
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.6)';
+                          e.currentTarget.style.color = '#f87171';
+                          e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.12)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.borderColor = '#2a3446';
+                          e.currentTarget.style.color = '#8b949e';
+                          e.currentTarget.style.backgroundColor = '#161c26';
+                        }}
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    )}
+
+                    <button
+                      onClick={() => onSelectSession?.(s.session_id)}
+                      className="btn btn-secondary"
+                      style={{
+                        padding: '5px 12px',
+                        fontSize: '11.5px',
+                        backgroundColor: isSelected ? '#1e293b' : '#141c28',
+                        borderColor: isSelected ? '#58a6ff' : '#243248',
+                        color: isSelected ? '#58a6ff' : '#f0f6fc',
+                        fontWeight: '600',
+                      }}
+                    >
+                      {isSelected ? 'Inspeccionando' : 'Abrir en Live'}
+                      <ArrowRight size={12} />
+                    </button>
+                  </div>
                 </div>
               </div>
             );

@@ -94,6 +94,41 @@ class WebSocketConnectionManager:
 ws_manager = WebSocketConnectionManager()
 
 
+from urllib.parse import urlparse
+
+def _is_origin_allowed(websocket: WebSocket) -> bool:
+    """Verifica si la cabecera Origin del WebSocket es legítima para prevenir CSWSH (Finding 20)."""
+    origin = websocket.headers.get("origin")
+    if not origin:
+        # Clientes no-navegador (CLI, tests, curl)
+        return True
+
+    allowed_env = os.environ.get("PRAXEON_ALLOWED_ORIGINS")
+    if allowed_env:
+        if allowed_env.strip() == "*":
+            return True
+        allowed_list = [o.strip().lower() for o in allowed_env.split(",") if o.strip()]
+        if origin.lower() in allowed_list:
+            return True
+
+    try:
+        parsed = urlparse(origin)
+        origin_host = (parsed.hostname or "").lower()
+    except Exception:
+        return False
+
+    # Permitir loopback local y clientes de prueba
+    if origin_host in ("localhost", "127.0.0.1", "::1", "testserver"):
+        return True
+
+    # Permitir si coincide con el host del propio servidor
+    host_header = websocket.headers.get("host", "").split(":")[0].lower()
+    if host_header and origin_host == host_header:
+        return True
+
+    return False
+
+
 @ws_router.websocket("/v1/sessions/{session_id}/stream")
 @ws_router.websocket("/ws/{session_id}")
 async def websocket_session_stream(
@@ -103,8 +138,19 @@ async def websocket_session_stream(
     token: Optional[str] = None,
 ):
     """Endpoint WebSocket para recibir en tiempo real los eventos de la sesión con gap recovery."""
-    # 0. Verificación de autenticación de WebSocket
-    if is_auth_required():
+    # 0. Finding 20: Prevención de CSWSH (Cross-Site WebSocket Hijacking)
+    if not _is_origin_allowed(websocket):
+        logger.warning(
+            "Fallo de seguridad evitado: Conexión WebSocket rechazada por Origin no autorizado (CSWSH): %s",
+            websocket.headers.get("origin"),
+        )
+        await websocket.close(code=WS_1008_POLICY_VIOLATION, reason="Origin no permitido.")
+        return
+
+    # 1. Verificación de autenticación de WebSocket
+    app_profile = getattr(websocket.app.state, "security_profile", None) if (hasattr(websocket, "app") and hasattr(websocket.app, "state")) else None
+    client_host = websocket.client.host if websocket.client else None
+    if is_auth_required(profile=app_profile, client_host=client_host):
         expected_key = os.environ.get("PRAXEON_API_KEY") or os.environ.get("PRAXEON_SECRET_KEY")
         if not expected_key:
             logger.error("Fallo de seguridad evitado en WS: Autenticación requerida pero no hay PRAXEON_API_KEY configurada.")

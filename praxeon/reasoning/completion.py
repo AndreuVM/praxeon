@@ -157,12 +157,19 @@ class CompletionVerifier:
             has_failed_tests = False
             has_passed_tests = False
             for s in state.steps:
+                tool_name = (s.action.tool_call.tool_name if s.action.tool_call else "").lower()
+                # Finding 18: La verificación de tests exige procedencia de ejecución activa (run_command / terminal)
+                # y no lectura pasiva de archivos (read_file / view_file) que contengan 'tests'.
+                if tool_name not in ("run_command", "execute_command", "bash", "terminal", "exec", "subprocess"):
+                    continue
+
                 obs_text = (s.observation or "").lower()
                 cmd_text = ""
                 if s.action.tool_call and s.action.tool_call.arguments:
                     cmd_text = str(s.action.tool_call.arguments.get("cmd") or s.action.tool_call.arguments.get("command") or "").lower()
                 
-                if "pytest" in cmd_text or "test" in cmd_text or "check" in cmd_text or "tests" in obs_text:
+                # Debe corresponder a una invocación de tests real
+                if "pytest" in cmd_text or "test" in cmd_text or "check" in cmd_text or "unittest" in cmd_text:
                     if EXIT_CODE_NONZERO_PATTERN.search(obs_text) or any(re.search(rf"\b{re.escape(w)}\b", obs_text) for w in ("failed", "failure", "fail", "failures", "errors")):
                         has_failed_tests = True
                     if TESTS_PASS_PATTERN.search(obs_text) or EXIT_CODE_ZERO_PATTERN.search(obs_text) or any(re.search(rf"\b{re.escape(w)}\b", obs_text) for w in ("ok", "100%")):

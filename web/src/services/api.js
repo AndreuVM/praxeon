@@ -58,6 +58,43 @@ export async function createSession(goal, sessionId = null) {
   return await res.json();
 }
 
+export async function deleteSession(sessionId) {
+  let res = await fetch(`${API_BASE}/sessions/${encodeURIComponent(sessionId)}`, {
+    method: 'DELETE',
+  });
+  if (res.status === 405) {
+    // Fallback con POST si el servidor o proxy restringe el verbo DELETE
+    res = await fetch(`${API_BASE}/sessions/${encodeURIComponent(sessionId)}/delete`, {
+      method: 'POST',
+    });
+  }
+  if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+  return await res.json();
+}
+
+export async function clearSessions(onlyCompleted = true, excludeSessionId = null) {
+  let url = `${API_BASE}/sessions?only_completed=${onlyCompleted}`;
+  if (excludeSessionId) {
+    url += `&exclude_session_id=${encodeURIComponent(excludeSessionId)}`;
+  }
+  let res = await fetch(url, {
+    method: 'DELETE',
+  });
+  if (res.status === 405) {
+    // Fallback con POST
+    let fallbackUrl = `${API_BASE}/sessions/clear?only_completed=${onlyCompleted}`;
+    if (excludeSessionId) {
+      fallbackUrl += `&exclude_session_id=${encodeURIComponent(excludeSessionId)}`;
+    }
+    res = await fetch(fallbackUrl, {
+      method: 'POST',
+    });
+  }
+  if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+  return await res.json();
+}
+
+
 export async function proposeAction(sessionId, proposal) {
   const res = await fetch(`${API_BASE}/sessions/${sessionId}/actions`, {
     method: 'POST',

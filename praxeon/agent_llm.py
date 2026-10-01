@@ -16,6 +16,7 @@ import sys
 import time
 from typing import Any, Dict, List, Optional, Tuple
 import urllib.error
+import urllib.parse
 import urllib.request
 
 
@@ -89,6 +90,43 @@ PROVIDER_PRESETS: Dict[str, Dict[str, Any]] = {
         ],
     },
 }
+
+
+class SafeNoAuthForwardRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Manejador de redirección seguro (Finding 5):
+    Elimina cabeceras de autorización si una redirección cambia de host o dominio,
+    impidiendo la fuga de credenciales a destinos no aprobados.
+    """
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        new_req = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if new_req is not None:
+            orig_netloc = urllib.parse.urlparse(req.get_full_url()).netloc.lower()
+            new_netloc = urllib.parse.urlparse(newurl).netloc.lower()
+            if orig_netloc and new_netloc and orig_netloc != new_netloc:
+                for h in ("Authorization", "authorization", "x-api-key", "X-API-Key"):
+                    new_req.headers.pop(h, None)
+                    new_req.unredirected_hdrs.pop(h, None)
+        return new_req
+
+
+def _is_custom_endpoint(provider_name: str, base_url: Optional[str]) -> bool:
+    """Verifica si base_url apunta a un destino distinto al origin oficial del proveedor (Finding 5)."""
+    if not base_url:
+        return False
+    preset = PROVIDER_PRESETS.get(provider_name)
+    if not preset or not preset.get("base_url"):
+        return True
+    user_host = urllib.parse.urlparse(base_url.rstrip("/")).netloc.lower()
+    preset_host = urllib.parse.urlparse(preset["base_url"].rstrip("/")).netloc.lower()
+    return bool(user_host and preset_host and user_host != preset_host)
+
+
+# Configurar el opener seguro por defecto para proteger redirecciones
+try:
+    urllib.request.install_opener(urllib.request.build_opener(SafeNoAuthForwardRedirectHandler()))
+except Exception:
+    pass
 
 
 class BaseAgentLLM(ABC):
@@ -463,7 +501,16 @@ def create_agent_llm(
     # Proveedor: Groq Cloud
     if prov_key == "groq":
         preset = PROVIDER_PRESETS["groq"]
-        key = api_key or os.getenv("GROQ_API_KEY")
+        is_custom = _is_custom_endpoint("groq", base_url)
+        if is_custom:
+            if not api_key:
+                raise ValueError(
+                    "Para endpoints personalizados de Groq (base_url), la clave de API debe ser suministrada "
+                    "explícitamente y no puede heredarse de las variables de entorno del servidor (Finding 5)."
+                )
+            key = api_key
+        else:
+            key = api_key or os.getenv("GROQ_API_KEY")
         if not key or not key.strip():
             raise ValueError(
                 "Para usar Groq debes configurar la variable GROQ_API_KEY en tu archivo .env "
@@ -510,7 +557,16 @@ def create_agent_llm(
     # Proveedor: OpenRouter
     elif prov_key == "openrouter":
         preset = PROVIDER_PRESETS["openrouter"]
-        key = api_key or os.getenv("OPENROUTER_API_KEY")
+        is_custom = _is_custom_endpoint("openrouter", base_url)
+        if is_custom:
+            if not api_key:
+                raise ValueError(
+                    "Para endpoints personalizados de OpenRouter (base_url), la clave de API debe ser suministrada "
+                    "explícitamente y no puede heredarse de las variables de entorno del servidor (Finding 5)."
+                )
+            key = api_key
+        else:
+            key = api_key or os.getenv("OPENROUTER_API_KEY")
         if not key or not key.strip():
             raise ValueError(
                 "Para usar OpenRouter debes configurar la variable OPENROUTER_API_KEY en tu archivo .env. "
@@ -543,7 +599,12 @@ def create_agent_llm(
     # Proveedor: OpenAI Oficial o Endpoint Genérico
     elif prov_key in ("openai", "custom", "openai_compatible"):
         preset = PROVIDER_PRESETS["openai"]
-        key = api_key or os.getenv("OPENAI_API_KEY")
+        is_custom = _is_custom_endpoint("openai", base_url) if prov_key == "openai" else True
+        if is_custom and base_url:
+            # Finding 5: Endpoint personalizado no debe heredar OPENAI_API_KEY ambiental
+            key = api_key
+        else:
+            key = api_key or os.getenv("OPENAI_API_KEY")
         target_url = base_url or preset["base_url"]
         target_model = model or preset["default_model"]
         return OpenAICompatibleLLM(

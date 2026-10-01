@@ -1,5 +1,5 @@
 import React from 'react';
-import { ChevronDown, User, Layers, Cpu, Play, Shield, AlertTriangle, Box, Terminal } from 'lucide-react';
+import { ChevronDown, User, Layers, Cpu, Play, Shield, AlertTriangle, Box, Terminal, Plus } from 'lucide-react';
 
 export default function Header({
   sessionId = '7f3a2c',
@@ -9,6 +9,7 @@ export default function Header({
   operatorRole = 'operator',
   onOpenSessions,
   onOpenPropose,
+  onNewSession,
 }) {
   const getModeBadge = () => {
     const mode = (executionMode || '').toLowerCase();
@@ -148,6 +149,7 @@ export default function Header({
         {/* Session Selector Pill */}
         <button
           onClick={onOpenSessions}
+          title="Ver y seleccionar sesiones registradas"
           style={{
             display: 'flex',
             alignItems: 'center',
@@ -175,6 +177,39 @@ export default function Header({
           <Cpu size={12} style={{ color: '#8b949e' }} />
           <span>Session #{sessionId}</span>
           <ChevronDown size={12} style={{ color: '#8b949e' }} />
+        </button>
+
+        {/* New Clean Session Button */}
+        <button
+          onClick={onNewSession}
+          title="Crear una nueva sesión limpia (grafo y chat reseteados sin historial previo)"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '5px',
+            padding: '4px 10px',
+            borderRadius: '9999px',
+            backgroundColor: 'rgba(56, 139, 253, 0.12)',
+            border: '1px solid rgba(56, 139, 253, 0.35)',
+            color: '#58a6ff',
+            fontSize: '11px',
+            fontWeight: '600',
+            cursor: 'pointer',
+            transition: 'all 0.15s ease',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.backgroundColor = 'rgba(56, 139, 253, 0.25)';
+            e.currentTarget.style.borderColor = '#58a6ff';
+            e.currentTarget.style.color = '#79c0ff';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.backgroundColor = 'rgba(56, 139, 253, 0.12)';
+            e.currentTarget.style.borderColor = 'rgba(56, 139, 253, 0.35)';
+            e.currentTarget.style.color = '#58a6ff';
+          }}
+        >
+          <Plus size={12} />
+          <span>Nueva Sesión</span>
         </button>
 
         {/* Operator Role / Profile */}

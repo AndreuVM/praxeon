@@ -16,6 +16,7 @@ del CapabilityPayload con execution_mode='full_access'.
 from enum import Enum
 import os
 import subprocess
+import sys
 import time
 from typing import Any, Dict, Optional, Protocol, Tuple
 from pydantic import BaseModel, ConfigDict
@@ -169,17 +170,56 @@ class FullAccessExecutor:
                 cmd = f"{tool_name} {cmd}".strip() if cmd else tool_name
             timeout = float(arguments.get("timeout") or 30.0)
             try:
-                proc = subprocess.run(
-                    cmd,
-                    shell=True,
-                    cwd=cwd,
-                    env=os.environ.copy(),
-                    capture_output=True,
-                    text=True,
-                    timeout=timeout,
-                    encoding="utf-8",
-                    errors="replace",
-                )
+                if sys.platform == "win32":
+                    # Normalización inteligente de comandos comunes de Linux emitidos por LLMs en Windows
+                    cmd_norm = cmd
+                    cmd_lower = cmd.strip().lower()
+                    if cmd_lower in ("ls -la", "ls -l", "ls -al", "ls -a", "ls -lh"):
+                        cmd_norm = "Get-ChildItem -Force"
+                    elif cmd_lower.startswith("ls -la ") or cmd_lower.startswith("ls -l ") or cmd_lower.startswith("ls -al "):
+                        target_arg = cmd.split(maxsplit=2)[-1]
+                        cmd_norm = f"Get-ChildItem -Force {target_arg}"
+                    elif (cmd_norm.startswith('"') or cmd_norm.startswith("'")) and not cmd_norm.startswith("&"):
+                        cmd_norm = f"& {cmd_norm}"
+
+                    proc = subprocess.run(
+                        ["powershell", "-NoProfile", "-NonInteractive", "-Command", cmd_norm],
+                        cwd=cwd,
+                        env=os.environ.copy(),
+                        capture_output=True,
+                        text=True,
+                        timeout=timeout,
+                        encoding="utf-8",
+                        errors="replace",
+                        shell=False,
+                    )
+                    # Si falla por ser script por lotes clásico (.bat/.cmd), intentar fallback a cmd.exe
+                    if proc.returncode != 0 and any(cmd_lower.endswith(ext) for ext in (".bat", ".cmd")):
+                        fallback_proc = subprocess.run(
+                            cmd,
+                            shell=True,
+                            cwd=cwd,
+                            env=os.environ.copy(),
+                            capture_output=True,
+                            text=True,
+                            timeout=timeout,
+                            encoding="utf-8",
+                            errors="replace",
+                        )
+                        if fallback_proc.returncode == 0:
+                            proc = fallback_proc
+                else:
+                    proc = subprocess.run(
+                        cmd,
+                        shell=True,
+                        cwd=cwd,
+                        env=os.environ.copy(),
+                        capture_output=True,
+                        text=True,
+                        timeout=timeout,
+                        encoding="utf-8",
+                        errors="replace",
+                    )
                 elapsed = (time.perf_counter() - start_t) * 1000.0
                 out = (proc.stdout or proc.stderr or f"Comando '{cmd}' ejecutado sin salida en host.").strip()
                 success = (proc.returncode == 0)

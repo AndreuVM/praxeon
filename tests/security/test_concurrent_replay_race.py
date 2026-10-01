@@ -56,12 +56,14 @@ def test_sqlite_nonce_store_concurrent_race_condition():
         assert len(store) == 1
 
 
-def test_secure_executor_concurrent_receipt_replay_prevention():
-    """Demuestra que 20 workers intentando ejecutar el mismo capability receipt
-    mediante SecureExecutor resultan en exactamente 1 ejecución exitosa y 19 PolicyViolation.
+@pytest.mark.parametrize("num_threads", [20, 50, 100])
+def test_secure_executor_concurrent_receipt_replay_prevention(num_threads):
+    """Demuestra formalmente (P0.3) que bajo contienda masiva (20, 50 y 100 workers simultáneos),
+    intentar ejecutar el mismo capability receipt mediante SecureExecutor resulta invariablemente
+    en exactamente 1 ejecución exitosa y N-1 PolicyViolation por rechazo atómico de nonce/replay.
     """
     with tempfile.TemporaryDirectory() as tmp_dir:
-        db_path = os.path.join(tmp_dir, "executor_race_nonces.db")
+        db_path = os.path.join(tmp_dir, f"executor_race_nonces_{num_threads}.db")
         store = SqliteNonceStore(db_path=db_path)
         secret_key = "test-concurrent-secret-key-32-chars"
         executor = SecureExecutor(
@@ -70,10 +72,10 @@ def test_secure_executor_concurrent_receipt_replay_prevention():
             nonce_store=store,
         )
 
-        goal = Goal(objective="Concurrent capability test")
-        state = SessionState(session_id="race_sess_1", goal=goal)
+        goal = Goal(objective=f"Concurrent capability stress test {num_threads}")
+        state = SessionState(session_id=f"race_sess_{num_threads}", goal=goal)
         action = ActionCandidate(
-            id="act_race_1",
+            id=f"act_race_{num_threads}",
             description="Concurrent action execution",
             tool_call=ToolCall(tool_name="read_file", arguments={"path": "race.txt"}),
         )
@@ -81,19 +83,18 @@ def test_secure_executor_concurrent_receipt_replay_prevention():
         a_hash = compute_action_hash(action)
         s_hash = compute_state_hash(state)
         receipt = DecisionReceipt(
-            decision_id="race_dec_exec_001",
+            decision_id=f"race_dec_exec_{num_threads}",
             action_id=action.id,
             action_hash=a_hash,
             state_hash=s_hash,
             session_id=state.session_id,
             decision_status=DecisionStatus.ALLOW,
-            nonce="unique_token_race_999",
+            nonce=f"unique_token_race_{num_threads}",
             issued_at=datetime.utcnow(),
             expires_at=datetime.utcnow() + timedelta(minutes=5),
         )
         signed = sign_receipt(receipt, secret_key)
 
-        num_threads = 20
         barrier = threading.Barrier(num_threads)
         successes = []
         violations = []
@@ -115,8 +116,12 @@ def test_secure_executor_concurrent_receipt_replay_prevention():
                 else:
                     violations.append(payload)
 
-        assert len(successes) == 1, f"Se esperaba exactamente 1 éxito, pero hubo {len(successes)}"
-        assert len(violations) == 19, f"Se esperaban 19 violaciones por replay, pero hubo {len(violations)}"
+        assert len(successes) == 1, (
+            f"Se esperaba exactamente 1 éxito con {num_threads} hilos, pero hubo {len(successes)}"
+        )
+        assert len(violations) == (num_threads - 1), (
+            f"Se esperaban {num_threads - 1} violaciones por replay, pero hubo {len(violations)}"
+        )
         for msg in violations:
             assert "ya ha sido consumido" in msg or "Replay detectado" in msg
 

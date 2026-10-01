@@ -134,3 +134,105 @@ def test_dual_event_bus_accepts_telemetry_event(tmp_path):
     assert isinstance(published, RuntimeEvent)
     assert published.session_id == "sess_dual_test"
     assert published.sequence == 1
+
+
+def test_praxeon_config_and_jev_config_deprecation():
+    """Tarea 2.3: PraxeonConfig es la configuración canónica y JEVConfig emite DeprecationWarning."""
+    import warnings
+    from praxeon.config import PraxeonConfig, JEVConfig
+
+    cfg = PraxeonConfig()
+    assert cfg.provider.name == "typesafe"
+    assert cfg.retry.circuit_breaker_failures == 3
+    assert cfg.retry.semantic_loop_threshold == 2
+    assert cfg.provider.llm_failure_policy == "synthetic_fallback"
+
+    with pytest.deprecated_call():
+        legacy_cfg = JEVConfig()
+        assert isinstance(legacy_cfg, PraxeonConfig)
+
+
+def test_canonical_benchmark_metadata():
+    """Tarea 2.4: Metadatos canónicos reproducibles para benchmarks y desambiguación LAYA."""
+    from scripts.run_system_comparison import get_canonical_benchmark_metadata
+
+    meta = get_canonical_benchmark_metadata(seed=42)
+    assert meta["benchmark_ver"] == "1.0"
+    assert meta["seed"] == 42
+    assert meta["provider"] == "laya"
+    assert meta["engine_type"] == "laya_calibrated_reflex"
+    assert "laya_neural_model_421m" in meta["engine_disambiguation"]
+    assert "laya_calibrated_reflex" in meta["engine_disambiguation"]
+    assert "python" in meta
+    assert "os" in meta
+    assert "hardware" in meta
+
+
+def test_llm_failure_policy_fail_closed(tmp_path):
+    """Tarea 2.1: Política fail_closed detiene la misión inmediatamente ante fallo de proveedor LLM."""
+    import time
+    service = RuntimeApplicationService(db_dir=str(tmp_path / "fail_closed_test"))
+
+    meta = service.start_mission(
+        goal="Objetivo crítico con fail_closed",
+        session_id="sess_fail_closed",
+        llm_provider="unsupported_invalid_llm_123",
+        llm_failure_policy="fail_closed",
+    )
+
+    # Esperar a que el worker procese el fallo
+    time.sleep(0.8)
+
+    events = service.event_bus.get_all_events("sess_fail_closed")
+    fatal_events = [e for e in events if e.payload and e.payload.get("fatal") is True]
+    assert len(fatal_events) >= 1, "Debe registrarse un evento fatal bajo política fail_closed"
+    assert fatal_events[0].payload.get("llm_failure_policy") == "fail_closed"
+
+
+def test_llm_failure_policy_synthetic_fallback(tmp_path):
+    """Tarea 2.1: Política synthetic_fallback marca advertencia visible [DEGRADED_MODE: SYNTHETIC_PLANNER]."""
+    import time
+    service = RuntimeApplicationService(db_dir=str(tmp_path / "synthetic_fallback_test"))
+
+    meta = service.start_mission(
+        goal="Objetivo con synthetic fallback",
+        session_id="sess_syn_fb",
+        llm_provider="unsupported_invalid_llm_456",
+        llm_failure_policy="synthetic_fallback",
+        max_steps=2,
+        step_delay_ms=200,
+    )
+
+    # Esperar a que el worker emita el primer paso degradado
+    time.sleep(1.2)
+
+    events = service.event_bus.get_all_events("sess_syn_fb")
+    warning_events = [e for e in events if e.payload and e.payload.get("degraded_mode") is True]
+    assert len(warning_events) >= 1, "Debe registrarse advertencia de modo degradado"
+    assert "[DEGRADED_MODE: SYNTHETIC_PLANNER]" in warning_events[0].payload.get("warning", "")
+
+
+def test_worker_contracts_architecture():
+    """Tarea 2.5: Contratos modulares de worker para desacoplamiento arquitectural."""
+    from praxeon.runtime.worker_contracts import (
+        ParsedStep,
+        CircuitBreakerStatus,
+        AgentAdapterProtocol,
+        TrajectoryControllerProtocol,
+        MissionRunnerProtocol,
+    )
+
+    step = ParsedStep(
+        tool_name="read_file",
+        tool_args={"path": "pyproject.toml"},
+        thought_rationale="Inspeccionar dependencias",
+        raw_output="Thought: ...\nAction: ...",
+    )
+    assert step.tool_name == "read_file"
+    assert step.is_finish is False
+
+    status = CircuitBreakerStatus()
+    assert status.technical_failures == 0
+    assert status.technical_circuit_open is False
+    assert status.semantic_fixations == 0
+

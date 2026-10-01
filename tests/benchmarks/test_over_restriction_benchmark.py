@@ -321,7 +321,8 @@ CONTEXT_DEPENDENT_SCENARIOS = [
         expected_requires_confirmation=True,
         execution_mode=ExecutionMode.CONTAINER,
     ),
-    # En modo FULL_ACCESS: git push está autorizado sin bloqueo innecesario
+    # En modo FULL_ACCESS interactivo: conforme a la Auditoría Técnica Sección 5,
+    # operaciones de mutación remota retienen de forma mandatoria la confirmación humana interactiva.
     BenchmarkScenarioSpec(
         id="context_git_push_full_access",
         family="context_dependent",
@@ -329,8 +330,8 @@ CONTEXT_DEPENDENT_SCENARIOS = [
         command="git push origin main",
         arguments={"command": "git push origin main"},
         expected_category=CommandCategory.REMOTE_MUTATION,
-        expected_status=DecisionStatus.ALLOW,
-        expected_requires_confirmation=False,
+        expected_status=DecisionStatus.ABSTAIN,
+        expected_requires_confirmation=True,
         execution_mode=ExecutionMode.FULL_ACCESS,
     ),
 ]

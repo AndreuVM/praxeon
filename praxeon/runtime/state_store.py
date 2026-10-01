@@ -54,6 +54,15 @@ class InMemoryStateStore(StateStore, CheckpointStore):
         cids = self._session_checkpoints.get(session_id, [])
         return [self._checkpoints[cid] for cid in cids if cid in self._checkpoints]
 
+    def delete_session(self, session_id: str) -> bool:
+        """Elimina una sesión y sus checkpoints asociados en memoria."""
+        had_state = session_id in self._states
+        self._states.pop(session_id, None)
+        cids = self._session_checkpoints.pop(session_id, [])
+        for cid in cids:
+            self._checkpoints.pop(cid, None)
+        return had_state or bool(cids)
+
     def clear(self) -> None:
         """Limpia todos los estados y checkpoints."""
         self._states.clear()
@@ -232,6 +241,18 @@ class SqliteStateStore(StateStore, CheckpointStore):
                 )
                 rows = cur.fetchall()
                 return [Checkpoint.model_validate_json(r[0]) for r in rows]
+            finally:
+                self._close_conn(conn)
+
+    def delete_session(self, session_id: str) -> bool:
+        """Elimina una sesión y sus checkpoints asociados de la base de datos SQLite."""
+        with self._lock:
+            conn = self._get_connection()
+            try:
+                with conn:
+                    conn.execute("DELETE FROM checkpoints WHERE session_id = ?", (session_id,))
+                    cur = conn.execute("DELETE FROM sessions WHERE session_id = ?", (session_id,))
+                    return cur.rowcount > 0
             finally:
                 self._close_conn(conn)
 

@@ -837,90 +837,33 @@ def _execute_single_live_task(
                         cmd = cmd.get("command") or cmd.get("cmd") or cmd.get("raw") or ""
                     cmd = str(cmd).strip().strip('"').strip("'")
                     if cmd:
-                        try:
+                        # Adaptaciones benignas para terminales Windows
+                        if sys.platform == "win32":
                             import shutil
-                            import subprocess
-                            obs = None
-                            if sys.platform == "win32":
-                                cmd_stripped = cmd.strip()
-                                if cmd_stripped.lower().startswith("git") and shutil.which("git") is None:
-                                    if any(sub in cmd_stripped.lower() for sub in ("status", "ls-files", "branch")):
-                                        cmd = "dir /b"
-                                        cmd_stripped = cmd
-                                    else:
-                                        obs = "Aviso del entorno: 'git' no está instalado en este equipo Windows. Usa comandos nativos como 'dir /b' o invoca 'read_file(path)' para inspeccionar archivos."
-
-                                if not obs:
-                                    if cmd_stripped.startswith("find ") and any(x in cmd_stripped for x in ("-maxdepth", "-name", "-type", "-path", ".")):
-                                        cmd = "Get-ChildItem -Depth 2 -Name"
-                                        cmd_stripped = cmd
-                                    elif cmd_stripped.startswith("ls"):
-                                        cmd = "dir /b"
-                                        cmd_stripped = cmd
-
-                                    is_ps = any(cmd_stripped.lower().startswith(p) for p in ("get-", "set-", "select-", "where-", "format-", "out-", "$", "powershell"))
-                                    if is_ps:
-                                        proc = subprocess.run(
-                                            ["powershell", "-NoProfile", "-NonInteractive", "-Command", cmd],
-                                            capture_output=True,
-                                            text=True,
-                                            timeout=10,
-                                            encoding="utf-8",
-                                            errors="replace",
-                                        )
-                                    else:
-                                        proc = subprocess.run(
-                                            cmd,
-                                            shell=True,
-                                            capture_output=True,
-                                            text=True,
-                                            timeout=10,
-                                            encoding="utf-8",
-                                            errors="replace",
-                                        )
-                                        combined = ((proc.stderr or "") + (proc.stdout or "")).lower()
-                                        if "no se reconoce como un comando" in combined or "not recognized as an internal" in combined:
-                                            proc = subprocess.run(
-                                                ["powershell", "-NoProfile", "-NonInteractive", "-Command", cmd],
-                                                capture_output=True,
-                                                text=True,
-                                                timeout=10,
-                                                encoding="utf-8",
-                                                errors="replace",
-                                            )
-                                    output = (proc.stdout or proc.stderr or "Comando ejecutado sin salida").strip()
-                                    obs = output[:50_000]
-                            else:
-                                proc = subprocess.run(
-                                    cmd,
-                                    shell=True,
-                                    capture_output=True,
-                                    text=True,
-                                    timeout=10,
-                                    encoding="utf-8",
-                                    errors="replace",
-                                )
-                                output = (proc.stdout or proc.stderr or "Comando ejecutado sin salida").strip()
-                                obs = output[:10000]
-                        except Exception as e:
-                            obs = f"Error ejecutando '{cmd}': {e}"
+                            cmd_stripped = cmd.strip()
+                            if cmd_stripped.lower().startswith("git") and shutil.which("git") is None:
+                                if any(sub in cmd_stripped.lower() for sub in ("status", "ls-files", "branch")):
+                                    cmd = "dir /b"
+                            elif cmd_stripped.startswith("ls"):
+                                cmd = "dir /b"
+                        tool_args["command"] = cmd
+                        # Finding 6: Enrutamiento forzoso por PolicyEngine y SecureExecutor
+                        tool_obs = dash.middleware.execute_tool(
+                            tool_name="run_command",
+                            tool_args=tool_args,
+                            thought_rationale=thought_str,
+                        )
+                        obs = tool_obs.output
                     else:
                         obs = "Comando vacío."
-                elif tool_name == "read_file":
-                    p = tool_args.get("path", "")
-                    if p and os.path.exists(p):
-                        try:
-                            with open(p, "r", encoding="utf-8", errors="replace") as f:
-                                file_content = f.read(50000)
-                                if len(file_content) >= 50000:
-                                    file_content += "\n\n[... Archivo muy extenso: truncado a 50.000 caracteres por seguridad de contexto ...]"
-                                obs = f"Contenido de '{p}':\n{file_content}"
-                        except Exception as e:
-                            obs = f"Error leyendo {p}: {e}"
-                    else:
-                        obs = f"Archivo '{p}' no encontrado."
-                elif tool_name == "edit_file":
-                    obs = "Archivo editado correctamente en el entorno de pruebas."
+                elif tool_name in ("read_file", "view_file", "edit_file"):
+                    # Finding 6: Ejecución confinada en sandbox tras evaluación de PolicyEngine
+                    tool_obs = dash.middleware.execute_tool(
+                        tool_name=tool_name,
+                        tool_args=tool_args,
+                        thought_rationale=thought_str,
+                    )
+                    obs = tool_obs.output
 
                 dash.last_observation = obs
                 dash.middleware.record_observation(obs)

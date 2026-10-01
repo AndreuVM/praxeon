@@ -61,7 +61,11 @@ def validate_security_profile(profile: Optional[str] = None) -> List[str]:
 
 def create_app(profile: Optional[str] = None) -> FastAPI:
     """Crea y configura la aplicación FastAPI con rutas y middleware."""
-    origins = validate_security_profile(profile)
+    prof = (profile or os.environ.get("PRAXEON_PROFILE") or os.environ.get("PRAXEON_ENV") or "dev").lower().strip()
+    from praxeon.server.dependencies import set_active_security_profile
+    set_active_security_profile(prof)
+
+    origins = validate_security_profile(prof)
 
     app = FastAPI(
         title="PRAXEON Web Server",
@@ -70,13 +74,19 @@ def create_app(profile: Optional[str] = None) -> FastAPI:
         docs_url="/docs",
         redoc_url="/redoc",
     )
+    app.state.security_profile = prof
+
+    prof = (profile or os.environ.get("PRAXEON_PROFILE") or os.environ.get("PRAXEON_ENV") or "dev").lower().strip()
+    is_prod = (prof == "production")
+    cors_methods = ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"] if is_prod else ["*"]
+    cors_headers = ["Authorization", "X-API-Key", "Content-Type", "Accept"] if is_prod else ["*"]
 
     app.add_middleware(
         CORSMiddleware,
         allow_origins=origins,
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=cors_methods,
+        allow_headers=cors_headers,
     )
 
     # Registrar routers REST y WebSocket
@@ -102,6 +112,19 @@ def create_app(profile: Optional[str] = None) -> FastAPI:
 app = create_app()
 
 
+def validate_network_binding(host: str) -> None:
+    """Valida que si el servidor se vincula a interfaces de red externas, se exija autenticación."""
+    loopback_hosts = {"127.0.0.1", "localhost", "::1", "testclient"}
+    normalized_host = (host or "").lower().strip()
+    if normalized_host not in loopback_hosts:
+        from praxeon.server.dependencies import is_auth_required
+        if not is_auth_required():
+            raise ValueError(
+                f"Fallo de seguridad: Vincular el servidor a la interfaz de red '{host}' sin autenticación "
+                "activa está prohibido. Configure PRAXEON_API_KEY o use 127.0.0.1."
+            )
+
+
 def start():
     """Función de arranque del servidor Uvicorn vía script o CLI."""
     parser = argparse.ArgumentParser(description="PRAXEON Web Server")
@@ -110,6 +133,7 @@ def start():
     parser.add_argument("--reload", action="store_true", help="Recarga en caliente para desarrollo")
     args = parser.parse_args()
 
+    validate_network_binding(args.host)
     print(f"[PRAXEON] Web Server iniciando en http://{args.host}:{args.port}")
     print(f"[PRAXEON] Documentacion OpenAPI disponible en http://{args.host}:{args.port}/docs")
     uvicorn.run("praxeon.server.app:app", host=args.host, port=args.port, reload=args.reload)
@@ -127,6 +151,7 @@ def launch_web():
     parser.add_argument("--reload", action="store_true", help="Recarga en caliente para desarrollo")
     args = parser.parse_args()
 
+    validate_network_binding(args.host)
     url = f"http://{args.host}:{args.port}"
     print("=" * 68)
     print("PRAXEON 1.0 -- Runtime Supervision for Autonomous AI Agents")

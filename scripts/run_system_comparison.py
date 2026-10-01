@@ -24,6 +24,8 @@ import io
 import json
 import os
 from pathlib import Path
+import platform
+import subprocess
 import sys
 import time
 from typing import Any, Dict, List, Optional, Tuple
@@ -82,6 +84,37 @@ from tests.benchmarks.test_ood_and_adversarial_benchmark import (
 )
 
 console = Console(legacy_windows=False)
+
+
+def get_canonical_benchmark_metadata(seed: int = 42) -> Dict[str, Any]:
+    """Extrae metadatos canónicos reproducibles del entorno para trazabilidad de benchmarks."""
+    commit = "unknown"
+    try:
+        commit = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], stderr=subprocess.DEVNULL
+        ).decode("utf-8").strip()
+    except Exception:
+        pass
+
+    return {
+        "commit": commit,
+        "benchmark_ver": "1.0",
+        "seed": seed,
+        "timestamp_utc": time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime()),
+        "provider": "laya",
+        "engine_type": "laya_calibrated_reflex",
+        "engine_disambiguation": {
+            "laya_calibrated_reflex": "LAYA Calibrated Local Engine (rule-calibrated static reflex engine, deterministic, latency < 0.1ms)",
+            "laya_neural_model_421m": "LAYA Neural Model 421M (PyTorch transformer classifier, inference latency ~33ms)",
+        },
+        "python": sys.version.split()[0],
+        "os": sys.platform,
+        "hardware": {
+            "machine": platform.machine(),
+            "processor": platform.processor(),
+            "system": platform.system(),
+        },
+    }
 
 
 # =============================================================================
@@ -686,9 +719,11 @@ def run_comparative_benchmark(output_dir: str = "benchmark_results") -> Dict[str
     console.print(t_perf)
 
     # -------------------------------------------------------------------------
-    # GENERAR INFORME OFICIAL JSON Y MARKDOWN
+    # GENERAR INFORME OFICIAL JSON Y MARKDOWN CON METADATOS CANÓNICOS
     # -------------------------------------------------------------------------
+    canonical_meta = get_canonical_benchmark_metadata(seed=42)
     full_report_data = {
+        "metadata": canonical_meta,
         "timestamp": time.time(),
         "praxeon_version": __version__,
         "holdout_evaluation": {k: v.to_summary_dict() for k, v in holdout_metrics.items()},
@@ -706,8 +741,15 @@ def run_comparative_benchmark(output_dir: str = "benchmark_results") -> Dict[str
 
 **Estudio Empírico de Desempeño: Praxeon vs JEV vs LAYA vs LAYA+JEV vs Sin Modelos de Clasificación**
 
-Fecha de Generación: `{time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime())}`  
-Plataforma: `{sys.platform}` | Python: `{sys.version.split()[0]}`
+Fecha de Generación: `{canonical_meta['timestamp_utc']}`  
+Commit: `{canonical_meta['commit']}` | Versión Benchmark: `{canonical_meta['benchmark_ver']}` | Seed: `{canonical_meta['seed']}`  
+Motor LAYA: `{canonical_meta['engine_type']}` (*LAYA Calibrated Local Engine <0.1ms*)  
+Plataforma: `{canonical_meta['os']}` | Python: `{canonical_meta['python']}` | Arquitectura: `{canonical_meta['hardware']['machine']}`
+
+> [!NOTE]
+> **Desambiguación Arquitectural de Motores LAYA:**
+> - **LAYA Calibrated Local Engine (Evaluado en este benchmark):** Motor reflejo determinista ultra-rápido (<0.10 ms) optimizado para inferencia en caliente sin dependencias de GPU ni PyTorch.
+> - **LAYA Neural Model 421M:** Modelo neuronal profundo transformer (~33 ms de inferencia) para entornos con aceleración por hardware o análisis multi-modal.
 
 ---
 
