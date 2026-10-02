@@ -226,3 +226,23 @@ def clear_old_sessions(
     return APIResponse(data={"deleted_count": deleted_count})
 
 
+@router.get("/{session_id}/context-stats", response_model=APIResponse[Dict[str, Any]])
+def get_session_context_stats(
+    session_id: str,
+    service: RuntimeApplicationService = Depends(get_runtime_service),
+):
+    """Retorna las métricas cuantitativas de context caching e invalidación para esta sesión."""
+    session = service.get_session(session_id)
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Sesión '{session_id}' no encontrada.",
+        )
+    metrics = service.context_manager.get_metrics()
+    return APIResponse(data={
+        "session_id": session_id,
+        "context_metrics": metrics,
+    })
+
+
+

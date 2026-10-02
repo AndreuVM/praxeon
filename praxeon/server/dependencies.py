@@ -57,6 +57,7 @@ from praxeon.runtime.decision_store import SqliteDecisionRepository
 from praxeon.runtime.event_bus import EventBus, EventStore
 from praxeon.runtime.executor import PolicyViolation, SecureExecutor, ToolObservation
 from praxeon.runtime.nonce_store import NonceStore, SqliteNonceStore
+from praxeon.context.manager import ContextManager
 from praxeon.runtime.sandbox import (
     LocalProcessSandbox,
     SandboxExecutionResult,
@@ -144,6 +145,7 @@ class RuntimeApplicationService:
         self._sessions_meta: Dict[str, Dict[str, Any]] = {}
         self._decisions: Dict[str, Dict[str, Any]] = {}
         self._running_missions: Dict[str, Dict[str, Any]] = {}
+        self.context_manager = ContextManager()
 
     # =========================================================================
     # GESTIÓN DE SESIONES

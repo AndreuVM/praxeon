@@ -96,6 +96,31 @@ class SessionContextManager:
         self.task_records.append(record)
         return record
 
+    def get_task_fragments(self) -> List[Any]:
+        """Convierte los registros de tareas previas en TaskFragments estructurados de ContextManager."""
+        from praxeon.context.fragments import TaskFragment
+        frags = []
+        for rec in self.task_records:
+            frags.append(
+                TaskFragment(
+                    task_id=rec.task_id,
+                    goal=rec.goal,
+                    summary=rec.summary,
+                    metadata={
+                        "discovered_files": rec.discovered_files,
+                        "modified_files": rec.modified_files,
+                        "executed_steps": rec.executed_steps,
+                    },
+                )
+            )
+        return frags
+
+    def get_environment_fragment(self, root_dir: Optional[str] = None) -> Any:
+        """Convierte la información del entorno anfitrión en un EnvironmentFragment cacheable."""
+        from praxeon.context.fragments import EnvironmentFragment
+        env_text = self.get_environment_info(root_dir=root_dir)
+        return EnvironmentFragment(environment_info=env_text, source_id="session_host_env")
+
     def build_initial_system_prompt(self) -> str:
         """Genera el prompt de sistema base con instrucciones de eficiencia y formato ReAct."""
         return (

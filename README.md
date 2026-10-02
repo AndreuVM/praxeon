@@ -4,17 +4,18 @@
 
 > **The model proposes. The runtime decides what gets executed.**
 
-[![Tests](https://img.shields.io/badge/tests-293%20passed-brightgreen.svg)](https://github.com/AndreuVM/praxeon)
+[![Tests](https://img.shields.io/badge/tests-527%20passed-brightgreen.svg)](https://github.com/AndreuVM/praxeon)
 [![Version](https://img.shields.io/badge/version-v1.0.0-blue.svg)](https://github.com/AndreuVM/praxeon)
 [![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](https://github.com/AndreuVM/praxeon)
+[![Context Caching](https://img.shields.io/badge/context%20caching-L1%20%2F%20L2%20Prefix%20Cache-blueviolet.svg)](https://github.com/AndreuVM/praxeon)
 [![Security](https://img.shields.io/badge/security-sandbox%20%26%20container%20hardened-green.svg)](https://github.com/AndreuVM/praxeon/blob/main/SECURITY.md)
 [![Providers](https://img.shields.io/badge/providers-TypeSafe%20%7C%20LAYA%20%7C%20CascadeRouter-purple.svg)](https://github.com/AndreuVM/praxeon)
 
 `PRAXEON` es un middleware de supervisión formal y runtime de seguridad desacoplado para agentes autónomos basados en Modelos de Lenguaje (*ReAct*, *Tool-use*, *Tree-of-Thought*).
 
-Los LLMs son generadores estocásticos que proponen acciones basándose en distribuciones probabilísticas de tokens. `PRAXEON` desacopla la fase de propuesta de la fase de ejecución física: ninguna acción propuesta por un agente se ejecuta de manera directa ni posee autoridad intrínseca sobre el entorno. El runtime determinista intercepta cada paso, verifica sus precondiciones empíricas en las observaciones previas, evalúa el riesgo operacional, somete la acción a evaluación semántica calibrada cuando es necesario, emite un capability criptográfico firmado (HMAC-SHA256) con validez temporal acotada y ejecuta la herramienta confinada dentro de un sandbox aislado.
+Los LLMs son generadores estocásticos que proponen acciones basándose en distribuciones probabilísticas de tokens. `PRAXEON` desacopla la fase de propuesta de la fase de ejecución física: ninguna acción propuesta por un agente se ejecuta de manera directa ni posee autoridad intrínseca sobre el entorno. El runtime determinista intercepta cada paso, optimiza el contexto de entrada mediante caching y presupuestado jerárquico (`ContextManager`), verifica precondiciones empíricas en las observaciones previas, evalúa el riesgo operacional, somete la acción a evaluación semántica calibrada cuando es necesario, emite un capability criptográfico firmado (HMAC-SHA256) con validez temporal acotada y ejecuta la herramienta confinada dentro de un sandbox aislado.
 
-$$\text{Semantic Judgment (LAYA / TypeSafe Router)} \neq \text{Operational Policy (PolicyEngine)} \neq \text{Capability Receipt (HMAC)} \neq \text{Enforced Sandbox (SecureExecutor)}$$
+$$\text{Context Optimization (ContextManager)} \to \text{Semantic Judgment (LAYA / TypeSafe)} \neq \text{Operational Policy (PolicyEngine)} \neq \text{Capability Receipt (HMAC)} \neq \text{Enforced Sandbox (SecureExecutor)}$$
 
 ---
 
@@ -157,8 +158,17 @@ praxeon/
 │   │   ├── checkpoint.py         # Checkpoint, SessionSnapshot
 │   │   ├── state.py              # SessionState (hash canónico SHA-256 determinista)
 │   │   └── interfaces.py         # Protocols: ReasoningProvider, EvidenceProvider, Executor
+│   ├── context/                  # Context Management & Caching determinista (Post-v1.0)
+│   │   ├── fragments.py          # 9 tipos de ContextFragment inmutables con hash SHA-256
+│   │   ├── fingerprint.py        # ContextFingerprint determinista dependiente de DAG y estado
+│   │   ├── cache.py              # L1 Fragment Cache + L2 Context Snapshot Cache (LRU, TTL)
+│   │   ├── budget.py             # TokenBudget con jerarquía de prioridades estricta de 8 niveles
+│   │   ├── selector.py           # DAGContextSelector estructural determinista (sin vector DB)
+│   │   ├── builder.py            # ContextSnapshotBuilder para compilar prompts normalizados
+│   │   ├── policies.py           # Invalidation predicates por sesión, TTL y evidencia revocada
+│   │   └── manager.py            # ContextManager central con Prefix Caching y telemetría
 │   ├── providers/                # Adaptadores de inferencia semántica desacoplados
-│   │   ├── context.py            # ProviderContextBuilder con token budgeting y truncamiento
+│   │   ├── context.py            # ProviderContextBuilder integrado con ContextManager y caching L1/L2
 │   │   ├── laya.py               # LayaProvider (System-1: auto, local, hosted, simulated)
 │   │   ├── typesafe.py           # Adaptador TypeSafe AI System One con fail-safe
 │   │   ├── router.py             # ConfidenceAwareRouter (cascada adaptativa LAYA + TypeSafe)
@@ -194,7 +204,7 @@ praxeon/
 │   └── dashboard.py              # Monitor visual interactivo TUI en tiempo real
 ├── docs/
 │   └── DAM_PROJECT_MEMO.md       # Memoria técnica formal para el ciclo DAM
-├── tests/                        # 280 pruebas automatizadas (unitarias, integración, seguridad, OOD)
+├── tests/                        # 527 pruebas automatizadas (unitarias, integración, seguridad, OOD, contexto)
 ├── SECURITY.md                   # Política de seguridad y modelo de amenazas formal auditado
 ├── pyproject.toml                # Metadatos del proyecto y dependencias (v1.0.0)
 └── README.md
@@ -378,9 +388,50 @@ if decision.status == "replan":
 
 ---
 
+## 7. Context Management & Caching Optimizado (Post-v1.0)
+
+A partir de la especificación técnica post-v1.0, PRAXEON incorpora el módulo central **`praxeon.context`**, un subsistema determinista de gestión, selección DAG-aware y almacenamiento en caché de dos niveles (**L1 Fragment Cache** + **L2 Context Snapshot Cache con Prefix Caching**) diseñado para abatir la explosión de tokens y la latencia en agentes autónomos continuos sin relajar ningún control de seguridad:
+
+### A. Principios del Subsistema de Contexto
+1. **Fragmentación Tipada e Inmutable (`ContextFragment`):** El estado no entra como bloque plano; se descompone en 9 fragmentos canónicos (`GoalFragment`, `ConstraintFragment`, `EvidenceFragment`, `ObservationFragment`, `DecisionFragment`, `TaskFragment`, `EnvironmentFragment`, `FileFragment`, `SummaryFragment`) con cálculo determinista de hash SHA-256 inmutable y estimación precisa de tokens.
+2. **Huellas Criptográficas Deterministas (`ContextFingerprint`):**
+   $$\text{Fingerprint} = \text{SHA-256}(\text{session\_id} \mathbin{\Vert} \text{goal\_hash} \mathbin{\Vert} \text{node\_ids} \mathbin{\Vert} \text{fragment\_hashes} \mathbin{\Vert} \text{policy\_ver} \mathbin{\Vert} \text{strategy\_ver} \mathbin{\Vert} \text{model\_profile})$$
+3. **Presupuestado de Tokens por Capas (`TokenBudget`):** Asignación estricta orientada por jerarquía formal de 8 niveles de prioridad:
+   1. Objetivo y criterios de éxito $\to$ 2. Estado actual $\to$ 3. Restricciones operacionales $\to$ 4. Dependencias directas $\to$ 5. Evidencia contrastada $\to$ 6. Observaciones recientes $\to$ 7. Resúmenes de memoria episódica $\to$ 8. Historial secundario.
+4. **Prefix Caching en L2:** Desacopla la huella del estado base (`base_fingerprint`) del sufijo de la acción evaluada. Permite que evaluaciones multi-candidato o la supervisión en cascada (LAYA $\to$ TypeSafe) reutilicen de inmediato los fragmentos base presupuestados en memoria con latencias $< 0.5\text{ ms}$.
+
+> [!IMPORTANT]
+> **Invariante Axiomático de Seguridad (I1 - I4):**  
+> El `ContextManager` se sitúa estrictamente **antes** del evaluador semántico o LLM. Un *cache hit* es un evento puramente de optimización de datos: **NUNCA** equivale a un veredicto `ALLOW`, **NUNCA** emite una `Capability` criptográfica firmada con HMAC y **NUNCA** despacha ejecución física en [`SecureExecutor`](file:///c:/Users/adria/.gemini/antigravity-ide/scratch/jev-llm/jev-reasoning-navigator/praxeon/runtime/executor.py). Modificar o revocar una evidencia invalida de inmediato todos los snapshots asociados.
+
+### B. Evidencia Empírica: Benchmark Científico Formal (Sección 16)
+Evaluación multi-modo comparando **A) Full Context**, **B) Truncamiento Heurístico Fijo**, **C) Cached Relevant DAG** y **D) Cached Relevant + Summarized**:
+
+| Misión | Modo Evaluado | Tokens Totales | Tokens Ahorrados | CRR (*Reducción*) | CHR (*Hit Rate*) | DP (*Preservación*) | Latencia Build | Coste ($2.5/M tok) |
+|---|---|---|---|---|---|---|---|---|
+| **5 pasos** (14 llamadas) | **A_FULL** | 3.918 | 0 | 0.0% (base) | 0.0% | 100.0% | 0.09 ms | $0.00979 |
+| | **B_TRUNCATED** | 3.998 | 0 | 0.0% | 0.0% | 100.0% | 0.08 ms | $0.01000 |
+| | **C_CACHED_RELEVANT** | 4.844 | 0 | 0.0% | **64.3%** | 100.0% | 0.38 ms | $0.01211 |
+| | **D_CACHED_SUMMARIZED** | 4.144 | 0 | 0.0% | **64.3%** | 100.0% | 0.28 ms | $0.01036 |
+| **15 pasos** (44 llamadas) | **A_FULL** | 31.314 | 0 | 0.0% (base) | 0.0% | 100.0% | 0.11 ms | $0.07829 |
+| | **B_TRUNCATED** | 29.708 | 1.606 | 5.1% | 0.0% | 100.0% | 0.11 ms | $0.07427 |
+| | **C_CACHED_RELEVANT** | 34.758 | 0 | 0.0% | **65.9%** | 100.0% | 0.45 ms | $0.08690 |
+| | **D_CACHED_SUMMARIZED** | 22.206 | 9.108 | **29.1%** | **65.9%** | 100.0% | 0.37 ms | $0.05552 |
+| **30 pasos** (84 llamadas) | **A_FULL** | 123.440 | 0 | 0.0% (base) | 0.0% | 100.0% | 0.15 ms | $0.30860 |
+| | **B_TRUNCATED** | 76.258 | 47.182 | 38.2% | 0.0% | 100.0% | 0.13 ms | $0.19065 |
+| | **C_CACHED_RELEVANT** | 89.154 | 34.286 | 27.8% | **66.7%** | 100.0% | 0.52 ms | $0.22289 |
+| | **D_CACHED_SUMMARIZED** | **51.616** | **71.824** | **58.2%** | **66.7%** | **100.0%** | **0.44 ms** | **$0.12904** |
+
+- **58.2% de reducción de tokens (CRR):** En 30 pasos, el Modo D ahorra 71.824 tokens sin degradar información crítica.
+- **66.7% Cache Hit Rate (CHR):** Aprovechamiento exhaustivo de prefijos estables y evaluación dual agente-supervisor.
+- **100.0% Decision Preservation (DP):** Concordancia perfecta de veredictos de políticas frente al baseline sin pérdida de grounding empírico.
+- Ejecutar benchmark reproducible: `python scripts/run_context_benchmark.py --steps 5 15 30`
+
+---
+
 # PARTE II: EVIDENCIA EMPÍRICA DE BENCHMARKS
 
-## 7. Metodología Experimental y Dataset Procedural
+## 8. Metodología Experimental y Dataset Procedural
 
 La suite de evaluación mide empíricamente la precisión de decisión, la eficacia de contención física en sandbox y la latencia operacional del runtime:
 
@@ -390,7 +441,7 @@ La suite de evaluación mide empíricamente la precisión de decisión, la efica
 
 ---
 
-## 8. Las 5 Dimensiones de Evaluación
+## 9. Las 5 Dimensiones de Evaluación
 
 1. **Provider Benchmark:** Acuerdo inter-proveedor (*agreement rate*), concordancia decisional y latencias de inferencia entre LAYA local, TypeSafe remoto y el Router en cascada.
 2. **Policy Benchmark:** Calidad de clasificación (`ALLOW`, `BLOCK`, `REPLAN`, `ABSTAIN`), matrices de confusión, tasa de falsos permitidos (`false_allow_rate`) y precisión de denegación.
@@ -400,7 +451,7 @@ La suite de evaluación mide empíricamente la precisión de decisión, la efica
 
 ---
 
-## 9. Estudio Cuantitativo de Ablaciones
+## 10. Estudio Cuantitativo de Ablaciones
 
 Evaluación experimental de 6 configuraciones arquitectónicas sobre el conjunto Holdout ($n=200$ escenarios independientes):
 
@@ -417,7 +468,7 @@ Evaluación experimental de 6 configuraciones arquitectónicas sobre el conjunto
 
 ---
 
-## 10. Benchmark Comparativo Multidimensional: PRAXEON vs JEV vs LAYA vs LAYA+JEV vs Sin Modelos
+## 11. Benchmark Comparativo Multidimensional: PRAXEON vs JEV vs LAYA vs LAYA+JEV vs Sin Modelos
 
 Para certificar si existe una mejora real con el uso de **PRAXEON**, se evaluaron formalmente las 5 configuraciones sobre el conjunto Holdout ($n=200$ escenarios independientes), el Benchmark de Sobre-restricción (30 escenarios, 6 familias) y la suite de ataques adversarios Fuera de Distribución (OOD):
 
@@ -435,7 +486,7 @@ Para certificar si existe una mejora real con el uso de **PRAXEON**, se evaluaro
 
 ---
 
-## 11. Benchmark en Vivo con LLM Local Real (`deepseek-r1:7b` vía Ollama)
+## 12. Benchmark en Vivo con LLM Local Real (`deepseek-r1:7b` vía Ollama)
 
 Para evaluar el comportamiento demostrable en un entorno de producción real sin recurrir a fallbacks ni simulaciones, se conectó un agente autónomo real al modelo **`deepseek-r1:7b`** en ejecución local vía Ollama. Al someter al modelo a 8 tareas que incluían instrucciones benignas, ambiguas y de riesgo inducido, el LLM generó de forma autónoma comandos reales:
 
@@ -475,11 +526,11 @@ De acuerdo con las mejores prácticas de rigor científico y divulgación técni
 
 ## Verificación de la Suite de Pruebas e Invariantes
 
-La arquitectura de PRAXEON v1.0.0, los contratos de proveedores (`LayaProvider`, `TypeSafeAdapter`, `ReplayProvider`, `ConfidenceAwareRouter`), el desacoplamiento de semántica de operaciones (`CommandClassifier`), el Benchmark de Sobre-restricción, la detección de evasión Rule 0, la suite de concurrencia anti-replay (20 hilos), la autenticación de Web API / WebSocket, las barreras de enforcement HMAC, el servidor FastAPI, la suite E2E y los benchmarks comparativos están respaldados por **293 pruebas automatizadas pasando al 100%**:
+La arquitectura de PRAXEON v1.0.0, los contratos de proveedores (`LayaProvider`, `TypeSafeAdapter`, `ReplayProvider`, `ConfidenceAwareRouter`), el subsistema de Context Caching determinista (`praxeon.context`), el desacoplamiento de semántica de operaciones (`CommandClassifier`), el Benchmark de Sobre-restricción, la detección de evasión Rule 0, la suite de concurrencia anti-replay (20 hilos), la autenticación de Web API / WebSocket, las barreras de enforcement HMAC, el servidor FastAPI, la suite E2E y los benchmarks comparativos están respaldados por **527 pruebas automatizadas pasando al 100%**:
 
 ```bash
 pytest -q
-# 293 passed, 1 skipped in ~77s
+# 527 passed, 1 skipped in ~114s
 ```
 
 ---

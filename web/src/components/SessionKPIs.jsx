@@ -1,5 +1,5 @@
 import React from 'react';
-import { Layers, Check, X, AlertTriangle } from 'lucide-react';
+import { Layers, Check, X, AlertTriangle, Zap } from 'lucide-react';
 
 export default function SessionKPIs({ session }) {
   const {
@@ -252,6 +252,30 @@ export default function SessionKPIs({ session }) {
           <span style={{ color: '#8b949e', fontSize: '10.5px' }}>Review:</span>
           <strong style={{ color: '#d29922', fontWeight: '700', fontFamily: 'var(--font-mono)' }}>
             {metrics.review}
+          </strong>
+        </div>
+
+        {/* Context Caching */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '5px',
+            height: '22px',
+            padding: '0 7px',
+            borderRadius: '4px',
+            backgroundColor: 'rgba(56, 189, 248, 0.08)',
+            border: '1px solid rgba(56, 189, 248, 0.25)',
+            fontSize: '11px',
+          }}
+          title="Optimización de tokens y Context Caching L1/L2 activo"
+        >
+          <Zap size={11} style={{ color: '#38bdf8' }} />
+          <span style={{ color: '#8b949e', fontSize: '10.5px' }}>Context Cache:</span>
+          <strong style={{ color: '#38bdf8', fontWeight: '700', fontFamily: 'var(--font-mono)' }}>
+            {session?.contextMetrics?.context_tokens_saved != null
+              ? `${session.contextMetrics.context_tokens_saved} tok`
+              : 'Active'}
           </strong>
         </div>
       </div>

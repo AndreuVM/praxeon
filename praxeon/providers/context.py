@@ -62,18 +62,43 @@ class ProviderContext(BaseModel):
         }
 
 
+from praxeon.context.manager import ContextManager
+from praxeon.context.selector import DAGContextSelector
+from praxeon.context.budget import TokenBudget
+from praxeon.context.fragments import FragmentType
+
+
 class ProviderContextBuilder:
-    """Constructor y podador inteligente de contexto para ReasoningProviders (JEV, LAYA, Replay)."""
+    """Constructor y podador inteligente de contexto para ReasoningProviders (JEV, LAYA, Replay).
+    
+    Integra de forma transparente el ContextManager de PRAXEON para proveer caching L1,
+    fingerprints deterministas y presupuestado jerárquico de tokens.
+    """
 
     def __init__(
         self,
         default_max_tokens: int = 2048,
         max_history_steps: int = 10,
         max_obs_chars: int = 300,
+        enable_caching: bool = True,
+        context_manager: Optional[ContextManager] = None,
     ):
         self.default_max_tokens = default_max_tokens
         self.max_history_steps = max_history_steps
         self.max_obs_chars = max_obs_chars
+        self.enable_caching = enable_caching
+
+        if context_manager is not None:
+            self.context_manager = context_manager
+        elif enable_caching:
+            selector = DAGContextSelector(
+                max_recent_observations=max_history_steps,
+                max_obs_chars=max_obs_chars,
+            )
+            budget = TokenBudget(default_max_tokens=default_max_tokens)
+            self.context_manager = ContextManager(selector=selector, budget=budget)
+        else:
+            self.context_manager = None
 
     def _estimate_tokens(self, text: str) -> int:
         """Aproximación heurística de tokens (~4 caracteres por token en inglés/español técnico)."""
@@ -89,6 +114,73 @@ class ProviderContextBuilder:
         budget_tokens = max_tokens or self.default_max_tokens
         max_chars = budget_tokens * 4
         truncated = False
+
+        state_meta = getattr(state, "metadata", {}) or (state.get("metadata", {}) if isinstance(state, dict) else {})
+
+        # Ruta optimizada con ContextManager (Context Caching L1)
+        if self.enable_caching and self.context_manager is not None:
+            snapshot, is_hit = self.context_manager.build(
+                state=state,
+                candidate_action=action,
+                max_tokens=budget_tokens,
+            )
+
+            # Extraer campos estructurados directamente de los fragmentos compilados
+            goal_text = "Objetivo no especificado"
+            criteria: List[str] = []
+            evidence_claims: List[str] = []
+            history_steps: List[Dict[str, Any]] = []
+
+            for frag in snapshot.fragments:
+                if frag.fragment_type == FragmentType.GOAL:
+                    goal_text = frag.content.split("\nCriterios de éxito:")[0].replace("OBJETIVO: ", "").strip()
+                    criteria = frag.metadata.get("criteria", [])
+                elif frag.fragment_type == FragmentType.EVIDENCE:
+                    # Extraer claim limpio
+                    claim = frag.content.split("]: ", 1)[-1] if "]: " in frag.content else frag.content
+                    evidence_claims.append(claim)
+                elif frag.fragment_type == FragmentType.OBSERVATION:
+                    history_steps.append({
+                        "id": frag.source_id,
+                        "tool": frag.metadata.get("tool_name"),
+                        "arguments": frag.metadata.get("arguments", {}),
+                        "operation": "",
+                        "observation": frag.metadata.get("observation", frag.content.split("]: ", 1)[-1] if "]: " in frag.content else frag.content),
+                    })
+
+            candidate_dict = {
+                "id": action.id,
+                "description": action.description,
+                "tool_name": action.tool_call.tool_name if action.tool_call else None,
+                "arguments": action.tool_call.arguments if action.tool_call else {},
+                "requires_evidence": list(action.requires_evidence),
+            }
+
+            meta_merged = dict(state_meta) if isinstance(state_meta, dict) else {}
+            meta_merged["cache_hit"] = is_hit
+            meta_merged["fingerprint"] = snapshot.fingerprint
+
+            # Verificar si se truncó el historial o el prompt
+            is_trunc = snapshot.truncated
+            raw_steps_len = len(getattr(state, "steps", []))
+            if raw_steps_len > len(history_steps) or len(snapshot.formatted_prompt) > max_chars:
+                is_trunc = True
+
+            return ProviderContext(
+                session_id=snapshot.session_id,
+                goal=goal_text,
+                success_criteria=criteria,
+                history_window=history_steps,
+                active_evidence=evidence_claims,
+                candidate_action=candidate_dict,
+                token_estimate=snapshot.total_tokens,
+                truncated=is_trunc,
+                max_context_tokens=budget_tokens,
+                formatted_prompt=snapshot.formatted_prompt,
+                metadata=meta_merged,
+            )
+
+        # Ruta estándar (fallback sin caching)
 
         # 1. Extraer meta y criterios de éxito
         session_id = getattr(state, "session_id", "session_unknown")

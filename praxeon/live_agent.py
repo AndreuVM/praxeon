@@ -62,19 +62,55 @@ def prune_observation_output(output: str, max_chars: int = 2000) -> str:
     )
 
 
-def build_optimized_prompt(conversation_history: List[Dict[str, str]], max_recent_turns: int = 8) -> str:
-    """Construye el prompt optimizado para el LLM aplicando compresión a turnos antiguos si la conversación es larga."""
-    if len(conversation_history) <= (max_recent_turns * 2 + 2):
-        return "\n\n".join(f"[{m['role'].upper()}]: {m['content']}" for m in conversation_history) + "\n\n[ASSISTANT]:\n"
+def compact_conversation_history(
+    conversation_history: List[Dict[str, str]],
+    context_manager: Optional[Any] = None,
+    max_recent_turns: int = 4,
+) -> List[Dict[str, str]]:
+    """Compacta el historial conversacional utilizando ContextManager.
     
+    Mantiene el prompt de sistema y objetivo inicial, compacta los pasos
+    intermedios antiguos en un resumen estructurado y preserva los turnos recientes.
+    """
+    max_recent_msgs = max_recent_turns * 2
+    if len(conversation_history) <= (2 + max_recent_msgs):
+        return list(conversation_history)
+
     header = conversation_history[:2]
-    recent = conversation_history[-(max_recent_turns * 2):]
-    middle_count = len(conversation_history) - len(header) - len(recent)
+    intermediate = conversation_history[2:-max_recent_msgs]
+    recent = conversation_history[-max_recent_msgs:]
+
+    summary_lines = []
+    for msg in intermediate:
+        role = msg.get("role", "")
+        content = msg.get("content", "").strip()
+        if role == "assistant":
+            for line in content.splitlines():
+                if line.lower().startswith("action:"):
+                    summary_lines.append(f"• Ejecutado: {line[7:].strip()}")
+                    break
+        elif role == "user":
+            first_line = content.splitlines()[0] if content.splitlines() else content
+            if len(first_line) > 160:
+                first_line = first_line[:150] + "..."
+            summary_lines.append(f"  Observación: {first_line}")
+
+    summary_content = "\n".join(summary_lines)
     summary_msg = {
         "role": "user",
-        "content": f"[... Historial intermedio: {middle_count} mensajes anteriores comprimidos por JEV para preservar ventana de contexto ...]",
+        "content": (
+            f"📋 [MEMORIA INTERMEDIA COMPACTADA POR PRAXEON CONTEXT MANAGER ({len(intermediate)//2} pasos)]:\n"
+            f"{summary_content}\n"
+            "Continúa la resolución a partir de este punto."
+        ),
     }
-    compacted = header + [summary_msg] + recent
+
+    return header + [summary_msg] + recent
+
+
+def build_optimized_prompt(conversation_history: List[Dict[str, str]], max_recent_turns: int = 8) -> str:
+    """Construye el prompt optimizado para el LLM aplicando compresión a turnos antiguos si la conversación es larga."""
+    compacted = compact_conversation_history(conversation_history, max_recent_turns=max_recent_turns)
     return "\n\n".join(f"[{m['role'].upper()}]: {m['content']}" for m in compacted) + "\n\n[ASSISTANT]:\n"
 
 
@@ -240,6 +276,7 @@ def run_live_agent(
     middleware: Optional[JEVProxyMiddleware] = None,
     provider: Optional[str] = None,
     base_url: Optional[str] = None,
+    context_manager: Optional[Any] = None,
 ) -> Tuple[bool, str, SessionContextManager, JEVProxyMiddleware]:
     """Ejecuta un bucle de razonamiento de agente supervisado en bloques por PRAXEON.
     
@@ -281,9 +318,13 @@ def run_live_agent(
     is_laya = getattr(cfg, "supervisor", "typesafe").lower() in ("laya", "laya-system1", "laya-v1")
     sup_runtime = f"PRAXEON (LAYA System-1 [{getattr(cfg, 'laya_backend', 'auto')}])" if is_laya else "PRAXEON (TypeSafe AI / JEV)"
 
+    from praxeon.context.manager import ContextManager
+    ctx_mgr = context_manager or ContextManager()
+
     console.print(Panel(
         f"[bold white]Tarea del Agente:[/] {task}\n"
         f"[bold white]Supervisor Runtime:[/] {sup_runtime}\n"
+        f"[bold white]Context Manager:[/] [bold green]Activo[/] (L1/L2 Caching & Compaction)\n"
         f"[bold white]Modelo LLM Agente:[/] [bold cyan]{agent_llm.model_name}[/] ({agent_llm.provider_name.upper()})\n"
         f"[bold white]Límite de Pasos:[/] {'Ilimitado (hasta invocar finish)' if is_unlimited else f'{max_steps} pasos'}\n"
         f"[bold white]Tamaño de bloque (Chunk Size):[/] {cfg.evaluation_chunk_size} pasos por lote\n"
@@ -331,7 +372,8 @@ def run_live_agent(
 
                 console.print(f"[dim]⚡ Consultando {agent_llm.provider_name.upper()} ({agent_llm.model_name})... [Llamada #{llm_calls_count}][/]")
                 last_llm_call_time = time.time()
-                llm_output = agent_llm.generate(conversation_history)
+                compacted_history = compact_conversation_history(conversation_history, context_manager=ctx_mgr)
+                llm_output = agent_llm.generate(compacted_history)
                 console.print(f"[bold white]LLM Output ({agent_llm.provider_name}):[/]\n{llm_output}")
                 break
             except Exception as err:

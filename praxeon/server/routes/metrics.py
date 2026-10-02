@@ -101,5 +101,6 @@ def get_metrics(
             "default_tier": "local_process",
             "container_supported": True,
         },
+        "context_cache": service.context_manager.get_metrics(),
     }
     return APIResponse(data=metrics_data)
