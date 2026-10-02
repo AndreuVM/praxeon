@@ -18,7 +18,8 @@ Key accomplishments sealed in this milestone:
 - **Resilient Realtime Streaming**: Monotonic sequence-tracked WebSocket broadcasting with `after_sequence` gap recovery and interactive synchronization (`sync`).
 - **Clean Configuration Architecture**: Complete codebase migration from deprecated `JEVConfig` to canonical `PraxeonConfig` with zero runtime warnings.
 - **Implemented Context Management & Caching (`praxeon.context`)**: L1 typed fragment cache + L2 snapshot cache with runtime context prefix reuse, strict 8-level token budgeting, DAG-aware structural selection, and verifiable invalidation.
-- **Comprehensive Test Regression**: 539 automated tests passing at 100% (540 collected: 539 passed, 1 skipped, 0 failed) across unit, integration, security, context invalidation, execution mode binding, and benchmark suites.
+- **Formal Technical Review Remediation (P0–P2 Closed)**: Fully resolved all audit findings: BUG-01 (order-sensitive context fingerprints), BUG-02 (robust DTO score handling for offline/uncalibrated providers), CHG-01 (decoupled unknown from malicious with contextual risk assessment and human review), CHG-02 (mandatory explicit operator consent for autonomous full access), CHG-03 (packaging test decoupling), BENCH-01 (reproducible `--seed 42` caching and LRU pressure benchmarks), MAINT-01 (universal UTC datetime modernization), and DOC-02/DOC-03 (canonical PRAXEON naming and relative documentation links).
+- **Comprehensive Test Regression**: 543 automated tests passing at 100% (544 collected: 543 passed, 1 skipped, 0 failed) across unit, integration, security, context invalidation, execution mode binding, and benchmark suites.
 
 ---
 

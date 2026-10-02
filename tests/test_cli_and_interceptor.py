@@ -16,7 +16,7 @@ def test_cli_analyze_all_sample_traces(capsys):
     for trace_file in DATA_DIR.glob("*.json"):
         analyze_trace_file(str(trace_file))
         captured = capsys.readouterr()
-        assert "JEV-Reasoning-Navigator" in captured.out
+        assert "PRAXEON" in captured.out
 
 
 def test_cli_simulate_execution(capsys):

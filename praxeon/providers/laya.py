@@ -12,9 +12,10 @@ Soporta backends:
 - 'simulated': Motor determinista calibrado para pruebas y benchmarks reproducibles offline.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 import json
 import logging
+
 import os
 import time
 import urllib.error
@@ -413,8 +414,9 @@ class LayaProvider(BaseReasoningProvider):
                 "score": score_val,
                 "noul": noul_data,
                 "memory_mb": self._get_resident_memory_mb(),
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
             }
+
 
             return ProviderAssessment(
                 provider="laya",

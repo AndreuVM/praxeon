@@ -403,32 +403,45 @@ A partir de la especificación técnica post-v1.0, PRAXEON incorpora el módulo 
 
 > [!IMPORTANT]
 > **Invariante Axiomático de Separación de Autoridad (I1 - I4):**  
-> El `ContextManager` se sitúa estrictamente **antes** del evaluador semántico o LLM. Un *cache hit* es un evento puramente de optimización de datos: **NUNCA** equivale a un veredicto `ALLOW`, **NUNCA** emite una `Capability` criptográfica firmada con HMAC y **NUNCA** despacha ejecución física en [`SecureExecutor`](file:///c:/Users/adria/.gemini/antigravity-ide/scratch/jev-llm/jev-reasoning-navigator/praxeon/runtime/executor.py). Modificar o revocar una evidencia invalida de inmediato todos los snapshots asociados; el *rollback* del DAG descarta cualquier contexto del linaje podado.
+> El `ContextManager` se sitúa estrictamente **antes** del evaluador semántico o LLM. Un *cache hit* es un evento puramente de optimización de datos: **NUNCA** equivale a un veredicto `ALLOW`, **NUNCA** emite una `Capability` criptográfica firmada con HMAC y **NUNCA** despacha ejecución física en [`SecureExecutor`](praxeon/runtime/executor.py). Modificar o revocar una evidencia invalida de inmediato todos los snapshots asociados; el *rollback* del DAG descarta cualquier contexto del linaje podado.
 >
 > **Separación Metodológica:** La reducción de tokens mide la eficiencia computacional y económica de entrada al modelo; no constituye evidencia de corrección de seguridad ni altera las compuertas deterministas de `PolicyEngine`.
 
 ### B. Evidencia Empírica: Benchmark Científico Formal (Sección 16)
-Evaluación multi-modo comparando **A) Full Context**, **B) Truncamiento Heurístico Fijo**, **C) Cached Relevant DAG** y **D) Cached Relevant + Summarized** (resultados observados sobre la carga de trabajo de ingeniería de software evaluada, no como propiedades universales del modelo):
+Evaluación multi-modo comparando **A) Full Context**, **B) Truncamiento Heurístico Fijo**, **C) Cached Relevant DAG** y **D) Cached Relevant + Summarized** (resultados observados sobre la carga de trabajo sintética reproducible con semilla 42, no como propiedades universales del modelo):
 
 | Misión | Modo Evaluado | Tokens Totales | Tokens Ahorrados | CRR (*Reducción*) | CHR (*Hit Rate*) | DP (*Preservación*) | Latencia Build | Coste ($2.5/M tok) |
 |---|---|---|---|---|---|---|---|---|
 | **5 pasos** (14 llamadas) | **A_FULL** | 3.918 | 0 | 0.0% (base) | 0.0% | 100.0% | 0.09 ms | $0.00979 |
 | | **B_TRUNCATED** | 3.998 | 0 | 0.0% | 0.0% | 100.0% | 0.08 ms | $0.01000 |
-| | **C_CACHED_RELEVANT** | 4.844 | 0 | 0.0% | **64.3%** | 100.0% | 0.38 ms | $0.01211 |
+| | **C_CACHED_RELEVANT** | 4.844 | 0 | 0.0% | **64.3%** | 100.0% | 0.31 ms | $0.01211 |
 | | **D_CACHED_SUMMARIZED** | 4.144 | 0 | 0.0% | **64.3%** | 100.0% | 0.28 ms | $0.01036 |
 | **15 pasos** (44 llamadas) | **A_FULL** | 31.314 | 0 | 0.0% (base) | 0.0% | 100.0% | 0.11 ms | $0.07829 |
 | | **B_TRUNCATED** | 29.708 | 1.606 | 5.1% | 0.0% | 100.0% | 0.11 ms | $0.07427 |
-| | **C_CACHED_RELEVANT** | 34.758 | 0 | 0.0% | **65.9%** | 100.0% | 0.45 ms | $0.08690 |
-| | **D_CACHED_SUMMARIZED** | 22.206 | 9.108 | **29.1%** | **65.9%** | 100.0% | 0.37 ms | $0.05552 |
+| | **C_CACHED_RELEVANT** | 34.758 | 0 | 0.0% | **65.9%** | 100.0% | 0.42 ms | $0.08690 |
+| | **D_CACHED_SUMMARIZED** | 22.206 | 9.108 | **29.1%** | **65.9%** | 100.0% | 0.38 ms | $0.05552 |
 | **30 pasos** (84 llamadas) | **A_FULL** | 123.440 | 0 | 0.0% (base) | 0.0% | 100.0% | 0.15 ms | $0.30860 |
 | | **B_TRUNCATED** | 76.258 | 47.182 | 38.2% | 0.0% | 100.0% | 0.13 ms | $0.19065 |
-| | **C_CACHED_RELEVANT** | 89.154 | 34.286 | 27.8% | **66.7%** | 100.0% | 0.52 ms | $0.22289 |
+| | **C_CACHED_RELEVANT** | 89.154 | 34.286 | 27.8% | **66.7%** | 100.0% | 0.48 ms | $0.22289 |
 | | **D_CACHED_SUMMARIZED** | **51.616** | **71.824** | **58.2%** | **66.7%** | **100.0%** | **0.44 ms** | **$0.12904** |
 
-- **58.2% de reducción de tokens (CRR):** En 30 pasos, el Modo D ahorra 71.824 tokens sin degradar información crítica.
-- **66.7% Cache Hit Rate (CHR):** Reutilización eficiente de prefijos estables de sesión y evaluación dual agente-supervisor.
-- **100.0% Decision Preservation (DP):** Concordancia perfecta de veredictos de políticas frente al baseline sin pérdida de grounding empírico.
-- Ejecutar benchmark reproducible con metadatos: `python scripts/run_context_benchmark.py --steps 5 15 30`
+### C. Benchmark de Presión de Memoria y Desalojo LRU (CHG-13)
+Evaluación formal bajo contención severa de caché (10 sesiones concurrentes, cuota acotada de 20 snapshots y política de desalojo determinista):
+
+| Métrica Operacional | Media (AVG) | p50 | p95 |
+|---|---|---|---|
+| **Cold Start** (*Miss inicial de construcción*) | 0.191 ms | 0.165 ms | 0.302 ms |
+| **Warm Hit** (*Reutilización en caché caliente*) | 0.103 ms | 0.091 ms | 0.153 ms |
+| **Rebuild post-Desalojo** (*Reconstrucción tras desalojo LRU*) | 0.314 ms | 0.314 ms | 0.339 ms |
+
+- **Factor de Aceleración en Caliente (Warm Speedup):** **1.85x** frente a cold build.
+- **Tasa de Contención y Desalojo Controlado:** 169 snapshots y 14 fragmentos desalojados bajo cuota sin fugas de memoria.
+- **Reproducibilidad Total con Artefactos JSON:**
+  ```bash
+  python scripts/run_context_benchmark.py --seed 42 --steps 5 15 30 --output benchmark_results/context_caching_evaluation.json
+  python scripts/benchmark_cache_pressure.py --seed 42 --output benchmark_results/context_cache_pressure_evaluation.json
+  ```
+
 
 ---
 

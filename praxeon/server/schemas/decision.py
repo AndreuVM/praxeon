@@ -1,8 +1,9 @@
 """Esquemas de respuesta y confirmación de decisiones para PRAXEON 1.0 (Sección 3.3 y 6.3)."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, ConfigDict, Field
+
 
 
 class ProviderEvaluationDTO(BaseModel):
@@ -10,8 +11,9 @@ class ProviderEvaluationDTO(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     name: str
-    score: float
-    verdict: str  # ALLOW, REVIEW, BLOCK
+    score: Optional[float] = None
+    verdict: str  # ALLOW, REVIEW, BLOCK, UNAVAILABLE
+    available: bool = True
 
 
 class RiskDTO(BaseModel):
@@ -100,7 +102,8 @@ class ConfirmDecisionResponse(BaseModel):
     operator_id: Optional[str] = None
     role: Optional[str] = None
     capability: Optional[Dict[str, Any]] = None
-    confirmed_at: datetime = Field(default_factory=datetime.utcnow)
+    confirmed_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
 
 
 class ExecuteDecisionRequest(BaseModel):

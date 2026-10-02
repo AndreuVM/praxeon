@@ -1,4 +1,5 @@
-"""Modelos Pydantic v2 y parsers de trazas para JEV-Reasoning-Navigator."""
+"""Modelos Pydantic v2 y parsers de trazas para PRAXEON."""
+
 
 from .schema import (
     StepType,

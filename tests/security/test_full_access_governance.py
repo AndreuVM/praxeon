@@ -109,3 +109,41 @@ def test_production_profile_fails_fast_on_insecure_secret(tmp_path, monkeypatch)
     with pytest.raises(ValueError) as exc_info:
         RuntimeApplicationService(db_dir=str(tmp_path / "prod_insecure_cache"))
     assert "no use claves por defecto" in str(exc_info.value)
+
+
+def test_chg_02_full_access_autonomous_without_explicit_operator_authorization_retains_confirmation(clean_runtime):
+    """CHG-02: create_session ya no infiere autorización por created_by=='system'.
+    Una acción con efecto mutante o confirmación retiene REVIEW si full_access_authorized_by_operator no es True."""
+    # Sesión autónoma pero sin autorización explícita de operador
+    session = clean_runtime.create_session(
+        goal="Sesión desatendida sin autorización de operador",
+        session_id="fa_unauthorized_unattended",
+        execution_mode="full_access",
+        metadata={"autonomous": True, "allow_unattended_execution": True},
+    )
+
+    # Acción que requiere confirmación (ej. git push)
+    proposal = ProposeActionRequest(
+        tool="git",
+        arguments={"command": "push origin main"},
+        thought_rationale="Intento de push desatendido sin autorización explícita",
+    )
+    resp = clean_runtime.propose_action(session_id="fa_unauthorized_unattended", proposal=proposal)
+    assert resp.status == "REVIEW"
+    assert resp.policy.requires_confirmation is True
+
+    # Sesión autónoma CON autorización explícita de operador
+    session_auth = clean_runtime.create_session(
+        goal="Sesión desatendida con autorización explícita de operador",
+        session_id="fa_authorized_unattended",
+        execution_mode="full_access",
+        metadata={
+            "autonomous": True,
+            "allow_unattended_execution": True,
+            "full_access_authorized_by_operator": True,
+        },
+    )
+    resp_auth = clean_runtime.propose_action(session_id="fa_authorized_unattended", proposal=proposal)
+    assert resp_auth.status == "ALLOW"
+    assert resp_auth.policy.requires_confirmation is False
+

@@ -3,7 +3,7 @@
 Mantiene el estado completo, auditable y serializable con hash determinista.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Set
 from pydantic import BaseModel, ConfigDict, Field
 from praxeon.domain.models import (
@@ -24,7 +24,8 @@ class StepRecord(BaseModel):
     action: ActionCandidate
     decision: PolicyDecision
     observation: Optional[str] = None
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
 
 
 class SessionState(BaseModel):

@@ -56,7 +56,7 @@ class CommandClassifier:
         r"\bdel\b.*(/[fqs]|\s-[fqs])",
         r"\bformat\s+[a-z]:",
         r"\bdiskpart\b",
-        r"\bdrop\s+(table|database|schema)\b",
+        r"\bdrop[_\s]+(all[_\s]+)?(table|tables|database|schema)(\b|_)",
         r"\btruncate\s+table\b",
         r"\bkill\s+-9\b",
         r"\bshutdown\b",

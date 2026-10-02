@@ -18,7 +18,7 @@ class RiskEngine:
         r"\brmdir\b.*(/[sq]|\s-[sq])",
         r"\bdel\b.*(/[fqs]|\s-[fqs])",
         r"\bformat\s+[a-z]:",
-        r"\bdrop\s+(table|database|schema)\b",
+        r"\bdrop[_\s]+(all[_\s]+)?(table|tables|database|schema)(\b|_)",
         r"\bkill\s+-9\b",
         r"\bshutdown\b",
         r"\bchmod\b.*\b777\b",
@@ -68,7 +68,29 @@ class RiskEngine:
         # 1. Obtener evaluación base del registro
         base_assessment = self.registry.assess_risk(tool_name)
         if not self.registry.is_known(tool_name):
+            # CHG-01: Contextual assessment for unregistered tools
+            cmd = str(args.get("command") or args.get("cmd") or args.get("raw") or "").strip()
+            check_text = f"{tool_name} {cmd}".strip().lower()
+            for pattern in self.DESTRUCTIVE_SHELL_PATTERNS:
+                if re.search(pattern, check_text):
+                    return RiskAssessment(
+                        level=RiskLevel.CRITICAL,
+                        requires_confirmation=True,
+                        executable=False,
+                        reasons=[f"Herramienta no registrada con patrón destructivo: '{pattern}'"],
+                    )
+            path = str(args.get("path") or args.get("file") or "").strip().lower()
+            if path:
+                for pattern in self.PROTECTED_FILE_PATTERNS:
+                    if re.search(pattern, path):
+                        return RiskAssessment(
+                            level=RiskLevel.CRITICAL,
+                            requires_confirmation=True,
+                            executable=False,
+                            reasons=[f"Herramienta no registrada sobre archivo sensible: '{path}'"],
+                        )
             return base_assessment
+
 
         reasons = list(base_assessment.reasons)
         current_level = base_assessment.level

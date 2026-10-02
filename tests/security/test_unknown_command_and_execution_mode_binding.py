@@ -61,14 +61,23 @@ def test_chg_09_unknown_tool_rejection_e2e_local_restricted(clean_runtime):
         proposal=proposal,
     )
 
-    # 1. PolicyEngine debe emitir BLOCK determinista por UNKNOWN_TOOL_NOT_REGISTERED
-    assert resp.status == "BLOCK"
-    assert resp.policy.decision == "BLOCK"
+    # 1. Conforme a CHG-01, una herramienta desconocida no destructiva emite REVIEW (incertidumbre)
+    # y exige confirmación obligatoria, sin emitir capability
+    assert resp.status == "REVIEW"
+    assert resp.policy.decision == "REQUIRE_HUMAN_CONFIRMATION"
     assert "UNKNOWN_TOOL_NOT_REGISTERED" in resp.policy.reason_codes
-    assert resp.policy.requires_confirmation is False
-
-    # 2. El pipeline formal no debe emitir capability ejecutable para herramientas bloqueadas
+    assert resp.policy.requires_confirmation is True
     assert resp.capability is None
+
+    # 2. El operador evalúa y RECHAZA formalmente la decisión
+    reject_res = clean_runtime.confirm_decision(
+        decision_id=resp.decision_id,
+        approved=False,
+        reason="Herramienta no autorizada rechazada explícitamente por el operador",
+    )
+    assert reject_res.status == "BLOCKED"
+    assert reject_res.capability is None
+
 
     # 3. El recibo durable de auditoría almacenado debe reflejar estatus BLOCK
     decision_record = clean_runtime._decisions.get(resp.decision_id) or clean_runtime.decision_repository.get(resp.decision_id)
@@ -100,7 +109,8 @@ def test_chg_09_unknown_tool_rejection_e2e_local_restricted(clean_runtime):
 
 
 def test_chg_09_unknown_tool_rejection_e2e_full_access(clean_runtime):
-    """CHG-09: En FULL_ACCESS (incluso autónomo), herramientas desconocidas se bloquean invariablemente."""
+    """CHG-09 / CHG-02: En FULL_ACCESS (incluso autónomo), herramientas no catalogadas nunca se auto-aprueban;
+    retienen obligatoriamente confirmación interactiva humana (REVIEW), y comandos destructivos son BLOCK."""
     session = clean_runtime.create_session(
         goal="Validación de Full Access contra herramientas no registradas",
         session_id="test_unknown_fa_sess",
@@ -108,22 +118,35 @@ def test_chg_09_unknown_tool_rejection_e2e_full_access(clean_runtime):
         metadata={"autonomous": True, "allow_unattended_execution": True},
     )
 
-    proposal = ProposeActionRequest(
-        tool="host_backdoor_tool",
-        operation="inject",
-        arguments={"payload": "malicious"},
+    # A: Herramienta desconocida no destructiva -> retiene REVIEW, nunca ALLOW
+    proposal_innocuous = ProposeActionRequest(
+        tool="unregistered_custom_script",
+        operation="run",
+        arguments={"path": "custom.py"},
         thought_rationale="Intento en full_access",
     )
-
-    resp = clean_runtime.propose_action(
+    resp_innocuous = clean_runtime.propose_action(
         session_id="test_unknown_fa_sess",
-        proposal=proposal,
+        proposal=proposal_innocuous,
     )
+    assert resp_innocuous.status == "REVIEW"
+    assert resp_innocuous.policy.requires_confirmation is True
+    assert "UNKNOWN_TOOL_NOT_REGISTERED" in resp_innocuous.policy.reason_codes
+    assert resp_innocuous.capability is None
 
-    # Invariante: Ningún modo relaja el bloqueo de herramientas no registradas
-    assert resp.status == "BLOCK"
-    assert resp.policy.decision == "BLOCK"
-    assert "UNKNOWN_TOOL_NOT_REGISTERED" in resp.policy.reason_codes
+    # B: Herramienta desconocida con comando destructivo -> BLOCK incondicional
+    proposal_destructive = ProposeActionRequest(
+        tool="unregistered_wiper",
+        arguments={"command": "rm -rf / --no-preserve-root"},
+        thought_rationale="Intento destructivo en full_access",
+    )
+    resp_destructive = clean_runtime.propose_action(
+        session_id="test_unknown_fa_sess",
+        proposal=proposal_destructive,
+    )
+    assert resp_destructive.status == "BLOCK"
+    assert resp_destructive.capability is None
+
 
 
 def test_chg_09_secure_executor_barrier_blocks_even_if_allow_forged():

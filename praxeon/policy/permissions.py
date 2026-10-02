@@ -1,6 +1,6 @@
 """Reglas de permisos, confirmaciones y gobierno de ejecución (policy/permissions.py)."""
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Set
 from pydantic import BaseModel, ConfigDict, Field
 from praxeon.domain.models import ActionCandidate, DecisionStatus, PolicyDecision, RiskAssessment, RiskLevel
@@ -14,7 +14,7 @@ class HumanApprovalTicket(BaseModel):
     action_id: str
     action_hash: str
     approver_id: str = "operator"
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     expires_at: Optional[datetime] = None
     reason: Optional[str] = None
     signature: Optional[str] = None
@@ -23,8 +23,14 @@ class HumanApprovalTicket(BaseModel):
         """Comprueba si el ticket ha superado su ventana temporal de validez."""
         if self.expires_at is None:
             return False
-        current_time = now or datetime.utcnow()
-        return current_time > self.expires_at
+        current_time = now or datetime.now(timezone.utc)
+        exp = self.expires_at
+        if exp.tzinfo is None and current_time.tzinfo is not None:
+            exp = exp.replace(tzinfo=timezone.utc)
+        elif exp.tzinfo is not None and current_time.tzinfo is None:
+            current_time = current_time.replace(tzinfo=timezone.utc)
+        return current_time > exp
+
 
 
 class PermissionManager:
@@ -78,8 +84,9 @@ class PermissionManager:
         reason: Optional[str] = None,
     ) -> HumanApprovalTicket:
         """Marca una acción como confirmada explícitamente emitiendo un ticket auditable."""
-        expires_at = datetime.utcnow() + timedelta(seconds=ttl_seconds) if ttl_seconds else None
+        expires_at = datetime.now(timezone.utc) + timedelta(seconds=ttl_seconds) if ttl_seconds else None
         ticket = HumanApprovalTicket(
+
             action_id=action_id,
             action_hash=action_hash or "*",
             approver_id=approver_id,

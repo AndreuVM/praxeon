@@ -61,21 +61,40 @@ def test_context_fragments_creation_and_hashing():
 # =========================================================================
 
 def test_context_fingerprint_determinism_and_dependencies():
-    """Verifica que ContextFingerprint sea idéntico para dependencias idénticas y mute ante cualquier cambio."""
+    """Verifica que ContextFingerprint sea idéntico para dependencias idénticas y mute ante cualquier cambio o inversión de orden."""
     fp1 = ContextFingerprint.generate(
         session_id="sess_1",
         goal_hash="goal_h1",
         relevant_node_ids=["node_1", "node_2"],
         fragment_hashes=["h_a", "h_b"],
     )
-    fp2 = ContextFingerprint.generate(
+    fp1_duplicate = ContextFingerprint.generate(
         session_id="sess_1",
         goal_hash="goal_h1",
-        relevant_node_ids=["node_2", "node_1"],  # Mismos nodos en distinto orden
-        fragment_hashes=["h_b", "h_a"],          # Mismos hashes en distinto orden
+        relevant_node_ids=["node_1", "node_2"],
+        fragment_hashes=["h_a", "h_b"],
     )
-    assert fp1.value == fp2.value
-    assert fp1 == fp2
+    # A -> A debe ser idéntico
+    assert fp1.value == fp1_duplicate.value
+    assert fp1 == fp1_duplicate
+
+    # BUG-01: A -> B con fragmentos en orden invertido DEBE producir huellas distintas
+    fp_inverted = ContextFingerprint.generate(
+        session_id="sess_1",
+        goal_hash="goal_h1",
+        relevant_node_ids=["node_1", "node_2"],
+        fragment_hashes=["h_b", "h_a"],  # Orden invertido
+    )
+    assert fp1.value != fp_inverted.value
+
+    # BUG-01: Nodos en orden invertido también deben producir huellas distintas si el orden de linaje difiere
+    fp_nodes_inverted = ContextFingerprint.generate(
+        session_id="sess_1",
+        goal_hash="goal_h1",
+        relevant_node_ids=["node_2", "node_1"],
+        fragment_hashes=["h_a", "h_b"],
+    )
+    assert fp1.value != fp_nodes_inverted.value
 
     # Cambio en objetivo
     fp_diff_goal = ContextFingerprint.generate(
@@ -94,6 +113,39 @@ def test_context_fingerprint_determinism_and_dependencies():
         fragment_hashes=["h_a", "h_c"],
     )
     assert fp1.value != fp_diff_frags.value
+
+
+def test_bug_01_state_observation_order_inversion_causes_cache_miss():
+    """BUG-01: Dos estados con observaciones en orden invertido no deben colisionar en caché."""
+    manager = ContextManager()
+
+    goal = Goal(objective="Probar sensibilidad al orden")
+    state_a = SessionState(session_id="sess_order_a", goal=goal)
+    state_b = SessionState(session_id="sess_order_b", goal=goal)
+
+    act1 = ActionCandidate(id="act1", description="Paso 1", tool_call=ToolCall(tool_name="read_file", arguments={"path": "a.txt"}))
+    act2 = ActionCandidate(id="act2", description="Paso 2", tool_call=ToolCall(tool_name="read_file", arguments={"path": "b.txt"}))
+
+    # Estado A: Obs 1 luego Obs 2
+    state_a.add_step(action=act1, decision=PolicyDecision(status=DecisionStatus.ALLOW), observation="Primera observación de compilación")
+    state_a.add_step(action=act2, decision=PolicyDecision(status=DecisionStatus.ALLOW), observation="Segunda observación de despliegue")
+
+    # Estado B: Obs 2 luego Obs 1
+    state_b.add_step(action=act2, decision=PolicyDecision(status=DecisionStatus.ALLOW), observation="Segunda observación de despliegue")
+    state_b.add_step(action=act1, decision=PolicyDecision(status=DecisionStatus.ALLOW), observation="Primera observación de compilación")
+
+    cand = ActionCandidate(id="cand_eval", description="Evaluar siguiente acción", tool_call=ToolCall(tool_name="read_file", arguments={"path": "status.txt"}))
+
+    snap_a, hit_a = manager.build(state_a, cand)
+    assert hit_a is False
+    assert snap_a.fingerprint != ""
+
+    # Estado B debe ser miss y generar un fingerprint distinto a pesar de tener exactamente los mismos fragmentos en orden invertido
+    snap_b, hit_b = manager.build(state_b, cand)
+    assert hit_b is False
+    assert snap_a.fingerprint != snap_b.fingerprint
+    # Comprobar que el prompt refleje el orden real
+    assert snap_a.formatted_prompt != snap_b.formatted_prompt
 
 
 # =========================================================================

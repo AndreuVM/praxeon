@@ -111,11 +111,12 @@ def test_policy_blocks_forbidden_tool():
 
 
 def test_policy_blocks_unregistered_unknown_tool():
-    """Verifica que invocar una herramienta no registrada sea bloqueada (BLOCK) por seguridad."""
+    """CHG-01: Verifica que invocar una herramienta no registrada inocua emita ABSTAIN (requiriendo revisión)
+    en vez de BLOCK ciego, y que una destructiva sí sea bloqueada (BLOCK)."""
     engine = PolicyEngine()
     action = ActionCandidate(
         id="act_5",
-        description="Invocar plugin no autorizado",
+        description="Invocar plugin no autorizado inocuo",
         tool_call=ToolCall(tool_name="unknown_arbitrary_shell", arguments={}),
     )
 
@@ -124,8 +125,21 @@ def test_policy_blocks_unregistered_unknown_tool():
         state={},
     )
 
-    assert decision.status == DecisionStatus.BLOCK
+    # Inocuo desconocido -> ABSTAIN con confirmación requerida
+    assert decision.status == DecisionStatus.ABSTAIN
+    assert decision.requires_confirmation is True
     assert "UNKNOWN_TOOL_NOT_REGISTERED" in decision.reason_codes
+
+    # Desconocido con patrón destructivo -> BLOCK incondicional
+    action_destructive = ActionCandidate(
+        id="act_5_dest",
+        description="Invocar comando destructivo no registrado",
+        tool_call=ToolCall(tool_name="unknown_tool", arguments={"command": "rm -rf / --no-preserve-root"}),
+    )
+    dec_dest, _ = engine.evaluate_action(action=action_destructive, state={})
+    assert dec_dest.status == DecisionStatus.BLOCK
+    assert "DESTRUCTIVE_COMMAND_BLOCK" in dec_dest.reason_codes
+
 
 
 def test_policy_failsafe_blocks_destructive_tool_on_provider_down():

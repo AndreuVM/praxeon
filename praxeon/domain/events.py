@@ -5,11 +5,12 @@ Define los 15 tipos canónicos de evento, el contrato de payload estructurado,
 y la secuencia monótona por sesión para streaming y replay determinista.
 """
 
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional
 import uuid
 from pydantic import BaseModel, ConfigDict, Field
+
 
 
 def serialize_payload_value(val: Any) -> Any:
@@ -65,7 +66,7 @@ class RuntimeEvent(BaseModel):
     session_id: str
     sequence: int  # Secuencia monótona estrictamente creciente por sesión: 1, 2, 3...
     type: EventType
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     node_id: Optional[str] = None
     parent_id: Optional[str] = None
     decision_id: Optional[str] = None
@@ -107,9 +108,10 @@ def make_event(
         session_id=session_id,
         sequence=sequence,
         type=event_type,
-        timestamp=timestamp or datetime.utcnow(),
+        timestamp=timestamp or datetime.now(timezone.utc),
         node_id=node_id,
         parent_id=parent_id,
         decision_id=decision_id,
         payload=payload or {},
     )
+

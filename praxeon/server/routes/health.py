@@ -1,8 +1,9 @@
 """Ruta de comprobación de salud del Web Server (praxeon/server/routes/health.py)."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 import time
 from typing import Any, Dict, Optional
+
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from praxeon.server.dependencies import (
@@ -35,8 +36,9 @@ def healthcheck(
         "active_provider": service.config.provider.name,
         "default_workspace": get_default_workspace_root(),
         "environment": "local_development",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }
+
     return APIResponse(data=data)
 
 

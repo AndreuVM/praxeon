@@ -221,3 +221,42 @@ def test_premature_finish_without_observations_is_rejected_as_replan():
     resp = service.propose_action(session_id=sid, proposal=req_premature)
     assert resp.status == "REPLAN"
     assert "PREMATURE_COMPLETION_WITHOUT_EVIDENCE" in resp.policy.reason_codes
+
+
+def test_chg_01_unknown_innocuous_tool_requires_confirmation_review_and_executes_upon_approval():
+    """CHG-01: Verifica que una herramienta desconocida no destructiva reciba REVIEW (requires_confirmation)
+    en vez de un BLOCK ciego, y al ser confirmada por el operador emita ALLOW con capability token."""
+    service = RuntimeApplicationService(
+        state_store=InMemoryStateStore(),
+        event_bus=EventBus(),
+    )
+    sid = "sess_unknown_innocuous_tool"
+    service.create_session(
+        goal="Exploración de datos con herramienta personalizada",
+        session_id=sid,
+        execution_mode="local_restricted",
+    )
+
+    req = ProposeActionRequest(
+        tool="custom_domain_analyzer",
+        arguments={"input_path": "data/metrics.csv"},
+        thought_rationale="Ejecutar analizador de dominio no registrado en catálogo estándar",
+    )
+    resp = service.propose_action(session_id=sid, proposal=req)
+
+    # Debe ser REVIEW con requires_confirmation=True, no BLOCK
+    assert resp.status == "REVIEW"
+    assert resp.policy.requires_confirmation is True
+    assert any("UNKNOWN_TOOL" in code for code in resp.policy.reason_codes)
+    assert resp.capability is None
+
+    # El operador autoriza la decisión
+    conf_resp = service.confirm_decision(
+        decision_id=resp.decision_id,
+        approved=True,
+        actor="human_operator",
+    )
+    assert conf_resp.status == "ALLOW"
+    assert conf_resp.capability is not None
+
+

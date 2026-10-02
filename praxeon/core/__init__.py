@@ -1,4 +1,5 @@
-"""Módulos del núcleo del motor JEV-Reasoning-Navigator."""
+"""Módulos del núcleo del motor PRAXEON."""
+
 
 from .state_graph import StateGraph
 from .typesafe_client import TypeSafeJEVClient

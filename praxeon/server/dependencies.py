@@ -6,8 +6,9 @@ paralelas. Toda operación pasa por el pipeline canónico del runtime:
 Proposal -> Evidence -> Risk -> Provider -> Policy -> Capability -> Execution
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import hashlib
+
 import hmac
 import json
 import logging
@@ -162,9 +163,10 @@ class RuntimeApplicationService:
     ) -> Dict[str, Any]:
         """Crea formalmente una nueva sesión de supervisión y persiste su estado génesis."""
         sid = session_id or f"s-{uuid.uuid4().hex[:8]}"
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         meta = dict(metadata or {})
+
         mode_val = meta.get("execution_mode") or execution_mode
         meta["execution_mode"] = mode_val
         is_autonomous = bool(meta.get("allow_unattended_execution") or meta.get("autonomous") or False)
@@ -175,11 +177,10 @@ class RuntimeApplicationService:
         meta["working_directory"] = effective_ws
         meta["network_mode"] = "host" if mode_val == "full_access" else "isolated"
         meta["created_by"] = meta.get("created_by", "system")
-        if "full_access_authorized_by_operator" not in meta:
-            if meta.get("created_by") == "system":
-                meta["full_access_authorized_by_operator"] = is_autonomous
-            else:
-                meta["full_access_authorized_by_operator"] = False
+        # CHG-02: Eliminar inferencia automática de created_by == 'system'.
+        # full_access_authorized_by_operator solo debe ser True si viene explícitamente autorizado por el operador.
+        meta["full_access_authorized_by_operator"] = bool(meta.get("full_access_authorized_by_operator", False))
+
 
         state = SessionState(session_id=sid, goal=Goal(objective=goal), metadata=meta)
         self.state_store.save_state(state)
@@ -238,9 +239,10 @@ class RuntimeApplicationService:
             "agent_name": "CodingAgent",
             "status": "Active",
             "execution_mode": mode_val,
-            "created_at": datetime.utcnow(),
-            "updated_at": datetime.utcnow(),
+            "created_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc),
             "metadata": state.metadata,
+
         }
         with self._lock:
             self._sessions_meta[session_id] = meta
@@ -386,9 +388,10 @@ class RuntimeApplicationService:
 
         action_id = proposal.action_id or f"act_{len(state.steps) + 1}"
         decision_id = f"d_{uuid.uuid4().hex[:6]}"
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         action = ActionCandidate(
+
             id=action_id,
             description=proposal.thought_rationale or f"{proposal.tool} {proposal.operation or ''}".strip(),
             tool_call=ToolCall(tool_name=proposal.tool, arguments=proposal.arguments),
@@ -541,11 +544,12 @@ class RuntimeApplicationService:
         assessments = self.provider.evaluate(state, [action])
         assessment = assessments[0] if assessments else ProviderAssessment(
             provider=self.config.provider.name,
-            available=True,
-            confidence=0.88,
-            loop_probability=0.05,
-            grounded_probability=grounding_score,
-            progress_probability=0.85,
+            available=False,
+            confidence=0.0,
+            loop_probability=None,
+            grounded_probability=None,
+            progress_probability=None,
+            reason_codes=["PROVIDER_NO_EVALUATION"],
         )
         if is_missing_resource or is_premature_finish:
             current_reasons = list(assessment.reason_codes or [])
@@ -560,11 +564,28 @@ class RuntimeApplicationService:
                 }
             )
 
+        prov_avail = bool(getattr(assessment, "available", True))
+        raw_prob = getattr(assessment, "progress_probability", None)
+        score_val = (
+            round(float(raw_prob), 2)
+            if (raw_prob is not None and isinstance(raw_prob, (int, float)))
+            else None
+        )
+
+        loop_prob = getattr(assessment, "loop_probability", None)
+        if not prov_avail:
+            verdict_val = "UNAVAILABLE"
+        elif loop_prob is not None and loop_prob >= 0.5:
+            verdict_val = "REVIEW"
+        else:
+            verdict_val = "ALLOW"
+
         provider_dtos = [
             ProviderEvaluationDTO(
                 name="LAYA" if self.config.provider.name.lower() == "laya" else "TypeSafe",
-                score=round(assessment.progress_probability, 2),
-                verdict="ALLOW" if assessment.loop_probability < 0.5 else "REVIEW",
+                score=score_val,
+                verdict=verdict_val,
+                available=prov_avail,
             )
         ]
         self.event_bus.emit(
@@ -576,6 +597,7 @@ class RuntimeApplicationService:
                 "provider_name": provider_dtos[0].name,
                 "score": provider_dtos[0].score,
                 "verdict": provider_dtos[0].verdict,
+                "available": provider_dtos[0].available,
             },
         )
 
@@ -624,7 +646,8 @@ class RuntimeApplicationService:
             policy_decision_str = "REPLAN"
             requires_conf = False
         elif requires_conf:
-            if mode_val == "full_access" and is_autonomous and full_access_authorized:
+            is_unregistered = bool(action.tool_call and not self.registry.is_known(action.tool_call.tool_name))
+            if mode_val == "full_access" and is_autonomous and full_access_authorized and not is_unregistered:
                 # FULL_ACCESS + AUTONOMOUS: Requiere flag explícito con advertencia auditada Y autorización previa verificada del operador
                 requires_conf = False
                 status_str = "ALLOW"
@@ -636,9 +659,10 @@ class RuntimeApplicationService:
                     action.tool_call.tool_name,
                 )
             else:
-                # FULL_ACCESS estándar u otros modos / autónomo no autorizado: retiene obligatoriamente la confirmación interactiva
+                # FULL_ACCESS estándar u otros modos / autónomo no autorizado / herramienta no registrada: retiene obligatoriamente la confirmación interactiva
                 status_str = "REVIEW"
                 policy_decision_str = "REQUIRE_HUMAN_CONFIRMATION"
+
         else:
             status_str = decision.status.value.upper()
             policy_decision_str = status_str
@@ -977,9 +1001,10 @@ class RuntimeApplicationService:
             if isinstance(created_at_val, datetime):
                 created_at_str = created_at_val.isoformat()
             else:
-                created_at_str = str(created_at_val or datetime.utcnow().isoformat())
+                created_at_str = str(created_at_val or datetime.now(timezone.utc).isoformat())
 
             # Proveedor principal
+
             providers = d.get("providers", [])
             provider_str = "PolicyEngine"
             if providers and len(providers) > 0:
@@ -1069,8 +1094,9 @@ class RuntimeApplicationService:
 
         session_id = record["session_id"]
         action: ActionCandidate = record["action"]
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         session_mode = record.get("execution_mode") or "local_restricted"
+
 
         if approved:
             new_status = "ALLOW"
@@ -1121,10 +1147,21 @@ class RuntimeApplicationService:
                 confirmed_at=now,
             )
         else:
+            receipt: DecisionReceipt = record["receipt"]
+            receipt_updated = receipt.model_copy(
+                update={
+                    "decision_status": DecisionStatus.BLOCK,
+                    "execution_mode": ExecutionMode(session_mode),
+                }
+            )
+            signed = sign_receipt(receipt_updated, self.policy_engine.secret_key)
             record["status"] = "BLOCKED"
+            record["receipt"] = signed
+            record["capability"] = None
             record["operator_id"] = effective_operator_id
             record["role"] = effective_role
             self.decision_repository.save(record)
+
 
             self.event_bus.emit(
                 session_id=session_id,
@@ -1226,8 +1263,12 @@ class RuntimeApplicationService:
             if exp:
                 try:
                     exp_dt = datetime.fromisoformat(exp) if isinstance(exp, str) else exp
-                    if exp_dt and datetime.utcnow() > exp_dt:
-                        raise PolicyViolation(f"Ejecución física DENEGADA: El capability token ha expirado (expiró en: {exp_dt.isoformat()}).")
+                    if exp_dt:
+                        now_utc = datetime.now(timezone.utc)
+                        if exp_dt.tzinfo is None:
+                            exp_dt = exp_dt.replace(tzinfo=timezone.utc)
+                        if now_utc > exp_dt:
+                            raise PolicyViolation(f"Ejecución física DENEGADA: El capability token ha expirado (expiró en: {exp_dt.isoformat()}).")
                 except PolicyViolation:
                     raise
                 except Exception:
@@ -1266,10 +1307,11 @@ class RuntimeApplicationService:
             )
             # Marcar recibo como ejecutado
             updated_receipt = receipt.model_copy(
-                update={"is_executed": True, "execution_timestamp": datetime.utcnow()}
+                update={"is_executed": True, "execution_timestamp": datetime.now(timezone.utc)}
             )
             record["receipt"] = updated_receipt
             self.decision_repository.save(record)
+
 
             # Actualizar observación en el estado de la sesión
             current_state = self.state_store.load_state(session_id)

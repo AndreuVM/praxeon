@@ -53,7 +53,11 @@ def test_full_access_auto_execution_policy():
         goal="Tarea en modo full access autónomo explícito",
         session_id=sid_auto,
         execution_mode="full_access",
-        metadata={"autonomous": True, "allow_unattended_execution": True},
+        metadata={
+            "autonomous": True,
+            "allow_unattended_execution": True,
+            "full_access_authorized_by_operator": True,
+        },
     )
     resp_auto = service.propose_action(session_id=sid_auto, proposal=req2)
     assert resp_auto.status == "ALLOW"

@@ -1,0 +1,67 @@
+{
+  "metadata": {
+    "benchmark_name": "PRAXEON Context Cache Pressure & Eviction Benchmark",
+    "praxeon_version": "1.0.0",
+    "timestamp": "2026-10-02T19:48:03.651153+00:00",
+    "dataset": "synthetic_multi_session_contention_v1",
+    "seed": 42,
+    "strategy_version": "dag_priority_v1",
+    "cache_limits": {
+      "max_entries": 20,
+      "max_entries_per_session": 5
+    },
+    "hardware_environment": {
+      "os": "Windows-10-10.0.26200-SP0",
+      "processor": "Intel64 Family 6 Model 183 Stepping 1, GenuineIntel",
+      "python_version": "3.11.15"
+    },
+    "aggregation_method": "stratified_percentiles_and_lru_contention",
+    "workload_scope_disclaimer": "NOTE: The eviction rate, speedup, and rebuild latencies reported herein are specific to this synthetic multi-session memory contention benchmark under constrained cache quotas. They demonstrate deterministic LRU behavior and bounded memory footprint, but should not be generalized as universal latency guarantees across heterogeneous hardware or unconstrained environments."
+  },
+  "benchmark_results": {
+    "configuration": {
+      "num_sessions": 10,
+      "steps_per_session": 8,
+      "cache_max_entries": 20,
+      "cache_per_session": 5,
+      "seed": 42
+    },
+    "latency_analysis": {
+      "cold_start_ms": {
+        "p50": 0.165,
+        "p95": 0.302,
+        "avg": 0.191,
+        "min": 0.142,
+        "max": 0.36
+      },
+      "warm_hit_ms": {
+        "p50": 0.091,
+        "p95": 0.153,
+        "avg": 0.103,
+        "min": 0.086,
+        "max": 0.18
+      },
+      "rebuild_after_eviction_ms": {
+        "p50": 0.314,
+        "p95": 0.339,
+        "avg": 0.314,
+        "min": 0.288,
+        "max": 0.345
+      },
+      "warm_speedup_factor": 1.85
+    },
+    "cache_pressure_metrics": {
+      "context_builds_total": 105,
+      "context_cache_hits_total": 11,
+      "context_prefix_hits_total": 1,
+      "context_cache_misses_total": 94,
+      "context_cache_hit_rate": 0.1048,
+      "context_rebuilds_total": 94,
+      "context_cache_evictions_total": 183,
+      "snapshot_evictions": 169,
+      "fragment_evictions": 14,
+      "active_cache_entries": 20,
+      "active_fragment_entries": 100
+    }
+  }
+}

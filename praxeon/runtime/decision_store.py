@@ -8,8 +8,9 @@ Garantiza:
 3. Reconstrucción determinista desde el log de eventos (EventStore) ante cache miss.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 import json
+
 import logging
 import os
 import sqlite3
@@ -151,8 +152,9 @@ class SqliteDecisionRepository:
             record.get("execution_mode")
             or getattr(record.get("receipt"), "execution_mode", ExecutionMode.LOCAL_RESTRICTED.value)
         )
-        created_at_dt = record.get("created_at") or datetime.utcnow()
+        created_at_dt = record.get("created_at") or datetime.now(timezone.utc)
         created_at_str = created_at_dt.isoformat() if isinstance(created_at_dt, datetime) else str(created_at_dt)
+
         data_json = _serialize_decision_record(record)
 
         with self._lock:
@@ -293,9 +295,11 @@ class SqliteDecisionRepository:
                 )
             elif ev.type == EventType.PROVIDER_EVALUATED:
                 name = p.get("provider_name", "LAYA")
-                score = float(p.get("score", 0.85))
+                raw_score = p.get("score")
+                score = float(raw_score) if (raw_score is not None and str(raw_score).strip() != "") else None
                 verdict = p.get("verdict", "ALLOW")
-                rec["providers"] = [ProviderEvaluationDTO(name=name, score=score, verdict=verdict)]
+                avail = bool(p.get("available", True))
+                rec["providers"] = [ProviderEvaluationDTO(name=name, score=score, verdict=verdict, available=avail)]
             elif ev.type == EventType.RISK_ASSESSED:
                 level = p.get("risk_level", "LOW")
                 score = float(p.get("risk_score", 0.1))

@@ -9,8 +9,9 @@ Proporciona:
 """
 
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 import json
+
 import os
 from pathlib import Path
 import sqlite3
@@ -195,9 +196,10 @@ class EventStore:
                     try:
                         ts = datetime.fromisoformat(ts_str)
                     except Exception:
-                        ts = datetime.utcnow()
+                        ts = datetime.now(timezone.utc)
 
                     results.append(
+
                         RuntimeEvent(
                             event_id=eid,
                             session_id=sid,

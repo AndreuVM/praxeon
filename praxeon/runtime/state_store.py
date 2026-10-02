@@ -141,8 +141,9 @@ class SqliteStateStore(StateStore, CheckpointStore):
             conn = self._get_connection()
             try:
                 raw_json = state.model_dump_json()
-                now = datetime.datetime.utcnow().isoformat()
+                now = datetime.datetime.now(datetime.timezone.utc).isoformat()
                 with conn:
+
                     conn.execute(
                         """
                         INSERT OR REPLACE INTO sessions (session_id, state_json, updated_at)
@@ -184,8 +185,9 @@ class SqliteStateStore(StateStore, CheckpointStore):
             try:
                 self._seq += 1
                 raw_json = checkpoint.model_dump_json()
-                now = datetime.datetime.utcnow().isoformat()
+                now = datetime.datetime.now(datetime.timezone.utc).isoformat()
                 with conn:
+
                     conn.execute(
                         """
                         INSERT OR REPLACE INTO checkpoints (id, session_id, sequence_num, checkpoint_json, created_at)

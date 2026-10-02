@@ -1,4 +1,5 @@
-"""Agente autónomo en vivo supervisado en tiempo real por JEV-Reasoning-Navigator con supervisión agrupada (chunking) y llamadas condicionales a Gemini."""
+"""Agente autónomo en vivo supervisado en tiempo real por PRAXEON con supervisión agrupada (chunking) y llamadas condicionales a Gemini."""
+
 
 import argparse
 import io

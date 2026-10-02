@@ -4,7 +4,7 @@ Permite restaurar el estado canónico anterior ante ramas degenerativas,
 invalidando descendientes y prohibiendo transiciones fallidas.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, ConfigDict, Field
@@ -20,7 +20,8 @@ class Checkpoint(BaseModel):
     state_hash: str
     reason: str
     snapshot_data: Dict[str, Any]
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
 
 
 class CheckpointManager:
@@ -96,8 +97,9 @@ class CheckpointManager:
 
         # 3. Registrar auditoría de rollback
         self.rollback_history.append({
-            "timestamp": datetime.utcnow(),
+            "timestamp": datetime.now(timezone.utc),
             "checkpoint_id": checkpoint_id,
+
             "target_step_index": checkpoint.step_index,
             "discarded_steps_count": len(current_state.steps) - checkpoint.step_index,
             "culprit_tool": culprit_tool,

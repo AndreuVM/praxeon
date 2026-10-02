@@ -36,15 +36,15 @@ class ContextFingerprint(BaseModel):
         context_strategy_version: str = "dag_priority_v1",
         model_context_profile: str = "default",
     ) -> "ContextFingerprint":
-        """Genera una huella SHA-256 canónica garantizando ordenamiento estricto."""
-        sorted_nodes = sorted(list(relevant_node_ids or []))
-        sorted_hashes = sorted(list(fragment_hashes or []))
+        """Genera una huella SHA-256 canónica preservando el orden semántico y posicional de los fragmentos (BUG-01)."""
+        ordered_nodes = list(relevant_node_ids or [])
+        ordered_hashes = list(fragment_hashes or [])
 
         raw_components = [
             f"session_id={session_id}",
             f"goal_hash={goal_hash}",
-            f"nodes={','.join(sorted_nodes)}",
-            f"fragments={','.join(sorted_hashes)}",
+            f"nodes={','.join(ordered_nodes)}",
+            f"fragments={','.join(ordered_hashes)}",
             f"policy_ver={policy_context_version}",
             f"strategy_ver={context_strategy_version}",
             f"model_profile={model_context_profile}",
@@ -56,8 +56,8 @@ class ContextFingerprint(BaseModel):
             value=computed_hash,
             session_id=session_id,
             goal_hash=goal_hash,
-            relevant_node_ids=sorted_nodes,
-            fragment_hashes=sorted_hashes,
+            relevant_node_ids=ordered_nodes,
+            fragment_hashes=ordered_hashes,
             policy_context_version=policy_context_version,
             context_strategy_version=context_strategy_version,
             model_context_profile=model_context_profile,

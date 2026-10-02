@@ -1,6 +1,6 @@
 """Entidades inmutables de Checkpoint atómico y entorno de ejecución recuperable."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Set
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -27,4 +27,5 @@ class Checkpoint(BaseModel):
     forbidden_tools: List[str] = Field(default_factory=list)
     environment: Optional[ExecutionEnvironment] = None
     reason: str = "Paso regular validado"
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+

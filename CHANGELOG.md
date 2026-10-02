@@ -37,12 +37,17 @@ Todas las modificaciones notables de este proyecto están documentadas en este a
   - **Reproducibilidad de Benchmarks (`REL-15`)**:
     - Metadatos estandarizados de ejecución (`git_commit`, `timestamp`, `praxeon_version`, `model`, `seed`) inyectados automáticamente en `benchmark_run_metadata.json` y cabeceras de `SUMMARY.md`.
     - Interfaz CLI completa en `scripts/run_benchmarks.py` con argumentos `--output-dir`, `--seed`, `--model` y `--quick`.
-- **Limpieza Arquitectural de Configuración**:
-  - Reemplazo y migración completa de `JEVConfig` a `PraxeonConfig` en todo el núcleo del runtime, servidor, CLI, dashboard, proxy interceptor y suite de pruebas.
-  - Alias retrocompatible de `JEVConfig` con `DeprecationWarning` controlado.
-  - Cero advertencias de obsolescencia activas en el runtime y aislamiento limpio de estados en pruebas.
+- **Remediaciones de Auditoría Técnica Formal (2 de octubre de 2026)**:
+  - **BUG-01 (Context Fingerprint)**: Eliminado ordenamiento artificial en cálculo de fingerprints de contexto en `praxeon/context/fingerprint.py`, preservando la sensibilidad al orden y posición de fragmentos de memoria y nodos relevantes.
+  - **BUG-02 (Robustez de Provider DTO)**: Corregido crash ante providers sin calibración o desconectados mediante campo opcional `score: Optional[float] = None` y `available: bool` en esquemas y repositorios de decisión.
+  - **CHG-01 (Semántica Unknown != Malicious)**: Herramientas no registradas inocuas se clasifican contextualmente y retienen en estado de revisión humana (`DecisionStatus.ABSTAIN` / `REVIEW` con `requires_confirmation=True`), reservando `BLOCK` determinista para comandos destructivos comprobados o veto de supervisor.
+  - **CHG-02 (Gobernanza Estricta de Full Access)**: Eliminada inferencia permisiva implícita de `created_by == 'system'`; las operaciones en modo autónomo requieren ahora autorización explícita y verificada del operador (`full_access_authorized_by_operator: True`).
+  - **CHG-03 (Independencia de Packaging)**: Desacopladas las pruebas de packaging de artefactos preexistentes en `dist/`, incorporando construcción bajo demanda o skip descriptivo.
+  - **BENCH-01 (Trazabilidad de Benchmarks de Caché)**: Ejecutados y versionados formalmente los benchmarks de caching y presión de contexto (`--seed 42`), generando `benchmark_results/context_caching_evaluation.json` y `benchmark_results/context_cache_pressure_evaluation.json`.
+  - **MAINT-01 (Modernización UTC)**: Migradas todas las llamadas deprecadas de `datetime.utcnow()` a `datetime.now(timezone.utc)` en la totalidad del paquete `praxeon/`.
+  - **DOC-02 / DOC-03 (Consistencia de Naming y Rutas)**: Limpieza definitiva de referencias a `JEV-Reasoning-Navigator` en headers CLI y sustitución de rutas absolutas Windows por enlaces relativos en `README.md`.
 - **Regresión Completa de la Suite**:
-  - 518 tests pasando (0 fallos, 1 omitido) en toda la suite `pytest tests/`.
+  - 543 tests pasando al 100% (544 recolectados: 543 passed, 1 skipped, 0 failed) en toda la suite `pytest tests/`.
 
 
 ## [0.4.0] — 2026-09-25

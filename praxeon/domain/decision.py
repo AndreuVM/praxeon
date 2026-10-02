@@ -1,6 +1,6 @@
 """Decisiones formales de política y recibos inmutables de auditoría (Cuadro 1)."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 import hashlib
 import hmac
@@ -10,6 +10,12 @@ import uuid
 from pydantic import BaseModel, ConfigDict, Field
 
 from praxeon.domain.assessment import CommandCategory, CommandRiskAssessment, ProviderAssessment, RiskAssessment
+
+
+def utc_now() -> datetime:
+    """Retorna el timestamp actual en UTC con timezone-awareness (Python 3.11+)."""
+    return datetime.now(timezone.utc)
+
 
 
 class ExecutionMode(str, Enum):
@@ -85,7 +91,7 @@ class DecisionReceipt(BaseModel):
     is_executed: bool = False
     observation_id: Optional[str] = None
     execution_timestamp: Optional[datetime] = None
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=utc_now)
 
     def __init__(self, **data: Any):
         # Compatibilidad: si se pasa 'status' o 'decision' en lugar de 'decision_status'
@@ -104,8 +110,13 @@ class DecisionReceipt(BaseModel):
         """Determina si el capability receipt ha superado su ventana temporal de validez."""
         if self.expires_at is None:
             return False
-        current_time = now or datetime.utcnow()
-        return current_time > self.expires_at
+        current_time = now or utc_now()
+        exp = self.expires_at
+        if exp.tzinfo is None and current_time.tzinfo is not None:
+            exp = exp.replace(tzinfo=timezone.utc)
+        elif exp.tzinfo is not None and current_time.tzinfo is None:
+            current_time = current_time.replace(tzinfo=timezone.utc)
+        return current_time > exp
 
     def to_capability_payload(self, allowed_tools: Optional[List[str]] = None) -> Optional["CapabilityPayload"]:
         """Convierte el recibo en un CapabilityPayload formal si el estatus es ALLOW; devuelve None si fue denegado/bloqueado."""
@@ -145,15 +156,21 @@ class CapabilityPayload(BaseModel):
     allowed_tools: List[str] = Field(default_factory=list)
     expires_at: Optional[datetime] = None
     signature: Optional[str] = None
-    issued_at: datetime = Field(default_factory=datetime.utcnow)
+    issued_at: datetime = Field(default_factory=utc_now)
     actor: Optional[str] = None
 
     def is_expired(self, now: Optional[datetime] = None) -> bool:
         """Determina si el capability ha superado su ventana temporal de validez."""
         if self.expires_at is None:
             return False
-        current_time = now or datetime.utcnow()
-        return current_time > self.expires_at
+        current_time = now or utc_now()
+        exp = self.expires_at
+        if exp.tzinfo is None and current_time.tzinfo is not None:
+            exp = exp.replace(tzinfo=timezone.utc)
+        elif exp.tzinfo is not None and current_time.tzinfo is None:
+            current_time = current_time.replace(tzinfo=timezone.utc)
+        return current_time > exp
+
 
 
 def compute_receipt_signature(

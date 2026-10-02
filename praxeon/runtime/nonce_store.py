@@ -5,9 +5,21 @@ proceso único como frente a reinicios o ejecución distribuida con TTL y poda a
 """
 
 from abc import ABC, abstractmethod
-from datetime import datetime
+from datetime import datetime, timezone
 import threading
 from typing import Dict, Optional, Tuple
+
+
+def _is_expired(exp: Optional[datetime], now: Optional[datetime] = None) -> bool:
+    if not exp:
+        return False
+    current = now or datetime.now(timezone.utc)
+    if exp.tzinfo is None and current.tzinfo is not None:
+        exp = exp.replace(tzinfo=timezone.utc)
+    elif exp.tzinfo is not None and current.tzinfo is None:
+        current = current.replace(tzinfo=timezone.utc)
+    return current > exp
+
 
 
 class NonceStore(ABC):
@@ -46,7 +58,7 @@ class InMemoryNonceStore(NonceStore):
             if key not in self._store:
                 return False
             exp = self._store[key]
-            if exp and datetime.utcnow() > exp:
+            if _is_expired(exp):
                 del self._store[key]
                 return False
             return True
@@ -56,7 +68,7 @@ class InMemoryNonceStore(NonceStore):
         with self._lock:
             if key in self._store:
                 exp = self._store[key]
-                if exp and datetime.utcnow() > exp:
+                if _is_expired(exp):
                     pass  # Expirado, permitimos sobreescritura si correspondiese
                 else:
                     return False  # Ya consumido y activo
@@ -64,14 +76,15 @@ class InMemoryNonceStore(NonceStore):
             return True
 
     def prune_expired(self) -> int:
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         removed = 0
         with self._lock:
-            expired_keys = [k for k, exp in self._store.items() if exp and now > exp]
+            expired_keys = [k for k, exp in self._store.items() if _is_expired(exp, now)]
             for k in expired_keys:
                 del self._store[k]
                 removed += 1
         return removed
+
 
     def __len__(self) -> int:
         with self._lock:
@@ -151,7 +164,7 @@ class SqliteNonceStore(NonceStore):
                 if exp_str:
                     try:
                         exp = datetime.fromisoformat(exp_str)
-                        if datetime.utcnow() > exp:
+                        if _is_expired(exp):
                             # Ha expirado: podar y permitir
                             with conn:
                                 cur.execute(
@@ -167,7 +180,7 @@ class SqliteNonceStore(NonceStore):
 
     def consume(self, decision_id: str, nonce: str, expires_at: Optional[datetime] = None) -> bool:
         import sqlite3
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         now_str = now.isoformat()
         exp_str = expires_at.isoformat() if expires_at else None
 
@@ -207,7 +220,7 @@ class SqliteNonceStore(NonceStore):
                 self._close_conn(conn)
 
     def prune_expired(self) -> int:
-        now_str = datetime.utcnow().isoformat()
+        now_str = datetime.now(timezone.utc).isoformat()
         with self._lock:
             conn = self._get_connection()
             try:
@@ -219,6 +232,7 @@ class SqliteNonceStore(NonceStore):
                     )
                     return cur.rowcount
             finally:
+
                 self._close_conn(conn)
 
     def __len__(self) -> int:

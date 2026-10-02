@@ -1,4 +1,5 @@
-"""Consola interactiva y visualizador CLI enriquecido con Rich para JEV-Reasoning-Navigator."""
+"""Consola interactiva y visualizador CLI enriquecido con Rich para PRAXEON."""
+
 
 import argparse
 import io
@@ -96,7 +97,8 @@ def analyze_trace_file(file_path: str, config: Optional[PraxeonConfig] = None) -
         f"[bold white]Motor evaluador:[/] {engine_name}\n"
         f"[bold white]Pasos analizados:[/] {len(trajectory.steps)}\n"
         f"[bold white]Estado global:[/] {status_text}",
-        title="🧠 [bold cyan]JEV-Reasoning-Navigator: Diagnóstico de Traza[/]",
+        title="🧠 [bold cyan]PRAXEON: Diagnóstico de Traza[/]",
+
         border_style="cyan" if not loop_report.loop_detected else "red",
     )
     console.print(header_panel)

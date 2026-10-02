@@ -682,3 +682,53 @@ def test_rel_14_simulated_agent_llm_step_generation():
     steps3 = parse_llm_steps(out3)
     assert len(steps3) == 1
     assert steps3[0]["tool_name"] == "finish"
+
+
+def test_bug_02_provider_unavailable_with_none_probability_does_not_crash(tmp_path, monkeypatch):
+    """BUG-02: ProviderAssessment con available=False y progress_probability=None no debe romper la API con TypeError."""
+    from praxeon.server.dependencies import RuntimeApplicationService
+    from praxeon.server.schemas.action import ProposeActionRequest
+    from praxeon.providers.base import BaseReasoningProvider
+
+    class UnavailableMockProvider(BaseReasoningProvider):
+        @property
+        def name(self) -> str:
+            return "MockUnavailable"
+
+        def evaluate(self, state, actions):
+            return [
+                ProviderAssessment(
+                    provider="MockUnavailable",
+                    available=False,
+                    confidence=0.0,
+                    loop_probability=None,
+                    grounded_probability=None,
+                    progress_probability=None,
+                    reason_codes=["PROVIDER_DOWN_SIMULATED"],
+                )
+            ]
+
+    monkeypatch.delenv("PRAXEON_PROFILE", raising=False)
+    monkeypatch.delenv("PRAXEON_ENV", raising=False)
+    service = RuntimeApplicationService(db_dir=str(tmp_path / "bug02_cache"))
+    service.provider = UnavailableMockProvider()
+
+    service.create_session(goal="Test BUG-02", session_id="bug02_sess")
+    req = ProposeActionRequest(
+        tool="read_file",
+        arguments={"path": "safe.txt"},
+        thought_rationale="Probar serialización con proveedor caído",
+    )
+
+    # Debe ejecutarse sin TypeError ni excepciones no controladas
+    resp = service.propose_action("bug02_sess", req)
+    assert resp is not None
+    assert resp.status in ("ALLOW", "REVIEW", "REPLAN", "BLOCK")
+
+    # Verificar la serialización de providers en la respuesta inmediata DecisionResponse
+    assert len(resp.providers) >= 1
+    prov_dto = resp.providers[0]
+    assert prov_dto.score is None
+    assert prov_dto.available is False
+    assert prov_dto.verdict == "UNAVAILABLE"
+

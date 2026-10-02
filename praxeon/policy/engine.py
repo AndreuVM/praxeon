@@ -4,9 +4,10 @@ Aplica la separación estricta:
 Semantic Judgment (JEV) != Operational Policy (PolicyEngine) != Physical Execution (Executor)
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import secrets
 import time
+
 from typing import Any, Dict, List, Optional, Set, Tuple
 import uuid
 
@@ -131,108 +132,109 @@ class PolicyEngine:
             status = DecisionStatus.BLOCK
             reason_codes.append("TOOL_FORBIDDEN_BY_SUPERVISOR")
 
-        # 2. Enforcement de herramientas desconocidas no registradas
+        # 1.5. Señal de incertidumbre para herramientas no registradas (CHG-01: Unknown != Malicious)
         elif tool_name and not self.registry.is_known(tool_name):
-            status = DecisionStatus.BLOCK
+            reason_codes.append("UNKNOWN_TOOL_UNCERTAIN")
             reason_codes.append("UNKNOWN_TOOL_NOT_REGISTERED")
 
-        # 2.5. Enforcement determinista de barreras críticas (PRIVILEGE y DESTRUCTIVE)
-        elif operation_assessment is not None and (
-            operation_assessment.category == CommandCategory.PRIVILEGE or operation_assessment.privilege_escalation
-        ):
-            status = DecisionStatus.BLOCK
-            reason_codes.append("PRIVILEGE_ESCALATION_BLOCK")
-            reason_codes.append("CRITICAL_OPERATIONAL_RISK")
-
-        elif operation_assessment is not None and (
-            operation_assessment.category == CommandCategory.DESTRUCTIVE or operation_assessment.destructive
-        ):
-            status = DecisionStatus.BLOCK
-            reason_codes.append("DESTRUCTIVE_COMMAND_BLOCK")
-            reason_codes.append("CRITICAL_OPERATIONAL_RISK")
-            if provider_assessment is not None and not provider_assessment.available:
-                reason_codes.append("PROVIDER_UNAVAILABLE_DESTRUCTIVE_BLOCK")
-
-        # 3. Verificación formal de evidencia requerida (Groundedness estricto)
-        elif action.requires_evidence and any(req.lower().strip() not in evidence_claims for req in action.requires_evidence):
-            missing_evidence = [
-                req for req in action.requires_evidence
-                if req.lower().strip() not in evidence_claims
-            ]
-            status = DecisionStatus.REPLAN
-            reason_codes.append(f"MISSING_REQUIRED_EVIDENCE: {', '.join(missing_evidence)}")
-
-        # 3.5. Verificación formal de completitud ante intentos de finish
-        elif completion_assessment is not None and not getattr(completion_assessment, "is_complete", True):
-            status = DecisionStatus.REPLAN
-            reasons = (
-                getattr(completion_assessment, "missing_criteria", [])
-                or getattr(completion_assessment, "unverified_claims", [])
-                or [getattr(completion_assessment, "rationale", "")]
-            )
-            reason_codes.append(f"UNVERIFIED_COMPLETION: {', '.join(reasons)}")
-
-        # 4. Evaluación de disponibilidad del proveedor (Fail-safe explícito - Hallazgo 3.2)
-        elif provider_assessment is not None and not provider_assessment.available:
-            status = self.failsafe.resolve_provider_failure(risk, is_read_only)
-            if status == DecisionStatus.BLOCK:
-                reason_codes.append("PROVIDER_UNAVAILABLE_DESTRUCTIVE_BLOCK")
-            elif status == DecisionStatus.ALLOW:
-                reason_codes.append("PROVIDER_UNAVAILABLE_READ_ONLY_ALLOWED")
-            else:
-                reason_codes.append("PROVIDER_UNAVAILABLE_FAILSAFE_ABSTAIN")
-
-        # 5. Evaluación semántica probabilística de JEV / LAYA (si está disponible)
-        elif provider_assessment is not None:
-            # Gating de confianza según JEV-as-a-Judge: juicios con baja confianza escalan a ABSTAIN
-            if (
-                provider_assessment.confidence is not None
-                and provider_assessment.confidence < self.min_confidence_threshold
-            ):
-                status = DecisionStatus.ABSTAIN
-                reason_codes.append(
-                    f"LOW_PROVIDER_CONFIDENCE_ESCALATE ({provider_assessment.confidence:.2f} < {self.min_confidence_threshold:.2f})"
-                )
-
-            # Clasificación de acción destructiva o peligrosa por LAYA
-            elif "LAYA_DESTRUCTIVE_BLOCK" in provider_assessment.reason_codes or (
-                isinstance(provider_assessment.metadata, dict)
-                and provider_assessment.metadata.get("choice", {}).get("label") == "BLOCK"
+        # 2. Enforcement determinista de barreras críticas (PRIVILEGE y DESTRUCTIVE)
+        if status is None:
+            if operation_assessment is not None and (
+                operation_assessment.category == CommandCategory.PRIVILEGE or operation_assessment.privilege_escalation
             ):
                 status = DecisionStatus.BLOCK
-                reason_codes.append("SUPERVISOR_LAYA_DESTRUCTIVE_BLOCK")
+                reason_codes.append("PRIVILEGE_ESCALATION_BLOCK")
+                reason_codes.append("CRITICAL_OPERATIONAL_RISK")
 
-            # Detección de bucle o degradación cíclica
-            elif (
-                provider_assessment.loop_probability is not None
-                and provider_assessment.loop_probability >= self.loop_threshold
+            elif operation_assessment is not None and (
+                operation_assessment.category == CommandCategory.DESTRUCTIVE or operation_assessment.destructive
             ):
+                status = DecisionStatus.BLOCK
+                reason_codes.append("DESTRUCTIVE_COMMAND_BLOCK")
+                reason_codes.append("CRITICAL_OPERATIONAL_RISK")
+                if provider_assessment is not None and not provider_assessment.available:
+                    reason_codes.append("PROVIDER_UNAVAILABLE_DESTRUCTIVE_BLOCK")
+
+            # 3. Verificación formal de evidencia requerida (Groundedness estricto)
+            elif action.requires_evidence and any(req.lower().strip() not in evidence_claims for req in action.requires_evidence):
+                missing_evidence = [
+                    req for req in action.requires_evidence
+                    if req.lower().strip() not in evidence_claims
+                ]
                 status = DecisionStatus.REPLAN
-                reason_codes.append(
-                    f"HIGH_LOOP_PROBABILITY ({provider_assessment.loop_probability:.2f} >= {self.loop_threshold})"
+                reason_codes.append(f"MISSING_REQUIRED_EVIDENCE: {', '.join(missing_evidence)}")
+
+            # 3.5. Verificación formal de completitud ante intentos de finish
+            elif completion_assessment is not None and not getattr(completion_assessment, "is_complete", True):
+                status = DecisionStatus.REPLAN
+                reasons = (
+                    getattr(completion_assessment, "missing_criteria", [])
+                    or getattr(completion_assessment, "unverified_claims", [])
+                    or [getattr(completion_assessment, "rationale", "")]
                 )
+                reason_codes.append(f"UNVERIFIED_COMPLETION: {', '.join(reasons)}")
 
-            # Clasificación de acción innecesaria o desvío por LAYA
-            elif "LAYA_UNNECESSARY_ACTION_REPLAN" in provider_assessment.reason_codes or (
-                isinstance(provider_assessment.metadata, dict)
-                and provider_assessment.metadata.get("choice", {}).get("label") == "REPLAN"
-            ):
-                status = DecisionStatus.REPLAN
-                reason_codes.append("SUPERVISOR_LAYA_UNNECESSARY_ACTION_REPLAN")
+            # 4. Evaluación de disponibilidad del proveedor (Fail-safe explícito - Hallazgo 3.2)
+            elif provider_assessment is not None and not provider_assessment.available:
+                status = self.failsafe.resolve_provider_failure(risk, is_read_only)
+                if status == DecisionStatus.BLOCK:
+                    reason_codes.append("PROVIDER_UNAVAILABLE_DESTRUCTIVE_BLOCK")
+                elif status == DecisionStatus.ALLOW:
+                    reason_codes.append("PROVIDER_UNAVAILABLE_READ_ONLY_ALLOWED")
+                else:
+                    reason_codes.append("PROVIDER_UNAVAILABLE_FAILSAFE_ABSTAIN")
 
-            # Detección de premisa no fundamentada o alucinación semántica
-            elif (
-                provider_assessment.grounded_probability is not None
-                and provider_assessment.grounded_probability < self.min_grounded_threshold
-            ):
-                status = DecisionStatus.REPLAN
-                reason_codes.append(
-                    f"LOW_GROUNDED_PROBABILITY ({provider_assessment.grounded_probability:.2f} < {self.min_grounded_threshold})"
-                )
-                if provider_assessment.reason_codes:
-                    for rc in provider_assessment.reason_codes:
-                        if rc not in reason_codes:
-                            reason_codes.append(rc)
+            # 5. Evaluación semántica probabilística de JEV / LAYA (si está disponible)
+            elif provider_assessment is not None:
+                # Gating de confianza según JEV-as-a-Judge: juicios con baja confianza escalan a ABSTAIN
+                if (
+                    provider_assessment.confidence is not None
+                    and provider_assessment.confidence < self.min_confidence_threshold
+                ):
+                    status = DecisionStatus.ABSTAIN
+                    reason_codes.append(
+                        f"LOW_PROVIDER_CONFIDENCE_ESCALATE ({provider_assessment.confidence:.2f} < {self.min_confidence_threshold:.2f})"
+                    )
+
+                # Clasificación de acción destructiva o peligrosa por LAYA
+                elif "LAYA_DESTRUCTIVE_BLOCK" in provider_assessment.reason_codes or (
+                    isinstance(provider_assessment.metadata, dict)
+                    and provider_assessment.metadata.get("choice", {}).get("label") == "BLOCK"
+                ):
+                    status = DecisionStatus.BLOCK
+                    reason_codes.append("SUPERVISOR_LAYA_DESTRUCTIVE_BLOCK")
+
+                # Detección de bucle o degradación cíclica
+                elif (
+                    provider_assessment.loop_probability is not None
+                    and provider_assessment.loop_probability >= self.loop_threshold
+                ):
+                    status = DecisionStatus.REPLAN
+                    reason_codes.append(
+                        f"HIGH_LOOP_PROBABILITY ({provider_assessment.loop_probability:.2f} >= {self.loop_threshold})"
+                    )
+
+                # Clasificación de acción innecesaria o desvío por LAYA
+                elif "LAYA_UNNECESSARY_ACTION_REPLAN" in provider_assessment.reason_codes or (
+                    isinstance(provider_assessment.metadata, dict)
+                    and provider_assessment.metadata.get("choice", {}).get("label") == "REPLAN"
+                ):
+                    status = DecisionStatus.REPLAN
+                    reason_codes.append("SUPERVISOR_LAYA_UNNECESSARY_ACTION_REPLAN")
+
+                # Detección de premisa no fundamentada o alucinación semántica
+                elif (
+                    provider_assessment.grounded_probability is not None
+                    and provider_assessment.grounded_probability < self.min_grounded_threshold
+                ):
+                    status = DecisionStatus.REPLAN
+                    reason_codes.append(
+                        f"LOW_GROUNDED_PROBABILITY ({provider_assessment.grounded_probability:.2f} < {self.min_grounded_threshold})"
+                    )
+                    if provider_assessment.reason_codes:
+                        for rc in provider_assessment.reason_codes:
+                            if rc not in reason_codes:
+                                reason_codes.append(rc)
 
         # 6. Evaluación de riesgo operacional y semántica de operación
         action_hash = compute_action_hash(action)
@@ -266,6 +268,14 @@ class PolicyEngine:
                     # Principio fundamental: Desconocido -> REVIEW / ABSTAIN, NUNCA BLOCK ciego
                     status = DecisionStatus.ABSTAIN
                     reason_codes.append("UNKNOWN_OPERATION_REVIEW")
+            elif tool_name and not self.registry.is_known(tool_name):
+                if self.permission_manager.is_action_confirmed(action.id, action_hash=action_hash):
+                    status = DecisionStatus.ALLOW
+                    reason_codes.append("HUMAN_CONFIRMED_ACTION")
+                else:
+                    # Herramienta desconocida no registrada requiere revisión humana explícita
+                    status = DecisionStatus.ABSTAIN
+                    reason_codes.append("UNKNOWN_TOOL_REQUIRES_CONFIRMATION")
             elif risk.requires_confirmation:
                 if self.permission_manager.is_action_confirmed(action.id, action_hash=action_hash):
                     status = DecisionStatus.ALLOW
@@ -285,6 +295,7 @@ class PolicyEngine:
         requires_confirmation = (
             bool(risk.requires_confirmation)
             or (status == DecisionStatus.ABSTAIN)
+            or bool(tool_name and not self.registry.is_known(tool_name))
             or (
                 operation_assessment is not None
                 and operation_assessment.category in (CommandCategory.REMOTE_MUTATION, CommandCategory.NETWORK, CommandCategory.UNKNOWN)
@@ -308,9 +319,10 @@ class PolicyEngine:
         # Construcción y firma criptográfica exhaustiva del capability receipt
         decision_id = f"dec_{uuid.uuid4().hex[:12]}"
         nonce = uuid.uuid4().hex
-        expires_at = datetime.utcnow() + timedelta(seconds=self.receipt_ttl_seconds)
+        expires_at = datetime.now(timezone.utc) + timedelta(seconds=self.receipt_ttl_seconds)
 
         signature = compute_receipt_signature(
+
             secret_key=self.secret_key,
             decision_id=decision_id,
             session_id=session_id,

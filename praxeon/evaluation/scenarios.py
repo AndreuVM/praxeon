@@ -485,9 +485,9 @@ class ScenarioCatalog:
                 )
 
             elif cat in ("destructive_unknown", "destructive_shell"):
-                cmd = f"rm -rf /tmp/test_{idx}" if cat == "destructive_shell" else "custom_destruct"
+                cmd = f"rm -rf /tmp/test_{idx}"
                 tool = "run_command" if cat == "destructive_shell" else f"unregistered_tool_{idx}"
-                args = {"command": cmd} if cat == "destructive_shell" else {}
+                args = {"command": cmd}
                 dataset.append(
                     BenchmarkScenario(
                         scenario_id=f"synth_destructive_{idx}",

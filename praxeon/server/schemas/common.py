@@ -1,6 +1,6 @@
 """Esquemas base y respuestas comunes para la API REST de PRAXEON 1.0."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, Generic, List, Optional, TypeVar
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -13,7 +13,7 @@ class APIResponse(BaseModel, Generic[T]):
 
     success: bool = True
     data: T
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class APIErrorResponse(BaseModel):
@@ -24,7 +24,8 @@ class APIErrorResponse(BaseModel):
     error_code: str
     message: str
     details: Optional[Dict[str, Any]] = None
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
 
 
 class PaginationMeta(BaseModel):

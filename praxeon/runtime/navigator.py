@@ -5,9 +5,10 @@ Proposal -> Evidence -> Risk -> JEV Provider -> Policy -> Decision -> Execution 
 con soporte de checkpoints automáticos, chunking tipado y rollback determinista.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 import hashlib
 from typing import Any, Dict, List, Optional, Set, Tuple
+
 from praxeon.domain.interfaces import ReasoningProvider
 from praxeon.domain.models import (
     ActionCandidate,
@@ -337,8 +338,9 @@ class Navigator:
         receipt_dict = receipt.model_dump()
         receipt_dict["is_executed"] = True
         receipt_dict["observation_id"] = f"obs_{len(state.steps)}"
-        receipt_dict["execution_timestamp"] = datetime.utcnow()
+        receipt_dict["execution_timestamp"] = datetime.now(timezone.utc)
         updated_receipt = DecisionReceipt(**receipt_dict)
+
         if self.audit_receipts:
             self.audit_receipts[-1] = updated_receipt
 

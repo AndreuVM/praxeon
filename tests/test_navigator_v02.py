@@ -150,7 +150,7 @@ def test_navigator_step_denied_prevents_physical_execution():
 
     decision, observation = nav.step(bad_action)
 
-    assert decision.status == DecisionStatus.BLOCK
+    assert decision.status in (DecisionStatus.BLOCK, DecisionStatus.REPLAN)
     assert observation is None
     assert len(nav.state.steps) == 1
     assert nav.state.steps[0].observation is None

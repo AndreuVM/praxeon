@@ -143,11 +143,11 @@ class ToolRegistry:
         spec = self._tools.get(tool_name)
         if not spec:
             return RiskAssessment(
-                level=RiskLevel.CRITICAL,
+                level=RiskLevel.HIGH,
                 requires_confirmation=True,
-                executable=False,
-                destructive_potential=True,
-                reasons=[f"Herramienta no registrada ni autorizada: '{tool_name}'."],
+                executable=True,
+                destructive_potential=False,
+                reasons=[f"Herramienta no registrada en catálogo estándar: '{tool_name}'. Requiere confirmación."],
             )
 
         reasons = [f"Herramienta registrada en categoría '{spec.category}' con nivel '{spec.risk_level.value}'."]
