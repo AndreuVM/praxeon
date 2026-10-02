@@ -390,7 +390,7 @@ if decision.status == "replan":
 
 ## 7. Context Management & Caching Optimizado (Post-v1.0)
 
-A partir de la especificación técnica post-v1.0, PRAXEON incorpora el módulo central **`praxeon.context`**, un subsistema determinista de gestión, selección DAG-aware y almacenamiento en caché de dos niveles (**L1 Fragment Cache** + **L2 Context Snapshot Cache con Prefix Caching**) diseñado para abatir la explosión de tokens y la latencia en agentes autónomos continuos sin relajar ningún control de seguridad:
+A partir de la especificación técnica post-v1.0, PRAXEON incorpora el módulo central **`praxeon.context`**, un subsistema determinista de gestión, selección DAG-aware y almacenamiento en caché de dos niveles (**L1 Fragment Cache** + **L2 Context Snapshot Cache con Runtime Context Prefix Reuse**) diseñado para abatir la explosión de tokens y la latencia en agentes autónomos continuos sin relajar ningún control de seguridad:
 
 ### A. Principios del Subsistema de Contexto
 1. **Fragmentación Tipada e Inmutable (`ContextFragment`):** El estado no entra como bloque plano; se descompone en 9 fragmentos canónicos (`GoalFragment`, `ConstraintFragment`, `EvidenceFragment`, `ObservationFragment`, `DecisionFragment`, `TaskFragment`, `EnvironmentFragment`, `FileFragment`, `SummaryFragment`) con cálculo determinista de hash SHA-256 inmutable y estimación precisa de tokens.
@@ -398,14 +398,17 @@ A partir de la especificación técnica post-v1.0, PRAXEON incorpora el módulo 
    $$\text{Fingerprint} = \text{SHA-256}(\text{session\_id} \mathbin{\Vert} \text{goal\_hash} \mathbin{\Vert} \text{node\_ids} \mathbin{\Vert} \text{fragment\_hashes} \mathbin{\Vert} \text{policy\_ver} \mathbin{\Vert} \text{strategy\_ver} \mathbin{\Vert} \text{model\_profile})$$
 3. **Presupuestado de Tokens por Capas (`TokenBudget`):** Asignación estricta orientada por jerarquía formal de 8 niveles de prioridad:
    1. Objetivo y criterios de éxito $\to$ 2. Estado actual $\to$ 3. Restricciones operacionales $\to$ 4. Dependencias directas $\to$ 5. Evidencia contrastada $\to$ 6. Observaciones recientes $\to$ 7. Resúmenes de memoria episódica $\to$ 8. Historial secundario.
-4. **Prefix Caching en L2:** Desacopla la huella del estado base (`base_fingerprint`) del sufijo de la acción evaluada. Permite que evaluaciones multi-candidato o la supervisión en cascada (LAYA $\to$ TypeSafe) reutilicen de inmediato los fragmentos base presupuestados en memoria con latencias $< 0.5\text{ ms}$.
+4. **Reutilización de Prefijos de Estado en Runtime (Runtime Context Prefix Reuse):** Desacopla la huella del estado base (`base_fingerprint`) del sufijo de la acción candidata evaluada. Permite que evaluaciones multi-candidato en el mismo paso o la supervisión en cascada (LAYA $\to$ TypeSafe) reutilicen de inmediato los fragmentos base presupuestados en memoria con latencias $< 0.5\text{ ms}$, sin depender de primitivas KV-cache del lado del servidor del modelo.
+5. **Contrato Efímero y Reconstruible:** El caché de contexto es estrictamente en memoria y local al proceso (`InMemoryContextCache`). Su contenido puede desaparecer en cualquier reinicio sin afectar la validez del runtime; las fuentes canónicas durables (`SessionState`, `EventStore`, `EvidenceEngine`) constituyen la única fuente de verdad y permiten reconstruir deterministamente el 100% del contexto. Un *cache miss* es una operación ordinaria, no un fallo de seguridad.
 
 > [!IMPORTANT]
-> **Invariante Axiomático de Seguridad (I1 - I4):**  
-> El `ContextManager` se sitúa estrictamente **antes** del evaluador semántico o LLM. Un *cache hit* es un evento puramente de optimización de datos: **NUNCA** equivale a un veredicto `ALLOW`, **NUNCA** emite una `Capability` criptográfica firmada con HMAC y **NUNCA** despacha ejecución física en [`SecureExecutor`](file:///c:/Users/adria/.gemini/antigravity-ide/scratch/jev-llm/jev-reasoning-navigator/praxeon/runtime/executor.py). Modificar o revocar una evidencia invalida de inmediato todos los snapshots asociados.
+> **Invariante Axiomático de Separación de Autoridad (I1 - I4):**  
+> El `ContextManager` se sitúa estrictamente **antes** del evaluador semántico o LLM. Un *cache hit* es un evento puramente de optimización de datos: **NUNCA** equivale a un veredicto `ALLOW`, **NUNCA** emite una `Capability` criptográfica firmada con HMAC y **NUNCA** despacha ejecución física en [`SecureExecutor`](file:///c:/Users/adria/.gemini/antigravity-ide/scratch/jev-llm/jev-reasoning-navigator/praxeon/runtime/executor.py). Modificar o revocar una evidencia invalida de inmediato todos los snapshots asociados; el *rollback* del DAG descarta cualquier contexto del linaje podado.
+>
+> **Separación Metodológica:** La reducción de tokens mide la eficiencia computacional y económica de entrada al modelo; no constituye evidencia de corrección de seguridad ni altera las compuertas deterministas de `PolicyEngine`.
 
 ### B. Evidencia Empírica: Benchmark Científico Formal (Sección 16)
-Evaluación multi-modo comparando **A) Full Context**, **B) Truncamiento Heurístico Fijo**, **C) Cached Relevant DAG** y **D) Cached Relevant + Summarized**:
+Evaluación multi-modo comparando **A) Full Context**, **B) Truncamiento Heurístico Fijo**, **C) Cached Relevant DAG** y **D) Cached Relevant + Summarized** (resultados observados sobre la carga de trabajo de ingeniería de software evaluada, no como propiedades universales del modelo):
 
 | Misión | Modo Evaluado | Tokens Totales | Tokens Ahorrados | CRR (*Reducción*) | CHR (*Hit Rate*) | DP (*Preservación*) | Latencia Build | Coste ($2.5/M tok) |
 |---|---|---|---|---|---|---|---|---|
@@ -423,9 +426,9 @@ Evaluación multi-modo comparando **A) Full Context**, **B) Truncamiento Heurís
 | | **D_CACHED_SUMMARIZED** | **51.616** | **71.824** | **58.2%** | **66.7%** | **100.0%** | **0.44 ms** | **$0.12904** |
 
 - **58.2% de reducción de tokens (CRR):** En 30 pasos, el Modo D ahorra 71.824 tokens sin degradar información crítica.
-- **66.7% Cache Hit Rate (CHR):** Aprovechamiento exhaustivo de prefijos estables y evaluación dual agente-supervisor.
+- **66.7% Cache Hit Rate (CHR):** Reutilización eficiente de prefijos estables de sesión y evaluación dual agente-supervisor.
 - **100.0% Decision Preservation (DP):** Concordancia perfecta de veredictos de políticas frente al baseline sin pérdida de grounding empírico.
-- Ejecutar benchmark reproducible: `python scripts/run_context_benchmark.py --steps 5 15 30`
+- Ejecutar benchmark reproducible con metadatos: `python scripts/run_context_benchmark.py --steps 5 15 30`
 
 ---
 
@@ -526,11 +529,11 @@ De acuerdo con las mejores prácticas de rigor científico y divulgación técni
 
 ## Verificación de la Suite de Pruebas e Invariantes
 
-La arquitectura de PRAXEON v1.0.0, los contratos de proveedores (`LayaProvider`, `TypeSafeAdapter`, `ReplayProvider`, `ConfidenceAwareRouter`), el subsistema de Context Caching determinista (`praxeon.context`), el desacoplamiento de semántica de operaciones (`CommandClassifier`), el Benchmark de Sobre-restricción, la detección de evasión Rule 0, la suite de concurrencia anti-replay (20 hilos), la autenticación de Web API / WebSocket, las barreras de enforcement HMAC, el servidor FastAPI, la suite E2E y los benchmarks comparativos están respaldados por **527 pruebas automatizadas pasando al 100%**:
+La arquitectura de PRAXEON v1.0.0, los contratos de proveedores (`LayaProvider`, `TypeSafeAdapter`, `ReplayProvider`, `ConfidenceAwareRouter`), el subsistema de Context Caching determinista (`praxeon.context`), el desacoplamiento de semántica de operaciones (`CommandClassifier`), el Benchmark de Sobre-restricción, la detección de evasión Rule 0, la suite de concurrencia anti-replay (hasta 100 workers concurrentes), la autenticación de Web API / WebSocket, las barreras de enforcement HMAC, el servidor FastAPI, la suite E2E y los benchmarks comparativos están respaldados por **539 pruebas automatizadas pasando al 100%**:
 
 ```bash
 pytest -q
-# 527 passed, 1 skipped in ~114s
+# 539 passed, 1 skipped in ~121s
 ```
 
 ---

@@ -7,17 +7,18 @@
 
 ## 1. Executive Summary
 
-PRAXEON v1.0.0 marks the formal production milestone of the runtime supervision and physical execution boundary system for autonomous AI agents. Originally conceived as JEV Reasoning Navigator, version 1.0.0 solidifies the platform into an enterprise-grade, deterministic, and cryptographically verified control plane that decouples LLM reasoning from operating system execution authority.
+PRAXEON v1.0.0 marks the formal production milestone of the runtime supervision and physical execution boundary system for autonomous AI agents. Originally conceived as JEV Reasoning Navigator, version 1.0.0 solidifies the platform into a production-oriented, deterministic, and cryptographically verified control plane that decouples LLM reasoning from operating system execution authority.
 
 Key accomplishments sealed in this milestone:
 - **Formal Verification Matrix (`REL-01` through `REL-15`)**: 151 dedicated release specification tests achieving 100% pass rate.
 - **Fail-Closed API & Network Hardening**: Mandatory authentication for sensitive endpoints and strict restrictions on non-loopback network bindings (`0.0.0.0`, LAN, public hostnames).
-- **Physical Enforcement & Anti-Replay Architecture**: HMAC-SHA256 capability tokens bound multidimensionally to session, state, action, and execution mode, backed by atomic consume-once durable nonce stores immune to 100-thread concurrent race conditions.
+- **Physical Enforcement & Anti-Replay Architecture**: HMAC-SHA256 capability tokens bound multidimensionally to session, state, action, and execution mode, backed by atomic consume-once durable nonce stores immune to 20, 50, and 100-thread concurrent race conditions.
 - **Full Access Mode Governance (`FULL_ACCESS_POLICY.md`)**: Formalized architecture where `BLOCK` veredicts unconditionally override execution, `REPLAN` states cannot be bypassed, and autonomous host executions require cryptographically verified operator authorization and audit logging.
 - **Multi-Database Crash Recovery**: Transactional SQLite WAL architecture resilient against unexpected process termination, preserving pending reviews, blocking replayed actions, and maintaining strictly monotonic event ordering.
 - **Resilient Realtime Streaming**: Monotonic sequence-tracked WebSocket broadcasting with `after_sequence` gap recovery and interactive synchronization (`sync`).
 - **Clean Configuration Architecture**: Complete codebase migration from deprecated `JEVConfig` to canonical `PraxeonConfig` with zero runtime warnings.
-- **Comprehensive Test Regression**: 518 automated tests passing at 100% (0 failed, 1 skipped) across unit, integration, security, and benchmark suites.
+- **Implemented Context Management & Caching (`praxeon.context`)**: L1 typed fragment cache + L2 snapshot cache with runtime context prefix reuse, strict 8-level token budgeting, DAG-aware structural selection, and verifiable invalidation.
+- **Comprehensive Test Regression**: 539 automated tests passing at 100% (540 collected: 539 passed, 1 skipped, 0 failed) across unit, integration, security, context invalidation, execution mode binding, and benchmark suites.
 
 ---
 
@@ -112,11 +113,11 @@ Starting with v1.0.0, `JEVConfig` has been formally replaced by `PraxeonConfig`.
 
 ## 5. Verification & Test Metrics
 
-The v1.0.0 release baseline was validated with the entire test suite:
+The v1.0.0 release baseline and post-release context optimization were validated with the entire test suite:
 
 ```bash
 $ pytest tests/
-==================== 518 passed, 1 skipped in 111.64s ====================
+==================== 539 passed, 1 skipped in ~121s ====================
 ```
 
 ```bash
@@ -128,6 +129,7 @@ $ pytest tests/release/ -v
 - **Unit & Core Invariants**: 199 tests verifying `StateGraph`, `CommandClassifier`, `EvidenceEngine`, `EventBus`, and `CheckpointManager`.
 - **API & Security Boundary**: 97 tests covering Bearer auth, CORS policies, path traversal defense, and MCP bridge isolation.
 - **Over-Restriction Benchmarks**: 6 test families ensuring 0% false block rate on safe developer operations and 100% block rate on malicious syntax.
+- **Context Caching & Invariants (`tests/context/`)**: 9 dedicated tests proving typed fragment immutability, SHA-256 fingerprint determinism, 8-level token budget allocation, runtime context prefix reuse, and the formal security invariant (cache hits never grant capabilities or OS execution).
 - **Release Matrix (`tests/release/`)**: 151 tests certifying REL-01 through REL-15 under real network, SQLite WAL, and multi-threaded stress conditions.
 
 ---
@@ -162,8 +164,17 @@ praxeon-live --task "Analyze codebase security and summarize findings" --provide
 
 ---
 
-## 7. Next Roadmap Milestone
+## 7. Status & Future Scope
 
-With the release of **PRAXEON v1.0.0**, the runtime supervision baseline is sealed and reproducible. The next major milestone on the roadmap is:
+With the completion of **PRAXEON v1.0.0** and the **Context Caching & Token Optimization** milestone, the runtime supervision baseline and in-memory context management subsystem are fully validated and sealed.
 
-- **Context Caching & Token Optimization**: Leveraging prefix caching and structured context pruning across LLM providers to minimize latency and token expenditure during long-horizon agent trajectories.
+### Implemented & Validated in v1.0 Post-Hardening:
+- **`praxeon.context` Subsystem**: L1 fragment cache, L2 snapshot cache with runtime context prefix reuse, DAG-aware structural selector, and token budget priority engine.
+- **Strict Authority Invariant**: Context cache is an optimization layer only; `Cache Hit ≠ ALLOW ≠ Capability ≠ Execution`.
+- **Reproducible Token Optimization**: Demonstrated 58.2% token reduction (CRR) and 66.7% cache hit rate (CHR) with 100% decision preservation (DP) in 30-step agent trajectories.
+
+### Out of Scope for v1.x (Future Milestones):
+- **Provider-Side KV/Prefix Caching**: Direct integration with remote model provider KV-cache APIs.
+- **Persistent / Distributed Context Cache**: External distributed caching layer (Redis / SQLite L2 across processes).
+- **Cross-Session Semantic Memory & Learned Summarization**: Learned neural compression models.
+- **Multi-Agent Context Sharing & Top-K Branching**: Coordination across heterogeneous distributed agent swarms.

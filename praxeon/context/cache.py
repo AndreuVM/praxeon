@@ -176,6 +176,7 @@ class InMemoryFragmentCache:
         self._store: OrderedDict[str, ContextFragment] = OrderedDict()
         self._hits = 0
         self._misses = 0
+        self._evictions = 0
 
     def get(self, content_hash: str) -> Optional[ContextFragment]:
         """Recupera un fragmento por su hash de contenido."""
@@ -195,6 +196,7 @@ class InMemoryFragmentCache:
                 return
             if len(self._store) >= self.max_entries:
                 self._store.popitem(last=False)
+                self._evictions += 1
             self._store[fragment.content_hash] = fragment
 
     def clear(self) -> None:
@@ -209,6 +211,7 @@ class InMemoryFragmentCache:
                 "entries_count": len(self._store),
                 "hits": self._hits,
                 "misses": self._misses,
+                "evictions": self._evictions,
                 "hit_rate": round(rate, 4),
             }
 

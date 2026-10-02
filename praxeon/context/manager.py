@@ -45,8 +45,9 @@ class ContextManager:
         self.strategy_version = strategy_version
         self.policy_version = policy_version
 
-        # Telemetría y observabilidad según Sección 13 del PDF
+        # Telemetría y observabilidad según Sección 13 del PDF y Change Request CHG-11
         self._builds_total = 0
+        self._rebuilds_total = 0
         self._cache_hits_total = 0
         self._prefix_hits_total = 0
         self._cache_misses_total = 0
@@ -79,6 +80,7 @@ class ContextManager:
 
         # 1. Si el caché está desactivado globalmente, construir sin consultar ni almacenar
         if not self.enabled:
+            self._rebuilds_total += 1
             raw_fragments = self.selector.select(
                 state=state,
                 candidate_action=candidate_action,
@@ -196,6 +198,7 @@ class ContextManager:
 
         # 5. Cache Miss: Aplicar presupuesto de tokens y compilar snapshot
         self._cache_misses_total += 1
+        self._rebuilds_total += 1
         budgeted_fragments, truncated, total_tokens = self.budget.allocate(
             raw_fragments, max_tokens=max_tokens
         )
@@ -251,7 +254,7 @@ class ContextManager:
         self.fragment_cache.clear()
 
     def get_metrics(self) -> Dict[str, Any]:
-        """Genera el reporte cuantitativo estandarizado de observabilidad de contexto."""
+        """Genera el reporte cuantitativo estandarizado de observabilidad de contexto (CHG-11)."""
         cache_stats = self.cache.stats()
         frag_stats = self.fragment_cache.stats()
         total_requests = self._cache_hits_total + self._cache_misses_total
@@ -269,13 +272,26 @@ class ContextManager:
             else 0.0
         )
 
+        snapshot_evictions = cache_stats.get("evictions", 0)
+        fragment_evictions = frag_stats.get("evictions", 0)
+        total_evictions = snapshot_evictions + fragment_evictions
+        exact_hits = self._cache_hits_total - self._prefix_hits_total
+
         return {
             "context_builds_total": self._builds_total,
+            "context_rebuilds_total": self._rebuilds_total,
+            "rebuild_count": self._rebuilds_total,
             "context_cache_hits_total": self._cache_hits_total,
             "context_prefix_hits_total": self._prefix_hits_total,
             "context_cache_misses_total": self._cache_misses_total,
             "context_cache_hit_rate": round(hit_rate, 4),
             "context_invalidations_total": self._invalidations_total,
+            "context_cache_evictions_total": total_evictions,
+            "eviction_count": total_evictions,
+            "snapshot_evictions": snapshot_evictions,
+            "fragment_evictions": fragment_evictions,
+            "snapshot_cache_hits": exact_hits,
+            "prefix_cache_hits": self._prefix_hits_total,
             "context_tokens_before": self._tokens_before,
             "context_tokens_after": self._tokens_after,
             "context_tokens_saved": self._tokens_saved,
@@ -285,4 +301,6 @@ class ContextManager:
             "cache_entries": cache_stats.get("entries_count", 0),
             "fragment_cache_entries": frag_stats.get("entries_count", 0),
             "fragment_cache_hits": frag_stats.get("hits", 0),
+            "fragment_cache_misses": frag_stats.get("misses", 0),
+            "fragment_cache_evictions": fragment_evictions,
         }

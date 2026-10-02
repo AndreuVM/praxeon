@@ -29,6 +29,7 @@ from praxeon.context import (
     DAGContextSelector,
     ContextSnapshotBuilder,
 )
+from praxeon.context.cache import InMemoryFragmentCache
 from praxeon.domain.action import ActionCandidate, ToolCall
 from praxeon.domain.evidence import Evidence
 from praxeon.domain.goal import Goal
@@ -348,5 +349,84 @@ def test_prefix_caching_for_alternative_candidate_actions():
     assert metrics["context_prefix_hits_total"] == 1
     assert metrics["context_cache_misses_total"] == 1
     assert metrics["context_tokens_saved"] > 0
+
+
+def test_chg_11_cache_eviction_and_rebuild_observability_metrics():
+    """CHG-11: Verificación de métricas de desalojo (eviction) y reconstrucción (rebuild)."""
+    # 1. Test de desalojo en InMemoryFragmentCache
+    frag_cache = InMemoryFragmentCache(max_entries=2)
+    f1 = GoalFragment(goal_text="f1")
+    f2 = GoalFragment(goal_text="f2")
+    f3 = GoalFragment(goal_text="f3")
+
+    frag_cache.put(f1)
+    frag_cache.put(f2)
+    assert frag_cache.stats()["evictions"] == 0
+    frag_cache.put(f3)  # Provoca desalojo de f1
+    assert frag_cache.stats()["evictions"] == 1
+
+    # 2. Test de desalojo y rebuild en ContextManager
+    # Caché con cuota muy baja para forzar desalojos rápidos
+    snap_cache = InMemoryContextCache(max_entries=2, max_entries_per_session=2)
+    manager = ContextManager(cache=snap_cache, fragment_cache=frag_cache)
+
+    goal = Goal(objective="Métricas CHG-11")
+    state = SessionState(session_id="sess_obs_1", goal=goal)
+
+    # Paso 1: Miss inicial -> Rebuild 1
+    snap1, hit1 = manager.build(state)
+    assert hit1 is False
+    m1 = manager.get_metrics()
+    assert m1["rebuild_count"] == 1
+    assert m1["context_cache_misses_total"] == 1
+    assert m1["context_cache_hits_total"] == 0
+
+    # Paso 2: Consulta idéntica -> Hit (no incrementa rebuild)
+    snap2, hit2 = manager.build(state)
+    assert hit2 is True
+    m2 = manager.get_metrics()
+    assert m2["rebuild_count"] == 1
+    assert m2["context_cache_hits_total"] == 1
+
+    # Paso 3: Invalidación de sesión y nueva consulta -> Rebuild 2
+    manager.invalidate_session("sess_obs_1")
+    snap3, hit3 = manager.build(state)
+    assert hit3 is False
+    m3 = manager.get_metrics()
+    assert m3["rebuild_count"] == 2
+    assert m3["context_invalidations_total"] >= 1
+
+    # Paso 4: Provocar múltiples inserciones para disparar evictions de snapshots
+    for i in range(5):
+        st_i = SessionState(session_id=f"sess_evict_{i}", goal=Goal(objective=f"Obj {i}"))
+        manager.build(st_i)
+
+    m4 = manager.get_metrics()
+    assert m4["eviction_count"] > 0
+    assert m4["snapshot_evictions"] > 0
+    assert "fragment_evictions" in m4
+    assert "context_cache_evictions_total" in m4
+    assert m4["rebuild_count"] >= 7
+
+
+def test_chg_13_cache_pressure_and_eviction_benchmark_execution():
+    """CHG-13: Verificación de ejecución del benchmark de presión de caché."""
+    from scripts.benchmark_cache_pressure import run_pressure_benchmark
+
+    res = run_pressure_benchmark(
+        num_sessions=3,
+        steps_per_session=3,
+        cache_max_entries=4,
+        cache_per_session=2,
+        seed=123,
+    )
+
+    assert "latency_analysis" in res
+    assert "cache_pressure_metrics" in res
+    assert res["latency_analysis"]["cold_start_ms"]["avg"] >= 0.0
+    assert res["cache_pressure_metrics"]["context_builds_total"] > 0
+    assert res["cache_pressure_metrics"]["snapshot_evictions"] > 0
+
+
 
 

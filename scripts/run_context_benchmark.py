@@ -17,6 +17,9 @@ Métricas reportadas:
 import argparse
 from datetime import datetime, timezone
 import json
+import os
+import platform
+import random
 import time
 from typing import Any, Dict, List, Tuple
 
@@ -222,11 +225,15 @@ def run_full_benchmark(step_counts: List[int] = [5, 15, 30]) -> Dict[str, Any]:
 def main():
     parser = argparse.ArgumentParser(description="PRAXEON Context Caching Scientific Benchmark")
     parser.add_argument("--steps", nargs="+", type=int, default=[5, 15, 30], help="Longitudes de trayectoria a evaluar")
+    parser.add_argument("--seed", type=int, default=42, help="Semilla pseudo-aleatoria de reproducibilidad")
     parser.add_argument("--output", type=str, default="benchmark_results/context_caching_evaluation.json", help="Ruta del reporte JSON")
     args = parser.parse_args()
 
+    random.seed(args.seed)
+
     print("=" * 80)
     print("PRAXEON: BENCHMARK FORMAL DE CONTEXT CACHING & MANAGEMENT (Sección 16)")
+    print(f"Semilla: {args.seed} | Dataset: synthetic_dag_workload_v1 | Tokenizer: heuristic_4chars_v1")
     print("=" * 80)
 
     results = run_full_benchmark(step_counts=args.steps)
@@ -245,18 +252,53 @@ def main():
             lat = f"{data['avg_latency_ms']:.2f}"
             print(f"{m_name:<22} | {tok:<8} | {saved:<8} | {crr:<7} | {chr_val:<9} | {dp_val:<6} | {lat:<8}")
 
+    metadata = {
+        "benchmark_name": "PRAXEON Context Caching & Prefix Reuse Benchmark",
+        "praxeon_version": "1.0.0",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "dataset": "synthetic_dag_workload_v1",
+        "seed": args.seed,
+        "model_provider": "gemini-1.5-pro-synthetic",
+        "tokenizer": "heuristic_4chars_v1",
+        "strategy_version": "dag_priority_v1",
+        "cache_limits": {
+            "max_entries": 200,
+            "max_entries_per_session": 50,
+            "fragment_max_entries": 1000,
+        },
+        "hardware_environment": {
+            "os": platform.platform(),
+            "processor": platform.processor(),
+            "python_version": platform.python_version(),
+        },
+        "aggregation_method": "arithmetic_mean_and_step_stratification",
+        "workload_scope_disclaimer": (
+            "NOTE: The token reduction, cache hit rate, and latency metrics reported herein "
+            "are strictly bounded to this synthetic multi-step agent trajectory benchmark workload, "
+            "deterministic configuration, and cache capacity limits. They represent local runtime "
+            "prefix and snapshot reuse and should not be construed as universal performance claims "
+            "across heterogeneous third-party LLM providers or unconstrained production workloads."
+        ),
+    }
+
+    out_dir = os.path.dirname(args.output)
+    if out_dir:
+        os.makedirs(out_dir, exist_ok=True)
+
     with open(args.output, "w", encoding="utf-8") as f:
         json.dump(
             {
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "praxeon_version": "1.0.0",
+                "metadata": metadata,
                 "results": results,
             },
             f,
             indent=2,
         )
 
-    print(f"\nReporte formal exportado exitosamente a: {args.output}")
+    print("\n" + "=" * 80)
+    print("METADATOS Y ACERTOS DE ALCANCE METODOLÓGICO:")
+    print(f"[*] Reporte formal exportado exitosamente a: {args.output}")
+    print(f"[*] {metadata['workload_scope_disclaimer']}")
     print("=" * 80)
 
 

@@ -40,7 +40,7 @@ $$\text{LLM Proposal} \to \text{Evidence Grounding} \to \text{Risk Assessment} \
    - `session_id == active_session_id`
    - `signature == HMAC-SHA256(secret_key, payload)` verificado mediante comparación en tiempo constante (`hmac.compare_digest`) para mitigar ataques de temporización.
    - `is_expired() == False` validado contra la ventana de validez temporal (`expires_at` / TTL).
-   - `nonce` no consumido previamente verificado mediante `SqliteNonceStore` persistente en disco o `InMemoryNonceStore`. **Resistencia a Condiciones de Carrera:** Probado bajo 20 hilos de ejecución concurrente paralela; la verificación y consumo del nonce ocurre en una transacción atómica serializada, garantizando que un recibo legítimo sea consumido exactamente una vez y todos los replays concurrentes sean rechazados con excepción de seguridad.
+   - `nonce` no consumido previamente verificado mediante `SqliteNonceStore` persistente en disco o `InMemoryNonceStore`. **Resistencia a Condiciones de Carrera y Replay:** Probado y validado formalmente bajo contienda masiva con **20, 50 y 100 workers concurrentes simultáneos** (sincronizados mediante barrera temporal en el microsegundo, ver `tests/security/test_concurrent_replay_race.py`). La verificación y consumo del nonce ocurre en una transacción atómica serializada, garantizando el invariante estricto: ante 1 capability legítimo y N intentos concurrentes, exactamente 1 worker consume el nonce con éxito y ejecuta, mientras los N-1 restantes son rechazados atómicamente con excepción `PolicyViolation`.
 3. **Persistencia Durable de Estados y Auditoría de Permisos:**
    - `SqliteStateStore`: Almacén transaccional en SQLite con modo WAL para sesiones y checkpoints versionados cronológicamente.
    - `PermissionManager`: Registro transaccional en disco (`audit_log_path`) en formato JSONL inmutable para todas las solicitudes, aprobaciones y rechazos de intervención humana (HITL).
@@ -57,7 +57,7 @@ $$\text{LLM Proposal} \to \text{Evidence Grounding} \to \text{Risk Assessment} \
 7. **Suite de Seguridad Dedicada (`tests/security/`):**
    Suite formal de pruebas de seguridad que evalúan activamente vectores de ataque adversariales:
    - Forja y alteración de firmas de recibos HMAC.
-   - Ataques de replay intra-proceso, tras reinicio con SQLite y bajo carreras concurrentes de alta carga (20 workers).
+   - Ataques de replay intra-proceso, tras reinicio con SQLite y bajo carreras concurrentes de alta carga (contienda masiva con 20, 50 y 100 workers simultáneos).
    - Path traversal y escape por enlaces simbólicos.
    - Inyección de comandos shell, evasión por `${IFS}`, base64 y subprocesos.
    - Exfiltración de red y evasión de políticas de egress.
@@ -72,15 +72,18 @@ $$\text{LLM Proposal} \to \text{Evidence Grounding} \to \text{Risk Assessment} \
    - `FULL_ACCESS`: Ejecución directa sobre el host sin aislamiento de sistema operativo.
 
    **Invariante Central de Full Access:**
-   > **Full Access no es un bypass del runtime.**
-   > Cambiar el backend de ejecución no cambia quién tiene autoridad sobre la ejecución. Incluso en modo `FULL_ACCESS`, cada acción debe pasar obligatoriamente por la cadena de custodia completa:
+   > **Full Access no es un bypass del runtime ni una relajación oculta de seguridad.**
+   > Cambiar el backend de ejecución no cambia quién tiene autoridad sobre la ejecución. Los modos de ejecución son estrictamente disjuntos:
+   > $$\text{LOCAL\_RESTRICTED} \neq \text{CONTAINER} \neq \text{FULL\_ACCESS}$$
+   > Incluso en modo `FULL_ACCESS`, cada acción debe pasar obligatoriamente por la cadena de custodia completa:
    > $$\text{Proposal} \to \text{Evidence} \to \text{Risk} \to \text{Provider} \to \text{Policy} \to \text{Capability} \to \text{SecureExecutor}$$
    >
    > **Límites no negociables:**
    > - **No fallback implícito:** Si `CONTAINER` o `LOCAL_RESTRICTED` fallan, jamás se degrada automáticamente a `FULL_ACCESS`.
-   > - **Firma criptográfica vinculante:** El `execution_mode` forma parte del material firmado por HMAC del `CapabilityPayload`. Cualquier intento de ejecutar un capability firmado para sandbox en host es rechazado como violación de política.
+   > - **Firma criptográfica vinculante:** El `execution_mode` forma parte del material firmado por HMAC del `CapabilityPayload`. Cualquier intento de ejecutar un capability firmado para sandbox en host (o viceversa) es rechazado como violación de política.
+   > - **Invarianza de BLOCK y REPLAN:** Un veredicto `BLOCK` o `REPLAN` emitido por política permanece absolutamente vinculante en `FULL_ACCESS`; jamás se transforma en `ALLOW`.
    > - **Revisión humana obligatoria:** Toda acción con riesgo High o Critical en `FULL_ACCESS` retiene el requerimiento ineludible de aprobación humana (REVIEW).
-   > - **Advertencia operacional:** `FULL_ACCESS` no ofrece aislamiento del host. Debe ser explícitamente habilitado y auditado.
+   > - **Advertencia operacional:** `FULL_ACCESS` opera directamente sobre el host sin aislamiento de sistema operativo. Debe ser explícitamente habilitado, auditado y registrado.
 
 9. **Precedencia de Seguridad Determinista y Detección de Evasión (Rule 0):**
    PRAXEON implementa una jerarquía estricta e inmutable de precedencia decisional:
@@ -98,6 +101,14 @@ $$\text{LLM Proposal} \to \text{Evidence Grounding} \to \text{Risk Assessment} \
 10. **Seguridad de la Web API y Streaming WebSocket:**
    - **Perfiles de Seguridad (`development`, `secure`, `production`):** En `production` y `secure`, el acceso a la API REST (`/api/v1/sessions`, `/decide`, `/events`) exige autenticación obligatoria mediante clave API (`X-API-Key` o `Authorization: Bearer <key>`), configurada a través de `PRAXEON_API_KEY`.
    - **Autenticación WebSocket:** Los sockets en `/ws/events` y `/ws/{session_id}` exigen validación de token (parámetro query `?token=` o cabecera). Los intentos de conexión sin autenticación válida son rechazados inmediatamente con código de cierre WS 1008 (Policy Violation).
+
+11. **El Caché de Contexto como Capa de Optimización No Vinculante (praxeon.context):**
+   El subsistema de Context Caching y Context Management optimiza el volumen y latencia de los datos presentados al razonador antes de la inferencia:
+   - **Invariante de Separación de Autoridad:**
+     $$\text{Cache Hit} \neq \text{ALLOW} \neq \text{DecisionReceipt} \neq \text{Capability} \neq \text{Execution}$$
+     Un *cache hit* nunca equivale a un permiso, nunca emite capabilities HMAC y nunca ejecuta herramientas en el host. Los caminos con y sin caché convergen en exactamente las mismas compuertas de autorización determinista.
+   - **Almacenamiento Efímero y Reconstruible:** El almacenamiento de fragmentos (L1) y snapshots (L2) es process-local y en memoria. Puede desaparecer tras el reinicio del proceso sin comprometer la seguridad ni el estado canónico; el almacenamiento durable (`SessionState`, `EventStore`, `Evidence`) es la única fuente de verdad y basta para reconstruir cualquier contexto bajo demanda. Un *cache miss* es un evento operacional normal, nunca un fallo de seguridad.
+   - **Invalidación Estricta:** Cualquier mutación, revocación o descalificación de una evidencia empírica invalida quirúrgicamente los snapshots dependientes; el *rollback* del DAG en la sesión descarta de inmediato cualquier contexto del linaje podado.
 
 ---
 

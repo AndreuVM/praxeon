@@ -1,6 +1,26 @@
 {
-  "timestamp": "2026-10-02T00:18:23.253804+00:00",
-  "praxeon_version": "1.0.0",
+  "metadata": {
+    "benchmark_name": "PRAXEON Context Caching & Prefix Reuse Benchmark",
+    "praxeon_version": "1.0.0",
+    "timestamp": "2026-10-02T17:36:05.331438+00:00",
+    "dataset": "synthetic_dag_workload_v1",
+    "seed": 42,
+    "model_provider": "gemini-1.5-pro-synthetic",
+    "tokenizer": "heuristic_4chars_v1",
+    "strategy_version": "dag_priority_v1",
+    "cache_limits": {
+      "max_entries": 200,
+      "max_entries_per_session": 50,
+      "fragment_max_entries": 1000
+    },
+    "hardware_environment": {
+      "os": "Windows-10-10.0.26200-SP0",
+      "processor": "Intel64 Family 6 Model 183 Stepping 1, GenuineIntel",
+      "python_version": "3.11.15"
+    },
+    "aggregation_method": "arithmetic_mean_and_step_stratification",
+    "workload_scope_disclaimer": "NOTE: The token reduction, cache hit rate, and latency metrics reported herein are strictly bounded to this synthetic multi-step agent trajectory benchmark workload, deterministic configuration, and cache capacity limits. They represent local runtime prefix and snapshot reuse and should not be construed as universal performance claims across heterogeneous third-party LLM providers or unconstrained production workloads."
+  },
   "results": {
     "5_steps": {
       "A_FULL": {
@@ -11,8 +31,8 @@
         "cache_hit_rate": 0.0,
         "total_input_tokens": 3918,
         "avg_tokens_per_call": 279.9,
-        "avg_latency_ms": 0.091,
-        "total_wall_ms": 7.9,
+        "avg_latency_ms": 0.088,
+        "total_wall_ms": 7.55,
         "decisions": [
           "allow",
           "allow",
@@ -32,8 +52,8 @@
         "cache_hit_rate": 0.0,
         "total_input_tokens": 3998,
         "avg_tokens_per_call": 285.6,
-        "avg_latency_ms": 0.081,
-        "total_wall_ms": 3.13,
+        "avg_latency_ms": 0.083,
+        "total_wall_ms": 3.19,
         "decisions": [
           "allow",
           "allow",
@@ -57,8 +77,8 @@
         "cache_hit_rate": 0.6429,
         "total_input_tokens": 4844,
         "avg_tokens_per_call": 346.0,
-        "avg_latency_ms": 0.38,
-        "total_wall_ms": 7.49,
+        "avg_latency_ms": 0.304,
+        "total_wall_ms": 6.27,
         "decisions": [
           "allow",
           "allow",
@@ -82,8 +102,8 @@
         "cache_hit_rate": 0.6429,
         "total_input_tokens": 4144,
         "avg_tokens_per_call": 296.0,
-        "avg_latency_ms": 0.281,
-        "total_wall_ms": 5.94,
+        "avg_latency_ms": 0.28,
+        "total_wall_ms": 5.96,
         "decisions": [
           "allow",
           "allow",
@@ -110,7 +130,7 @@
         "total_input_tokens": 31314,
         "avg_tokens_per_call": 711.7,
         "avg_latency_ms": 0.107,
-        "total_wall_ms": 12.79,
+        "total_wall_ms": 12.71,
         "decisions": [
           "allow",
           "allow",
@@ -145,8 +165,8 @@
         "cache_hit_rate": 0.0,
         "total_input_tokens": 29708,
         "avg_tokens_per_call": 675.2,
-        "avg_latency_ms": 0.112,
-        "total_wall_ms": 13.53,
+        "avg_latency_ms": 0.116,
+        "total_wall_ms": 13.42,
         "decisions": [
           "allow",
           "allow",
@@ -185,8 +205,8 @@
         "cache_hit_rate": 0.6591,
         "total_input_tokens": 34758,
         "avg_tokens_per_call": 790.0,
-        "avg_latency_ms": 0.449,
-        "total_wall_ms": 29.22,
+        "avg_latency_ms": 0.43,
+        "total_wall_ms": 28.19,
         "decisions": [
           "allow",
           "allow",
@@ -225,8 +245,8 @@
         "cache_hit_rate": 0.6591,
         "total_input_tokens": 22206,
         "avg_tokens_per_call": 504.7,
-        "avg_latency_ms": 0.372,
-        "total_wall_ms": 24.78,
+        "avg_latency_ms": 0.367,
+        "total_wall_ms": 24.43,
         "decisions": [
           "allow",
           "allow",
@@ -267,8 +287,8 @@
         "cache_hit_rate": 0.0,
         "total_input_tokens": 123440,
         "avg_tokens_per_call": 1371.6,
-        "avg_latency_ms": 0.155,
-        "total_wall_ms": 36.76,
+        "avg_latency_ms": 0.151,
+        "total_wall_ms": 35.97,
         "decisions": [
           "allow",
           "allow",
@@ -326,8 +346,8 @@
         "cache_hit_rate": 0.0,
         "total_input_tokens": 76258,
         "avg_tokens_per_call": 847.3,
-        "avg_latency_ms": 0.127,
-        "total_wall_ms": 33.36,
+        "avg_latency_ms": 0.139,
+        "total_wall_ms": 37.95,
         "decisions": [
           "allow",
           "allow",
@@ -389,8 +409,8 @@
         "cache_hit_rate": 0.6667,
         "total_input_tokens": 89154,
         "avg_tokens_per_call": 990.6,
-        "avg_latency_ms": 0.518,
-        "total_wall_ms": 72.58,
+        "avg_latency_ms": 0.505,
+        "total_wall_ms": 71.09,
         "decisions": [
           "allow",
           "allow",
@@ -452,8 +472,8 @@
         "cache_hit_rate": 0.6667,
         "total_input_tokens": 51616,
         "avg_tokens_per_call": 573.5,
-        "avg_latency_ms": 0.437,
-        "total_wall_ms": 63.27,
+        "avg_latency_ms": 0.433,
+        "total_wall_ms": 63.88,
         "decisions": [
           "allow",
           "allow",
