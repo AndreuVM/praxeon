@@ -63,6 +63,8 @@ class InMemoryContextCache(ContextCache):
         self._store: OrderedDict[str, ContextSnapshot] = OrderedDict()
         # Índice secundario para control y búsqueda por sesión: session_id -> Set[fingerprint]
         self._session_index: Dict[str, set] = {}
+        # Índice terciario por nodo en el árbol/DAG de razonamiento: node_id -> Set[fingerprint]
+        self._node_index: Dict[str, set] = {}
 
         # Métricas operacionales
         self._hits = 0
@@ -82,13 +84,16 @@ class InMemoryContextCache(ContextCache):
             return None
 
     def put(self, key: str, snapshot: ContextSnapshot) -> None:
-        """Almacena o actualiza un snapshot de manera idempotente."""
+        """Almacena o actualiza un snapshot de manera idempotente con indexación por sesión y nodo."""
         with self._lock:
             session_id = snapshot.session_id
+            node_id = snapshot.metadata.get("node_id") or snapshot.metadata.get("active_node_id")
 
             if key in self._store:
                 self._store[key] = snapshot
                 self._store.move_to_end(key)
+                if node_id:
+                    self._node_index.setdefault(node_id, set()).add(key)
                 self._puts += 1
                 return
 
@@ -104,16 +109,22 @@ class InMemoryContextCache(ContextCache):
             # Control de capacidad global
             if len(self._store) >= self.max_entries:
                 oldest_key, _ = self._store.popitem(last=False)
-                # Limpiar del índice de sesión
+                # Limpiar del índice de sesión y nodo
                 for s_id, s_keys in self._session_index.items():
                     if oldest_key in s_keys:
                         s_keys.remove(oldest_key)
+                        break
+                for n_id, n_keys in self._node_index.items():
+                    if oldest_key in n_keys:
+                        n_keys.remove(oldest_key)
                         break
                 self._evictions += 1
 
             # Insertar nuevo elemento
             self._store[key] = snapshot
             session_keys.add(key)
+            if node_id:
+                self._node_index.setdefault(node_id, set()).add(key)
             self._puts += 1
 
     def _remove_key(self, key: str) -> None:
@@ -123,6 +134,9 @@ class InMemoryContextCache(ContextCache):
             s_keys = self._session_index.get(snapshot.session_id)
             if s_keys and key in s_keys:
                 s_keys.remove(key)
+            node_id = snapshot.metadata.get("node_id") or snapshot.metadata.get("active_node_id")
+            if node_id and node_id in self._node_index:
+                self._node_index[node_id].discard(key)
 
     def invalidate(self, predicate: Callable[[ContextSnapshot], bool]) -> int:
         """Invalida quirúrgicamente las entradas que cumplan el predicado."""
@@ -144,11 +158,23 @@ class InMemoryContextCache(ContextCache):
             self._invalidations += count
             return count
 
+    def invalidate_node(self, node_id: str) -> int:
+        """Invalida todos los snapshots vinculados a un nodo del árbol de razonamiento."""
+        with self._lock:
+            keys = list(self._node_index.get(node_id, set()))
+            for k in keys:
+                self._remove_key(k)
+            self._node_index.pop(node_id, None)
+            count = len(keys)
+            self._invalidations += count
+            return count
+
     def clear(self) -> None:
         """Limpia la totalidad de snapshots almacenados."""
         with self._lock:
             self._store.clear()
             self._session_index.clear()
+            self._node_index.clear()
 
     def stats(self) -> Dict[str, Any]:
         """Retorna las métricas agregadas de rendimiento del caché."""
@@ -158,6 +184,7 @@ class InMemoryContextCache(ContextCache):
             return {
                 "entries_count": len(self._store),
                 "sessions_count": len(self._session_index),
+                "nodes_count": len(self._node_index),
                 "hits": self._hits,
                 "misses": self._misses,
                 "puts": self._puts,

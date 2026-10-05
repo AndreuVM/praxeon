@@ -44,3 +44,33 @@ def invalidate_by_ttl(max_age_seconds: float) -> Callable[[ContextSnapshot], boo
     """Invalida snapshots cuya antigüedad supere el TTL configurado."""
     now = time.time()
     return lambda snap: (now - snap.created_at) > max_age_seconds
+
+
+def invalidate_by_node(node_id: str) -> Callable[[ContextSnapshot], bool]:
+    """Invalida snapshots asociados a un nodo específico en el grafo de razonamiento."""
+    def _matches(snap: ContextSnapshot) -> bool:
+        if snap.metadata.get("node_id") == node_id or snap.metadata.get("active_node_id") == node_id:
+            return True
+        for frag in snap.fragments:
+            if frag.metadata.get("node_id") == node_id or frag.source_id == node_id:
+                return True
+        return False
+    return _matches
+
+
+def invalidate_by_dependency(dependency_target_id: str) -> Callable[[ContextSnapshot], bool]:
+    """Invalida cualquier snapshot que contenga fragmentos dependientes de target_id."""
+    def _matches(snap: ContextSnapshot) -> bool:
+        for frag in snap.fragments:
+            if dependency_target_id in frag.dependencies:
+                return True
+            if frag.source_id == dependency_target_id or frag.fragment_id == dependency_target_id:
+                return True
+        return False
+    return _matches
+
+
+def invalidate_by_prefix(prefix: str) -> Callable[[ContextSnapshot], bool]:
+    """Invalida snapshots cuya clave o fingerprint comience con el prefijo indicado."""
+    return lambda snap: snap.fingerprint.startswith(prefix)
+

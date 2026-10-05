@@ -15,6 +15,7 @@ import AgentsView from './components/views/AgentsView';
 import ProvidersView from './components/views/ProvidersView';
 import SecurityView from './components/views/SecurityView';
 import SettingsView from './components/views/SettingsView';
+import WorkflowsView from './components/views/WorkflowsView';
 
 import {
   INITIAL_SESSION,
@@ -1225,6 +1226,8 @@ export default function App() {
                 }}
               />
             )}
+
+            {activeNav === 'workflows' && <WorkflowsView />}
 
             {activeNav === 'providers' && <ProvidersView />}
 

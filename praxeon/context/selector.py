@@ -4,13 +4,14 @@ Selecciona fragmentos relevantes a partir del estado de la sesión, árbol de de
 y evidencias contrastadas sin requerir bases vectoriales ni modelos de embeddings opacos.
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 from praxeon.context.fragments import (
     ContextFragment,
     GoalFragment,
     EvidenceFragment,
     ObservationFragment,
     ConstraintFragment,
+    DecisionFragment,
     TaskFragment,
     EnvironmentFragment,
 )
@@ -18,7 +19,7 @@ from praxeon.domain.action import ActionCandidate
 
 
 class DAGContextSelector:
-    """Selector estructural de fragmentos de contexto a partir de SessionState y dependencias."""
+    """Selector estructural de fragmentos de contexto a partir de SessionState, dependencias y ramas."""
 
     def __init__(
         self,
@@ -26,11 +27,15 @@ class DAGContextSelector:
         max_obs_chars: int = 300,
         max_evidence_items: int = 8,
         include_environment: bool = True,
+        include_key_decisions: bool = True,
+        filter_pruned_branches: bool = True,
     ):
         self.max_recent_observations = max_recent_observations
         self.max_obs_chars = max_obs_chars
         self.max_evidence_items = max_evidence_items
         self.include_environment = include_environment
+        self.include_key_decisions = include_key_decisions
+        self.filter_pruned_branches = filter_pruned_branches
 
     def select(
         self,
@@ -78,17 +83,80 @@ class DAGContextSelector:
                 t_summary = getattr(rec, "summary", getattr(rec, "final_answer", ""))
                 fragments.append(TaskFragment(task_id=t_id, goal=t_goal, summary=t_summary))
 
-        # 4. Fragmentos de Evidencia Empírica Contrastada (EVIDENCE)
+        # 4. Fragmentos de Evidencia Empírica Contrastada (EVIDENCE) con Priorización Relevante (F2-03)
         raw_evidence = getattr(state, "evidence", [])
-        ev_items = raw_evidence[:self.max_evidence_items] if len(raw_evidence) > self.max_evidence_items else raw_evidence
-        for ev in ev_items:
+        req_evidence_ids = (
+            set(candidate_action.requires_evidence)
+            if candidate_action and candidate_action.requires_evidence
+            else set()
+        )
+
+        prioritized_ev = []
+        other_ev = []
+        for ev in raw_evidence:
+            ev_id = str(getattr(ev, "id", ""))
+            if ev_id in req_evidence_ids:
+                prioritized_ev.append(ev)
+            else:
+                other_ev.append(ev)
+
+        ordered_ev = (prioritized_ev + other_ev)[:self.max_evidence_items]
+        for ev in ordered_ev:
             ev_id = getattr(ev, "id", f"ev_{hash(str(ev)) % 10000}")
             claim = getattr(ev, "claim", str(ev))
             fragments.append(EvidenceFragment(evidence_id=str(ev_id), claim=claim))
 
-        # 5. Fragmentos de Observaciones Previas (OBSERVATION)
+        # 5. Filtrado de Ramas Podadas y Selección de Pasos Pertinentes (F2-03 y F2-04)
         raw_steps = getattr(state, "steps", [])
-        recent_steps = raw_steps[-self.max_recent_observations:] if len(raw_steps) > self.max_recent_observations else raw_steps
+        pruned_branches: Set[str] = set(metadata.get("pruned_branches", []))
+        pruned_nodes: Set[str] = set(metadata.get("pruned_nodes", []))
+
+        admissible_steps = []
+        key_decisions: List[ContextFragment] = []
+
+        for step in raw_steps:
+            step_action = getattr(step, "action", None)
+            step_meta = getattr(step_action, "metadata", {}) or {}
+            step_node = step_meta.get("node_id") or getattr(step, "node_id", None)
+            step_branch = step_meta.get("branch_id") or getattr(step, "branch_id", None)
+
+            # Exclusión estricta de ramas podadas/descartadas (F2-04)
+            if self.filter_pruned_branches:
+                if step_node and step_node in pruned_nodes:
+                    continue
+                if step_branch and step_branch in pruned_branches:
+                    continue
+
+            admissible_steps.append(step)
+
+            # Extracción de decisiones clave de supervisión (BLOCK / REPLAN) (F2-03)
+            if self.include_key_decisions:
+                decision = getattr(step, "decision", None)
+                if decision:
+                    status_val = getattr(decision, "status", None)
+                    status_str = status_val.value if hasattr(status_val, "value") else str(status_val)
+                    if status_str in ("block", "replan", "abstain"):
+                        r_codes = getattr(decision, "reason_codes", []) or []
+                        explanation = ", ".join(r_codes) if r_codes else "Acción denegada por política de seguridad"
+                        act_id = getattr(step_action, "id", "unknown_action") if step_action else None
+                        key_decisions.append(
+                            DecisionFragment(
+                                decision_id=f"dec_{len(key_decisions)+1}",
+                                status=status_str,
+                                explanation=explanation,
+                                action_id=act_id,
+                            )
+                        )
+
+        # Añadir decisiones clave seleccionadas
+        fragments.extend(key_decisions)
+
+        # 6. Fragmentos de Observaciones Previas Recientes
+        recent_steps = (
+            admissible_steps[-self.max_recent_observations:]
+            if len(admissible_steps) > self.max_recent_observations
+            else admissible_steps
+        )
 
         for step in recent_steps:
             step_action = getattr(step, "action", None)
@@ -121,7 +189,7 @@ class DAGContextSelector:
                 )
             )
 
-        # 6. Fragmento de Entorno (ENVIRONMENT)
+        # 7. Fragmento de Entorno (ENVIRONMENT)
         if self.include_environment:
             env_info = metadata.get("environment_info")
             if not env_info:

@@ -55,6 +55,11 @@ class ContextSnapshotBuilder:
         if FragmentType.ENVIRONMENT in sections:
             prompt_lines.extend(sections[FragmentType.ENVIRONMENT])
 
+        # 5.5 Decisiones operacionales y veredictos de supervisión
+        if FragmentType.DECISION in sections:
+            prompt_lines.append("\nDECISIONES OPERACIONALES CLAVE:")
+            prompt_lines.extend(f" - {d}" for d in sections[FragmentType.DECISION])
+
         # 6. Observaciones de pasos recientes
         if FragmentType.OBSERVATION in sections:
             prompt_lines.append("\nPASOS Y OBSERVACIONES RECIENTES:")

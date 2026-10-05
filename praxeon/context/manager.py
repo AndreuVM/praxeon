@@ -15,9 +15,20 @@ from typing import Any, Dict, List, Optional, Tuple
 from praxeon.context.budget import TokenBudget
 from praxeon.context.builder import ContextSnapshotBuilder
 from praxeon.context.cache import ContextCache, ContextSnapshot, InMemoryContextCache, InMemoryFragmentCache
+from praxeon.context.entities import (
+    ContextDependency,
+    ContextDependencyType,
+    ContextItem,
+    ContextReference,
+)
 from praxeon.context.fingerprint import ContextFingerprint
 from praxeon.context.fragments import ContextFragment, compute_content_hash
-from praxeon.context.policies import invalidate_by_evidence_id, invalidate_by_session
+from praxeon.context.policies import (
+    invalidate_by_dependency,
+    invalidate_by_evidence_id,
+    invalidate_by_node,
+    invalidate_by_session,
+)
 from praxeon.context.selector import DAGContextSelector
 from praxeon.domain.action import ActionCandidate
 
@@ -44,6 +55,11 @@ class ContextManager:
         self.enabled = enabled
         self.strategy_version = strategy_version
         self.policy_version = policy_version
+
+        # Registro formal de entidades de contexto (Fase 2)
+        self._items: Dict[str, ContextItem] = {}
+        self._dependencies: List[ContextDependency] = []
+        self._references: Dict[str, ContextReference] = {}
 
         # Telemetría y observabilidad según Sección 13 del PDF y Change Request CHG-11
         self._builds_total = 0
@@ -225,6 +241,7 @@ class ContextManager:
             extra_metadata={
                 "strategy": self.strategy_version,
                 "model_profile": model_profile,
+                "node_id": active_node_id,
             },
         )
 
@@ -248,10 +265,66 @@ class ContextManager:
         self._invalidations_total += count
         return count
 
+    def invalidate_node(self, node_id: str) -> int:
+        """Invalida todos los snapshots vinculados a un nodo específico en el árbol de razonamiento."""
+        if hasattr(self.cache, "invalidate_node"):
+            count = self.cache.invalidate_node(node_id)
+        else:
+            count = self.cache.invalidate(invalidate_by_node(node_id))
+        self._invalidations_total += count
+        return count
+
+    def invalidate_dependency(self, target_id: str) -> int:
+        """Invalida en cascada todos los snapshots que dependan del target_id especificado."""
+        count = self.cache.invalidate(invalidate_by_dependency(target_id))
+        self._invalidations_total += count
+        return count
+
+    def add_item(self, item: ContextItem) -> None:
+        """Registra un ContextItem y almacena su fragmento subyacente en la caché L1."""
+        self._items[item.item_id] = item
+        frag = item.to_fragment()
+        self.fragment_cache.put(frag)
+        for dep in item.dependencies:
+            self.register_dependency(dep)
+        for ref in item.references:
+            self.register_reference(ref)
+
+    def get_item(self, item_id: str) -> Optional[ContextItem]:
+        """Recupera un ContextItem registrado por su ID."""
+        return self._items.get(item_id)
+
+    def get_items(self) -> List[ContextItem]:
+        """Devuelve todos los ContextItem registrados en el gestor."""
+        return list(self._items.values())
+
+    def register_dependency(self, dependency: ContextDependency) -> None:
+        """Registra una dependencia formal y dirigida entre entidades de contexto."""
+        if dependency not in self._dependencies:
+            self._dependencies.append(dependency)
+
+    def register_reference(self, reference: ContextReference) -> None:
+        """Registra una referencia a origen o recurso canónico."""
+        self._references[reference.reference_id] = reference
+
+    def get_dependencies(
+        self,
+        item_id: str,
+        dependency_type: Optional[ContextDependencyType] = None,
+    ) -> List[ContextDependency]:
+        """Obtiene las dependencias asociadas a un elemento."""
+        deps = [d for d in self._dependencies if d.source_id == item_id]
+        if dependency_type is not None:
+            deps = [d for d in deps if d.dependency_type == dependency_type]
+        return deps
+
     def clear(self) -> None:
-        """Limpia el almacenamiento de caché."""
+        """Limpia el almacenamiento de caché y el registro de entidades."""
         self.cache.clear()
         self.fragment_cache.clear()
+        self._items.clear()
+        self._dependencies.clear()
+        self._references.clear()
 
     def get_metrics(self) -> Dict[str, Any]:
         """Genera el reporte cuantitativo estandarizado de observabilidad de contexto (CHG-11)."""

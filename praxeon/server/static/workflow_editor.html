@@ -1,0 +1,823 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PRAXEON - Visual Workflow Orchestrator</title>
+  <meta name="description" content="Editor visual drag & drop interactivo para orquestación y gobernanza determinista de workflows multiagente en PRAXEON." />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-base: #080c14;
+      --bg-panel: rgba(15, 23, 42, 0.85);
+      --bg-card: #111827;
+      --bg-card-hover: #1f2937;
+      --border-color: rgba(51, 65, 85, 0.6);
+      --border-focus: #38bdf8;
+      --accent-cyan: #38bdf8;
+      --accent-indigo: #818cf8;
+      --accent-emerald: #10b981;
+      --accent-amber: #f59e0b;
+      --accent-rose: #f43f5e;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+      --font-ui: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg-base);
+      color: var(--text-main);
+      font-family: var(--font-ui);
+      overflow: hidden;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      user-select: none;
+    }
+
+    /* Header Superior */
+    header {
+      height: 56px;
+      background: var(--bg-panel);
+      backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 20px;
+      z-index: 50;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand svg {
+      width: 28px;
+      height: 28px;
+      fill: none;
+      stroke: var(--accent-cyan);
+    }
+
+    .brand h1 {
+      font-size: 1.05rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      background: linear-gradient(135deg, #ffffff 40%, var(--accent-cyan));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .brand .badge {
+      font-size: 0.65rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      padding: 2px 6px;
+      background: rgba(56, 189, 248, 0.15);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      color: var(--accent-cyan);
+      border-radius: 4px;
+      letter-spacing: 0.05em;
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 14px;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.18s ease;
+      border: 1px solid var(--border-color);
+      background: var(--bg-card);
+      color: var(--text-main);
+    }
+
+    .btn:hover {
+      background: var(--bg-card-hover);
+      border-color: var(--border-focus);
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #0284c7, #2563eb);
+      border-color: #38bdf8;
+      color: #ffffff;
+      box-shadow: 0 0 12px rgba(2, 132, 199, 0.35);
+    }
+
+    .btn-primary:hover {
+      background: linear-gradient(135deg, #0369a1, #1d4ed8);
+      box-shadow: 0 0 16px rgba(2, 132, 199, 0.55);
+    }
+
+    .btn-success {
+      background: rgba(16, 185, 129, 0.15);
+      border-color: rgba(16, 185, 129, 0.4);
+      color: #34d399;
+    }
+
+    .btn-success:hover {
+      background: rgba(16, 185, 129, 0.25);
+    }
+
+    .btn-warning {
+      background: rgba(245, 158, 11, 0.15);
+      border-color: rgba(245, 158, 11, 0.4);
+      color: #fbbf24;
+    }
+
+    /* Contenedor Principal (Workspace) */
+    .workspace {
+      display: flex;
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* Paleta Lateral Izquierda */
+    .palette {
+      width: 240px;
+      background: var(--bg-panel);
+      backdrop-filter: blur(16px);
+      border-right: 1px solid var(--border-color);
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      z-index: 40;
+    }
+
+    .palette h2 {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-dim);
+      margin-bottom: 8px;
+    }
+
+    .palette-item {
+      padding: 10px 12px;
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 0.82rem;
+      font-weight: 500;
+      cursor: grab;
+      transition: all 0.15s ease;
+    }
+
+    .palette-item:hover {
+      background: var(--bg-card-hover);
+      border-color: var(--accent-cyan);
+      transform: translateY(-1px);
+    }
+
+    .palette-icon {
+      width: 22px;
+      height: 22px;
+      border-radius: 5px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.75rem;
+      font-weight: 700;
+    }
+
+    .icon-start { background: rgba(56, 189, 248, 0.2); color: var(--accent-cyan); }
+    .icon-task { background: rgba(129, 140, 248, 0.2); color: var(--accent-indigo); }
+    .icon-agent { background: rgba(16, 185, 129, 0.2); color: var(--accent-emerald); }
+    .icon-decision { background: rgba(245, 158, 11, 0.2); color: var(--accent-amber); }
+    .icon-end { background: rgba(244, 63, 94, 0.2); color: var(--accent-rose); }
+
+    /* Lienzo / Canvas */
+    .canvas-container {
+      flex: 1;
+      position: relative;
+      background: 
+        radial-gradient(circle at 50% 50%, rgba(30, 41, 59, 0.2) 0%, transparent 80%),
+        radial-gradient(circle, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+      background-size: 100% 100%, 24px 24px;
+      overflow: hidden;
+      cursor: crosshair;
+    }
+
+    #svg-connections {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 10;
+    }
+
+    .wire-path {
+      fill: none;
+      stroke: #475569;
+      stroke-width: 2.2;
+      stroke-linecap: round;
+      transition: stroke 0.2s ease;
+    }
+
+    .wire-path.active {
+      stroke: var(--accent-cyan);
+      stroke-dasharray: 6 3;
+      animation: wireFlow 1.5s linear infinite;
+    }
+
+    @keyframes wireFlow {
+      from { stroke-dashoffset: 24; }
+      to { stroke-dashoffset: 0; }
+    }
+
+    /* Nodos en Lienzo */
+    .wf-node {
+      position: absolute;
+      width: 190px;
+      background: rgba(17, 24, 39, 0.92);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      padding: 12px;
+      cursor: move;
+      z-index: 20;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+      transition: border-color 0.18s, box-shadow 0.18s, transform 0.05s;
+    }
+
+    .wf-node:hover {
+      border-color: rgba(56, 189, 248, 0.6);
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6), 0 0 12px rgba(56, 189, 248, 0.2);
+    }
+
+    .wf-node.selected {
+      border-color: var(--accent-cyan);
+      box-shadow: 0 0 18px rgba(56, 189, 248, 0.4);
+    }
+
+    /* Estados de ejecución de los nodos */
+    .wf-node.status-RUNNING {
+      border-color: var(--accent-cyan);
+      box-shadow: 0 0 20px rgba(56, 189, 248, 0.6);
+      animation: nodePulse 1.4s ease-in-out infinite alternate;
+    }
+
+    .wf-node.status-COMPLETED {
+      border-color: var(--accent-emerald);
+      box-shadow: 0 0 14px rgba(16, 185, 129, 0.3);
+    }
+
+    .wf-node.status-WAITING_APPROVAL {
+      border-color: var(--accent-amber);
+      box-shadow: 0 0 16px rgba(245, 158, 11, 0.5);
+      animation: nodePulseAmber 1s ease-in-out infinite alternate;
+    }
+
+    .wf-node.status-FAILED {
+      border-color: var(--accent-rose);
+      box-shadow: 0 0 16px rgba(244, 63, 94, 0.5);
+    }
+
+    .wf-node.status-SKIPPED {
+      opacity: 0.45;
+      border-style: dashed;
+    }
+
+    @keyframes nodePulse {
+      from { box-shadow: 0 0 8px rgba(56, 189, 248, 0.3); }
+      to { box-shadow: 0 0 22px rgba(56, 189, 248, 0.8); }
+    }
+
+    @keyframes nodePulseAmber {
+      from { box-shadow: 0 0 8px rgba(245, 158, 11, 0.3); }
+      to { box-shadow: 0 0 22px rgba(245, 158, 11, 0.8); }
+    }
+
+    .node-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+
+    .node-badge {
+      font-size: 0.62rem;
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .node-title {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: #ffffff;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-bottom: 4px;
+    }
+
+    .node-subtitle {
+      font-size: 0.7rem;
+      color: var(--text-dim);
+      font-family: var(--font-mono);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* Puertos de conexión */
+    .port {
+      position: absolute;
+      width: 10px;
+      height: 10px;
+      background: var(--bg-card);
+      border: 2px solid #64748b;
+      border-radius: 50%;
+      top: 50%;
+      transform: translateY(-50%);
+      transition: all 0.15s ease;
+    }
+
+    .port-in { left: -6px; }
+    .port-out { right: -6px; }
+
+    .port:hover {
+      background: var(--accent-cyan);
+      border-color: #ffffff;
+      transform: translateY(-50%) scale(1.3);
+    }
+
+    /* Inspector Lateral Derecho */
+    .inspector {
+      width: 320px;
+      background: var(--bg-panel);
+      backdrop-filter: blur(16px);
+      border-left: 1px solid var(--border-color);
+      display: flex;
+      flex-direction: column;
+      z-index: 40;
+    }
+
+    .inspector-header {
+      padding: 16px;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .inspector-header h2 {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--text-main);
+    }
+
+    .inspector-body {
+      flex: 1;
+      padding: 16px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .prop-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .prop-label {
+      font-size: 0.72rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-dim);
+    }
+
+    .prop-input, .prop-textarea {
+      width: 100%;
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      padding: 8px 10px;
+      font-size: 0.82rem;
+      color: var(--text-main);
+      font-family: var(--font-ui);
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    .prop-input:focus, .prop-textarea:focus {
+      border-color: var(--accent-cyan);
+    }
+
+    .prop-textarea {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      height: 100px;
+      resize: vertical;
+    }
+
+    /* Barra Inferior de Telemetría */
+    .telemetry-bar {
+      height: 120px;
+      background: var(--bg-panel);
+      border-top: 1px solid var(--border-color);
+      padding: 10px 16px;
+      overflow-y: auto;
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      z-index: 50;
+    }
+
+    .telemetry-entry {
+      display: flex;
+      gap: 10px;
+      line-height: 1.4;
+    }
+
+    .telemetry-time { color: var(--text-dim); }
+    .telemetry-tag { font-weight: 600; color: var(--accent-cyan); }
+  </style>
+</head>
+<body>
+  <!-- Header -->
+  <header>
+    <div class="brand">
+      <svg viewBox="0 0 24 24"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.28 1.28L3 12l5.8 1.9a2 2 0 0 1 1.28 1.28L12 21l1.9-5.8a2 2 0 0 1 1.28-1.28L21 12l-5.8-1.9a2 2 0 0 1-1.28-1.28L12 3Z"/></svg>
+      <h1>PRAXEON Workflows</h1>
+      <span class="badge">Visual Engine v1.0</span>
+    </div>
+
+    <div class="header-actions">
+      <button id="btn-validate" class="btn" title="Validar que el grafo sea un DAG sin ciclos">
+        <span>✓</span> Validar DAG
+      </button>
+      <button id="btn-step" class="btn btn-primary" title="Avanzar un solo nodo paso a paso">
+        <span>⏭</span> Step
+      </button>
+      <button id="btn-run" class="btn btn-success" title="Ejecutar flujo completo supervisado">
+        <span>▶</span> Run Flow
+      </button>
+      <button id="btn-backtrack" class="btn btn-warning" title="Retroceso determinista al nodo seleccionado">
+        <span>↺</span> Backtrack
+      </button>
+      <button id="btn-reset" class="btn" title="Reiniciar estados de ejecución">
+        <span>⟳</span> Reset
+      </button>
+    </div>
+  </header>
+
+  <!-- Workspace -->
+  <div class="workspace">
+    <!-- Paleta de Componentes -->
+    <div class="palette">
+      <h2>Nodos Disponibles</h2>
+      <div class="palette-item" onclick="createNodeOnCanvas('TASK', 'Task Worker')">
+        <div class="palette-icon icon-task">T</div>
+        <span>Task Node</span>
+      </div>
+      <div class="palette-item" onclick="createNodeOnCanvas('AGENT', 'Agent Worker')">
+        <div class="palette-icon icon-agent">A</div>
+        <span>Agent Node</span>
+      </div>
+      <div class="palette-item" onclick="createNodeOnCanvas('DECISION', 'Decision Gate')">
+        <div class="palette-icon icon-decision">D</div>
+        <span>Decision Gate</span>
+      </div>
+      <div class="palette-item" onclick="createNodeOnCanvas('END', 'End State')">
+        <div class="palette-icon icon-end">E</div>
+        <span>End Node</span>
+      </div>
+    </div>
+
+    <!-- Lienzo -->
+    <div id="canvas" class="canvas-container">
+      <svg id="svg-connections">
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1 L 10 5 L 0 9 z" fill="#64748b"/>
+          </marker>
+          <marker id="arrow-active" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1 L 10 5 L 0 9 z" fill="#38bdf8"/>
+          </marker>
+        </defs>
+      </svg>
+      <!-- Nodos dinámicos inyectados por JS -->
+    </div>
+
+    <!-- Inspector Lateral -->
+    <div class="inspector">
+      <div class="inspector-header">
+        <h2>Propiedades del Nodo</h2>
+      </div>
+      <div class="inspector-body">
+        <div class="prop-group">
+          <label class="prop-label">ID del Nodo</label>
+          <input id="prop-node-id" class="prop-input" readonly />
+        </div>
+        <div class="prop-group">
+          <label class="prop-label">Nombre</label>
+          <input id="prop-node-name" class="prop-input" />
+        </div>
+        <div class="prop-group">
+          <label class="prop-label">Tipo de Nodo</label>
+          <input id="prop-node-type" class="prop-input" readonly />
+        </div>
+        <div class="prop-group">
+          <label class="prop-label">Estado Actual</label>
+          <input id="prop-node-status" class="prop-input" readonly />
+        </div>
+        <div class="prop-group">
+          <label class="prop-label">Inputs (JSON)</label>
+          <textarea id="prop-node-inputs" class="prop-textarea"></textarea>
+        </div>
+        <div class="prop-group">
+          <label class="prop-label">Salidas (Outputs)</label>
+          <textarea id="prop-node-outputs" class="prop-textarea" readonly></textarea>
+        </div>
+        <button id="btn-delete-node" class="btn" style="color: var(--accent-rose); border-color: rgba(244,63,94,0.3); margin-top: 10px;">
+          Eliminar Nodo
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Telemetría Inferior -->
+  <div id="telemetry" class="telemetry-bar">
+    <div class="telemetry-entry">
+      <span class="telemetry-time">[INIT]</span>
+      <span class="telemetry-tag">PRAXEON:</span>
+      <span>Editor visual inicializado. Listo para composición y ejecución de workflows.</span>
+    </div>
+  </div>
+
+  <script>
+    const currentWorkflowId = "wf_demo_autonomous";
+    let workflowData = null;
+    let selectedNodeId = null;
+    let draggingNode = null;
+    let dragOffset = { x: 0, y: 0 };
+
+    async function loadWorkflow() {
+      try {
+        const res = await fetch(`/v1/workflows/${currentWorkflowId}`);
+        const json = await res.json();
+        if (json.data) {
+          workflowData = json.data;
+          renderNodes();
+          renderConnections();
+          logTelemetry("WORKFLOW", `Cargado '${workflowData.name}' (${Object.keys(workflowData.nodes).length} nodos).`);
+        }
+      } catch (err) {
+        logTelemetry("ERROR", "No se pudo cargar el workflow desde el servidor.");
+      }
+    }
+
+    function renderNodes() {
+      const canvas = document.getElementById("canvas");
+      // Limpiar nodos existentes
+      document.querySelectorAll(".wf-node").forEach(el => el.remove());
+
+      if (!workflowData || !workflowData.nodes) return;
+
+      Object.values(workflowData.nodes).forEach(node => {
+        const nodeEl = document.createElement("div");
+        nodeEl.className = `wf-node status-${node.status || 'PENDING'}`;
+        nodeEl.id = `wf-node-${node.node_id}`;
+        nodeEl.style.left = `${node.position.x}px`;
+        nodeEl.style.top = `${node.position.y}px`;
+
+        if (selectedNodeId === node.node_id) {
+          nodeEl.classList.add("selected");
+        }
+
+        const badgeClass = `icon-${node.node_type.toLowerCase()}`;
+        nodeEl.innerHTML = `
+          <div class="port port-in"></div>
+          <div class="node-header">
+            <span class="node-badge ${badgeClass}">${node.node_type}</span>
+          </div>
+          <div class="node-title">${node.name}</div>
+          <div class="node-subtitle">${node.agent_id || node.tool_name || node.node_id}</div>
+          <div class="port port-out"></div>
+        `;
+
+        // Eventos de arrastre
+        nodeEl.addEventListener("mousedown", (e) => onNodeMouseDown(e, node.node_id));
+        nodeEl.addEventListener("click", () => selectNode(node.node_id));
+
+        canvas.appendChild(nodeEl);
+      });
+    }
+
+    function renderConnections() {
+      const svg = document.getElementById("svg-connections");
+      // Limpiar paths previos excepto defs
+      svg.querySelectorAll("path").forEach(p => p.remove());
+
+      if (!workflowData || !workflowData.edges) return;
+
+      workflowData.edges.forEach(edge => {
+        const fromEl = document.getElementById(`wf-node-${edge.from_node}`);
+        const toEl = document.getElementById(`wf-node-${edge.to_node}`);
+
+        if (fromEl && toEl) {
+          const fromRect = fromEl.getBoundingClientRect();
+          const toRect = toEl.getBoundingClientRect();
+          const canvasRect = document.getElementById("canvas").getBoundingClientRect();
+
+          const x1 = fromRect.right - canvasRect.left;
+          const y1 = fromRect.top + fromRect.height / 2 - canvasRect.top;
+          const x2 = toRect.left - canvasRect.left;
+          const y2 = toRect.top + toRect.height / 2 - canvasRect.top;
+
+          const dx = Math.abs(x2 - x1) * 0.5;
+          const pathData = `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`;
+
+          const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+          path.setAttribute("d", pathData);
+          path.setAttribute("class", "wire-path");
+          path.setAttribute("marker-end", "url(#arrow)");
+          svg.appendChild(path);
+        }
+      });
+    }
+
+    function onNodeMouseDown(e, nodeId) {
+      if (e.target.classList.contains("port")) return;
+      draggingNode = nodeId;
+      const nodeEl = document.getElementById(`wf-node-${nodeId}`);
+      const rect = nodeEl.getBoundingClientRect();
+      dragOffset.x = e.clientX - rect.left;
+      dragOffset.y = e.clientY - rect.top;
+
+      window.addEventListener("mousemove", onMouseMove);
+      window.addEventListener("mouseup", onMouseUp);
+    }
+
+    function onMouseMove(e) {
+      if (!draggingNode) return;
+      const canvasRect = document.getElementById("canvas").getBoundingClientRect();
+      let newX = e.clientX - canvasRect.left - dragOffset.x;
+      let newY = e.clientY - canvasRect.top - dragOffset.y;
+
+      const nodeEl = document.getElementById(`wf-node-${draggingNode}`);
+      nodeEl.style.left = `${newX}px`;
+      nodeEl.style.top = `${newY}px`;
+
+      if (workflowData.nodes[draggingNode]) {
+        workflowData.nodes[draggingNode].position = { x: newX, y: newY };
+      }
+
+      renderConnections();
+    }
+
+    async function onMouseUp() {
+      if (draggingNode) {
+        const node = workflowData.nodes[draggingNode];
+        if (node) {
+          // Persistir en backend
+          fetch(`/v1/workflows/${currentWorkflowId}/nodes/${draggingNode}/position`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ x: node.position.x, y: node.position.y })
+          });
+        }
+        draggingNode = null;
+      }
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+    }
+
+    function selectNode(nodeId) {
+      selectedNodeId = nodeId;
+      document.querySelectorAll(".wf-node").forEach(n => n.classList.remove("selected"));
+      const el = document.getElementById(`wf-node-${nodeId}`);
+      if (el) el.classList.add("selected");
+
+      const node = workflowData.nodes[nodeId];
+      if (node) {
+        document.getElementById("prop-node-id").value = node.node_id;
+        document.getElementById("prop-node-name").value = node.name;
+        document.getElementById("prop-node-type").value = node.node_type;
+        document.getElementById("prop-node-status").value = node.status || "PENDING";
+        document.getElementById("prop-node-inputs").value = JSON.stringify(node.inputs || {}, null, 2);
+        document.getElementById("prop-node-outputs").value = JSON.stringify(node.outputs || {}, null, 2);
+      }
+    }
+
+    function logTelemetry(tag, msg) {
+      const box = document.getElementById("telemetry");
+      const entry = document.createElement("div");
+      entry.className = "telemetry-entry";
+      const now = new Date().toTimeString().split(' ')[0];
+      entry.innerHTML = `<span class="telemetry-time">[${now}]</span><span class="telemetry-tag">${tag}:</span><span>${msg}</span>`;
+      box.appendChild(entry);
+      box.scrollTop = box.scrollHeight;
+    }
+
+    // Controles de Ejecución
+    document.getElementById("btn-step").addEventListener("click", async () => {
+      try {
+        const res = await fetch(`/v1/workflows/${currentWorkflowId}/step`, { method: "POST" });
+        const json = await res.json();
+        if (json.data) {
+          logTelemetry("STEP", `Ejecutado nodo '${json.data.executed_node_id || "None"}' | Estado: ${json.data.status}`);
+          await loadWorkflow();
+        }
+      } catch (err) {
+        logTelemetry("ERROR", "Fallo al ejecutar paso de workflow.");
+      }
+    });
+
+    document.getElementById("btn-run").addEventListener("click", async () => {
+      try {
+        logTelemetry("RUN", "Iniciando ejecución supervisada de flujo...");
+        const res = await fetch(`/v1/workflows/${currentWorkflowId}/execute`, { method: "POST" });
+        const json = await res.json();
+        if (json.data) {
+          logTelemetry("COMPLETE", `Workflow finalizado con estado: ${json.data.status}`);
+          await loadWorkflow();
+        }
+      } catch (err) {
+        logTelemetry("ERROR", "Fallo en ejecución de workflow.");
+      }
+    });
+
+    document.getElementById("btn-backtrack").addEventListener("click", async () => {
+      if (!selectedNodeId) {
+        alert("Selecciona primero un nodo en el lienzo para aplicar backtrack determinista.");
+        return;
+      }
+      try {
+        const res = await fetch(`/v1/workflows/${currentWorkflowId}/backtrack`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ target_node_id: selectedNodeId })
+        });
+        const json = await res.json();
+        logTelemetry("BACKTRACK", `Retroceso aplicado hacia nodo '${selectedNodeId}' | Éxito: ${json.data.success}`);
+        await loadWorkflow();
+      } catch (err) {
+        logTelemetry("ERROR", "Fallo al aplicar backtrack.");
+      }
+    });
+
+    document.getElementById("btn-reset").addEventListener("click", async () => {
+      try {
+        await fetch(`/v1/workflows/${currentWorkflowId}/reset`, { method: "POST" });
+        logTelemetry("RESET", "Workflow reiniciado a estado IDLE.");
+        await loadWorkflow();
+      } catch (err) {
+        logTelemetry("ERROR", "Fallo al reiniciar workflow.");
+      }
+    });
+
+    document.getElementById("btn-validate").addEventListener("click", async () => {
+      try {
+        const res = await fetch(`/v1/workflows/${currentWorkflowId}/validate`, { method: "POST" });
+        const json = await res.json();
+        if (json.data.is_valid) {
+          logTelemetry("VALID", `Grafo DAG verificado sin ciclos. Orden: [${json.data.topological_order.join(" → ")}]`);
+        } else {
+          logTelemetry("INVALID", `Errores encontrados: ${json.data.errors.join(", ")}`);
+        }
+      } catch (err) {
+        logTelemetry("ERROR", "Fallo al validar workflow.");
+      }
+    });
+
+    // Iniciar carga al montar
+    window.addEventListener("DOMContentLoaded", loadWorkflow);
+  </script>
+</body>
+</html>

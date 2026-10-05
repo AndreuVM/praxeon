@@ -27,6 +27,13 @@ from praxeon.context.budget import TokenBudget
 from praxeon.context.selector import DAGContextSelector
 from praxeon.context.builder import ContextSnapshotBuilder
 from praxeon.context.manager import ContextManager
+from praxeon.context.compressor import SemanticContextCompressor
+from praxeon.context.entities import (
+    ContextDependency,
+    ContextDependencyType,
+    ContextItem,
+    ContextReference,
+)
 
 __all__ = [
     "ContextFragment",
@@ -49,4 +56,9 @@ __all__ = [
     "DAGContextSelector",
     "ContextSnapshotBuilder",
     "ContextManager",
+    "ContextItem",
+    "ContextReference",
+    "ContextDependency",
+    "ContextDependencyType",
+    "SemanticContextCompressor",
 ]

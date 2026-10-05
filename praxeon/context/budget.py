@@ -37,10 +37,14 @@ class TokenBudget:
         default_max_tokens: int = 2048,
         priority_map: Optional[Dict[FragmentType, int]] = None,
         tokenizer: Optional[Callable[[str], int]] = None,
+        auto_summarize: bool = False,
+        compressor: Optional[Any] = None,
     ):
         self.default_max_tokens = default_max_tokens
         self.priority_map = priority_map or dict(DEFAULT_PRIORITY_MAP)
         self.tokenizer = tokenizer or estimate_tokens
+        self.auto_summarize = auto_summarize
+        self.compressor = compressor
 
     def get_fragment_priority(self, fragment: ContextFragment, index_in_source: int = 0) -> Tuple[int, int]:
         """Calcula una tupla de ordenación (prioridad_categoria, orden_secundario).
@@ -58,6 +62,9 @@ class TokenBudget:
         max_tokens: Optional[int] = None,
     ) -> Tuple[List[ContextFragment], bool, int]:
         """Selecciona los fragmentos de mayor valor informativo dentro del presupuesto de tokens.
+        
+        Si auto_summarize está activo y se produce truncamiento en observaciones o evidencias,
+        condensa semánticamente los elementos descartados en un SummaryFragment.
         
         Retorna:
             (fragmentos_seleccionados_en_orden_logico, fue_truncado, tokens_totales)
@@ -85,6 +92,7 @@ class TokenBudget:
         used_tokens = 0
         selected_indices = set()
         truncated = False
+        excluded_observations = []
 
         for item in indexed_items:
             cost = item["token_cost"]
@@ -96,10 +104,28 @@ class TokenBudget:
                 used_tokens += cost
             else:
                 truncated = True
+                if item["fragment"].fragment_type == FragmentType.OBSERVATION:
+                    excluded_observations.append(item["fragment"])
 
-        # 4. Reconstruir la lista seleccionada preservando el orden secuencial/lógico original
+        # 4. Condensación semántica de fragmentos excluidos si auto_summarize está activo (F2-05)
+        summary_frag: Optional[ContextFragment] = None
+        if (self.auto_summarize or self.compressor) and excluded_observations:
+            from praxeon.context.compressor import SemanticContextCompressor
+            comp = self.compressor or SemanticContextCompressor()
+            summary_frag = comp.condense_observations(excluded_observations)
+            if summary_frag:
+                summary_cost = summary_frag.token_estimate if summary_frag.token_estimate > 0 else self.tokenizer(summary_frag.content)
+                if used_tokens + summary_cost <= budget + 50:  # margen pequeño para retención de resumen
+                    used_tokens += summary_cost
+
+        # 5. Reconstruir la lista seleccionada preservando el orden secuencial/lógico original
         final_selected = [
             fragments[idx] for idx in range(len(fragments)) if idx in selected_indices
         ]
+
+        if summary_frag:
+            # Insertar el resumen inmediatamente antes de las observaciones recientes seleccionadas
+            obs_pos = next((i for i, f in enumerate(final_selected) if f.fragment_type == FragmentType.OBSERVATION), len(final_selected))
+            final_selected.insert(obs_pos, summary_frag)
 
         return (final_selected, truncated, used_tokens)

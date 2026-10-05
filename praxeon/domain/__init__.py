@@ -15,6 +15,13 @@ from praxeon.domain.decision import (
     verify_receipt_signature,
 )
 from praxeon.domain.events import EventType, RuntimeEvent, make_event
+from praxeon.domain.branch import (
+    BranchPath,
+    BranchScore,
+    BranchStatus,
+    BranchStep,
+    RollbackCheckpoint,
+)
 from praxeon.domain.tree import (
     DecisionTree,
     NodeActor,
@@ -81,4 +88,9 @@ __all__ = [
     "NodeKind",
     "NodeStatus",
     "NodeActor",
+    "BranchStatus",
+    "BranchScore",
+    "BranchStep",
+    "BranchPath",
+    "RollbackCheckpoint",
 ]

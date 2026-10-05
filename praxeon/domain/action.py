@@ -24,6 +24,7 @@ class ActionCandidate(BaseModel):
     rationale: Optional[str] = None
     requires_evidence: List[str] = Field(default_factory=list)
     estimated_cost: float = 0.0
+    metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
 def compute_action_hash(action: ActionCandidate) -> str:

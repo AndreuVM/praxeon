@@ -74,6 +74,29 @@ class InterventionEvent(TelemetryEvent):
     suggested_action: Optional[str] = None
 
 
+class EfficiencyStepEvent(TelemetryEvent):
+    """Evento emitido para registrar métricas de telemetría de eficiencia de un paso normativo."""
+    event_type: str = "step_efficiency"
+    step_index: int
+    action_id: str
+    tool_name: str
+    decision: str
+    tokens_in: int = 0
+    tokens_out: int = 0
+    tokens_total: int = 0
+    llm_calls: int = 1
+    llm_latency_ms: float = 0.0
+    praxeon_overhead_ms: float = 0.0
+    execution_time_ms: float = 0.0
+    total_step_latency_ms: float = 0.0
+    physical_execution_attempted: bool = False
+    physical_execution_allowed: bool = False
+    physical_execution_success: Optional[bool] = None
+    is_error: bool = False
+    cost_usd: float = 0.0
+
+
+
 class JsonlTelemetrySink:
     """Persiste eventos estructurados en un archivo en formato JSON Lines."""
 

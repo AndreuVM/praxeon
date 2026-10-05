@@ -90,9 +90,9 @@ def simulate_agent_mission(
             enable_caching=True,
         )
     elif mode == "D_CACHED_SUMMARIZED":
-        # Con presupuesto más compacto (1024 tokens) y selección priorizada
+        # Con presupuesto más compacto (1024 tokens) y selección priorizada con condensación
         selector = DAGContextSelector(max_recent_observations=6, max_obs_chars=200)
-        budget = TokenBudget(default_max_tokens=1024)
+        budget = TokenBudget(default_max_tokens=1024, auto_summarize=True)
         manager = ContextManager(selector=selector, budget=budget)
         builder = ProviderContextBuilder(
             default_max_tokens=1024,

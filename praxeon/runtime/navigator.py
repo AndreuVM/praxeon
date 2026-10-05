@@ -7,6 +7,7 @@ con soporte de checkpoints automáticos, chunking tipado y rollback determinista
 
 from datetime import datetime, timezone
 import hashlib
+import time
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from praxeon.domain.interfaces import ReasoningProvider
@@ -19,6 +20,13 @@ from praxeon.domain.models import (
     PolicyDecision,
     ProviderAssessment,
 )
+from praxeon.runtime.efficiency import (
+    EfficiencyCalculator,
+    ModelPricing,
+    MODEL_PRICING_CATALOG,
+    SessionEfficiencySummary,
+    StepEfficiencyRecord,
+)
 from praxeon.models.schema import BatchSemantics
 from praxeon.policy.engine import PolicyEngine
 from praxeon.reasoning.completion import CompletionAssessment, CompletionVerifier
@@ -29,6 +37,7 @@ from praxeon.runtime.executor import SecureExecutor, ToolObservation
 from praxeon.runtime.state import SessionState
 from praxeon.runtime.telemetry import (
     DecisionEvent,
+    EfficiencyStepEvent,
     ObservationEvent,
     ToolExecutionEvent,
     global_event_bus,
@@ -50,6 +59,7 @@ class Navigator:
         completion_verifier: Optional[CompletionVerifier] = None,
         event_bus: Optional[EventBus] = None,
         shadow_mode: bool = False,
+        model_name: Optional[str] = None,
     ):
         self.provider = provider
         self.policy_engine = policy_engine or PolicyEngine()
@@ -64,9 +74,12 @@ class Navigator:
         self.completion_verifier = completion_verifier or CompletionVerifier()
         self.event_bus = event_bus or global_event_bus
         self.shadow_mode = shadow_mode
+        self.model_name = model_name or getattr(self.provider, "model", "deepseek-r1-7b")
 
         self.state: Optional[SessionState] = None
         self.audit_receipts: List[DecisionReceipt] = []
+        self.efficiency_records: List[StepEfficiencyRecord] = []
+        self._last_timing: Dict[str, float] = {"llm_latency_ms": 0.0, "praxeon_overhead_ms": 0.0}
 
     @property
     def router_telemetry(self) -> Optional[Any]:
@@ -79,6 +92,8 @@ class Navigator:
         """Inicializa una nueva sesión de supervisión formal con checkpoint génesis."""
         sid = session_id or f"sess_{len(self.audit_receipts)}"
         self.state = SessionState(session_id=sid, goal=goal)
+        self.efficiency_records = []
+        self._last_timing = {"llm_latency_ms": 0.0, "praxeon_overhead_ms": 0.0}
         if hasattr(self.executor, "sandbox") and hasattr(self.executor.sandbox, "workspace_root"):
             self.state.metadata["workspace_root"] = self.executor.sandbox.workspace_root
         self.checkpoint_manager.create_checkpoint(self.state, reason="Genesis checkpoint")
@@ -209,19 +224,26 @@ class Navigator:
     ) -> Tuple[PolicyDecision, DecisionReceipt]:
         """Toma la decisión operacional formal para una única acción."""
         state = self._ensure_session()
+        t_decide_start = time.perf_counter()
 
         completion_assessment: Optional[CompletionAssessment] = None
         if self.completion_verifier.is_finish_action(action):
             completion_assessment = self.completion_verifier.verify(state.goal, state, action)
 
+        llm_latency_ms = 0.0
         if assessment is None:
+            t_llm_start = time.perf_counter()
             assessments = self.provider.evaluate(state, [action])
+            t_llm_end = time.perf_counter()
+            llm_latency_ms = (t_llm_end - t_llm_start) * 1000.0
             assessment = assessments[0] if assessments else ProviderAssessment(
                 provider="unknown",
                 available=False,
                 confidence=0.0,
                 failure_reason="No assessment returned",
             )
+        elif hasattr(assessment, "metadata") and isinstance(assessment.metadata, dict) and "llm_latency_ms" in assessment.metadata:
+            llm_latency_ms = float(assessment.metadata["llm_latency_ms"])
 
         risk_assessment = self.risk_engine.assess_action_risk(action)
 
@@ -236,6 +258,14 @@ class Navigator:
             session_id=state.session_id,
         )
         self.audit_receipts.append(receipt)
+
+        t_decide_end = time.perf_counter()
+        total_decide_ms = (t_decide_end - t_decide_start) * 1000.0
+        praxeon_overhead_ms = max(0.0, total_decide_ms - llm_latency_ms)
+        self._last_timing = {
+            "llm_latency_ms": round(llm_latency_ms, 2),
+            "praxeon_overhead_ms": round(praxeon_overhead_ms, 2),
+        }
 
         # Emitir evento estructurado de decisión (Secciones 21 y 30)
         self.event_bus.publish(
@@ -267,20 +297,80 @@ class Navigator:
         Proposal -> Evidence -> Risk -> JEV -> Policy -> Decision -> Execution -> Observation.
         """
         state = self._ensure_session()
+        t_step_start = time.perf_counter()
 
         # 1. Evaluar decisión con la política
         decision, receipt = self.decide(action)
+        tool_name = action.tool_call.tool_name if action.tool_call else None
+        tool_args = action.tool_call.arguments if action.tool_call else {}
+
+        # Estimación / extracción de tokens in / out
+        tokens_in = 0
+        tokens_out = 0
+        if action.metadata and isinstance(action.metadata, dict):
+            tokens_in = int(action.metadata.get("tokens_in", 0))
+            tokens_out = int(action.metadata.get("tokens_out", 0))
+        if tokens_in <= 0:
+            prompt_context_size = len(str(getattr(state.goal, "objective", state.goal))) + sum(len(str(st)) for st in state.steps) + 120
+            tokens_in = max(15, prompt_context_size // 4)
+        if tokens_out <= 0:
+            gen_size = len(action.rationale or "") + len(str(action.tool_call or "")) + 40
+            tokens_out = max(10, gen_size // 4)
+        tokens_total = tokens_in + tokens_out
 
         # 2. Si la política DENEGÓ la ejecución (BLOCK, REPLAN, ABSTAIN)
         # En modo shadow, se observa y registra pero se permite continuar
         if decision.status != DecisionStatus.ALLOW and not self.shadow_mode:
             state.add_step(action=action, decision=decision, observation=None)
+            t_step_end = time.perf_counter()
+            total_step_lat_ms = (t_step_end - t_step_start) * 1000.0
+
+            cost_usd = EfficiencyCalculator.calculate_step_cost(tokens_in, tokens_out, self.model_name)
+            record = StepEfficiencyRecord(
+                step_index=len(self.efficiency_records),
+                action_id=action.id,
+                tool_name=tool_name or "none",
+                decision_status=decision.status.value,
+                tokens_in=tokens_in,
+                tokens_out=tokens_out,
+                tokens_total=tokens_total,
+                llm_calls=1,
+                llm_latency_ms=self._last_timing.get("llm_latency_ms", 0.0),
+                praxeon_overhead_ms=self._last_timing.get("praxeon_overhead_ms", 0.0),
+                execution_time_ms=0.0,
+                total_step_latency_ms=round(total_step_lat_ms, 2),
+                physical_execution_attempted=True,
+                physical_execution_allowed=False,
+                physical_execution_success=None,
+                is_error=False,
+                cost_usd=round(cost_usd, 6),
+            )
+            self.efficiency_records.append(record)
+            self.event_bus.publish(
+                EfficiencyStepEvent(
+                    session_id=state.session_id,
+                    step_index=record.step_index,
+                    action_id=record.action_id,
+                    tool_name=record.tool_name,
+                    decision=record.decision_status,
+                    tokens_in=record.tokens_in,
+                    tokens_out=record.tokens_out,
+                    tokens_total=record.tokens_total,
+                    llm_calls=record.llm_calls,
+                    llm_latency_ms=record.llm_latency_ms,
+                    praxeon_overhead_ms=record.praxeon_overhead_ms,
+                    execution_time_ms=record.execution_time_ms,
+                    total_step_latency_ms=record.total_step_latency_ms,
+                    physical_execution_attempted=record.physical_execution_attempted,
+                    physical_execution_allowed=record.physical_execution_allowed,
+                    physical_execution_success=record.physical_execution_success,
+                    is_error=record.is_error,
+                    cost_usd=record.cost_usd,
+                )
+            )
             return decision, None
 
         # 3. La acción está AUTORIZADA (ALLOW o Shadow Mode)
-        tool_name = action.tool_call.tool_name if action.tool_call else None
-        tool_args = action.tool_call.arguments if action.tool_call else {}
-
         # Checkpoint preventivo automático ante mutaciones relevantes
         if auto_checkpoint and tool_name:
             spec = self.policy_engine.registry.get_tool(tool_name)
@@ -359,7 +449,75 @@ class Navigator:
         # 6. Registrar paso completado en el estado canónico
         state.add_step(action=action, decision=decision, observation=observation.output)
 
+        t_step_end = time.perf_counter()
+        total_step_lat_ms = (t_step_end - t_step_start) * 1000.0
+
+        cost_usd = EfficiencyCalculator.calculate_step_cost(tokens_in, tokens_out, self.model_name)
+        record = StepEfficiencyRecord(
+            step_index=len(self.efficiency_records),
+            action_id=action.id,
+            tool_name=tool_name or "unknown",
+            decision_status=decision.status.value,
+            tokens_in=tokens_in,
+            tokens_out=tokens_out,
+            tokens_total=tokens_total,
+            llm_calls=1,
+            llm_latency_ms=self._last_timing.get("llm_latency_ms", 0.0),
+            praxeon_overhead_ms=self._last_timing.get("praxeon_overhead_ms", 0.0),
+            execution_time_ms=round(observation.execution_time_ms, 2),
+            total_step_latency_ms=round(total_step_lat_ms, 2),
+            physical_execution_attempted=True,
+            physical_execution_allowed=True,
+            physical_execution_success=observation.success,
+            is_error=observation.is_error,
+            cost_usd=round(cost_usd, 6),
+        )
+        self.efficiency_records.append(record)
+        self.event_bus.publish(
+            EfficiencyStepEvent(
+                session_id=state.session_id,
+                step_index=record.step_index,
+                action_id=record.action_id,
+                tool_name=record.tool_name,
+                decision=record.decision_status,
+                tokens_in=record.tokens_in,
+                tokens_out=record.tokens_out,
+                tokens_total=record.tokens_total,
+                llm_calls=record.llm_calls,
+                llm_latency_ms=record.llm_latency_ms,
+                praxeon_overhead_ms=record.praxeon_overhead_ms,
+                execution_time_ms=record.execution_time_ms,
+                total_step_latency_ms=record.total_step_latency_ms,
+                physical_execution_attempted=record.physical_execution_attempted,
+                physical_execution_allowed=record.physical_execution_allowed,
+                physical_execution_success=record.physical_execution_success,
+                is_error=record.is_error,
+                cost_usd=record.cost_usd,
+            )
+        )
+
         return decision, observation
+
+    def get_efficiency_summary(
+        self,
+        scale: str = "medium",
+        successful_completion: Optional[bool] = None,
+    ) -> SessionEfficiencySummary:
+        """Calcula y devuelve el resumen formal de telemetría de eficiencia de la sesión actual."""
+        state = self._ensure_session()
+        if successful_completion is None:
+            successful_completion = (
+                len(self.efficiency_records) > 0
+                and not self.efficiency_records[-1].is_error
+                and self.efficiency_records[-1].physical_execution_success is not False
+            )
+        return EfficiencyCalculator.aggregate_session(
+            session_id=state.session_id,
+            scale=scale,
+            model_name=self.model_name,
+            successful_completion=successful_completion,
+            steps=list(self.efficiency_records),
+        )
 
     def rollback(
         self,
