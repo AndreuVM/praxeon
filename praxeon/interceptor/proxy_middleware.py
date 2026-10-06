@@ -438,10 +438,24 @@ class JEVProxyMiddleware:
 
         score = self.engine.evaluate_step(candidate_step)
 
-        # Detectar bucle según TypeSafe
+        # Detectar bucle según TypeSafe o reintento idéntico en historial
         ts_eval = score.details.get("typesafe_eval") or {}
-        is_loop = bool(ts_eval.get("is_loop", False) or score.total_jev < self.config.critical_jev_threshold)
-        loop_type = ts_eval.get("loop_type", LoopType.ONE_HOP_TOOL_REPEAT if is_loop else LoopType.NONE)
+        prov_avail = bool(score.details.get("provider_available", False))
+
+        is_immediate_repeat = False
+        steps_history = self.graph.get_all_steps()
+        for s in reversed(steps_history):
+            if s.step_type == StepType.TOOL_CALL and s.tool_name:
+                if s.tool_name == tool_name and (s.tool_args or {}) == (tool_args or {}):
+                    is_immediate_repeat = True
+                break
+
+        if prov_avail:
+            is_loop = bool(ts_eval.get("is_loop", False) or score.total_jev < self.config.critical_jev_threshold or is_immediate_repeat)
+            loop_type = ts_eval.get("loop_type", LoopType.ONE_HOP_TOOL_REPEAT if is_loop else LoopType.NONE)
+        else:
+            is_loop = is_immediate_repeat
+            loop_type = LoopType.ONE_HOP_TOOL_REPEAT if is_loop else LoopType.NONE
 
         loop_rep = LoopReport(
             loop_detected=is_loop,
