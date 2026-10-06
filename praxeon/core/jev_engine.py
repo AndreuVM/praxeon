@@ -108,6 +108,35 @@ class JEVEngine:
                 history=history_steps,
                 candidate=candidate,
             )
+        elif self.typesafe_client is not None:
+            # Fallback determinista local de ciclo cuando TypeSafe está offline (ej. CI sin API key)
+            is_repeat = False
+            last_tc = None
+            for s in reversed(history_steps):
+                if s.tool_name:
+                    last_tc = (s.tool_name, s.tool_args or {})
+                    break
+            if last_tc and candidate.tool_name == last_tc[0] and (candidate.tool_args or {}) == last_tc[1]:
+                is_repeat = True
+
+            if is_repeat:
+                typesafe_eval = {
+                    "source": "offline_heuristic",
+                    "is_loop": True,
+                    "loop_type": LoopType.ONE_HOP_TOOL_REPEAT,
+                    "p_progress": 0.05,
+                    "delta_u": 0.0,
+                    "loop_penalty": 1.6,
+                }
+            else:
+                typesafe_eval = {
+                    "source": "offline_heuristic",
+                    "is_loop": False,
+                    "loop_type": LoopType.NONE,
+                    "p_progress": 0.8,
+                    "delta_u": 0.8,
+                    "loop_penalty": 0.0,
+                }
 
         # Hallazgo 3.2: Erradicación de Fail-Open
         if typesafe_eval is not None:
@@ -254,9 +283,7 @@ class JEVEngine:
                 "explanation": f"Evaluado por LAYA System-1 ({self.laya_provider.backend})",
             }
         else:
-            is_provider_up = self.typesafe_client is not None and self.typesafe_client.is_available()
-
-            if is_provider_up:
+            if self.typesafe_client is not None:
                 chunk_eval = self.typesafe_client.evaluate_step_chunk(
                     goal=self.graph.goal,
                     history=history_steps,
