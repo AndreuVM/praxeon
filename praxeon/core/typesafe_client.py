@@ -79,8 +79,44 @@ class TypeSafeJEVClient:
         Permite ahorrar peticiones a la API agrupando la supervisión de múltiples pasos
         y verificando activamente la fundamentación empírica para prevenir alucinaciones.
         """
-        if not self.is_available() or not candidates:
+        if not candidates:
             return None
+
+        if not self.is_available():
+            import json
+            flagged_idx = None
+            for i in range(1, len(candidates)):
+                c_prev = candidates[i - 1]
+                c_curr = candidates[i]
+                if c_curr.tool_name and c_curr.tool_name == c_prev.tool_name and (c_curr.tool_args or {}) == (c_prev.tool_args or {}):
+                    flagged_idx = i
+                    break
+            if flagged_idx is None and history and candidates:
+                last_hist = None
+                for s in reversed(history):
+                    if s.tool_name:
+                        last_hist = (s.tool_name, s.tool_args or {})
+                        break
+                if last_hist and candidates[0].tool_name == last_hist[0] and (candidates[0].tool_args or {}) == last_hist[1]:
+                    flagged_idx = 0
+
+            is_loop = (flagged_idx is not None)
+            return {
+                "source": "typesafe_offline_heuristic",
+                "all_safe": not is_loop,
+                "is_loop": is_loop,
+                "loop_type": LoopType.ONE_HOP_TOOL_REPEAT if is_loop else LoopType.NONE,
+                "is_hallucination": False,
+                "hallucination_type": None,
+                "flagged_index": flagged_idx,
+                "noul_prob": 0.9 if is_loop else 0.05,
+                "p_progress": 0.1 if is_loop else 0.8,
+                "delta_u": 0.0 if is_loop else 0.8,
+                "loop_penalty": 1.5 if is_loop else 0.0,
+                "confidence": 0.9,
+                "model": "offline-heuristic",
+                "total_candidates": len(candidates),
+            }
 
         try:
             from typesafe_sdk import Choice, Noul, Score
@@ -445,13 +481,53 @@ class TypeSafeJEVClient:
         steps = getattr(trajectory, "steps", [])
         goal = getattr(trajectory, "goal", "")
 
-        if not self.is_available() or not steps:
+        if not steps:
             return LoopReport(
                 loop_detected=False,
                 loop_type=LoopType.NONE,
                 severity=0,
                 confidence=1.0,
-                explanation="Trayectoria vacía o cliente TypeSafe AI no configurado.",
+                explanation="Trayectoria vacía.",
+            )
+
+        if not self.is_available():
+            import json
+            tool_calls = [
+                (s.tool_name, json.dumps(s.tool_args or {}, sort_keys=True))
+                for s in steps if s.tool_name
+            ]
+            if len(tool_calls) >= 2:
+                # 1. Chequear repetición 1-hop inmediata: A -> A
+                for i in range(1, len(tool_calls)):
+                    if tool_calls[i] == tool_calls[i - 1]:
+                        return LoopReport(
+                            loop_detected=True,
+                            loop_type=LoopType.ONE_HOP_TOOL_REPEAT,
+                            severity=3,
+                            confidence=0.9,
+                            explanation=f"Reintento idéntico inmediato de herramienta '{tool_calls[i][0]}'",
+                            culprit_tool=tool_calls[i][0],
+                        )
+                # 2. Chequear ciclo n-hop (periodo 2 o 3, ej: A -> B -> A -> B)
+                for p in (2, 3):
+                    if len(tool_calls) >= 2 * p:
+                        pattern = tool_calls[-2 * p : -p]
+                        recent = tool_calls[-p:]
+                        if pattern == recent:
+                            return LoopReport(
+                                loop_detected=True,
+                                loop_type=LoopType.N_HOP_CYCLE,
+                                severity=4,
+                                confidence=0.95,
+                                explanation=f"Ciclo cerrado de acciones de periodo {p} detectado: {[t[0] for t in pattern]}",
+                                culprit_tool=recent[-1][0],
+                            )
+            return LoopReport(
+                loop_detected=False,
+                loop_type=LoopType.NONE,
+                severity=0,
+                confidence=1.0,
+                explanation="Trayectoria analizada localmente sin bucles detectados.",
             )
 
         try:

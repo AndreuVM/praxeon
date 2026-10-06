@@ -2,6 +2,7 @@
 Valida el ciclo de vida completo: REST + WebSocket + Policy + Capabilities + Sandbox + Frontend.
 """
 
+import uuid
 import pytest
 from fastapi.testclient import TestClient
 
@@ -80,12 +81,13 @@ def test_complete_platform_lifecycle_e2e(test_app):
     assert safe_exec.status_code == 200
     assert safe_exec.json()["data"]["success"] is True
 
-    # 5. Propuesta de comando de alto riesgo (git push exige confirmación)
+    # 5. Propuesta de comando de alto riesgo (mutación local controlada que exige confirmación humana)
+    temp_dir_name = f"e2e_dir_{uuid.uuid4().hex[:8]}"
     risk_prop = test_app.post(f"/v1/sessions/{session_id}/actions", json={
         "tool": "run_command",
-        "operation": "git push origin main",
-        "arguments": {"command": "Write-Output 'confirmed_success'"},
-        "thought_rationale": "Pushing unreviewed changes to main",
+        "operation": f"mkdir {temp_dir_name}",
+        "arguments": {"command": f"mkdir {temp_dir_name}"},
+        "thought_rationale": "Create temporary directory for workspace execution",
         "provenance": {"source": "E2ETestAgent", "step": 2},
     })
     assert risk_prop.status_code == 200
