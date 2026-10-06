@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { CheckCircle2 } from 'lucide-react';
 import Header from './components/Header';
 import TopNav from './components/TopNav';
 import SessionKPIs from './components/SessionKPIs';
@@ -8,6 +7,7 @@ import ConsolePanel from './components/ConsolePanel';
 import DecisionInspector from './components/DecisionInspector';
 import ProposeActionModal from './components/ProposeActionModal';
 import SessionsModal from './components/SessionsModal';
+import UnauthorizedModal from './components/UnauthorizedModal';
 
 import SessionsView from './components/views/SessionsView';
 import DecisionsView from './components/views/DecisionsView';
@@ -73,8 +73,20 @@ export default function App() {
   const [isPaused, setIsPaused] = useState(false);
   const [isProposeOpen, setIsProposeOpen] = useState(false);
   const [isSessionsOpen, setIsSessionsOpen] = useState(false);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [inspectorTab, setInspectorTab] = useState('chat');
   const maxSeqRef = useRef(0);
+
+  // Escuchar eventos globales de 401/403 para abrir modal de autenticación reactivo
+  useEffect(() => {
+    const handleUnauthorized = () => {
+      setIsAuthModalOpen(true);
+    };
+    window.addEventListener('praxeon:unauthorized', handleUnauthorized);
+    return () => {
+      window.removeEventListener('praxeon:unauthorized', handleUnauthorized);
+    };
+  }, []);
 
   // Estado persistente del Chat de Misión y configuración de modelos
   const [missionConfig, setMissionConfig] = useState({
@@ -1121,6 +1133,7 @@ export default function App() {
         onOpenSessions={() => setIsSessionsOpen(true)}
         onOpenPropose={() => setIsProposeOpen(true)}
         onNewSession={handleNewCleanSession}
+        onOpenAuth={() => setIsAuthModalOpen(true)}
       />
 
       {/* 2. Main Work Layout (Left: TopNav + Content; Right: DecisionInspector / MissionChat) */}
@@ -1311,6 +1324,14 @@ export default function App() {
         }}
         onDeleteSession={handleDeleteSession}
         onNewCleanSession={handleNewCleanSession}
+      />
+
+      <UnauthorizedModal
+        isOpen={isAuthModalOpen}
+        onClose={() => setIsAuthModalOpen(false)}
+        onSuccess={() => {
+          refreshSessionsList();
+        }}
       />
     </div>
   );

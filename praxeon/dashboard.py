@@ -59,6 +59,7 @@ class JEVDashboard:
     """Gestor del visualizador CLI de supervisión cognitiva basado puramente en TypeSafe AI."""
 
     def __init__(self, goal: str, model_name: str = "Gemini / Antigravity", config: Optional[PraxeonConfig] = None):
+
         self.goal = goal
         self.model_name = model_name
         self.config = config or default_config
@@ -720,8 +721,8 @@ def _execute_single_live_task(
                         )
                     else:
                         dash.directive_text += (
-                            "\n\n🚨 [ALERTA DE DESBLOQUEO]: Queda TERMINANTEMENTE PROHIBIDO invocar 'edit_file'. "
-                            "En tu siguiente turno invoca 'read_file' para verificar hechos o 'finish' para concluir con los hallazgos."
+                            "\n\n🚨 [ALERTA DE DESBLOQUEO]: Queda TERMINANTEMENTE PROHIBIDO invocar 'edit_file' sin fundamento. "
+                            "En tu siguiente turno invoca 'finish' si tu tarea es conceptual o de diseño, o una herramienta de inspección válida si operas sobre código existente."
                         )
                 elif consecutive_blocks >= 3:
                     console.print("[bold yellow]⚡ CIRCUIT BREAKER: Inyectando observación empírica para romper la parálisis cognitiva...[/]")
@@ -729,7 +730,7 @@ def _execute_single_live_task(
                     try:
                         auto_probe += ", ".join([f for f in os.listdir(".") if not f.startswith(".")][:6])
                     except Exception:
-                        auto_probe += "pyproject.toml, README.md"
+                        auto_probe += "(directorio local no listable)"
                     dash.last_observation = auto_probe
                     dash.middleware.record_observation(auto_probe)
                     conversation_history.append({
@@ -1113,5 +1114,11 @@ def main():
         run_visual_demo(task=args.task, once=args.once)
 
 
+# Nomenclatura canónica PRAXEON 1.0 (JEVDashboard conservado para retrocompatibilidad)
+PraxeonDashboard = JEVDashboard
+
+
 if __name__ == "__main__":
     main()
+
+

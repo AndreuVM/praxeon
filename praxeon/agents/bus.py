@@ -14,6 +14,7 @@ import heapq
 import queue
 import time
 from typing import Any, Callable, Dict, List, Optional, Set
+import uuid
 
 from praxeon.agents.protocol import AgentMessage, MessagePriority, MessageType
 
@@ -49,6 +50,20 @@ class AgentMailbox:
         _, _, _, msg = heapq.heappop(self._queue)
         return msg
 
+    def pop_matching(self, predicate: Callable[[AgentMessage], bool]) -> Optional[AgentMessage]:
+        """Extrae el mensaje de mayor prioridad que satisfaga el predicado dado."""
+        if not self._queue:
+            return None
+        sorted_items = sorted(self._queue)
+        for item in sorted_items:
+            msg = item[3]
+            if predicate(msg):
+                self._queue.remove(item)
+                heapq.heapify(self._queue)
+                return msg
+        return None
+
+
     def peek(self) -> Optional[AgentMessage]:
         """Consulta el siguiente mensaje sin extraerlo."""
         if not self._queue:
@@ -64,15 +79,19 @@ class AgentMailbox:
 
 
 class AgentMessageBus:
-    """Bus centralizado de mensajería multiagente en memoria con gobernanza topológica."""
+    """Bus centralizado de mensajería multiagente en memoria con gobernanza topológica y criptográfica."""
 
     def __init__(
         self,
         default_topology: TopologyType = TopologyType.HUB_AND_SPOKE,
         supervisor_id: str = "praxeon_supervisor",
+        shared_secret: Optional[str] = None,
+        enforce_integrity: bool = False,
     ):
         self.default_topology = default_topology
         self.supervisor_id = supervisor_id
+        self.shared_secret = shared_secret
+        self.enforce_integrity = enforce_integrity
         self._mailboxes: Dict[str, AgentMailbox] = {}
         self._agent_topologies: Dict[str, TopologyType] = {}
         self._topic_subscriptions: Dict[str, Set[str]] = defaultdict(set)
@@ -140,7 +159,13 @@ class AgentMessageBus:
         return True
 
     def send(self, message: AgentMessage) -> bool:
-        """Envía un mensaje al destinatario respetando topología y entregando a su buzón."""
+        """Envía un mensaje al destinatario respetando topología, verificando integridad y entregando a su buzón."""
+        # 0. Verificación criptográfica de integridad y firma (si están activadas)
+        if self.enforce_integrity and not message.verify_integrity():
+            return False
+        if self.shared_secret and not message.verify_signature(self.shared_secret):
+            return False
+
         # 1. Validar topología de enrutamiento
         if not self.validate_routing_topology(message):
             # Rechazado por restricción de topología
@@ -211,7 +236,7 @@ class AgentMessageBus:
         for sub_id in subscribers:
             if sub_id != sender_id:
                 msg = AgentMessage(
-                    message_id=f"topic_{topic}_{int(time.time()*1000)%100000}_{delivered}",
+                    message_id=f"topic_{topic}_{uuid.uuid4().hex[:12]}_{delivered}",
                     sender_id=sender_id,
                     receiver_id=sub_id,
                     session_id=session_id,
@@ -219,6 +244,8 @@ class AgentMessageBus:
                     priority=priority,
                     payload={"topic": topic, **payload},
                 )
+                if self.shared_secret:
+                    msg = msg.sign(self.shared_secret)
                 if self.send(msg):
                     delivered += 1
 
@@ -236,3 +263,110 @@ class AgentMessageBus:
         if agent_id:
             msgs = [m for m in msgs if m.sender_id == agent_id or m.receiver_id in (agent_id, "*")]
         return msgs
+
+    def acknowledge_message(
+        self,
+        message: AgentMessage,
+        sender_id: str,
+        note: Optional[str] = None,
+    ) -> AgentMessage:
+        """Emite una confirmación positiva (ACK) al remitente de un mensaje."""
+        ack_msg = message.create_ack(sender_id=sender_id, note=note)
+        if self.shared_secret:
+            ack_msg = ack_msg.sign(self.shared_secret)
+        self.send(ack_msg)
+        return ack_msg
+
+    def nack_message(
+        self,
+        message: AgentMessage,
+        sender_id: str,
+        reason: str,
+        error_code: Optional[str] = None,
+    ) -> AgentMessage:
+        """Emite un rechazo o confirmación negativa (NACK) al remitente de un mensaje."""
+        nack_msg = message.create_nack(sender_id=sender_id, reason=reason, error_code=error_code)
+        if self.shared_secret:
+            nack_msg = nack_msg.sign(self.shared_secret)
+        self.send(nack_msg)
+        return nack_msg
+
+    def send_result(
+        self,
+        message: AgentMessage,
+        sender_id: str,
+        result_payload: Dict[str, Any],
+    ) -> AgentMessage:
+        """Emite un resultado estructurado (AGENT_RESULT) en respuesta a un mensaje."""
+        res_msg = message.create_result(sender_id=sender_id, payload=result_payload)
+        if self.shared_secret:
+            res_msg = res_msg.sign(self.shared_secret)
+        self.send(res_msg)
+        return res_msg
+
+    def receive_reply_for(
+        self,
+        sender_id: str,
+        message_id: str,
+        expected_types: Optional[Set[MessageType]] = None,
+    ) -> Optional[AgentMessage]:
+        """Extrae del buzón del emisor un mensaje que correlacione o responda al message_id."""
+        box = self._mailboxes.get(sender_id)
+        if not box:
+            return None
+
+        def matches(m: AgentMessage) -> bool:
+            correlates = (m.correlation_id == message_id or m.in_reply_to == message_id)
+            if not correlates:
+                return False
+            if expected_types and m.message_type not in expected_types:
+                return False
+            return True
+
+        return box.pop_matching(matches)
+
+    def send_and_wait_reply(
+        self,
+        message: AgentMessage,
+        timeout_seconds: float = 2.0,
+        poll_interval: float = 0.02,
+        expected_types: Optional[Set[MessageType]] = None,
+    ) -> Optional[AgentMessage]:
+        """Envía un mensaje y espera de forma síncrona una respuesta o confirmación correlacionada."""
+        if not self.send(message):
+            return None
+
+        deadline = time.time() + timeout_seconds
+        while time.time() < deadline:
+            reply = self.receive_reply_for(
+                sender_id=message.sender_id,
+                message_id=message.message_id,
+                expected_types=expected_types,
+            )
+            if reply is not None:
+                return reply
+            time.sleep(poll_interval)
+
+        return None
+
+    def send_with_retry(
+        self,
+        message: AgentMessage,
+        max_retries: int = 3,
+        retry_delay: float = 0.05,
+        timeout_per_try: float = 0.5,
+    ) -> Optional[AgentMessage]:
+        """Envía un mensaje con política de reintentos ante timeout o NACK."""
+        for attempt in range(max_retries):
+            reply = self.send_and_wait_reply(
+                message=message,
+                timeout_seconds=timeout_per_try,
+            )
+            if reply is not None:
+                if reply.message_type != MessageType.AGENT_NACK:
+                    return reply
+            if attempt < max_retries - 1 and retry_delay > 0:
+                time.sleep(retry_delay)
+
+        return None
+

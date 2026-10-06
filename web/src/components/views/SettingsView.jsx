@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   Settings,
   Save,
@@ -7,13 +7,15 @@ import {
   Sliders,
   Shield,
   Cpu,
-  Bot,
-  Terminal,
-  Lock,
   Zap,
-  AlertTriangle,
-  Layers,
+  Key,
+  Eye,
+  EyeOff,
+  CheckCircle2,
+  AlertCircle,
+  Trash2,
 } from 'lucide-react';
+import { getApiKey, setApiKey, clearApiKey, fetchHealth } from '../../services/api';
 
 const STORAGE_KEY = 'praxeon_runtime_settings_v1';
 
@@ -49,7 +51,7 @@ const DEFAULT_SETTINGS = {
 };
 
 export default function SettingsView({
-  missionConfig = {},
+  _missionConfig = {},
   onConfigChange,
 }) {
   const [settings, setSettings] = useState(() => {
@@ -64,17 +66,61 @@ export default function SettingsView({
     return DEFAULT_SETTINGS;
   });
 
+  const [praxeonApiKey, setPraxeonApiKey] = useState(() => getApiKey() || '');
+  const [showPraxeonKey, setShowPraxeonKey] = useState(false);
+  const [testingAuth, setTestingAuth] = useState(false);
+  const [authStatus, setAuthStatus] = useState(null);
+
   const [saved, setSaved] = useState(false);
-  const [activeTab, setActiveTab] = useState('supervisor');
+  const [activeTab, setActiveTab] = useState('auth');
 
   const handleChange = (key, value) => {
     setSettings((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const handleTestAuth = async () => {
+    if (!praxeonApiKey.trim()) {
+      setAuthStatus({ success: false, message: 'Introduce una API Key antes de probar.' });
+      return;
+    }
+    setTestingAuth(true);
+    setAuthStatus(null);
+    const prevKey = getApiKey();
+    setApiKey(praxeonApiKey.trim());
+    try {
+      const res = await fetchHealth();
+      if (res && res.status !== 'offline') {
+        setAuthStatus({ success: true, message: 'Autenticación verificada con éxito. Servidor online.' });
+      } else {
+        setApiKey(prevKey);
+        setAuthStatus({ success: false, message: 'Fallo de autenticación (401/403) o servidor offline.' });
+      }
+    } catch (err) {
+      setApiKey(prevKey);
+      setAuthStatus({ success: false, message: `Error de conexión: ${err.message}` });
+    } finally {
+      setTestingAuth(false);
+    }
+  };
+
+  const handleClearAuth = () => {
+    clearApiKey();
+    setPraxeonApiKey('');
+    setAuthStatus({ success: true, message: 'Credenciales de PRAXEON eliminadas.' });
+    setTimeout(() => setAuthStatus(null), 3000);
   };
 
   const handleSave = (e) => {
     e.preventDefault();
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+
+      // Guardar API Key maestra de PRAXEON en servicio centralizado
+      if (praxeonApiKey && praxeonApiKey.trim()) {
+        setApiKey(praxeonApiKey.trim());
+      } else {
+        clearApiKey();
+      }
 
       // Synchronize with missionConfig if callback available
       if (onConfigChange) {
@@ -192,6 +238,7 @@ export default function SettingsView({
         gap: '4px',
       }}>
         {[
+          { id: 'auth', label: 'Autenticación & Clave Maestra', icon: Key },
           { id: 'supervisor', label: 'Supervisor Cognitivo & Bucles', icon: Sliders },
           { id: 'models', label: 'Proveedores LLM & Endpoints', icon: Cpu },
           { id: 'sandbox', label: 'Sandbox & Aislamiento Físico', icon: Shield },
@@ -227,6 +274,131 @@ export default function SettingsView({
 
       {/* Settings Tab Content */}
       <form onSubmit={handleSave} style={{ maxWidth: '800px' }}>
+        {/* Tab 0: Autenticación & Clave Maestra */}
+        {activeTab === 'auth' && (
+          <div style={{
+            backgroundColor: '#121824',
+            borderRadius: '10px',
+            border: '1px solid #1e293b',
+            padding: '24px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '22px',
+          }}>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                <Key size={16} style={{ color: '#58a6ff' }} />
+                <label style={{ fontSize: '13px', fontWeight: '600', color: '#f8fafc' }}>
+                  Clave Maestra de Acceso (PRAXEON API Key)
+                </label>
+              </div>
+              <p style={{ fontSize: '11.5px', color: '#73849c', marginBottom: '14px', lineHeight: '1.5' }}>
+                Requerida para comunicar la interfaz web con el servidor cuando el entorno se ejecuta en perfil de producción (<code>PRAXEON_PROFILE=production</code>) o tiene la variable de entorno <code>PRAXEON_API_KEY</code> configurada.
+              </p>
+
+              <div style={{ position: 'relative', display: 'flex', alignItems: 'center', marginBottom: '12px' }}>
+                <input
+                  type={showPraxeonKey ? 'text' : 'password'}
+                  value={praxeonApiKey}
+                  onChange={(e) => {
+                    setPraxeonApiKey(e.target.value);
+                    setAuthStatus(null);
+                  }}
+                  placeholder="Introduce tu PRAXEON_API_KEY..."
+                  style={{
+                    width: '100%',
+                    padding: '10px 42px 10px 14px',
+                    borderRadius: '6px',
+                    backgroundColor: '#0c111a',
+                    border: '1px solid #1e293b',
+                    color: '#f8fafc',
+                    fontSize: '12.5px',
+                    fontFamily: 'var(--font-mono)',
+                    outline: 'none',
+                    boxSizing: 'border-box',
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPraxeonKey(!showPraxeonKey)}
+                  style={{
+                    position: 'absolute',
+                    right: '12px',
+                    background: 'none',
+                    border: 'none',
+                    color: '#64748b',
+                    cursor: 'pointer',
+                    padding: '2px',
+                    display: 'flex',
+                  }}
+                >
+                  {showPraxeonKey ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
+
+              {authStatus && (
+                <div style={{
+                  padding: '10px 14px',
+                  borderRadius: '6px',
+                  backgroundColor: authStatus.success ? 'rgba(63, 185, 80, 0.12)' : 'rgba(248, 81, 73, 0.12)',
+                  border: `1px solid ${authStatus.success ? 'rgba(63, 185, 80, 0.3)' : 'rgba(248, 81, 73, 0.3)'}`,
+                  color: authStatus.success ? '#3fb950' : '#f85149',
+                  fontSize: '12px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  marginBottom: '14px',
+                }}>
+                  {authStatus.success ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />}
+                  <span>{authStatus.message}</span>
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                <button
+                  type="button"
+                  onClick={handleTestAuth}
+                  disabled={testingAuth || !praxeonApiKey.trim()}
+                  className="btn btn-secondary"
+                  style={{ padding: '8px 14px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}
+                >
+                  <Key size={13} />
+                  {testingAuth ? 'Comprobando...' : 'Probar Conexión'}
+                </button>
+
+                {praxeonApiKey && (
+                  <button
+                    type="button"
+                    onClick={handleClearAuth}
+                    className="btn btn-secondary"
+                    style={{ padding: '8px 14px', fontSize: '12px', color: '#f85149', display: 'flex', alignItems: 'center', gap: '6px' }}
+                  >
+                    <Trash2 size={13} />
+                    Limpiar Credencial
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div style={{
+              borderTop: '1px solid #1a2333',
+              paddingTop: '18px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '10px',
+            }}>
+              <h3 style={{ fontSize: '12px', fontWeight: '600', color: '#94a3b8', margin: 0 }}>
+                Protocolo de Seguridad y Streaming
+              </h3>
+              <ul style={{ fontSize: '11.5px', color: '#64748b', margin: 0, paddingLeft: '18px', lineHeight: '1.6' }}>
+                <li><strong>Inyección Automática:</strong> Las llamadas REST envían la clave en las cabeceras <code>X-API-Key</code> y <code>Authorization: Bearer</code>.</li>
+                <li><strong>Handshake Efímero en WebSocket:</strong> La SPA solicita tokens de streaming efímeros de un solo uso (<code>/v1/sessions/:id/ws-ticket</code>) con TTL de 60s, evitando la exposición de claves maestras en URLs de WebSockets y registros de proxies.</li>
+                <li><strong>Almacenamiento Local Seguro:</strong> La clave se almacena en el <code>localStorage</code> del navegador y en memoria protegida de la SPA.</li>
+              </ul>
+            </div>
+          </div>
+        )}
+
         {/* Tab 1: Supervisor Cognitivo */}
         {activeTab === 'supervisor' && (
           <div style={{

@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from praxeon.context.budget import TokenBudget
 from praxeon.context.builder import ContextSnapshotBuilder
 from praxeon.context.cache import ContextCache, ContextSnapshot, InMemoryContextCache, InMemoryFragmentCache
+from praxeon.context.delta import ContextDelta
 from praxeon.context.entities import (
     ContextDependency,
     ContextDependencyType,
@@ -68,11 +69,87 @@ class ContextManager:
         self._prefix_hits_total = 0
         self._cache_misses_total = 0
         self._invalidations_total = 0
-        self._tokens_before = 0
-        self._tokens_after = 0
-        self._tokens_saved = 0
+        self._estimated_tokens_before = 0
+        self._estimated_tokens_after = 0
+        self._estimated_tokens_saved = 0
+        self._actual_prompt_tokens = 0
+        self._actual_cached_tokens = 0
+        self._actual_output_tokens = 0
+        self._cache_hit_status = "none"
         self._fragments_reused = 0
         self._latencies_ms: List[float] = []
+
+    @property
+    def _tokens_before(self) -> int:
+        return self._estimated_tokens_before
+
+    @_tokens_before.setter
+    def _tokens_before(self, val: int) -> None:
+        self._estimated_tokens_before = val
+
+    @property
+    def _tokens_after(self) -> int:
+        return self._estimated_tokens_after
+
+    @_tokens_after.setter
+    def _tokens_after(self, val: int) -> None:
+        self._estimated_tokens_after = val
+
+    @property
+    def _tokens_saved(self) -> int:
+        return self._estimated_tokens_saved
+
+    @_tokens_saved.setter
+    def _tokens_saved(self, val: int) -> None:
+        self._estimated_tokens_saved = val
+
+    def record_actual_tokens(
+        self,
+        prompt_tokens: int,
+        output_tokens: int,
+        cached_tokens: int = 0,
+        cache_hit_status: str = "none",
+    ) -> None:
+        """Registra tokens reales consumidos y facturados reportados por la API del LLM."""
+        self._actual_prompt_tokens += max(0, prompt_tokens)
+        self._actual_cached_tokens += max(0, cached_tokens)
+        self._actual_output_tokens += max(0, output_tokens)
+        if cache_hit_status != "none":
+            self._cache_hit_status = cache_hit_status
+
+    def compute_delta(
+        self,
+        base_snapshot: Optional[ContextSnapshot],
+        target_snapshot: ContextSnapshot,
+    ) -> ContextDelta:
+        """Calcula el delta incremental entre dos instantáneas de contexto."""
+        return ContextDelta.compute(base_snapshot, target_snapshot)
+
+    def build_with_delta(
+        self,
+        state: Any,
+        candidate_action: Optional[ActionCandidate] = None,
+        previous_snapshot: Optional[ContextSnapshot] = None,
+        session_context: Optional[Any] = None,
+        max_tokens: Optional[int] = None,
+        force_refresh: bool = False,
+        model_profile: str = "default",
+        active_node_id: Optional[str] = None,
+        dependency_graph: Optional[Any] = None,
+    ) -> Tuple[ContextSnapshot, bool, ContextDelta]:
+        """Construye un ContextSnapshot y calcula el ContextDelta respecto al snapshot previo."""
+        snapshot, is_hit = self.build(
+            state=state,
+            candidate_action=candidate_action,
+            session_context=session_context,
+            max_tokens=max_tokens,
+            force_refresh=force_refresh,
+            model_profile=model_profile,
+            active_node_id=active_node_id,
+            dependency_graph=dependency_graph,
+        )
+        delta = self.compute_delta(previous_snapshot, snapshot)
+        return (snapshot, is_hit, delta)
 
     def build(
         self,
@@ -83,6 +160,7 @@ class ContextManager:
         force_refresh: bool = False,
         model_profile: str = "default",
         active_node_id: Optional[str] = None,
+        dependency_graph: Optional[Any] = None,
     ) -> Tuple[ContextSnapshot, bool]:
         """Obtiene o construye de forma incremental un ContextSnapshot para el estado dado.
         
@@ -102,6 +180,7 @@ class ContextManager:
                 candidate_action=candidate_action,
                 session_context=session_context,
                 active_node_id=active_node_id,
+                dependency_graph=dependency_graph,
             )
             budgeted_fragments, truncated, total_tokens = self.budget.allocate(
                 raw_fragments, max_tokens=max_tokens
@@ -123,6 +202,7 @@ class ContextManager:
             candidate_action=candidate_action,
             session_context=session_context,
             active_node_id=active_node_id,
+            dependency_graph=dependency_graph,
         )
 
         # L1: Reutilizar fragmentos atómicos mediante InMemoryFragmentCache
@@ -350,6 +430,8 @@ class ContextManager:
         total_evictions = snapshot_evictions + fragment_evictions
         exact_hits = self._cache_hits_total - self._prefix_hits_total
 
+        actual_billed = max(0, self._actual_prompt_tokens - self._actual_cached_tokens + self._actual_output_tokens)
+
         return {
             "context_builds_total": self._builds_total,
             "context_rebuilds_total": self._rebuilds_total,
@@ -365,10 +447,25 @@ class ContextManager:
             "fragment_evictions": fragment_evictions,
             "snapshot_cache_hits": exact_hits,
             "prefix_cache_hits": self._prefix_hits_total,
-            "context_tokens_before": self._tokens_before,
-            "context_tokens_after": self._tokens_after,
-            "context_tokens_saved": self._tokens_saved,
+            # Métricas estimadas de contexto (heurísticas locales)
+            "estimated_context_tokens_before": self._estimated_tokens_before,
+            "estimated_context_tokens_after": self._estimated_tokens_after,
+            "estimated_context_tokens_saved": self._estimated_tokens_saved,
+            "estimated_reduction_ratio": round(reduction_ratio, 4),
+            # Métricas reales facturadas del proveedor LLM
+            "actual_prompt_tokens": self._actual_prompt_tokens,
+            "actual_cached_tokens": self._actual_cached_tokens,
+            "actual_output_tokens": self._actual_output_tokens,
+            "actual_billed_tokens": actual_billed,
+            "cache_hit_status": self._cache_hit_status,
+            # Aliases para compatibilidad con versiones anteriores
+            "context_tokens_before": self._estimated_tokens_before,
+            "context_tokens_after": self._estimated_tokens_after,
+            "context_tokens_saved": self._estimated_tokens_saved,
             "context_reduction_ratio": round(reduction_ratio, 4),
+            "tokens_before": self._estimated_tokens_before,
+            "tokens_after": self._estimated_tokens_after,
+            "tokens_saved": self._estimated_tokens_saved,
             "context_fragments_reused": self._fragments_reused,
             "context_build_latency_ms": round(avg_latency, 3),
             "cache_entries": cache_stats.get("entries_count", 0),

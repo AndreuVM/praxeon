@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Play, Pause, Square, Sparkles, Terminal, Cpu, Shield, RefreshCw, AlertTriangle, Box } from 'lucide-react';
+import { Play, Pause, Square, Sparkles, Terminal, Cpu, Shield, RefreshCw, AlertTriangle } from 'lucide-react';
 
 export default function MissionLauncher({
   isRunning = false,

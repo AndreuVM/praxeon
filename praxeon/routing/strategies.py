@@ -14,6 +14,7 @@ import math
 import re
 import time
 from typing import Any, Dict, List, Optional, Set, Tuple
+import uuid
 
 from praxeon.agents.definition import AgentDefinition
 from praxeon.domain.assessment import RiskLevel
@@ -101,7 +102,7 @@ class CostAwareRoutingStrategy:
         matched_caps = [c for c in task.required_capabilities if c in best_agent.capabilities]
 
         return RoutingDecision(
-            decision_id=f"rd_cost_{int(time.time()*1000)%100000}",
+            decision_id=f"rd_cost_{uuid.uuid4().hex[:12]}",
             task_id=task.task_id,
             selected_agent_id=best_agent.agent_id,
             confidence=0.88,
@@ -189,7 +190,7 @@ class SemanticRoutingStrategy:
         matched_caps = [c for c in task.required_capabilities if c in top_agent.capabilities]
 
         return RoutingDecision(
-            decision_id=f"rd_sem_{int(time.time()*1000)%100000}",
+            decision_id=f"rd_sem_{uuid.uuid4().hex[:12]}",
             task_id=task.task_id,
             selected_agent_id=top_agent.agent_id,
             confidence=norm_conf,
@@ -273,25 +274,28 @@ class AdaptiveRoutingStrategy:
         conf = min(0.99, max(0.68, round(top["utility"], 3)))
 
         return RoutingDecision(
-            decision_id=f"rd_adapt_{int(time.time()*1000)%100000}",
+            decision_id=f"rd_adapt_{uuid.uuid4().hex[:12]}",
             task_id=task.task_id,
             selected_agent_id=top_agent.agent_id,
             confidence=conf,
             strategy_used=RoutingStrategyType.ADAPTIVE,
             alternative_agent_ids=alts,
             rationale=(
-                f"Selección adaptativa balanceada (Utilidad: {top['utility']:.2f}): "
+                f"[EXPERIMENTAL] Selección adaptativa balanceada (Utilidad: {top['utility']:.2f}): "
                 f"Semántica={top['sem_norm']:.2f}, Eficiencia Coste={top['cost_norm']:.2f}, "
                 f"Cobertura Capabilities={top['cap_ratio']:.2f} con '{top_agent.name}'."
             ),
             matched_capabilities=matched_caps,
             estimated_cost=top["cost_raw"],
             metadata={
+                "experimental": True,
+                "is_experimental": True,
+                "baseline_mode": "adaptive_experimental",
                 "adaptive_breakdown": {
                     "utility": round(top["utility"], 4),
                     "semantic_normalized": round(top["sem_norm"], 4),
                     "cost_normalized": round(top["cost_norm"], 4),
                     "capability_ratio": round(top["cap_ratio"], 4),
-                }
+                },
             },
         )

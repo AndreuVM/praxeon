@@ -10,7 +10,6 @@ import {
   AlertTriangle,
   Clock,
   Sparkles,
-  GitBranch,
   RefreshCw,
   RotateCcw,
 } from 'lucide-react';
@@ -62,7 +61,7 @@ export default function DecisionTree({
       const targetY = Math.min(20, Math.max(-1200, (viewportHeight * 0.35) - latestNode.y));
       setPan((p) => ({ ...p, y: targetY }));
     }
-  }, [nodes.length, autoLayout]);
+  }, [nodes, autoLayout]);
 
   // Helper to find parent coordinates for bezier curves
   const nodeMap = React.useMemo(() => {

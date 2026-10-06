@@ -25,6 +25,9 @@ class StepRecord(BaseModel):
     decision: PolicyDecision
     observation: Optional[str] = None
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    synthetic_fallback: bool = False
+    model_source: Optional[str] = None
+    governance_mode: Optional[str] = None
 
 
 
@@ -56,14 +59,22 @@ class SessionState(BaseModel):
         action: ActionCandidate,
         decision: PolicyDecision,
         observation: Optional[str] = None,
+        synthetic_fallback: Optional[bool] = None,
+        model_source: Optional[str] = None,
+        governance_mode: Optional[str] = None,
     ) -> StepRecord:
         """Registra un nuevo paso completado en la trayectoria."""
+        is_synth = synthetic_fallback if synthetic_fallback is not None else action.synthetic_fallback
+        m_src = model_source or action.model_source
         record = StepRecord(
             id=f"step_{len(self.steps)}",
             index=len(self.steps),
             action=action,
             decision=decision,
             observation=observation,
+            synthetic_fallback=is_synth,
+            model_source=m_src,
+            governance_mode=governance_mode,
         )
         self.steps.append(record)
         return record

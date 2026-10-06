@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Plus, FolderKanban, ArrowRight, Trash2, Sparkles } from 'lucide-react';
+import { X, Plus, ArrowRight, Trash2, Sparkles } from 'lucide-react';
 
 export default function SessionsModal({
   isOpen,

@@ -144,7 +144,41 @@ def test_fastapi_workflow_endpoints(api_client):
     assert pos_data["position"]["x"] == 120.0
     assert pos_data["position"]["y"] == 260.0
 
-    # 5. Servir la interfaz web interactiva drag & drop
+    # 5. Actualizar propiedades del nodo (nombre, agente, inputs)
+    res_up_node = api_client.put(
+        "/v1/workflows/wf_demo_autonomous/nodes/research",
+        json={
+            "name": "Updated Deep Research",
+            "agent_id": "custom_agent_x",
+            "inputs": {"depth": "thorough", "max_tokens": 4096},
+        },
+    )
+    assert res_up_node.status_code == 200
+    up_node_data = res_up_node.json()["data"]
+    assert up_node_data["name"] == "Updated Deep Research"
+    assert up_node_data["agent_id"] == "custom_agent_x"
+    assert up_node_data["inputs"]["depth"] == "thorough"
+
+    # 6. Actualizar condición lógica de una arista
+    res_up_edge = api_client.put(
+        "/v1/workflows/wf_demo_autonomous/edges/e1",
+        json={
+            "label": "Condición Si Valida",
+            "condition": {
+                "field": "output.status",
+                "operator": "==",
+                "expected_value": "SUCCESS",
+            },
+        },
+    )
+    assert res_up_edge.status_code == 200
+    up_edge_data = res_up_edge.json()["data"]
+    assert up_edge_data["label"] == "Condición Si Valida"
+    assert up_edge_data["condition"]["field"] == "output.status"
+    assert up_edge_data["condition"]["operator"] == "=="
+    assert up_edge_data["condition"]["expected_value"] == "SUCCESS"
+
+    # 7. Servir la interfaz web interactiva drag & drop
     res_ui = api_client.get("/v1/workflows/editor/ui")
     assert res_ui.status_code == 200
     assert "PRAXEON - Visual Workflow Orchestrator" in res_ui.text

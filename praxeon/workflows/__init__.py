@@ -20,8 +20,11 @@ from praxeon.workflows.models import (
     UIPosition,
     WorkflowDefinition,
     WorkflowEdge,
+    WorkflowExecution,
     WorkflowNode,
 )
+
+from praxeon.workflows.scheduler import WorkflowScheduler
 
 __all__ = [
     "EdgeCondition",
@@ -36,6 +39,8 @@ __all__ = [
     "WorkflowEngine",
     "WorkflowDecisionBridge",
     "WorkflowExecutionContext",
+    "WorkflowExecution",
     "WorkflowNode",
+    "WorkflowScheduler",
     "WorkflowStatus",
 ]

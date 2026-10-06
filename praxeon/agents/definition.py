@@ -24,6 +24,7 @@ class AgentStatus(str, Enum):
     INACTIVE = "INACTIVE"          # Deshabilitado temporalmente
     PROVISIONING = "PROVISIONING"  # En proceso de arranque y enlace de dependencias
     TERMINATED = "TERMINATED"      # Desmantelado permanentemente
+    QUARANTINED = "QUARANTINED"    # En cuarentena por fallo de integridad o deserialización
 
 
 class ModelConfig(BaseModel):

@@ -19,7 +19,7 @@ from praxeon.routing.models import (
     TaskComplexity,
     TaskRequirement,
 )
-from praxeon.routing.router import AgentRouter
+from praxeon.routing.router import AgentRouter, IneligibleAgentRoutingError
 from praxeon.routing.strategies import (
     AdaptiveRoutingStrategy,
     CostAwareRoutingStrategy,
@@ -34,6 +34,7 @@ __all__ = [
     "EscalationContext",
     "EscalationResult",
     "EscalationTriggerType",
+    "IneligibleAgentRoutingError",
     "RoutingDecision",
     "RoutingStrategyType",
     "SemanticRoutingStrategy",

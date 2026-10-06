@@ -15,6 +15,7 @@ from enum import Enum
 import json
 import re
 from typing import Any, Callable, Dict, List, Optional, Set
+import uuid
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 import yaml
 
@@ -40,6 +41,19 @@ class NodeStatus(str, Enum):
     SKIPPED = "SKIPPED"                # Omitido por bifurcación condicional
     CANCELLED = "CANCELLED"            # Cancelado por aborto de workflow
     WAITING_APPROVAL = "WAITING_APPROVAL"  # Pausado esperando confirmación humana
+    WAITING_RESULT = "WAITING_RESULT"      # En espera asíncrona de resultado (p. ej. respuesta de agente o servicio externo)
+    TIMEOUT = "TIMEOUT"                # Expiró el tiempo límite asignado
+    RETRYING = "RETRYING"              # En espera programada por política de reintentos y backoff
+
+
+class WorkflowStatus(str, Enum):
+    """Estados del ciclo de vida de la ejecución de un flujo de trabajo."""
+    IDLE = "IDLE"                      # Instanciado, aún no iniciado
+    RUNNING = "RUNNING"                # Ejecutándose activamente
+    PAUSED = "PAUSED"                  # Detenido temporalmente
+    COMPLETED = "COMPLETED"            # Todos los nodos terminales alcanzados
+    FAILED = "FAILED"                  # Detenido por fallo no recuperable en un nodo crítico
+    CANCELLED = "CANCELLED"            # Abortado explícitamente
 
 
 class UIPosition(BaseModel):
@@ -158,6 +172,7 @@ class WorkflowDefinition(BaseModel):
     nodes: Dict[str, WorkflowNode] = Field(default_factory=dict, description="Catálogo de nodos indexados por node_id")
     edges: List[WorkflowEdge] = Field(default_factory=list, description="Lista de conexiones dirigidas")
     variables: Dict[str, Any] = Field(default_factory=dict, description="Variables globales del flujo")
+    timeout_seconds: Optional[float] = Field(default=None, description="Timeout global máximo de ejecución en segundos")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     metadata: Dict[str, Any] = Field(default_factory=dict)
@@ -290,6 +305,25 @@ class WorkflowDefinition(BaseModel):
 
         return order
 
+    def create_execution(
+        self,
+        execution_id: Optional[str] = None,
+        initial_variables: Optional[Dict[str, Any]] = None,
+    ) -> "WorkflowExecution":
+        """Crea una nueva instancia independiente y aislada de ejecución para este workflow."""
+        exec_id = execution_id or f"exec_{uuid.uuid4().hex[:12]}"
+        vars_copy = dict(self.variables)
+        if initial_variables:
+            vars_copy.update(initial_variables)
+        return WorkflowExecution(
+            execution_id=exec_id,
+            workflow_id=self.workflow_id,
+            status=WorkflowStatus.IDLE,
+            node_states={nid: NodeStatus.PENDING for nid in self.nodes},
+            variables=vars_copy,
+            node_retries={nid: 0 for nid in self.nodes},
+        )
+
     def to_dict(self) -> Dict[str, Any]:
         """Serializa la definición a diccionario estructurado."""
         return self.model_dump(mode="json")
@@ -315,3 +349,60 @@ class WorkflowDefinition(BaseModel):
         if not isinstance(parsed, dict):
             raise ValueError("El contenido YAML no representa un objeto válido de workflow.")
         return cls.from_dict(parsed)
+
+
+class WorkflowExecution(BaseModel):
+    """Entidad formal e independiente que representa una instancia única de ejecución de un workflow."""
+    model_config = ConfigDict(frozen=False)
+
+    execution_id: str = Field(description="Identificador único de la instancia de ejecución")
+    workflow_id: str = Field(description="ID del WorkflowDefinition asociado")
+    status: WorkflowStatus = Field(default=WorkflowStatus.IDLE)
+    node_states: Dict[str, NodeStatus] = Field(default_factory=dict, description="Estado de cada nodo en esta ejecución")
+    node_outputs: Dict[str, Dict[str, Any]] = Field(default_factory=dict, description="Outputs producidos por cada nodo")
+    node_retries: Dict[str, int] = Field(default_factory=dict, description="Reintentos por nodo")
+    node_started_at: Dict[str, datetime] = Field(default_factory=dict, description="Momento de inicio de ejecución por nodo")
+    node_retry_after: Dict[str, datetime] = Field(default_factory=dict, description="Momento a partir del cual el nodo puede reintentarse")
+    variables: Dict[str, Any] = Field(default_factory=dict, description="Variables dinámicas de ejecución")
+    execution_history: List[str] = Field(default_factory=list, description="Secuencia de nodos ejecutados")
+    checkpoints: List[Dict[str, Any]] = Field(default_factory=list, description="Instantáneas de estado para rollback")
+    error_message: Optional[str] = Field(default=None)
+    started_at: Optional[datetime] = Field(default=None)
+    finished_at: Optional[datetime] = Field(default=None)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+    def is_active(self) -> bool:
+        """Determina si la ejecución está en progreso (RUNNING o PAUSED)."""
+        return self.status in (WorkflowStatus.RUNNING, WorkflowStatus.PAUSED)
+
+    def is_terminal(self) -> bool:
+        """Determina si la ejecución ha concluido (COMPLETED, FAILED o CANCELLED)."""
+        return self.status in (WorkflowStatus.COMPLETED, WorkflowStatus.FAILED, WorkflowStatus.CANCELLED)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialización canónica a diccionario."""
+        return self.model_dump(mode="json")
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "WorkflowExecution":
+        """Deserialización desde diccionario estructurado."""
+        clean = dict(data)
+        if isinstance(clean.get("started_at"), str):
+            clean["started_at"] = datetime.fromisoformat(clean["started_at"])
+        if isinstance(clean.get("finished_at"), str):
+            clean["finished_at"] = datetime.fromisoformat(clean["finished_at"])
+        if isinstance(clean.get("created_at"), str):
+            clean["created_at"] = datetime.fromisoformat(clean["created_at"])
+        if isinstance(clean.get("node_started_at"), dict):
+            clean["node_started_at"] = {
+                k: datetime.fromisoformat(v) if isinstance(v, str) else v
+                for k, v in clean["node_started_at"].items()
+            }
+        if isinstance(clean.get("node_retry_after"), dict):
+            clean["node_retry_after"] = {
+                k: datetime.fromisoformat(v) if isinstance(v, str) else v
+                for k, v in clean["node_retry_after"].items()
+            }
+        return cls(**clean)
+

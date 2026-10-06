@@ -4,6 +4,7 @@ Selecciona fragmentos relevantes a partir del estado de la sesión, árbol de de
 y evidencias contrastadas sin requerir bases vectoriales ni modelos de embeddings opacos.
 """
 
+import hashlib
 from typing import Any, Dict, List, Optional, Set
 from praxeon.context.fragments import (
     ContextFragment,
@@ -37,14 +38,73 @@ class DAGContextSelector:
         self.include_key_decisions = include_key_decisions
         self.filter_pruned_branches = filter_pruned_branches
 
+    def resolve_ancestral_nodes(
+        self,
+        active_node_id: str,
+        steps: List[Any],
+        metadata: Dict[str, Any],
+        dependency_graph: Optional[Any] = None,
+    ) -> Optional[Set[str]]:
+        """Resuelve el conjunto de nodos ancestros en el DAG requeridos para active_node_id."""
+        import networkx as nx
+
+        g = nx.DiGraph()
+
+        # 1. Si se proporciona dependency_graph explícito
+        if dependency_graph is not None:
+            if hasattr(dependency_graph, "graph") and isinstance(dependency_graph.graph, nx.DiGraph):
+                g = dependency_graph.graph.copy()
+            elif isinstance(dependency_graph, nx.DiGraph):
+                g = dependency_graph.copy()
+            elif isinstance(dependency_graph, dict):
+                for child, parents in dependency_graph.items():
+                    if isinstance(parents, (list, tuple, set)):
+                        for p in parents:
+                            g.add_edge(p, child)
+                    elif parents:
+                        g.add_edge(parents, child)
+
+        # 2. De metadata["node_dependencies"] o metadata["dependencies"]
+        node_deps = metadata.get("node_dependencies") or metadata.get("dependencies")
+        if isinstance(node_deps, dict):
+            for child, parents in node_deps.items():
+                if isinstance(parents, (list, tuple, set)):
+                    for p in parents:
+                        g.add_edge(p, child)
+                elif parents:
+                    g.add_edge(parents, child)
+
+        # 3. Extraer aristas de steps (parent_id o metadata['parent_id'])
+        for s in steps:
+            s_action = getattr(s, "action", None)
+            s_meta = getattr(s_action, "metadata", {}) or {}
+            s_node = s_meta.get("node_id") or getattr(s, "node_id", None) or getattr(s, "step_id", None)
+            if not s_node:
+                continue
+            g.add_node(s_node)
+            s_parent = s_meta.get("parent_id") or getattr(s, "parent_id", None)
+            if s_parent:
+                g.add_edge(s_parent, s_node)
+            s_extra_deps = s_meta.get("dependencies") or []
+            if isinstance(s_extra_deps, (list, tuple)):
+                for dep in s_extra_deps:
+                    g.add_edge(dep, s_node)
+
+        if active_node_id in g:
+            ancestors = nx.ancestors(g, active_node_id)
+            return set(ancestors) | {active_node_id}
+
+        return None
+
     def select(
         self,
         state: Any,
         candidate_action: Optional[ActionCandidate] = None,
         session_context: Optional[Any] = None,
         active_node_id: Optional[str] = None,
+        dependency_graph: Optional[Any] = None,
     ) -> List[ContextFragment]:
-        """Extrae y estructura todos los fragmentos pertinentes para el nodo actual de la trayectoria."""
+        """Extrae y estructura los fragmentos de contexto pertinentes para el nodo actual de la trayectoria."""
         fragments: List[ContextFragment] = []
 
         # 1. Fragmento de Meta (GOAL) y criterios de éxito
@@ -83,13 +143,34 @@ class DAGContextSelector:
                 t_summary = getattr(rec, "summary", getattr(rec, "final_answer", ""))
                 fragments.append(TaskFragment(task_id=t_id, goal=t_goal, summary=t_summary))
 
-        # 4. Fragmentos de Evidencia Empírica Contrastada (EVIDENCE) con Priorización Relevante (F2-03)
+        # 4. Resolución topológica de dependencias si se provee active_node_id
+        raw_steps = getattr(state, "steps", [])
+        relevant_ancestors = (
+            self.resolve_ancestral_nodes(active_node_id, raw_steps, metadata, dependency_graph)
+            if active_node_id
+            else None
+        )
+
+        # 5. Evidencias requeridas por la acción candidata o por la cadena de pasos ancestros
         raw_evidence = getattr(state, "evidence", [])
         req_evidence_ids = (
             set(candidate_action.requires_evidence)
             if candidate_action and candidate_action.requires_evidence
             else set()
         )
+
+        for step in raw_steps:
+            step_action = getattr(step, "action", None)
+            step_meta = getattr(step_action, "metadata", {}) or {}
+            step_node = step_meta.get("node_id") or getattr(step, "node_id", None) or getattr(step, "step_id", None)
+            if relevant_ancestors is not None and step_node and step_node not in relevant_ancestors:
+                continue
+            step_reqs = getattr(step_action, "requires_evidence", []) or step_meta.get("requires_evidence") or []
+            if isinstance(step_reqs, (list, tuple, set)):
+                req_evidence_ids.update(step_reqs)
+            produced = step_meta.get("produced_evidence") or []
+            if isinstance(produced, (list, tuple, set)):
+                req_evidence_ids.update(produced)
 
         prioritized_ev = []
         other_ev = []
@@ -102,12 +183,11 @@ class DAGContextSelector:
 
         ordered_ev = (prioritized_ev + other_ev)[:self.max_evidence_items]
         for ev in ordered_ev:
-            ev_id = getattr(ev, "id", f"ev_{hash(str(ev)) % 10000}")
+            ev_id = getattr(ev, "id", None) or f"ev_{hashlib.sha256(str(ev).encode('utf-8')).hexdigest()[:12]}"
             claim = getattr(ev, "claim", str(ev))
             fragments.append(EvidenceFragment(evidence_id=str(ev_id), claim=claim))
 
-        # 5. Filtrado de Ramas Podadas y Selección de Pasos Pertinentes (F2-03 y F2-04)
-        raw_steps = getattr(state, "steps", [])
+        # 6. Filtrado de Ramas Podadas y Selección de Pasos Pertinentes (F2-03 y F2-04)
         pruned_branches: Set[str] = set(metadata.get("pruned_branches", []))
         pruned_nodes: Set[str] = set(metadata.get("pruned_nodes", []))
 
@@ -117,8 +197,12 @@ class DAGContextSelector:
         for step in raw_steps:
             step_action = getattr(step, "action", None)
             step_meta = getattr(step_action, "metadata", {}) or {}
-            step_node = step_meta.get("node_id") or getattr(step, "node_id", None)
+            step_node = step_meta.get("node_id") or getattr(step, "node_id", None) or getattr(step, "step_id", None)
             step_branch = step_meta.get("branch_id") or getattr(step, "branch_id", None)
+
+            # Dependency-aware filtering: Si hay una cadena de ancestros activa, excluir pasos ajenos
+            if relevant_ancestors is not None and step_node and step_node not in relevant_ancestors:
+                continue
 
             # Exclusión estricta de ramas podadas/descartadas (F2-04)
             if self.filter_pruned_branches:

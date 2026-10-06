@@ -11,21 +11,65 @@ from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
+import uuid
 import yaml
 
 from praxeon.agents.definition import AgentDefinition, AgentStatus
 
+if TYPE_CHECKING:
+    from praxeon.persistence.sqlite_store import SqlitePersistenceStore
+
 
 class AgentRegistry:
-    """Registro y gestor de ciclo de vida de agentes en memoria con persistencia opcional."""
+    """Registro y gestor de ciclo de vida de agentes en memoria con persistencia transaccional SQLite o en disco."""
 
-    def __init__(self, storage_dir: Optional[str] = None):
+    def __init__(
+        self,
+        storage_dir: Optional[str] = None,
+        store: Optional["SqlitePersistenceStore"] = None,
+        db_path: Optional[str] = None,
+    ):
         self._agents: Dict[str, AgentDefinition] = {}
+        self._quarantined: List[Dict[str, Any]] = []
+        self._version_history: Dict[str, List[Dict[str, Any]]] = {}
+        self._in_memory_versions: Dict[str, Dict[int, AgentDefinition]] = {}
         self.storage_dir = Path(storage_dir) if storage_dir else None
-        if self.storage_dir:
+        if store is not None:
+            self.store: Optional["SqlitePersistenceStore"] = store
+        elif db_path is not None:
+            from praxeon.persistence.sqlite_store import SqlitePersistenceStore
+            self.store = SqlitePersistenceStore(db_path=db_path)
+        else:
+            self.store = None
+
+        if self.store is not None:
+            self._load_from_store()
+        elif self.storage_dir:
             self.storage_dir.mkdir(parents=True, exist_ok=True)
             self._load_from_storage()
+
+    def _record_version_in_memory(self, agent: AgentDefinition) -> None:
+        """Registra una versión de agente en la memoria interna para trazabilidad inmutable."""
+        aid = agent.agent_id
+        if aid not in self._version_history:
+            self._version_history[aid] = []
+        if aid not in self._in_memory_versions:
+            self._in_memory_versions[aid] = {}
+
+        self._in_memory_versions[aid][agent.version] = agent
+        if not any(v.get("version") == agent.version for v in self._version_history[aid]):
+            created_str = (
+                agent.created_at.isoformat()
+                if hasattr(agent.created_at, "isoformat")
+                else str(agent.created_at)
+            )
+            self._version_history[aid].append({
+                "agent_id": aid,
+                "version": agent.version,
+                "definition_hash": agent.definition_hash,
+                "created_at": created_str,
+            })
 
     def register(self, agent: AgentDefinition) -> AgentDefinition:
         """Registra un nuevo agente en el registry."""
@@ -33,6 +77,7 @@ class AgentRegistry:
             raise ValueError(f"El agente con ID '{agent.agent_id}' ya está registrado. Usa update() para modificarlo.")
 
         self._agents[agent.agent_id] = agent
+        self._record_version_in_memory(agent)
         self._persist_if_configured(agent)
         return agent
 
@@ -70,8 +115,10 @@ class AgentRegistry:
 
         updated_agent = AgentDefinition(**data)
         self._agents[agent_id] = updated_agent
+        self._record_version_in_memory(updated_agent)
         self._persist_if_configured(updated_agent)
         return updated_agent
+
 
     def delete(self, agent_id: str, hard_delete: bool = False) -> bool:
         """Elimina un agente. Por defecto aplica soft-delete marcándolo como TERMINATED."""
@@ -80,6 +127,8 @@ class AgentRegistry:
 
         if hard_delete:
             del self._agents[agent_id]
+            if self.store:
+                self.store.delete_agent(agent_id, hard_delete=True)
             if self.storage_dir:
                 file_path = self.storage_dir / f"{agent_id}.json"
                 if file_path.exists():
@@ -173,22 +222,94 @@ class AgentRegistry:
         return imported
 
     def _persist_if_configured(self, agent: AgentDefinition) -> None:
-        """Guarda en disco si storage_dir está configurado."""
-        if not self.storage_dir:
+        """Guarda en almacén SQLite o en disco si están configurados."""
+        if self.store:
+            self.store.save_agent(agent)
+        if self.storage_dir:
+            dest = self.storage_dir / f"{agent.agent_id}.json"
+            with open(dest, "w", encoding="utf-8") as f:
+                json.dump(agent.to_dict(), f, indent=2, ensure_ascii=False)
+
+    def _load_from_store(self) -> None:
+        """Carga agentes desde el almacén transaccional SQLite."""
+        if not self.store:
             return
-        dest = self.storage_dir / f"{agent.agent_id}.json"
-        with open(dest, "w", encoding="utf-8") as f:
-            json.dump(agent.to_dict(), f, indent=2, ensure_ascii=False)
+        loaded = self.store.list_agents()
+        for agent in loaded:
+            self._agents[agent.agent_id] = agent
+        self._quarantined = self.store.list_quarantined(entity_type="agent")
 
     def _load_from_storage(self) -> None:
-        """Carga agentes preexistentes del directorio de almacenamiento."""
+        """Carga agentes preexistentes del directorio de almacenamiento capturando registros corruptos en cuarentena."""
         if not self.storage_dir:
             return
         for file in self.storage_dir.glob("*.json"):
+            raw_content = ""
             try:
-                with open(file, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                    agent = AgentDefinition.from_dict(data)
-                    self._agents[agent.agent_id] = agent
-            except Exception:
-                pass
+                raw_content = file.read_text(encoding="utf-8")
+                data = json.loads(raw_content)
+                agent = AgentDefinition.from_dict(data)
+                self._agents[agent.agent_id] = agent
+            except Exception as exc:
+                entry = {
+                    "record_id": f"quarantine_{file.stem}_{uuid.uuid4().hex[:8]}",
+                    "entity_type": "agent",
+                    "entity_id": file.stem,
+                    "raw_content": raw_content,
+                    "error_message": str(exc),
+                    "quarantined_at": datetime.now(timezone.utc).isoformat(),
+                }
+                self._quarantined.append(entry)
+
+    def get_quarantined_agents(self) -> List[Dict[str, Any]]:
+        """Lista los agentes que se encuentran en estado de cuarentena por errores de deserialización o integridad."""
+        if self.store:
+            return self.store.list_quarantined(entity_type="agent")
+        return list(self._quarantined)
+
+    def quarantine_agent(self, agent_id: str, reason: str) -> None:
+        """Coloca un agente existente o corrupto en cuarentena explícita."""
+        agent = self.get(agent_id)
+        raw_content = ""
+        if agent:
+            raw_content = json.dumps(agent.to_dict(), ensure_ascii=False)
+            self.update(agent_id, {"status": AgentStatus.QUARANTINED})
+        if self.store:
+            self.store.quarantine_record("agent", agent_id, raw_content, reason)
+        else:
+            self._quarantined.append({
+                "record_id": f"quarantine_{agent_id}_{uuid.uuid4().hex[:8]}",
+                "entity_type": "agent",
+                "entity_id": agent_id,
+                "raw_content": raw_content,
+                "error_message": reason,
+                "quarantined_at": datetime.now(timezone.utc).isoformat(),
+            })
+
+    def get_agent_history(self, agent_id: str) -> List[Dict[str, Any]]:
+        """Obtiene el historial inmutable de versiones de un agente con sus hashes criptográficos."""
+        if self.store:
+            return self.store.get_agent_versions(agent_id)
+        if agent_id in self._version_history:
+            return list(self._version_history[agent_id])
+        agent = self.get(agent_id)
+        if not agent:
+            return []
+        return [{
+            "agent_id": agent.agent_id,
+            "version": agent.version,
+            "definition_hash": agent.definition_hash,
+            "created_at": agent.created_at.isoformat() if hasattr(agent.created_at, "isoformat") else str(agent.created_at),
+        }]
+
+    def get_agent_version(self, agent_id: str, version: int) -> Optional[AgentDefinition]:
+        """Obtiene una versión histórica inmutable específica de un agente."""
+        if self.store:
+            return self.store.get_agent_version(agent_id, version)
+        if agent_id in self._in_memory_versions:
+            return self._in_memory_versions[agent_id].get(version)
+        agent = self.get(agent_id)
+        if agent and agent.version == version:
+            return agent
+        return None
+

@@ -11,11 +11,13 @@ dependencies = [
     "networkx>=3.6.1",
     "pydantic>=2.13.5",
     "python-dotenv>=1.2.3",
+    "pyyaml>=6.0",
     "rich>=15.0.0",
     "typesafe-sdk>=0.7.0",
     "uvicorn>=0.30.0",
     "websockets>=12.0",
 ]
+
 
 [project.urls]
 Homepage = "https://github.com/AndreuVM/praxeon"
@@ -57,3 +59,14 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["praxeon"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "unit: Tests unitarios atomicos, puros y rapidos sin I/O pesado ni servidor",
+    "integration: Tests de integracion de servicios, almacenamiento y protocolos",
+    "e2e: Tests end-to-end de ciclo de vida completo de plataforma y agentes",
+    "security: Tests de seguridad, HMAC, autorizacion, limites y aislamiento",
+    "providers: Tests de proveedores de inferencia y evaluacion semantica",
+    "benchmark: Tests de rendimiento, ablacion y benchmarking comparativo",
+]

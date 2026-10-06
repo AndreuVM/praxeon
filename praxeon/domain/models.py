@@ -4,6 +4,7 @@ Re-exporta todas las entidades puras e inmutables organizadas modularmente en el
 """
 
 from praxeon.domain.action import ActionCandidate, ToolCall, compute_action_hash
+from praxeon.domain.governance import ActionProvenance, FallbackMode, resolve_fallback_mode
 from praxeon.domain.assessment import (
     CommandCategory,
     CommandRiskAssessment,
@@ -59,4 +60,7 @@ __all__ = [
     "StateSnapshot",
     "StateStepRecord",
     "TrajectoryState",
+    "ActionProvenance",
+    "FallbackMode",
+    "resolve_fallback_mode",
 ]

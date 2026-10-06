@@ -29,6 +29,7 @@ from praxeon.domain.models import (
 )
 from praxeon.policy.failsafe import FailSafePolicy
 from praxeon.policy.permissions import PermissionManager
+from praxeon.policy.reconciliation import RiskReconciler
 from praxeon.policy.registry import ToolRegistry
 from praxeon.reasoning.classifier import CommandClassifier
 
@@ -47,11 +48,13 @@ class PolicyEngine:
         secret_key: Optional[str] = None,
         receipt_ttl_seconds: float = 60.0,
         classifier: Optional[CommandClassifier] = None,
+        reconciler: Optional[RiskReconciler] = None,
     ):
         self.registry = registry or ToolRegistry(register_defaults=True)
         self.failsafe = failsafe or FailSafePolicy()
         self.permission_manager = permission_manager or PermissionManager(registry=self.registry)
         self.classifier = classifier or CommandClassifier()
+        self.reconciler = reconciler or RiskReconciler(registry=self.registry)
         self.loop_threshold = loop_threshold
         self.min_grounded_threshold = min_grounded_threshold
         self.min_confidence_threshold = min_confidence_threshold
@@ -87,9 +90,8 @@ class PolicyEngine:
                 resolved_mode = "local_restricted"
 
         tool_name = action.tool_call.tool_name if action.tool_call else None
-        risk: RiskAssessment = risk_assessment or self.registry.assess_risk(tool_name)
+        base_risk: RiskAssessment = risk_assessment or self.registry.assess_risk(tool_name)
         spec = self.registry.get_tool(tool_name) if tool_name else None
-        is_read_only = bool(spec.read_only) if spec else True
 
         # Clasificación contextual de la operación concreta si no fue provista externamente
         if operation_assessment is None:
@@ -109,20 +111,22 @@ class PolicyEngine:
                 op_text, context=state if isinstance(state, dict) else None
             )
 
-        if operation_assessment is not None:
-            # Desacoplamiento de la identidad de la herramienta y la semántica de la operación
-            # Si la operación concreta es de inspección o build/test de bajo riesgo,
-            # el riesgo se refina con la semántica real de la operación.
-            if operation_assessment.category in (CommandCategory.INSPECTION, CommandCategory.BUILD_TEST):
-                is_read_only = operation_assessment.read_only
-                if risk_assessment is None:
-                    risk = RiskAssessment(
-                        level=operation_assessment.risk_level,
-                        requires_confirmation=False,
-                        executable=True,
-                        destructive_potential=False,
-                        reasons=[f"Operación concreta clasificada como '{operation_assessment.category.value}' ({operation_assessment.risk_level.value})."],
-                    )
+        # FASE EXPLÍCITA DE RECONCILIACIÓN DE RIESGO (RiskReconciliation P0)
+        risk: RiskAssessment = self.reconciler.reconcile(
+            base_risk=base_risk,
+            operation_assessment=operation_assessment,
+            tool_name=tool_name,
+            tool_spec=spec,
+            action=action,
+            available_evidence=available_evidence,
+            execution_mode=resolved_mode,
+            forbidden_tools=forbidden_tools,
+        )
+        is_read_only = (
+            (operation_assessment.read_only if operation_assessment else False)
+            or (spec.read_only if spec else False)
+            or (tool_name in ("read_file", "view_file", "list_dir", "grep_search", "search_web"))
+        )
 
         reason_codes: List[str] = []
         status: Optional[DecisionStatus] = None

@@ -22,3 +22,11 @@ class ProposeActionRequest(BaseModel):
         default_factory=dict,
         description="Contexto relevante de la sesión (ej: meta actual, supuestos)",
     )
+    synthetic_fallback: bool = Field(
+        default=False,
+        description="Indica si la acción proviene de un fallback sintético",
+    )
+    model_source: Optional[str] = Field(
+        None,
+        description="Identificador del modelo de inferencia de la acción (ej: 'llm:gemini', 'synthetic:fallback')",
+    )

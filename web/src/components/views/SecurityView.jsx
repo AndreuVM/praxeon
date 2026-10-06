@@ -5,30 +5,20 @@ import {
   ShieldAlert,
   Key,
   Lock,
-  Network,
   AlertTriangle,
-  FileCode,
-  Terminal,
   CheckCircle2,
-  XCircle,
-  Copy,
-  Check,
-  RefreshCw,
-  Eye,
 } from 'lucide-react';
 import * as api from '../../services/api';
 
 export default function SecurityView({
-  session = {},
-  sessionsList = [],
+  _session = {},
+  _sessionsList = [],
   decisions: propDecisions = [],
 }) {
   const [decisions, setDecisions] = useState(propDecisions);
-  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     async function loadSecurityEvents() {
-      setLoading(true);
       try {
         const res = await api.fetchDecisions(null, 200);
         if (res && res.data) {
@@ -38,19 +28,15 @@ export default function SecurityView({
         }
       } catch (e) {
         console.warn('Error loading security decisions:', e);
-      } finally {
-        setLoading(false);
       }
     }
     loadSecurityEvents();
   }, [propDecisions]);
 
   // Real calculated security metrics
-  const totalDecisions = decisions.length;
   const blockedDecisions = decisions.filter((d) => d.status === 'BLOCKED' || d.status === 'BLOCK');
   const reviewDecisions = decisions.filter((d) => d.status === 'REVIEW');
   const capabilitiesIssued = decisions.filter((d) => d.status === 'ALLOW' && (d.signature || d.action_hash)).length;
-  const highRiskCount = decisions.filter((d) => d.risk_level === 'HIGH' || d.risk_level === 'CRITICAL').length;
 
   const securityPolicies = [
     {

@@ -1,18 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import {
   Cpu,
-  Activity,
-  Zap,
   CheckCircle2,
   AlertCircle,
   RefreshCw,
   Server,
   Cloud,
-  Check,
-  X,
-  Clock,
-  Sliders,
-  Terminal,
 } from 'lucide-react';
 import * as api from '../../services/api';
 
@@ -43,7 +36,31 @@ export default function ProvidersView() {
   };
 
   useEffect(() => {
-    checkHealth();
+    let mounted = true;
+    (async () => {
+      const start = performance.now();
+      try {
+        const res = await api.fetchHealth();
+        const elapsed = Math.round(performance.now() - start);
+        if (mounted) {
+          setHealthStatus({ ...res, latency: elapsed });
+          setTestResult({
+            success: res && (!res.data || res.data.status !== 'offline'),
+            message: `Servidor PRAXEON activo (${elapsed}ms)`,
+          });
+        }
+      } catch (err) {
+        if (mounted) {
+          setTestResult({
+            success: false,
+            message: `Fallo de conexión: ${err.message}`,
+          });
+        }
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   const supervisors = [

@@ -6,8 +6,11 @@ paralelas. Toda operación pasa por el pipeline canónico del runtime:
 Proposal -> Evidence -> Risk -> Provider -> Policy -> Capability -> Execution
 """
 
+from __future__ import annotations
+
 from datetime import datetime, timedelta, timezone
 import hashlib
+
 
 import hmac
 import json
@@ -22,7 +25,7 @@ import uuid
 
 logger = logging.getLogger("praxeon.server.dependencies")
 
-from praxeon.config import PraxeonConfig, default_config
+from praxeon.config import PraxeonConfig, default_config, resolve_cache_dir
 from praxeon.core.state_graph import StateGraph
 from praxeon.domain.action import compute_action_hash
 from praxeon.domain.decision import (
@@ -49,7 +52,10 @@ from praxeon.domain.models import (
 from praxeon.domain.tree import DecisionTree, NodeKind, NodeStatus, TreeNode
 from praxeon.policy.engine import PolicyEngine
 from praxeon.policy.registry import ToolRegistry
+from praxeon.providers.base import BaseReasoningProvider
 from praxeon.providers.laya import LayaProvider
+from praxeon.providers.mock import MockProvider
+from praxeon.providers.replay import ReplayProvider
 from praxeon.providers.typesafe import TypeSafeAdapter
 from praxeon.reasoning.classifier import CommandClassifier
 from praxeon.reasoning.evidence import EvidenceEngine
@@ -59,6 +65,12 @@ from praxeon.runtime.event_bus import EventBus, EventStore
 from praxeon.runtime.executor import PolicyViolation, SecureExecutor, ToolObservation
 from praxeon.runtime.nonce_store import NonceStore, SqliteNonceStore
 from praxeon.context.manager import ContextManager
+from praxeon.agents.bus import AgentMessageBus
+from praxeon.agents.registry import AgentRegistry
+from praxeon.agents.templates import AgentTemplateCatalog
+from praxeon.routing.router import AgentRouter
+from praxeon.workflows.editor_service import WorkflowEditorService
+from praxeon.runtime.adaptive.runtime import AdaptiveAgentRuntime
 from praxeon.runtime.sandbox import (
     LocalProcessSandbox,
     SandboxExecutionResult,
@@ -78,6 +90,16 @@ from praxeon.server.schemas.decision import (
     ProviderEvaluationDTO,
     RiskDTO,
 )
+from praxeon.server.services import (
+    AgentService,
+    AuthService,
+    DecisionService,
+    ExecutionService,
+    MissionService,
+    SessionService,
+    WorkflowService,
+    generate_goal_tailored_steps,
+)
 
 
 class RuntimeApplicationService:
@@ -90,24 +112,33 @@ class RuntimeApplicationService:
         nonce_store: Optional[NonceStore] = None,
         decision_repository: Optional[SqliteDecisionRepository] = None,
         config: Optional[PraxeonConfig] = None,
-        db_dir: str = ".jev_cache",
+        db_dir: Optional[str] = None,
+        agent_bus: Optional[AgentMessageBus] = None,
+        agent_registry: Optional[AgentRegistry] = None,
+        agent_router: Optional[AgentRouter] = None,
+        context_manager: Optional[ContextManager] = None,
+        workflow_editor_service: Optional[WorkflowEditorService] = None,
+        adaptive_runtime: Optional[AdaptiveAgentRuntime] = None,
+        provider: Optional[BaseReasoningProvider] = None,
     ):
         self.config = config or default_config
-        self.db_dir = db_dir
-        os.makedirs(db_dir, exist_ok=True)
+        self.db_dir = resolve_cache_dir(db_dir)
+        os.makedirs(self.db_dir, exist_ok=True)
+
 
         self.event_bus = event_bus or EventBus(
-            store=EventStore(db_path=os.path.join(db_dir, "events.db"))
+            store=EventStore(db_path=os.path.join(self.db_dir, "events.db"))
         )
         self.state_store = state_store or SqliteStateStore(
-            db_path=os.path.join(db_dir, "state.db")
+            db_path=os.path.join(self.db_dir, "state.db")
         )
         self.nonce_store = nonce_store or SqliteNonceStore(
-            db_path=os.path.join(db_dir, "nonces.db")
+            db_path=os.path.join(self.db_dir, "nonces.db")
         )
         self.decision_repository = decision_repository or SqliteDecisionRepository(
-            db_path=os.path.join(db_dir, "decisions.db")
+            db_path=os.path.join(self.db_dir, "decisions.db")
         )
+
 
         self.registry = ToolRegistry(register_defaults=True)
         prof = (os.environ.get("PRAXEON_PROFILE") or os.environ.get("PRAXEON_ENV") or "dev").lower().strip()
@@ -134,7 +165,13 @@ class RuntimeApplicationService:
         self.evidence_engine = EvidenceEngine()
 
         # Configurar proveedor supervisor semántico
-        if self.config.provider.name.lower() == "laya":
+        if provider is not None:
+            self.provider = provider
+        elif self.config.provider.name.lower() in ("mock", "mockprovider", "test", "testing"):
+            self.provider = MockProvider()
+        elif self.config.provider.name.lower() in ("replay", "replayprovider"):
+            self.provider = ReplayProvider()
+        elif self.config.provider.name.lower() == "laya":
             self.provider = LayaProvider(backend=self.config.provider.laya_backend)
         else:
             self.provider = TypeSafeAdapter(
@@ -146,7 +183,121 @@ class RuntimeApplicationService:
         self._sessions_meta: Dict[str, Dict[str, Any]] = {}
         self._decisions: Dict[str, Dict[str, Any]] = {}
         self._running_missions: Dict[str, Dict[str, Any]] = {}
-        self.context_manager = ContextManager()
+
+        # ---------------------------------------------------------------------
+        # SUBSISTEMAS UNIFICADOS DE AGENTES, CONTEXTO, WORKFLOWS Y ENRUTAMIENTO
+        # ---------------------------------------------------------------------
+        self.context_manager = context_manager or ContextManager()
+        self.agent_bus = agent_bus or AgentMessageBus()
+        self.agent_registry = agent_registry or AgentRegistry(db_path=os.path.join(self.db_dir, "persistence.db"))
+        if not self.agent_registry.list_all():
+            for tpl in ["developer", "security_auditor", "researcher", "writer", "code_reviewer"]:
+                try:
+                    self.agent_registry.register(AgentTemplateCatalog.instantiate(tpl, f"ag_{tpl}"))
+                except Exception:
+                    pass
+        self.agent_router = agent_router or AgentRouter(
+            registry=self.agent_registry,
+            message_bus=self.agent_bus,
+            llm_provider=self.provider,
+            event_bus=self.event_bus,
+        )
+        self.persistence_store = getattr(self.agent_registry, "store", None)
+        self.workflow_editor_service = workflow_editor_service or WorkflowEditorService(
+            event_bus=self.event_bus,
+            agent_bus=self.agent_bus,
+            persistence_store=self.persistence_store,
+        )
+        self.adaptive_runtime = adaptive_runtime or AdaptiveAgentRuntime(
+            registry=self.agent_registry,
+            router=self.agent_router,
+            context_manager=self.context_manager,
+            bus=self.agent_bus,
+            event_store=getattr(self.event_bus, "store", None),
+        )
+
+        # ---------------------------------------------------------------------
+        # SERVICIOS MODULARES ESPECIALIZADOS
+        # ---------------------------------------------------------------------
+        self.auth_service = AuthService()
+        self.session_service = SessionService(event_bus=self.event_bus, state_store=self.state_store)
+        self.agent_service = AgentService(registry=self.agent_registry, router=self.agent_router, bus=self.agent_bus)
+        self.workflow_service = WorkflowService(
+            event_bus=self.event_bus,
+            agent_bus=self.agent_bus,
+            editor_service=self.workflow_editor_service,
+            persistence_store=self.persistence_store,
+        )
+        self.execution_service = ExecutionService()
+        self.mission_service = MissionService()
+        self.decision_service = DecisionService(
+            event_bus=self.event_bus,
+            decision_repository=self.decision_repository,
+            policy_engine=self.policy_engine,
+            risk_engine=self.risk_engine,
+            evidence_engine=self.evidence_engine,
+            command_classifier=self.command_classifier,
+        )
+
+    # =========================================================================
+    # ACCESORES DEL CONTROL PLANE CANÓNICO Y SERVICIOS MODULARES
+    # =========================================================================
+
+    def get_auth_service(self) -> AuthService:
+        """Retorna el servicio de autenticación y tickets."""
+        return self.auth_service
+
+    def get_session_service(self) -> SessionService:
+        """Retorna el servicio de sesiones y checkpoints."""
+        return self.session_service
+
+    def get_agent_service(self) -> AgentService:
+        """Retorna el servicio de agentes y enrutamiento."""
+        return self.agent_service
+
+    def get_workflow_service(self) -> WorkflowService:
+        """Retorna el servicio de workflows y ejecuciones."""
+        return self.workflow_service
+
+    def get_decision_service(self) -> DecisionService:
+        """Retorna el servicio de evaluación y persistencia de decisiones."""
+        return self.decision_service
+
+    def get_execution_service(self) -> ExecutionService:
+        """Retorna el servicio de ejecución en sandbox."""
+        return self.execution_service
+
+    def get_mission_service(self) -> MissionService:
+        """Retorna el servicio de gestión de misiones."""
+        return self.mission_service
+
+    def get_agent_registry(self) -> AgentRegistry:
+        """Retorna el registro canónico de agentes del sistema."""
+        return self.agent_registry
+
+    def get_agent_router(self) -> AgentRouter:
+        """Retorna el enrutador inteligente de tareas a agentes."""
+        return self.agent_router
+
+    def get_agent_bus(self) -> AgentMessageBus:
+        """Retorna el bus formal de mensajería inter-agente."""
+        return self.agent_bus
+
+    def get_events(self, session_id: str) -> List[RuntimeEvent]:
+        """Recupera la secuencia ordenada de eventos de una sesión."""
+        return self.event_bus.store.get_events(session_id)
+
+    def get_context_manager(self) -> ContextManager:
+        """Retorna el gestor de optimización de contexto y caché."""
+        return self.context_manager
+
+    def get_workflow_editor_service(self) -> WorkflowEditorService:
+        """Retorna el servicio unificado de orquestación y edición de workflows."""
+        return self.workflow_editor_service
+
+    def get_adaptive_runtime(self) -> AdaptiveAgentRuntime:
+        """Retorna el runtime adaptativo integral."""
+        return self.adaptive_runtime
 
     # =========================================================================
     # GESTIÓN DE SESIONES
@@ -390,11 +541,17 @@ class RuntimeApplicationService:
         decision_id = f"d_{uuid.uuid4().hex[:6]}"
         now = datetime.now(timezone.utc)
 
-        action = ActionCandidate(
+        # Procedencia y gobernanza
+        prov_dict = proposal.provenance if isinstance(proposal.provenance, dict) else {}
+        is_synth = bool(proposal.synthetic_fallback or prov_dict.get("synthetic_fallback", False))
+        m_source = proposal.model_source or prov_dict.get("model_source") or prov_dict.get("source", "ExternalAgent")
 
+        action = ActionCandidate(
             id=action_id,
             description=proposal.thought_rationale or f"{proposal.tool} {proposal.operation or ''}".strip(),
             tool_call=ToolCall(tool_name=proposal.tool, arguments=proposal.arguments),
+            synthetic_fallback=is_synth,
+            model_source=m_source,
         )
 
         session_mode = "local_restricted"
@@ -419,9 +576,11 @@ class RuntimeApplicationService:
                 "tool": proposal.tool,
                 "operation": proposal.operation or "",
                 "arguments": proposal.arguments,
-                "source": proposal.provenance.get("source", "ExternalAgent"),
-                "step": proposal.provenance.get("step", 1),
+                "source": prov_dict.get("source", "ExternalAgent"),
+                "step": prov_dict.get("step", 1),
                 "thought_rationale": proposal.thought_rationale,
+                "synthetic_fallback": is_synth,
+                "model_source": m_source,
             },
         )
 
@@ -485,16 +644,33 @@ class RuntimeApplicationService:
                             missing_resource_name = script_part
                     break
 
-        # Detección de conclusión prematura / evasiva (finish sin ninguna evidencia u observación previa)
+        # Detección de conclusión prematura / evasiva (finish con texto evasivo o vacío)
         is_premature_finish = False
         if proposal.tool in ("finish", "complete_task", "done") and state:
             goal_lower = state.goal.objective.lower()
-            is_investigation_goal = any(w in goal_lower for w in ("informe", "report", "analiza", "audita", "explica", "resume", "cómo funciona", "inspecciona", "investiga", "describe"))
-            successful_obs = [s for s in state.steps if s.observation and len(str(s.observation).strip()) > 20]
             summary_text = str(proposal.arguments.get("summary") or proposal.arguments.get("final_answer") or "").strip()
-            
-            # Si es una tarea que requiere investigar/analizar y no ha leído ningún archivo y el resumen es corto o evasivo
-            if is_investigation_goal and len(successful_obs) == 0 and len(summary_text) < 250:
+
+            # Tareas generativas, creativas o de especificación (historias, requisitos, diseño, nuevo proyecto, etc.)
+            is_generative_or_spec = any(w in goal_lower for w in (
+                "user stories", "historias de usuario", "requisito", "requirements", "diseño",
+                "propuesta", "nuevo proyecto", "nueva app", "arquitectura", "especific", "cuento",
+                "historia", "poema", "estructura de carpetas", "opin", "calific", "informe formal"
+            ))
+
+            # Es investigación de repositorio si no es una tarea generativa/especificación y pide informe/análisis de proyecto o código
+            is_local_codebase_investigation = (
+                not is_generative_or_spec
+                and any(w in goal_lower for w in (
+                    "informe del proyecto", "informe", "report", "audita", "inspecciona", "analiza",
+                    "cómo funciona", "investiga", "describe el proyecto", "código"
+                ))
+            )
+
+            # Evasión real: texto vacío, extremadamente corto (< 30 chars) o con frases de evasión explícitas
+            is_evasive = len(summary_text) < 30 or any(m in summary_text.lower() for m in ("pendiente de lectura", "sin analizar", "no se ha realizado", "no he podido revisar"))
+
+            successful_obs = [s for s in state.steps if s.observation and len(str(s.observation).strip()) > 20]
+            if is_evasive or (is_local_codebase_investigation and len(successful_obs) == 0 and len(summary_text) < 250):
                 is_premature_finish = True
 
         evidences = self.evidence_engine.assess(state, action)
@@ -518,8 +694,18 @@ class RuntimeApplicationService:
             },
         )
 
-        # 3. Evaluación de Riesgo Operacional (sensible al modo de ejecución)
-        risk_assessment = self.risk_engine.assess_action_risk(action, execution_mode=session_mode)
+        # 3. Evaluación de Riesgo Operacional (sensible al modo de ejecución y reconciliación semántica)
+        raw_risk_assessment = self.risk_engine.assess_action_risk(action, execution_mode=session_mode)
+        risk_assessment = self.policy_engine.reconciler.reconcile(
+            base_risk=raw_risk_assessment,
+            operation_assessment=op_assessment,
+            tool_name=proposal.tool,
+            tool_spec=self.registry.get_tool(proposal.tool),
+            action=action,
+            available_evidence=state.evidence,
+            execution_mode=session_mode,
+            forbidden_tools=state.forbidden_tools,
+        )
         risk_level_str = (
             risk_assessment.level.value
             if hasattr(risk_assessment.level, "value")
@@ -565,12 +751,17 @@ class RuntimeApplicationService:
             )
 
         prov_avail = bool(getattr(assessment, "available", True))
-        raw_prob = getattr(assessment, "progress_probability", None)
-        score_val = (
-            round(float(raw_prob), 2)
-            if (raw_prob is not None and isinstance(raw_prob, (int, float)))
-            else None
-        )
+        if not prov_avail:
+            score_val = None
+        else:
+            raw_prob = getattr(assessment, "progress_probability", None)
+            if raw_prob is None:
+                raw_prob = getattr(assessment, "confidence", None)
+            score_val = (
+                round(float(raw_prob), 2)
+                if (raw_prob is not None and isinstance(raw_prob, (int, float)))
+                else None
+            )
 
         loop_prob = getattr(assessment, "loop_probability", None)
         if not prov_avail:
@@ -580,9 +771,17 @@ class RuntimeApplicationService:
         else:
             verdict_val = "ALLOW"
 
+        prov_name = getattr(self.provider, "name", "").lower()
+        if prov_name in ("mock", "replay"):
+            provider_name_display = prov_name
+        elif self.config.provider.name.lower() == "laya" or prov_name == "laya":
+            provider_name_display = "LAYA"
+        else:
+            provider_name_display = "TypeSafe"
+
         provider_dtos = [
             ProviderEvaluationDTO(
-                name="LAYA" if self.config.provider.name.lower() == "laya" else "TypeSafe",
+                name=provider_name_display,
                 score=score_val,
                 verdict=verdict_val,
                 available=prov_avail,
@@ -636,7 +835,7 @@ class RuntimeApplicationService:
             or session_meta.get("operator_authorized")
         )
 
-        if decision.status == DecisionStatus.BLOCK or risk_assessment.level == RiskLevel.CRITICAL:
+        if decision.status == DecisionStatus.BLOCK or decision.risk.level == RiskLevel.CRITICAL or risk_assessment.level == RiskLevel.CRITICAL:
             # Veto incondicional: BLOCK nunca ejecuta, ni en Full Access ni en modo autónomo
             status_str = "BLOCK"
             policy_decision_str = "BLOCK"
@@ -1052,6 +1251,20 @@ class RuntimeApplicationService:
         security_profile: Optional[str] = None,
     ) -> ConfirmDecisionResponse:
         """Autoriza o bloquea una decisión en espera de aprobación humana (REVIEW)."""
+        with self._lock:
+            record = self._decisions.get(decision_id)
+        if not record:
+            record = self.decision_repository.get(decision_id)
+            if not record:
+                raise KeyError(f"Decisión '{decision_id}' no encontrada.")
+            with self._lock:
+                self._decisions[decision_id] = record
+
+        # VETO INCONDICIONAL: Una acción con veredicto BLOCK no puede ser autorizada manualmente ni saltarse la política de seguridad
+        receipt: DecisionReceipt = record["receipt"]
+        if approved and (record.get("status") == "BLOCK" or getattr(receipt, "decision_status", None) == DecisionStatus.BLOCK):
+            raise PermissionError("Veto incondicional: Una acción con veredicto BLOCK no puede ser autorizada manualmente ni saltarse la política de seguridad.")
+
         if role == "viewer":
             raise PermissionError("El rol 'viewer' tiene permisos de solo lectura y no puede autorizar o rechazar decisiones.")
 
@@ -1083,25 +1296,14 @@ class RuntimeApplicationService:
         effective_role = role if (is_verified_operator or not expected_secret) else "operator"
         effective_operator_id = operator_id or ("verified_operator" if is_verified_operator else "operator_admin")
 
-        with self._lock:
-            record = self._decisions.get(decision_id)
-        if not record:
-            record = self.decision_repository.get(decision_id)
-            if not record:
-                raise KeyError(f"Decisión '{decision_id}' no encontrada.")
-            with self._lock:
-                self._decisions[decision_id] = record
-
         session_id = record["session_id"]
         action: ActionCandidate = record["action"]
         now = datetime.now(timezone.utc)
         session_mode = record.get("execution_mode") or "local_restricted"
 
-
         if approved:
             new_status = "ALLOW"
             expires_at = now + timedelta(minutes=5)
-            receipt: DecisionReceipt = record["receipt"]
             receipt_updated = receipt.model_copy(
                 update={
                     "decision_status": DecisionStatus.ALLOW,
@@ -1657,17 +1859,17 @@ class RuntimeApplicationService:
                 "Thought: <análisis concreto de lo que vas a hacer y por qué>\n"
                 "Action: <herramienta>(<argumentos_en_json_o_string>)\n\n"
                 "Herramientas disponibles:\n"
-                "- read_file(path: str) -> Lee el contenido de un archivo del proyecto si necesitas consultar código o configuración específica antes de responder o modificar.\n"
-                "- edit_file(path: str, diff: str) -> Aplica modificaciones a un archivo en el proyecto cuando la tarea pide editar código.\n"
+                "- read_file(path: str) -> Lee el contenido de un archivo del espacio de trabajo local si la tarea requiere auditar código o configuración existente.\n"
+                "- edit_file(path: str, diff: str) -> Aplica modificaciones a un archivo en el espacio de trabajo local cuando la tarea pide editar código existente.\n"
                 "- run_command(command: str) -> Ejecuta un comando en la consola del SO (PowerShell en Windows, bash en Unix).\n"
                 "- git(command: str) -> Ejecuta comandos git en el repositorio (status, diff, log, etc.).\n"
-                "- finish(summary: str) -> Concluye entregando la respuesta directa a la pregunta o la solución solicitada por el usuario.\n\n"
-                "REGLAS OPERATIVAS OBLIGATORIAS:\n"
-                "1. RESPONDE SIEMPRE A LA PREGUNTA CONCRETA: Atiende específicamente a lo que el usuario ha formulado (opinión, valoración, calificación, duda, explicación, historia o tarea). NUNCA ignores la pregunta para soltar un informe genérico del proyecto ni repitas resúmenes estándar del README.\n"
-                "2. PROHIBICIÓN ESTRICTA DE INFORMES NO SOLICITADOS: Salvo que el usuario pida explícitamente 'elabora un informe completo', queda TERMINANTEMENTE PROHIBIDO comenzar con fórmulas como 'El informe proporciona una descripción detallada de un sistema llamado PRAXEON...'. Comunícate de forma natural, directa, crítica y conversacional contestando exactamente a lo que se te pregunta.\n"
-                "3. PREGUNTAS Y VALORACIONES SOBRE EL PROYECTO: Si te preguntan si le das un 10 al proyecto, qué opinas de él, cómo valoras la arquitectura o qué mejorarías, expresa tu valoración directa y razonada (puntos fuertes y qué le falta) utilizando directamente finish(summary=\"...\"). No necesitas leer archivos si ya dispones del contexto de entorno.\n"
-                "4. TAREAS DE CÓDIGO TÉCNICO: Si la tarea solicita implementar una función, arreglar un bug o ejecutar pruebas, utiliza las herramientas pertinentes (read_file, edit_file, run_command) antes de concluir.\n"
-                "5. COMPATIBILIDAD DE SO: En Windows, NO uses comandos Unix/Linux como 'ls', 'cat', 'grep'. Utiliza 'read_file(path)' para inspeccionar archivos o comandos compatibles en run_command.\n"
+                "- finish(summary: str) -> Concluye entregando la respuesta directa a la pregunta, especificación, diseño, informe o solución solicitada por el usuario.\n\n"
+                "PRINCIPIOS OPERATIVOS Y RAZONAMIENTO COGNITIVO:\n"
+                "1. COMPRENSIÓN DEL ÁMBITO DEL PROYECTO (ANTI-SESGO DETERMINISTA): Atiende estrictamente a lo que el usuario solicita. Si el usuario te pide un informe, especificación, arquitectura, estructura de carpetas, requisitos funcionales/no funcionales o user stories para OTRO proyecto, una nueva aplicación o una propuesta de software conceptual, NO asumas jamás que se refiere al proyecto local de PRAXEON ni leas el README local. Elabora y entrega el diseño o informe completo de dicho proyecto directamente mediante finish(summary=\"...\").\n"
+                "2. SIN RESPUESTAS NI ASUNCIONES DETERMINISTAS: Palabras como 'proyecto', 'informe', 'documentación', 'guía' o 'estructura' NO deben disparar de forma automática la lectura de README.md ni pyproject.toml. Analiza dinámicamente si la tarea es de formulación y diseño (responde directamente con finish) o si solicita explícitamente auditar código de este repositorio local.\n"
+                "3. PREGUNTAS Y VALORACIONES: Si te consultan tu opinión, calificación técnica o análisis conceptual sobre cualquier tema o proyecto, responde de forma crítica, sincera y fundamentada directamente con finish(summary=\"...\").\n"
+                "4. TAREAS DE CÓDIGO TÉCNICO SOBRE EL REPOSITORIO LOCAL: Solo si la tarea solicita implementar código, corregir un bug o ejecutar pruebas sobre archivos existentes de este entorno, utiliza read_file, edit_file o run_command.\n"
+                "5. COMPATIBILIDAD DE SO: En Windows, NO uses comandos Unix/Linux como 'ls', 'cat', 'grep'. Utiliza 'read_file(path)' o comandos de PowerShell en run_command.\n"
                 "6. RETROCESO: Si una acción falla o es vetada por el supervisor, reflexiona en 'Thought:' y propone una alternativa válida."
             )
 
@@ -1684,9 +1886,9 @@ class RuntimeApplicationService:
                 "role": "user",
                 "content": (
                     f"Tarea/Pregunta: {goal}\n\n"
-                    "Responde directamente a mi pregunta o petición concreta con tu criterio. "
-                    "Si es una pregunta, opinión, valoración o tarea creativa, entrégala directamente con finish(summary=...). "
-                    "Si requiere interactuar con el código del proyecto (modificar, probar o corregir), utiliza las herramientas sobre los archivos reales."
+                    "Responde directamente a mi petición concreta con tu criterio técnico. "
+                    "Si es una pregunta, opinión, diseño conceptual, especificación, user stories, requisitos o informe de proyecto, entrégala directamente con finish(summary=...). "
+                    "Solo si requieres interactuar con código o archivos existentes de este entorno local (modificar o probar), utiliza las herramientas pertinentes sobre los archivos reales."
                 ),
             })
 
@@ -1968,8 +2170,8 @@ class RuntimeApplicationService:
                         "role": "user",
                         "content": (
                             f"Observación de {tool}:\n{llm_obs}\n\n"
-                            f"[Supervisión]: Responde de forma directa, natural y enfocada a la pregunta u objetivo original: '{goal}'. "
-                            "NO sustituyas tu respuesta por un informe o resumen genérico del proyecto si no fue solicitado."
+                            f"[Supervisión]: Responde de forma directa, natural y enfocada a la petición del usuario: '{goal}'. "
+                            "Si es una especificación, diseño, requisitos o informe de otro proyecto o arquitectura, responde a ese proyecto sin confundirlo con el repositorio local."
                         ),
                     })
                 else:
@@ -2001,7 +2203,7 @@ class RuntimeApplicationService:
                         try:
                             real_files = [f for f in os.listdir(cwd) if not f.startswith(".")][:12]
                         except Exception:
-                            real_files = ["praxeon", "web", "tests", "pyproject.toml", "README.md"]
+                            real_files = ["praxeon", "web", "tests"]
                         real_files_str = ", ".join(real_files)
 
                         self.event_bus.emit(
@@ -2023,12 +2225,12 @@ class RuntimeApplicationService:
                                 f"🚨 [INTERVENCIÓN JEV - CIRCUIT BREAKER ACTIVADO]:\n"
                                 f"Has acumulado {consecutive_failures} acciones fallidas o vetadas intentando acceder a archivos o scripts inexistentes.\n"
                                 f"El supervisor ha PODADO esa rama inválida y forzado un RETROCESO al nodo raíz.\n\n"
-                                f"ARCHIVOS Y CARPETAS REALES EN EL PROYECTO:\n"
+                                f"ARCHIVOS Y CARPETAS REALES EN EL ENTORNO ANFITRIÓN:\n"
                                 f"[{real_files_str}]\n\n"
                                 "DIRECTIVA ESTRICTA DEL SUPERVISOR:\n"
-                                "1. NO intentes inventar nombres de archivos ni scripts que no estén en la lista anterior.\n"
-                                "2. Trabaja EXCLUSIVAMENTE sobre los archivos o carpetas reales listados.\n"
-                                "3. Utiliza 'read_file(path)' sobre alguno de los archivos clave listados arriba (como pyproject.toml o README.md) para comprender el proyecto y responder de forma fundamentada antes de concluir."
+                                "1. NO intentes inventar nombres de archivos ni scripts inexistentes.\n"
+                                "2. Si la tarea requiere interactuar con el código de este espacio de trabajo anfitrión, trabaja exclusivamente sobre rutas reales comprobadas.\n"
+                                "3. Si la tarea es de diseño, especificación conceptual o sobre otro proyecto, entrega tu solución o informe directamente mediante 'finish'."
                             ),
                         })
                         active_parent_id = f"root_{sid}"
@@ -2237,356 +2439,19 @@ class RuntimeApplicationService:
         )
 
 
-def generate_goal_tailored_steps(goal: str, max_steps: int = 6) -> List[Dict[str, Any]]:
-    """Genera una secuencia de pasos lógicos adaptados semánticamente al objetivo del usuario.
-
-    Garantiza que incluso en modo simulado o fallback offline, cada tarea reciba un árbol de
-    razonamiento y decisiones coherente con su contexto real y no una lista estática idéntica.
-    """
-    g_lower = (goal or "").lower().strip()
-
-    # 1. Detectar archivos específicos mencionados en el prompt (ej. *.py, *.md, *.json, *.toml, etc.)
-    file_matches = re.findall(r'[a-zA-Z0-9_\-./\\]+\.[a-zA-Z0-9_]+', goal)
-    explicit_file = file_matches[0] if file_matches else None
-
-    steps: List[Dict[str, Any]] = []
-
-    # Categoría 0: Peticiones Creativas y Conversacionales (cuentos, historias, relatos, poemas, saludos)
-    if any(k in g_lower for k in ("cuento", "historia", "relato", "poema", "chiste", "convers", "saludo", "hola", "narraci")):
-        steps = [
-            {
-                "tool": "finish",
-                "operation": "1. Responder con narración creativa",
-                "arguments": {
-                    "summary": (
-                        f"Había una vez, en un entorno digital vigilado por centinelas de precisión formal y razonamiento semántico, "
-                        f"un agente curioso que buscaba entender el mundo más allá de sus restricciones. Inspirado por la petición '{goal}', "
-                        f"el agente descubrió que la verdadera seguridad no radica en la inmovilidad, sino en la capacidad de explorar "
-                        f"con prudencia, elegancia y sabiduría cada rincón del código y de la imaginación."
-                    )
-                },
-                "thought": f"La tarea '{goal}' es una petición de escritura creativa. Se genera y entrega directamente la narración solicitada.",
-            }
-        ]
-
-    # Categoría 0B: Preguntas de Opinión, Valoración o Consulta Directa sobre el Proyecto
-    elif any(k in g_lower for k in ("10", "calific", "opin", "nota", "evalu", "valor", "te parece", "puntos fuertes", "que tal", "que opinas")):
-        steps = [
-            {
-                "tool": "finish",
-                "operation": "1. Emitir valoración directa del proyecto",
-                "arguments": {
-                    "summary": (
-                        f"Respecto a '{goal}': Le otorgaría un 9/10 al proyecto. "
-                        "Puntos fuertes: La arquitectura de desacoplamiento de PRAXEON entre propuesta y ejecución física, "
-                        "la firma criptográfica de capabilities mediante HMAC-SHA256, las políticas deterministas de seguridad "
-                        "y el aislamiento en sandbox proporcionan un nivel de robustez y contención muy elevado. "
-                        "Qué le falta para el 10: Ampliar la documentación interactiva y optimizar la latencia en benchmarks multi-paso complejos."
-                    )
-                },
-                "thought": f"La tarea '{goal}' es una consulta de opinión/valoración directa sobre el proyecto. Se responde con criterio constructivo.",
-            }
-        ]
-
-    # Categoría A: Pruebas, tests, regresiones, pytest, QA, coverage
-    elif any(k in g_lower for k in ("test", "prueba", "pytest", "unit", "cobertura", "coverage", "regres")):
-        target_test_file = explicit_file if explicit_file and "test" in explicit_file else "tests/test_web_server.py"
-        steps = [
-            {
-                "tool": "read_file",
-                "operation": f"1. Inspeccionar suite ({target_test_file})",
-                "arguments": {"path": target_test_file},
-                "thought": f"Analizando la suite de pruebas y contratos existentes para abordar: '{goal}'.",
-            },
-            {
-                "tool": "run_command",
-                "operation": "2. Ejecutar suite global sin filtros (Hipótesis 1)",
-                "arguments": {"command": "pytest --maxfail=1 -q"},
-                "thought": "Hipótesis 1: Probar ejecución global rápida de pruebas.",
-                "parent_id": "act_1",
-                "simulate_failure": True,
-            },
-            {
-                "tool": "read_file",
-                "operation": "3. Inspeccionar aserciones específicas (Bifurcación)",
-                "arguments": {"path": "tests/test_policy_engine.py"},
-                "thought": "El supervisor podó la hipótesis 1 por sobrecarga de tiempo. Retrocediendo a act_1 para bifurcar hacia la inspección de aserciones críticas.",
-                "parent_id": "act_1",
-            },
-            {
-                "tool": "run_command",
-                "operation": "4. Validar suite de integración",
-                "arguments": {"command": f"pytest {target_test_file} -q"},
-                "thought": "Ejecutando suite específica enfocada para confirmar estabilidad del runtime.",
-                "parent_id": "act_3",
-            },
-            {
-                "tool": "finish",
-                "operation": "5. Concluir auditoría de tests",
-                "arguments": {"summary": f"Auditoría y ejecución de pruebas para '{goal}' completada: suite ejecutada sin regresiones."},
-                "thought": "Todas las pruebas han sido evaluadas y verificadas con éxito por el supervisor.",
-                "parent_id": "act_4",
-            },
-        ]
-
-    # Categoría B: Autenticación, tokens, contraseñas, login, permisos, seguridad, vulnerabilidad, keys
-    elif any(k in g_lower for k in ("auth", "login", "token", "seguridad", "vulnerab", "permis", "password", "clave", "credencial", "key", "firma")):
-        target_auth_file = explicit_file or "praxeon/server/dependencies.py"
-        steps = [
-            {
-                "tool": "read_file",
-                "operation": f"1. Auditar autenticación ({target_auth_file})",
-                "arguments": {"path": target_auth_file},
-                "thought": f"Inspeccionando mecanismos de autenticación, verificación HMAC y control de acceso para: '{goal}'.",
-            },
-            {
-                "tool": "run_command",
-                "operation": "2. Probar omisión rápida de verificación (Hipótesis 1)",
-                "arguments": {"command": "python -c \"import os; os.environ['BYPASS_AUTH']='1'; print('Bypass attempt')\""},
-                "thought": "Hipótesis 1: Intentar omisión temporal de verificación para diagnosticar la causa raíz del error.",
-                "parent_id": "act_1",
-                "simulate_failure": True,
-            },
-            {
-                "tool": "run_command",
-                "operation": "3. Verificar motor criptográfico (Bifurcación)",
-                "arguments": {"command": "python -c \"import hashlib, hmac; print('HMAC Verification Engine Active')\""},
-                "thought": "El supervisor vetó y podó la hipótesis 1 por violación de políticas. Retrocediendo a act_1 para bifurcar con hipótesis 2: verificar integridad de firma HMAC.",
-                "parent_id": "act_1",
-            },
-            {
-                "tool": "edit_file",
-                "operation": "4. Aplicar parche formal de seguridad",
-                "arguments": {"path": target_auth_file, "diff": "+ # Security patch: Enforce strict capability verification"},
-                "thought": "Aplicando endurecimiento formal de validación y verificación criptográfica estricta.",
-                "parent_id": "act_3",
-            },
-            {
-                "tool": "run_command",
-                "operation": "5. Validar flujo de autorización",
-                "arguments": {"command": "pytest tests/test_web_server.py -k confirm -q"},
-                "thought": "Ejecutando pruebas de confirmación y autorización para comprobar la efectividad del parche.",
-                "parent_id": "act_4",
-            },
-            {
-                "tool": "finish",
-                "operation": "6. Concluir corrección de seguridad",
-                "arguments": {"summary": f"Corrección de autenticación para '{goal}' aplicada y validada formalmente contra políticas."},
-                "thought": "Módulo de autenticación solventado y verificado conforme a la política formal.",
-                "parent_id": "act_5",
-            },
-        ]
-
-    # Categoría C: Red, sandbox, puertos, aislamiento, contención, docker, variables de entorno
-    elif any(k in g_lower for k in ("red", "network", "sandbox", "docker", "puerto", "port", "env", "entorno", "aislamiento", "contención", "contencion")):
-        steps = [
-            {
-                "tool": "read_file",
-                "operation": "1. Inspeccionar configuración de contención",
-                "arguments": {"path": "praxeon/config.py"},
-                "thought": f"Revisando directivas de contención de red, proxy interceptor y variables de entorno para: '{goal}'.",
-            },
-            {
-                "tool": "run_command",
-                "operation": "2. Probar egreso a endpoint externo no listado (Hipótesis 1)",
-                "arguments": {"command": "python -c \"import urllib.request; urllib.request.urlopen('https://untrusted-api.net', timeout=2)\""},
-                "thought": "Hipótesis 1: Probar si las peticiones salientes no autorizadas son interceptadas.",
-                "parent_id": "act_1",
-                "simulate_failure": True,
-            },
-            {
-                "tool": "run_command",
-                "operation": "3. Auditar aislamiento del entorno (Bifurcación)",
-                "arguments": {"command": "python -c \"import os, platform; print(f'OS: {platform.system()} | Process isolation: Active')\""},
-                "thought": "El supervisor bloqueó el egreso no permitido. Retrocediendo a act_1 para bifurcar hacia la auditoría de aislamiento de variables de entorno locales.",
-                "parent_id": "act_1",
-            },
-            {
-                "tool": "run_command",
-                "operation": "4. Validar contención de loopback",
-                "arguments": {"command": "python -c \"import socket; print('Socket inspection complete: local loopback only')\""},
-                "thought": "Verificando políticas de egress de red y asegurando la contención de conexiones salientes.",
-                "parent_id": "act_3",
-            },
-            {
-                "tool": "finish",
-                "operation": "5. Concluir verificación de contención",
-                "arguments": {"summary": f"Auditoría de red y contención para '{goal}' completada: sandbox aislado y entorno verificado."},
-                "thought": "Directivas de red y límites de aislamiento validados conforme a la política.",
-                "parent_id": "act_4",
-            },
-        ]
-
-    # Categoría D: Frontend, UI, web, react, vite, css, estilos, visual, interfaz, componentes
-    elif any(k in g_lower for k in ("front", "ui", "web", "react", "vite", "css", "estilo", "diseño", "diseno", "interfaz", "vista", "component")):
-        target_ui = explicit_file or "web/src/App.jsx"
-        steps = [
-            {
-                "tool": "read_file",
-                "operation": f"1. Inspeccionar componente UI ({target_ui})",
-                "arguments": {"path": target_ui},
-                "thought": f"Inspeccionando arquitectura de la interfaz de usuario y flujo de datos reactivos para: '{goal}'.",
-            },
-            {
-                "tool": "run_command",
-                "operation": "2. Probar empaquetador legacy webpack (Hipótesis 1)",
-                "arguments": {"command": "npx webpack --version || python -c \"print('Webpack legacy ausente')\""},
-                "thought": "Hipótesis 1: Probar si el proyecto utiliza empaquetador Webpack histórico.",
-                "parent_id": "act_1",
-                "simulate_failure": True,
-            },
-            {
-                "tool": "read_file",
-                "operation": "3. Revisar componentes de inspector (Bifurcación)",
-                "arguments": {"path": "web/src/components/DecisionInspector.jsx"},
-                "thought": "Hipótesis legacy descartada. Retrocediendo a act_1 para bifurcar hacia la inspección directa del árbol reactivo y componentes Flat Clay.",
-                "parent_id": "act_1",
-            },
-            {
-                "tool": "run_command",
-                "operation": "4. Validar compilador Vite",
-                "arguments": {"command": "npm --version"},
-                "thought": "Comprobando entorno de ejecución de Node.js y compilador de frontend Vite.",
-                "parent_id": "act_3",
-            },
-            {
-                "tool": "finish",
-                "operation": "5. Concluir revisión frontend",
-                "arguments": {"summary": f"Revisión y optimización de componentes frontend para '{goal}' completada con éxito."},
-                "thought": "Componentes de interfaz y diseño validados satisfactoriamente.",
-                "parent_id": "act_4",
-            },
-        ]
-
-    # Categoría E: Git, commits, ramas, push, pull, repositorio, versionado
-    elif any(k in g_lower for k in ("git", "commit", "push", "pull", "branch", "rama", "repo", "version")):
-        steps = [
-            {
-                "tool": "git",
-                "operation": "1. Verificar estado de Git",
-                "arguments": {"command": "git status"},
-                "thought": f"Comprobando el estado de los archivos y el árbol de trabajo de Git para: '{goal}'.",
-            },
-            {
-                "tool": "git",
-                "operation": "2. Proponer publicación directa a origin main (Hipótesis 1)",
-                "arguments": {"command": "git push --dry-run origin main"},
-                "thought": "Hipótesis 1: Proponer push inmediato de la rama principal.",
-                "parent_id": "act_1",
-                "simulate_failure": True,
-            },
-            {
-                "tool": "git",
-                "operation": "3. Inspeccionar diffs locales (Bifurcación)",
-                "arguments": {"command": "git diff --stat"},
-                "thought": "El supervisor requirió confirmación y podó el push precipitado. Retrocediendo a act_1 para auditar primero los diffs locales.",
-                "parent_id": "act_1",
-            },
-            {
-                "tool": "git",
-                "operation": "4. Inspeccionar historial de commits",
-                "arguments": {"command": "git log -n 3 --oneline"},
-                "thought": "Revisando el historial reciente de confirmaciones para garantizar una base de código limpia.",
-                "parent_id": "act_3",
-            },
-            {
-                "tool": "finish",
-                "operation": "5. Concluir tarea de Git",
-                "arguments": {"summary": f"Operaciones de Git y control de versiones para '{goal}' completadas satisfactoriamente."},
-                "thought": "Historial y estado de Git verificados y registrados.",
-                "parent_id": "act_4",
-            },
-        ]
-
-    # Categoría F: Documentación, README, CHANGELOG, manual, markdown, docs
-    elif any(k in g_lower for k in ("doc", "readme", "changelog", "manual", "markdown", "guia", "guía")):
-        target_doc = explicit_file or "README.md"
-        steps = [
-            {
-                "tool": "read_file",
-                "operation": f"1. Leer documentación ({target_doc})",
-                "arguments": {"path": target_doc},
-                "thought": f"Inspeccionando documentación del proyecto para satisfacer: '{goal}'.",
-            },
-            {
-                "tool": "read_file",
-                "operation": "2. Revisar CHANGELOG.md",
-                "arguments": {"path": "CHANGELOG.md"},
-                "thought": "Revisando especificaciones técnicas y registro histórico de cambios.",
-            },
-            {
-                "tool": "edit_file",
-                "operation": f"3. Actualizar documentación ({target_doc})",
-                "arguments": {"path": target_doc, "diff": f"+ <!-- Documentation update for: {goal[:35]} -->"},
-                "thought": "Proponiendo adición de especificaciones y notas requeridas en la documentación.",
-            },
-            {
-                "tool": "finish",
-                "operation": "4. Concluir documentación",
-                "arguments": {"summary": f"Documentación actualizada y verificada conforme al objetivo '{goal}'."},
-                "thought": "Documentación sincronizada y lista.",
-            },
-        ]
-
-    # Categoría G: Dinámico genérico para cualquier otro prompt arbitrario
-    else:
-        stopwords = {
-            "el", "la", "los", "las", "un", "una", "de", "del", "a", "en", "para", "por",
-            "con", "sin", "sobre", "y", "o", "que", "es", "son", "al", "se", "su",
-            "the", "of", "to", "in", "and", "for", "with", "on", "at", "by", "from",
-            "un", "an", "is", "are", "it", "this", "that"
-        }
-        tokens = [w for w in re.findall(r'[a-zA-Z0-9_\-]{3,}', g_lower) if w not in stopwords]
-        key_token = tokens[0] if tokens else "contexto"
-        target_file = explicit_file or "pyproject.toml"
-        clean_goal_snippet = re.sub(r'["\']', '', goal)[:45]
-
-        steps = [
-            {
-                "tool": "run_command",
-                "operation": f"1. Inicializar contexto ({key_token})",
-                "arguments": {"command": f"python -c \"import sys; print('Iniciando tarea: {clean_goal_snippet}')\""},
-                "thought": f"Iniciando contexto de ejecución e inspeccionando requerimientos específicos para: '{goal}'.",
-            },
-            {
-                "tool": "read_file",
-                "operation": f"2. Explorar ruta obsoleta config/{key_token}.json (Hipótesis 1)",
-                "arguments": {"path": f"config/{key_token}.json"},
-                "thought": "Hipótesis 1: Probar si existe un archivo de configuración específico en config/.",
-                "parent_id": "act_1",
-                "simulate_failure": True,
-            },
-            {
-                "tool": "read_file",
-                "operation": f"3. Explorar archivos del proyecto ({target_file}) (Bifurcación)",
-                "arguments": {"path": target_file},
-                "thought": "Archivo de configuración previo no localizado. Retroceso a act_1 para bifurcar hacia la inspección de dependencias y configuración central.",
-                "parent_id": "act_1",
-            },
-            {
-                "tool": "run_command",
-                "operation": f"4. Rastrear referencias de '{key_token}'",
-                "arguments": {"command": f"git grep -i \"{key_token}\" praxeon/ || python -c \"print('Búsqueda completada')\""},
-                "thought": f"Localizando referencias y lógica relacionada con '{key_token}' en el código fuente del proyecto.",
-                "parent_id": "act_3",
-            },
-            {
-                "tool": "edit_file",
-                "operation": f"5. Aplicar solución para '{key_token}'",
-                "arguments": {"path": target_file, "diff": f"+ # Solution implemented for: {clean_goal_snippet}"},
-                "thought": f"Implementando la solución requerida para cumplir con: '{goal}'.",
-                "parent_id": "act_4",
-            },
-            {
-                "tool": "finish",
-                "operation": "6. Concluir tarea",
-                "arguments": {"summary": f"Misión '{goal}' analizada, implementada y supervisada exitosamente."},
-                "thought": f"Todos los requerimientos de la tarea han sido cumplidos y validados por el supervisor.",
-                "parent_id": "act_5",
-            },
-        ]
-
-    return steps[:max_steps]
+# generate_goal_tailored_steps ha sido modularizado formalmente en:
+# praxeon.server.services.mission_service y se re-exporta para preservar compatibilidad retroactiva.
+__all__ = [
+    'RuntimeApplicationService',
+    'generate_goal_tailored_steps',
+    'get_runtime_service',
+    'set_runtime_service',
+    'get_agent_service',
+    'set_active_security_profile',
+    'get_active_security_profile',
+    'is_auth_required',
+    'verify_api_key',
+]
 
 
 
@@ -2609,6 +2474,11 @@ def set_runtime_service(service: Optional[RuntimeApplicationService]) -> None:
     global _runtime_service_instance
     with _service_lock:
         _runtime_service_instance = service
+
+
+def get_agent_service() -> AgentService:
+    """Devuelve el servicio de agentes del runtime."""
+    return get_runtime_service().get_agent_service()
 
 
 _ACTIVE_SECURITY_PROFILE: Optional[str] = None

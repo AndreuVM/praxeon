@@ -16,11 +16,18 @@ from praxeon.workflows.models import (
 
 router = APIRouter(prefix="/v1/workflows", tags=["Workflows"])
 
-# Instancia singleton del servicio de editor para la API
+# Instancia de fallback del servicio de editor
 _editor_service = WorkflowEditorService()
 
 
 def get_workflow_editor_service() -> WorkflowEditorService:
+    try:
+        from praxeon.server.dependencies import get_runtime_service
+        svc = get_runtime_service()
+        if svc and hasattr(svc, "get_workflow_editor_service"):
+            return svc.get_workflow_editor_service()
+    except Exception:
+        pass
     return _editor_service
 
 
@@ -45,11 +52,25 @@ class UpdateNodePositionRequest(BaseModel):
     y: float
 
 
+class UpdateNodeRequest(BaseModel):
+    name: Optional[str] = None
+    node_type: Optional[NodeType] = None
+    agent_id: Optional[str] = None
+    tool_name: Optional[str] = None
+    inputs: Optional[Dict[str, Any]] = None
+    metadata: Optional[Dict[str, Any]] = None
+
+
 class ConnectNodesRequest(BaseModel):
     from_node: str
     to_node: str
     condition: Optional[EdgeCondition] = None
     label: str = ""
+
+
+class UpdateEdgeRequest(BaseModel):
+    label: Optional[str] = None
+    condition: Optional[EdgeCondition] = None
 
 
 class BacktrackRequest(BaseModel):
@@ -123,6 +144,26 @@ def update_node_position(workflow_id: str, node_id: str, payload: UpdateNodePosi
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
 
 
+@router.put("/{workflow_id}/nodes/{node_id}", response_model=APIResponse[Dict[str, Any]])
+def update_node(workflow_id: str, node_id: str, payload: UpdateNodeRequest):
+    """Actualiza las propiedades de un nodo (nombre, agente asignado, tipo, herramienta, inputs)."""
+    service = get_workflow_editor_service()
+    try:
+        updated = service.update_node(
+            workflow_id=workflow_id,
+            node_id=node_id,
+            name=payload.name,
+            node_type=payload.node_type,
+            agent_id=payload.agent_id,
+            tool_name=payload.tool_name,
+            inputs=payload.inputs,
+            metadata=payload.metadata,
+        )
+        return APIResponse(data=updated.model_dump(mode="json"))
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+
 @router.delete("/{workflow_id}/nodes/{node_id}", response_model=APIResponse[Dict[str, Any]])
 def delete_node(workflow_id: str, node_id: str):
     """Elimina un nodo y sus aristas conectadas."""
@@ -147,6 +188,22 @@ def connect_nodes(workflow_id: str, payload: ConnectNodesRequest):
             to_node=payload.to_node,
             condition=payload.condition,
             label=payload.label,
+        )
+        return APIResponse(data=edge.model_dump(mode="json"))
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+
+@router.put("/{workflow_id}/edges/{edge_id}", response_model=APIResponse[Dict[str, Any]])
+def update_edge(workflow_id: str, edge_id: str, payload: UpdateEdgeRequest):
+    """Actualiza una arista existente (etiqueta, condición lógica de transición/unión)."""
+    service = get_workflow_editor_service()
+    try:
+        edge = service.update_edge(
+            workflow_id=workflow_id,
+            edge_id=edge_id,
+            label=payload.label,
+            condition=payload.condition,
         )
         return APIResponse(data=edge.model_dump(mode="json"))
     except ValueError as exc:

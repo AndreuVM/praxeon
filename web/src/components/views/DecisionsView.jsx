@@ -1,23 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   GitFork,
-  CheckCircle,
-  XCircle,
-  AlertTriangle,
   Search,
-  Filter,
   ArrowRight,
   Copy,
   Check,
   RefreshCw,
   Shield,
-  Clock,
   Terminal,
   FileCode,
   Globe,
-  Sliders,
-  Hash,
-  Eye,
   Key,
 } from 'lucide-react';
 import * as api from '../../services/api';
@@ -38,7 +30,8 @@ export default function DecisionsView({
   const [activeReceiptModal, setActiveReceiptModal] = useState(null);
 
   // Fetch decisions from backend
-  const loadDecisions = async (sid) => {
+  const loadDecisions = useCallback(async (sid) => {
+    await Promise.resolve();
     setLoading(true);
     try {
       const targetSid = sid === 'ALL' ? null : sid;
@@ -58,23 +51,46 @@ export default function DecisionsView({
     } finally {
       setLoading(false);
     }
-  };
+  }, [propDecisions]);
 
   useEffect(() => {
+    let mounted = true;
+    const sid = (currentSessionId && selectedSession === 'ALL') ? currentSessionId : selectedSession;
     if (currentSessionId && selectedSession === 'ALL') {
-      setSelectedSession(currentSessionId);
-      loadDecisions(currentSessionId);
-    } else {
-      loadDecisions(selectedSession);
+      queueMicrotask(() => setSelectedSession(currentSessionId));
     }
-  }, [selectedSession, currentSessionId]);
+    (async () => {
+      try {
+        const targetSid = sid === 'ALL' ? null : sid;
+        const res = await api.fetchDecisions(targetSid);
+        if (mounted) {
+          if (res && res.data) {
+            setDecisions(res.data);
+          } else if (propDecisions && propDecisions.length > 0) {
+            setDecisions(propDecisions);
+          } else {
+            setDecisions([]);
+          }
+        }
+      } catch {
+        if (mounted && propDecisions && propDecisions.length > 0) {
+          setDecisions(propDecisions);
+        }
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, [selectedSession, currentSessionId, propDecisions]);
 
   // Synchronize when propDecisions change
   useEffect(() => {
     if (propDecisions && propDecisions.length > 0 && decisions.length === 0) {
-      setDecisions(propDecisions);
+      queueMicrotask(() => {
+        setDecisions(propDecisions);
+      });
     }
-  }, [propDecisions]);
+  }, [propDecisions, decisions.length]);
 
   const copyToClipboard = (text, id) => {
     navigator.clipboard?.writeText(text);

@@ -8,8 +8,6 @@ import {
   ShieldCheck,
   FileCheck,
   UserCheck,
-  Terminal,
-  ExternalLink,
   ChevronRight,
   Play,
   RotateCcw,
@@ -70,7 +68,7 @@ export default function DecisionInspector({
     provider = 'JEV',
     model = 'Claude-3.5-sonnet',
     riskLevel = 'HIGH',
-    riskScore = 0.82,
+    _riskScore = 0.82,
     semanticEvaluation = [
       { provider: 'LAYA', score: 0.81, verdict: 'ALLOW' },
       { provider: 'TypeSafe', score: 0.64, verdict: 'REVIEW' },
@@ -90,7 +88,7 @@ export default function DecisionInspector({
     reason = 'High risk action requires confirmation according to policy rules.',
     evidenceTab = {},
     receiptTab = {},
-    decisionTab = {},
+    _decisionTab = {},
     relatedDecisions = [],
     observationOutput = null,
   } = decision || {};

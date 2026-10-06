@@ -120,3 +120,66 @@ def test_opinion_and_rating_goals_resolved_directly_without_boilerplate_report()
         summary = first_step["arguments"]["summary"]
         assert "El informe proporciona una descripción detallada" not in summary
         assert "10" in summary or "puntos fuertes" in summary or "arquitectura" in summary.lower()
+
+
+def test_project_spec_and_requirements_goals_resolved_without_reading_praxeon_readme():
+    """Peticiones de informes formales, user stories, requisitos y estructura de carpetas
+    para nuevos proyectos deben resolverse sin leer README.md ni pyproject.toml del repo local."""
+    goals = [
+        "Bien, pues hazme un informe formal inicial con la estructura de carpetas del proyecto, user stories, requisitos funcionales y no funcionales",
+        "Diseña la arquitectura, estructura de carpetas y requisitos para un nuevo proyecto de comercio electrónico",
+        "Redacta un informe inicial con user stories y requisitos funcionales y no funcionales para la app móvil",
+    ]
+
+    for g in goals:
+        steps = generate_goal_tailored_steps(goal=g, max_steps=5)
+        assert len(steps) >= 1
+        first_step = steps[0]
+        assert first_step["tool"] == "finish", f"Para '{g}', el primer paso debió ser finish directo, pero fue '{first_step['tool']}'"
+        summary = first_step["arguments"]["summary"]
+        assert "Estructura de Carpetas" in summary or "user stories" in summary.lower() or "requisitos" in summary.lower()
+        # Verificar que no forzó leer el README de PRAXEON
+        for s in steps:
+            args = s.get("arguments", {})
+            assert "README.md" not in str(args)
+            assert "pyproject.toml" not in str(args)
+
+
+def test_finish_on_project_report_is_not_flagged_as_premature_in_propose_action(runtime_service):
+    """Verificar que un finish con informe formal inicial no sea penalizado con baja probabilidad
+    de grounding en propose_action cuando no se han leído archivos del repositorio."""
+    from praxeon.server.schemas.action import ProposeActionRequest
+
+    # Crear una sesión en el runtime_service
+    meta = runtime_service.create_session(
+        goal="Bien, pues hazme un informe formal inicial con la estructura de carpetas del proyecto, user stories, requisitos funcionales y no funcionales",
+        execution_mode="local_restricted",
+    )
+    sid = meta["session_id"]
+
+    req = ProposeActionRequest(
+        action_id="act_1",
+        parent_id=f"root_{sid}",
+        tool="finish",
+        operation="1. Entregar especificación técnica e informe formal",
+        arguments={
+            "summary": (
+                "# Informe Formal Inicial\n\n"
+                "## Estructura de Carpetas del Proyecto\n"
+                "project-root/ docs/ src/ tests/\n\n"
+                "## User Stories\n"
+                "- US-01: Registro de usuario seguro\n\n"
+                "## Requisitos Funcionales\n"
+                "- RF-01: Autenticación OAuth2 y JWT\n\n"
+                "## Requisitos No Funcionales\n"
+                "- RNF-01: Latencia p95 < 200ms"
+            )
+        },
+        thought_rationale="Entregando informe formal con arquitectura, user stories y requisitos del nuevo proyecto solicitado.",
+        context={"goal": "Bien, pues hazme un informe formal inicial con la estructura de carpetas del proyecto, user stories, requisitos funcionales y no funcionales"},
+    )
+
+    resp = runtime_service.propose_action(session_id=sid, proposal=req)
+    assert resp.status == "ALLOW"
+    assert "GROUNDED_LOW_RISK_AUTHORIZED" in resp.policy.reason_codes
+

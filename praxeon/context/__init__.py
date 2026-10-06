@@ -27,6 +27,7 @@ from praxeon.context.budget import TokenBudget
 from praxeon.context.selector import DAGContextSelector
 from praxeon.context.builder import ContextSnapshotBuilder
 from praxeon.context.manager import ContextManager
+from praxeon.context.delta import ContextDelta
 from praxeon.context.compressor import SemanticContextCompressor
 from praxeon.context.entities import (
     ContextDependency,
@@ -52,6 +53,7 @@ __all__ = [
     "InMemoryContextCache",
     "InMemoryFragmentCache",
     "ContextSnapshot",
+    "ContextDelta",
     "TokenBudget",
     "DAGContextSelector",
     "ContextSnapshotBuilder",

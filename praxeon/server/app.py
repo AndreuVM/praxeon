@@ -97,10 +97,10 @@ def create_app(profile: Optional[str] = None) -> FastAPI:
     static_packaged = os.path.abspath(os.path.join(os.path.dirname(__file__), "static"))
     frontend_dist = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "web", "dist"))
     target_static_dir = None
-    if os.path.isdir(static_packaged) and os.path.isfile(os.path.join(static_packaged, "index.html")):
-        target_static_dir = static_packaged
-    elif os.path.isdir(frontend_dist) and os.path.isfile(os.path.join(frontend_dist, "index.html")):
+    if os.path.isdir(frontend_dist) and os.path.isfile(os.path.join(frontend_dist, "index.html")):
         target_static_dir = frontend_dist
+    elif os.path.isdir(static_packaged) and os.path.isfile(os.path.join(static_packaged, "index.html")):
+        target_static_dir = static_packaged
 
     if target_static_dir:
         from fastapi.staticfiles import StaticFiles

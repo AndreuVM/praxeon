@@ -98,14 +98,18 @@ class SqliteNonceStore(NonceStore):
     del proceso y permitiendo sincronización concurrente entre múltiples procesos.
     """
 
-    def __init__(self, db_path: str = ".jev_cache/nonces.db"):
+    def __init__(self, db_path: Optional[str] = None):
         import os
         import sqlite3
         from pathlib import Path
+        from praxeon.config import resolve_db_path
 
-        self.db_path = str(db_path)
-        if self.db_path != ":memory:":
+        if db_path == ":memory:":
+            self.db_path = ":memory:"
+        else:
+            self.db_path = str(resolve_db_path("nonces.db", db_path))
             os.makedirs(os.path.dirname(os.path.abspath(self.db_path)), exist_ok=True)
+
             
         self._lock = threading.Lock()
         self._init_db()

@@ -550,7 +550,23 @@
         </div>
         <div class="prop-group">
           <label class="prop-label">Tipo de Nodo</label>
-          <input id="prop-node-type" class="prop-input" readonly />
+          <select id="prop-node-type" class="prop-input">
+            <option value="AGENT">AGENT</option>
+            <option value="TASK">TASK</option>
+            <option value="DECISION">DECISION</option>
+            <option value="PARALLEL_FORK">PARALLEL_FORK</option>
+            <option value="PARALLEL_JOIN">PARALLEL_JOIN</option>
+            <option value="START">START</option>
+            <option value="END">END</option>
+          </select>
+        </div>
+        <div class="prop-group" id="group-prop-agent">
+          <label class="prop-label">Agente Asignado (agent_id)</label>
+          <input id="prop-node-agent" class="prop-input" placeholder="ej. ag_res_01" />
+        </div>
+        <div class="prop-group" id="group-prop-tool">
+          <label class="prop-label">Herramienta (tool_name)</label>
+          <input id="prop-node-tool" class="prop-input" placeholder="ej. deploy_service" />
         </div>
         <div class="prop-group">
           <label class="prop-label">Estado Actual</label>
@@ -564,9 +580,14 @@
           <label class="prop-label">Salidas (Outputs)</label>
           <textarea id="prop-node-outputs" class="prop-textarea" readonly></textarea>
         </div>
-        <button id="btn-delete-node" class="btn" style="color: var(--accent-rose); border-color: rgba(244,63,94,0.3); margin-top: 10px;">
-          Eliminar Nodo
-        </button>
+        <div style="display: flex; gap: 8px; margin-top: 10px;">
+          <button id="btn-save-node" class="btn btn-success" style="flex: 1;">
+            Guardar Cambios
+          </button>
+          <button id="btn-delete-node" class="btn" style="color: var(--accent-rose); border-color: rgba(244,63,94,0.3);">
+            Eliminar
+          </button>
+        </div>
       </div>
     </div>
   </div>
@@ -581,11 +602,42 @@
   </div>
 
   <script>
-    const currentWorkflowId = "wf_demo_autonomous";
+    const urlParams = new URLSearchParams(window.location.search);
+    const currentWorkflowId = urlParams.get("workflow_id") || "wf_demo_autonomous";
     let workflowData = null;
     let selectedNodeId = null;
     let draggingNode = null;
     let dragOffset = { x: 0, y: 0 };
+    let wiringSourceNodeId = null;
+
+    async function createNodeOnCanvas(type, defaultName) {
+      try {
+        const payload = {
+          name: defaultName || (type + " Node"),
+          node_type: type,
+          x: 250 + Math.floor(Math.random() * 200),
+          y: 150 + Math.floor(Math.random() * 150),
+          agent_id: type === "AGENT" ? "ag_res_01" : null,
+          tool_name: type === "TASK" ? "run_command" : null,
+          inputs: {}
+        };
+        const res = await fetch(`/v1/workflows/${currentWorkflowId}/nodes`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        const json = await res.json();
+        if (json.data) {
+          logTelemetry("NODE", `Creado nuevo nodo '${json.data.name}' (${json.data.node_type}).`);
+          await loadWorkflow();
+          selectNode(json.data.node_id);
+        } else {
+          alert(`Error al crear nodo: ${json.detail || "Error desconocido"}`);
+        }
+      } catch (err) {
+        logTelemetry("ERROR", "Fallo al crear nodo en backend.");
+      }
+    }
 
     async function loadWorkflow() {
       try {
@@ -635,8 +687,45 @@
         nodeEl.addEventListener("mousedown", (e) => onNodeMouseDown(e, node.node_id));
         nodeEl.addEventListener("click", () => selectNode(node.node_id));
 
+        // Eventos de puertos para cableado interactivo
+        const portOut = nodeEl.querySelector(".port-out");
+        const portIn = nodeEl.querySelector(".port-in");
+        if (portOut) {
+          portOut.addEventListener("click", (e) => {
+            e.stopPropagation();
+            wiringSourceNodeId = node.node_id;
+            logTelemetry("WIRE", `Cableando desde '${node.name}'. Haz clic en el puerto de entrada de otro nodo.`);
+          });
+        }
+        if (portIn) {
+          portIn.addEventListener("click", async (e) => {
+            e.stopPropagation();
+            if (wiringSourceNodeId && wiringSourceNodeId !== node.node_id) {
+              await createEdge(wiringSourceNodeId, node.node_id);
+              wiringSourceNodeId = null;
+            }
+          });
+        }
+
         canvas.appendChild(nodeEl);
       });
+    }
+
+    async function createEdge(from, to) {
+      try {
+        const res = await fetch(`/v1/workflows/${currentWorkflowId}/edges`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ from_node: from, to_node: to, label: `${from} -> ${to}` })
+        });
+        const json = await res.json();
+        if (json.data) {
+          logTelemetry("EDGE", `Unión creada: ${from} → ${to}`);
+          await loadWorkflow();
+        }
+      } catch (err) {
+        logTelemetry("ERROR", "Fallo al conectar nodos.");
+      }
     }
 
     function renderConnections() {
@@ -667,6 +756,16 @@
           path.setAttribute("d", pathData);
           path.setAttribute("class", "wire-path");
           path.setAttribute("marker-end", "url(#arrow)");
+          path.style.cursor = "pointer";
+          path.setAttribute("title", `Clic para eliminar unión ${edge.from_node} -> ${edge.to_node}`);
+          path.addEventListener("click", async (e) => {
+            e.stopPropagation();
+            if (confirm(`¿Eliminar la conexión ${edge.from_node} -> ${edge.to_node}?`)) {
+              await fetch(`/v1/workflows/${currentWorkflowId}/edges/${edge.edge_id}`, { method: "DELETE" });
+              logTelemetry("EDGE", `Conexión eliminada.`);
+              await loadWorkflow();
+            }
+          });
           svg.appendChild(path);
         }
       });
@@ -729,11 +828,65 @@
         document.getElementById("prop-node-id").value = node.node_id;
         document.getElementById("prop-node-name").value = node.name;
         document.getElementById("prop-node-type").value = node.node_type;
+        document.getElementById("prop-node-agent").value = node.agent_id || "";
+        document.getElementById("prop-node-tool").value = node.tool_name || "";
         document.getElementById("prop-node-status").value = node.status || "PENDING";
         document.getElementById("prop-node-inputs").value = JSON.stringify(node.inputs || {}, null, 2);
         document.getElementById("prop-node-outputs").value = JSON.stringify(node.outputs || {}, null, 2);
       }
     }
+
+    document.getElementById("btn-save-node").addEventListener("click", async () => {
+      if (!selectedNodeId) return;
+      try {
+        let inputs = {};
+        try {
+          inputs = JSON.parse(document.getElementById("prop-node-inputs").value || "{}");
+        } catch {
+          alert("Error de sintaxis JSON en inputs");
+          return;
+        }
+        const payload = {
+          name: document.getElementById("prop-node-name").value.trim(),
+          node_type: document.getElementById("prop-node-type").value,
+          agent_id: document.getElementById("prop-node-agent").value.trim() || null,
+          tool_name: document.getElementById("prop-node-tool").value.trim() || null,
+          inputs: inputs
+        };
+        const res = await fetch(`/v1/workflows/${currentWorkflowId}/nodes/${selectedNodeId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        const json = await res.json();
+        if (json.data) {
+          logTelemetry("NODE", `Nodo '${selectedNodeId}' actualizado.`);
+          await loadWorkflow();
+        }
+      } catch (err) {
+        logTelemetry("ERROR", "Fallo al guardar propiedades de nodo.");
+      }
+    });
+
+    document.getElementById("btn-delete-node").addEventListener("click", async () => {
+      if (!selectedNodeId) return;
+      if (!confirm(`¿Eliminar nodo '${selectedNodeId}' y sus conexiones?`)) return;
+      try {
+        const res = await fetch(`/v1/workflows/${currentWorkflowId}/nodes/${selectedNodeId}`, {
+          method: "DELETE"
+        });
+        const json = await res.json();
+        if (json.data) {
+          logTelemetry("NODE", `Nodo '${selectedNodeId}' eliminado.`);
+          selectedNodeId = null;
+          await loadWorkflow();
+        } else {
+          alert(`No se pudo eliminar nodo: ${json.detail || "Error"}`);
+        }
+      } catch (err) {
+        logTelemetry("ERROR", "Fallo al eliminar nodo.");
+      }
+    });
 
     function logTelemetry(tag, msg) {
       const box = document.getElementById("telemetry");

@@ -25,6 +25,7 @@ class TaskRecord:
     discovered_files: List[str] = field(default_factory=list)
     modified_files: List[str] = field(default_factory=list)
     key_findings: List[str] = field(default_factory=list)
+    history_steps: List[Dict[str, Any]] = field(default_factory=list)
 
 
 class SessionContextManager:
@@ -92,6 +93,7 @@ class SessionContextManager:
             discovered_files=sorted(list(discovered)),
             modified_files=sorted(list(modified)),
             key_findings=findings,
+            history_steps=history_steps or [],
         )
         self.task_records.append(record)
         return record
@@ -141,8 +143,11 @@ class SessionContextManager:
             "La herramienta 'finish' SOLO debe usarse para entregar la solución definitiva ya sintetizada a partir de las observaciones reales obtenidas.\n"
             "- NUNCA propongas 'finish' en el mismo bloque junto a herramientas de inspección (como read_file o run_command) que aún no hayan sido ejecutadas.\n"
             "- Emite EXCLUSIVAMENTE los bloques de pasos estructurados (Step 1, Step 2, etc.) con sus campos Thought y Action. NO agregues introducciones, preámbulos conversacionales ni texto suelto fuera de ese formato.\n"
-            "- Para tareas de consulta, informe, análisis u opinión (ej. '¿Qué opinas...?', 'analiza...', 'resume...', 'explica...'): la tarea es EXCLUSIVAMENTE DE LECTURA. Queda PROHIBIDO usar 'edit_file'. Inspecciona con 'read_file' o comandos de lectura y entrega tu conclusión u opinión directamente en 'finish'.\n"
-            "- En la acción 'finish', responde DIRECTAMENTE al objetivo del usuario. Queda TERMINANTEMENTE PROHIBIDO describir mensajes internos del supervisor, herramientas vetadas, advertencias de bucle o diagnósticos del sistema. Entrega siempre tu análisis fundamentado sobre el código y proyecto inspeccionado.\n"
+            "- DISCERNIMIENTO DE CONTEXTO Y TIPO DE TAREA:\n"
+            "  a) Para tareas de diseño, especificación, arquitectura, user stories, requisitos funcionales/no funcionales o propuestas para un nuevo proyecto o sistema: formula y entrega la solución técnica completa directamente en 'finish(summary=...)'. NO intentes inspeccionar ni forzar lecturas de archivos del repositorio anfitrión a menos que el usuario indique expresamente que se refiere a los archivos ya existentes en este espacio de trabajo.\n"
+            "  b) Para consultas, análisis u opiniones conceptuales o externas: responde directamente con 'finish' sin forzar lectura de archivos no relacionados.\n"
+            "  c) Para tareas de auditoría, modificación o pruebas sobre el código del repositorio local anfitrión: inspecciona con 'read_file' o comandos de terminal antes de editar o concluir.\n"
+            "- En la acción 'finish', responde DIRECTAMENTE al objetivo del usuario. Queda TERMINANTEMENTE PROHIBIDO describir mensajes internos del supervisor, herramientas vetadas, advertencias de bucle o diagnósticos del sistema. Entrega siempre tu respuesta técnica fundamentada.\n"
             "Cuando hayas resuelto la tarea o encontrado la solución fundamentada, invoca obligatoriamente:\n"
             'Action: finish {"summary": "explicación clara, fundamentada y completa de la solución final"}'
         )
@@ -204,11 +209,12 @@ class SessionContextManager:
             f"• Shell del terminal (run_command): {shell_name}",
             f"• Directorio de trabajo raíz (CWD): {cwd}",
             f"• Separador de rutas: '{os.sep}' (en las herramientas puedes usar rutas relativas normales con '/')",
-            "• Estructura inicial del espacio de trabajo detectada:",
+            "• Espacio de trabajo anfitrión montado (CWD del supervisor):",
             f"  {tree_str}",
+            "  [AVISO DE ÁMBITO]: Este listado corresponde al entorno anfitrión donde corre el supervisor. Si el usuario te pide crear, diseñar, especificar o hacer un informe sobre otro proyecto, aplicación o arquitectura conceptual, esa tarea es de diseño y NO se refiere a estos archivos.",
             "",
             "💡 RECOMENDACIONES DE ENTORNO:",
-            "1. Para inspeccionar cualquier archivo listado arriba, usa DIRECTAMENTE 'read_file(path)' con su ruta relativa.",
+            "1. Si el objetivo requiere inspeccionar código existente en este espacio de trabajo anfitrión, usa 'read_file(path)'. Si la tarea es conceptual, de diseño o sobre otro proyecto, sintetiza directamente en 'finish' sin lecturas innecesarias.",
         ]
         if sys.platform == "win32":
             env_lines.append(

@@ -13,10 +13,13 @@ Implementa la orquestación y control de ejecución en tiempo real:
 """
 
 from collections import deque
-from datetime import datetime, timezone
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime, timezone, timedelta
 from enum import Enum
+import threading
 import time
 from typing import Any, Callable, Dict, List, Optional, Set
+import uuid
 from pydantic import BaseModel, ConfigDict, Field
 
 from praxeon.agents.bus import AgentMessageBus
@@ -26,18 +29,10 @@ from praxeon.workflows.models import (
     NodeType,
     WorkflowDefinition,
     WorkflowEdge,
+    WorkflowExecution,
     WorkflowNode,
+    WorkflowStatus,
 )
-
-
-class WorkflowStatus(str, Enum):
-    """Estados del ciclo de vida del flujo de trabajo."""
-    IDLE = "IDLE"                      # Instanciado, aún no iniciado
-    RUNNING = "RUNNING"                # Ejecutándose activamente
-    PAUSED = "PAUSED"                  # Detenido temporalmente
-    COMPLETED = "COMPLETED"            # Todos los nodos terminales alcanzados
-    FAILED = "FAILED"                  # Detenido por fallo no recuperable en un nodo crítico
-    CANCELLED = "CANCELLED"            # Abortado explícitamente
 
 
 class ExecutionCheckpoint(BaseModel):
@@ -57,12 +52,14 @@ class WorkflowExecutionContext:
     """Contexto y estado mutable de una ejecución activa de workflow."""
 
     def __init__(self, workflow: WorkflowDefinition, execution_id: Optional[str] = None):
-        self.execution_id = execution_id or f"exec_{int(time.time()*1000)%1000000}"
+        self.execution_id = execution_id or f"exec_{uuid.uuid4().hex[:12]}"
         self.workflow_id = workflow.workflow_id
         self.status = WorkflowStatus.IDLE
         self.node_states: Dict[str, NodeStatus] = {nid: NodeStatus.PENDING for nid in workflow.nodes}
         self.node_outputs: Dict[str, Dict[str, Any]] = {}
         self.node_retries: Dict[str, int] = {nid: 0 for nid in workflow.nodes}
+        self.node_started_at: Dict[str, datetime] = {}
+        self.node_retry_after: Dict[str, datetime] = {}
         self.variables: Dict[str, Any] = dict(workflow.variables)
         self.execution_history: List[str] = []
         self.checkpoints: List[ExecutionCheckpoint] = []
@@ -73,7 +70,7 @@ class WorkflowExecutionContext:
     def create_checkpoint(self, current_node_id: Optional[str] = None) -> ExecutionCheckpoint:
         """Captura una instantánea del estado actual de ejecución."""
         ckpt = ExecutionCheckpoint(
-            checkpoint_id=f"ckpt_{len(self.checkpoints)+1}_{int(time.time()*1000)%10000}",
+            checkpoint_id=f"ckpt_{len(self.checkpoints)+1}_{uuid.uuid4().hex[:8]}",
             target_node_id=current_node_id,
             node_states=dict(self.node_states),
             node_outputs={nid: dict(out) for nid, out in self.node_outputs.items()},
@@ -91,6 +88,42 @@ class WorkflowExecutionContext:
         self.execution_history = list(checkpoint.execution_history)
         self.error_message = None
 
+    def to_execution(self) -> WorkflowExecution:
+        """Exporta el estado mutable del contexto a una entidad formal WorkflowExecution."""
+        return WorkflowExecution(
+            execution_id=self.execution_id,
+            workflow_id=self.workflow_id,
+            status=self.status,
+            node_states=dict(self.node_states),
+            node_outputs={k: dict(v) for k, v in self.node_outputs.items()},
+            node_retries=dict(self.node_retries),
+            node_started_at=dict(self.node_started_at),
+            node_retry_after=dict(self.node_retry_after),
+            variables=dict(self.variables),
+            execution_history=list(self.execution_history),
+            checkpoints=[ckpt.model_dump(mode="json") if hasattr(ckpt, "model_dump") else dict(ckpt) for ckpt in self.checkpoints],
+            error_message=self.error_message,
+            started_at=self.started_at,
+            finished_at=self.finished_at,
+        )
+
+    @classmethod
+    def from_execution(cls, workflow: WorkflowDefinition, execution: WorkflowExecution) -> "WorkflowExecutionContext":
+        """Reconstruye un contexto activo de ejecución a partir de una entidad WorkflowExecution."""
+        ctx = cls(workflow=workflow, execution_id=execution.execution_id)
+        ctx.status = execution.status
+        ctx.node_states = dict(execution.node_states)
+        ctx.node_outputs = {k: dict(v) for k, v in execution.node_outputs.items()}
+        ctx.node_retries = dict(execution.node_retries)
+        ctx.node_started_at = dict(execution.node_started_at)
+        ctx.node_retry_after = dict(execution.node_retry_after)
+        ctx.variables = dict(execution.variables)
+        ctx.execution_history = list(execution.execution_history)
+        ctx.error_message = execution.error_message
+        ctx.started_at = execution.started_at
+        ctx.finished_at = execution.finished_at
+        return ctx
+
     def to_dict(self) -> Dict[str, Any]:
         """Serializa el estado del contexto de ejecución."""
         return {
@@ -100,6 +133,9 @@ class WorkflowExecutionContext:
             "node_states": {k: v.value for k, v in self.node_states.items()},
             "node_outputs": self.node_outputs,
             "variables": self.variables,
+            "node_retries": self.node_retries,
+            "node_started_at": {k: v.isoformat() for k, v in self.node_started_at.items()},
+            "node_retry_after": {k: v.isoformat() for k, v in self.node_retry_after.items()},
             "execution_history": self.execution_history,
             "error_message": self.error_message,
             "started_at": self.started_at.isoformat() if self.started_at else None,
@@ -108,23 +144,58 @@ class WorkflowExecutionContext:
 
 
 class WorkflowEngine:
-    """Motor orquestador de grafos de workflows."""
+    """Motor orquestador de grafos de workflows con soporte para múltiples instancias de WorkflowExecution."""
 
     def __init__(
         self,
         workflow: WorkflowDefinition,
         agent_bus: Optional[AgentMessageBus] = None,
         task_handlers: Optional[Dict[str, Callable[[Dict[str, Any]], Dict[str, Any]]]] = None,
+        tool_registry: Optional[Any] = None,
+        allow_synthetic_fallback: bool = False,
+        execution: Optional[WorkflowExecution] = None,
+        execution_id: Optional[str] = None,
     ):
         self.workflow = workflow
         self.agent_bus = agent_bus
-        self._handlers: Dict[str, Callable[[Dict[str, Any]], Dict[str, Any]]] = task_handlers or {}
-        self.context = WorkflowExecutionContext(workflow=self.workflow)
+        self.tool_registry = tool_registry
+        self.allow_synthetic_fallback = allow_synthetic_fallback
+        self._handlers: Dict[str, Callable[[Dict[str, Any]], Dict[str, Any]]] = dict(task_handlers or {})
+        self._lock = threading.RLock()
+
+        if execution:
+            self.context = WorkflowExecutionContext.from_execution(workflow=self.workflow, execution=execution)
+        else:
+            self.context = WorkflowExecutionContext(workflow=self.workflow, execution_id=execution_id)
 
         # Validar consistencia estructural del flujo
         errors = self.workflow.validate_graph()
         if errors:
             raise ValueError(f"No se puede instanciar WorkflowEngine con un grafo inválido: {'; '.join(errors)}")
+
+    def get_execution(self) -> WorkflowExecution:
+        """Retorna una instantánea formal e inmutable del estado de ejecución activo."""
+        return self.context.to_execution()
+
+    def create_new_execution(
+        self,
+        execution_id: Optional[str] = None,
+        initial_variables: Optional[Dict[str, Any]] = None,
+    ) -> WorkflowExecution:
+        """Crea una nueva ejecución formal e independiente para este workflow sin alterar la actual."""
+        return self.workflow.create_execution(
+            execution_id=execution_id,
+            initial_variables=initial_variables,
+        )
+
+    def bind_execution(self, execution: WorkflowExecution) -> None:
+        """Vincula el motor a una ejecución específica, reemplazando el contexto activo."""
+        if execution.workflow_id != self.workflow.workflow_id:
+            raise ValueError(
+                f"No se puede vincular una ejecución de '{execution.workflow_id}' "
+                f"en un motor con workflow '{self.workflow.workflow_id}'"
+            )
+        self.context = WorkflowExecutionContext.from_execution(workflow=self.workflow, execution=execution)
 
     def register_task_handler(
         self,
@@ -209,29 +280,39 @@ class WorkflowEngine:
 
         return False
 
+    def find_all_ready_nodes(self) -> List[str]:
+        """Localiza todos los nodos actualmente listos para ejecutarse de manera independiente."""
+        with self._lock:
+            return [nid for nid in self.workflow.nodes if self.is_node_ready(nid)]
+
     def find_next_ready_node(self) -> Optional[str]:
         """Localiza el siguiente nodo listo para ejecutarse según el orden topológico."""
-        for nid in self.workflow.nodes:
-            if self.is_node_ready(nid):
-                return nid
-        return None
+        with self._lock:
+            ready = self.find_all_ready_nodes()
+            return ready[0] if ready else None
 
-    def execute_node(self, node_id: str) -> bool:
+    def execute_node(self, node_id: str, current_time: Optional[datetime] = None) -> bool:
         """Ejecuta un nodo individual, despacha tareas/agentes y propaga outputs."""
         node = self.workflow.nodes[node_id]
 
-        # 1. Guardar checkpoint antes de la mutación del nodo
-        self.context.create_checkpoint(current_node_id=node_id)
+        now = current_time or datetime.now(timezone.utc)
+        if now.tzinfo is None:
+            now = now.replace(tzinfo=timezone.utc)
 
-        self.context.node_states[node_id] = NodeStatus.RUNNING
+        with self._lock:
+            # 1. Guardar checkpoint antes de la mutación del nodo
+            self.context.create_checkpoint(current_node_id=node_id)
 
-        # 2. Construir inputs combinando variables globales y outputs de predecesores
-        resolved_inputs = dict(self.context.variables)
-        for up_id in self.workflow.get_upstream_node_ids(node_id):
-            if up_id in self.context.node_outputs:
-                resolved_inputs[f"upstream_{up_id}"] = self.context.node_outputs[up_id]
-                resolved_inputs.update(self.context.node_outputs[up_id])
-        resolved_inputs.update(node.inputs)
+            self.context.node_states[node_id] = NodeStatus.RUNNING
+            self.context.node_started_at[node_id] = now
+
+            # 2. Construir inputs combinando variables globales y outputs de predecesores
+            resolved_inputs = dict(self.context.variables)
+            for up_id in self.workflow.get_upstream_node_ids(node_id):
+                if up_id in self.context.node_outputs:
+                    resolved_inputs[f"upstream_{up_id}"] = self.context.node_outputs[up_id]
+                    resolved_inputs.update(self.context.node_outputs[up_id])
+            resolved_inputs.update(node.inputs)
 
         output: Dict[str, Any] = {}
         success = True
@@ -247,19 +328,31 @@ class WorkflowEngine:
                 handler_key = node.tool_name or node.name
                 if handler_key in self._handlers:
                     output = self._handlers[handler_key](resolved_inputs)
-                else:
-                    # Ejecutor estándar por defecto
+                elif node.node_id in self._handlers:
+                    output = self._handlers[node.node_id](resolved_inputs)
+                elif self.tool_registry and node.tool_name and hasattr(self.tool_registry, "has_tool") and self.tool_registry.has_tool(node.tool_name):
+                    tool_spec = self.tool_registry.get_tool(node.tool_name)
+                    if hasattr(tool_spec, "handler") and callable(tool_spec.handler):
+                        output = tool_spec.handler(resolved_inputs)
+                    else:
+                        output = {"tool": node.tool_name, "executed": True, "inputs": resolved_inputs}
+                elif self.allow_synthetic_fallback:
                     output = {
                         "task_result": f"Executed {handler_key}",
                         "inputs_echo": resolved_inputs,
                         "status": "completed",
                     }
+                else:
+                    raise NotImplementedError(
+                        f"No execution handler or ToolSpec registered for task '{handler_key}' in node '{node_id}'. "
+                        "Governed runtime requires real execution handlers or explicit mock injection."
+                    )
 
             elif node.node_type == NodeType.AGENT:
                 if self.agent_bus and node.agent_id:
                     # Enviar mensaje formal al buzón del agente
                     msg = AgentMessage(
-                        message_id=f"wf_agent_{node_id}_{int(time.time()*1000)%10000}",
+                        message_id=f"wf_agent_{node_id}_{uuid.uuid4().hex[:8]}",
                         sender_id="praxeon_supervisor",
                         receiver_id=node.agent_id,
                         session_id=self.context.execution_id,
@@ -269,19 +362,28 @@ class WorkflowEngine:
                         payload=resolved_inputs,
                     )
                     self.agent_bus.send(msg)
-                    # Procesar simulación o respuesta si está disponible
-                    output = {
-                        "agent_id": node.agent_id,
-                        "dispatched": True,
-                        "message_id": msg.message_id,
-                        "status": "completed",
-                    }
-                else:
+                    # Poner el nodo en estado WAITING_RESULT esperando la respuesta asíncrona del agente
+                    with self._lock:
+                        self.context.node_states[node_id] = NodeStatus.WAITING_RESULT
+                        self.context.node_outputs[node_id] = {
+                            "agent_id": node.agent_id,
+                            "dispatched": True,
+                            "message_id": msg.message_id,
+                            "status": "waiting_result",
+                        }
+                    return True
+                elif node.agent_id and node.agent_id in self._handlers:
+                    output = self._handlers[node.agent_id](resolved_inputs)
+                elif self.allow_synthetic_fallback:
                     output = {
                         "agent_id": node.agent_id or "unassigned",
                         "response": f"Agent {node.agent_id} completed goal",
                         "status": "completed",
                     }
+                else:
+                    raise NotImplementedError(
+                        f"No AgentMessageBus or execution handler configured for agent '{node.agent_id}' in node '{node_id}'."
+                    )
 
             elif node.node_type == NodeType.DECISION:
                 # Nodo de ramificación condicional
@@ -295,32 +397,39 @@ class WorkflowEngine:
             output = {"error": str(exc)}
 
         # 3. Actualizar estado y salidas del nodo
-        if success:
-            self.context.node_states[node_id] = NodeStatus.COMPLETED
-            self.context.node_outputs[node_id] = output
-            self.context.execution_history.append(node_id)
+        with self._lock:
+            if success:
+                self.context.node_states[node_id] = NodeStatus.COMPLETED
+                self.context.node_outputs[node_id] = output
+                self.context.execution_history.append(node_id)
+                self.context.node_retry_after.pop(node_id, None)
 
-            # Si es END, verificar si el workflow concluyó
-            if node.node_type == NodeType.END:
-                self.context.status = WorkflowStatus.COMPLETED
-                self.context.finished_at = datetime.now(timezone.utc)
+                # Si es END, verificar si el workflow concluyó
+                if node.node_type == NodeType.END:
+                    self.context.status = WorkflowStatus.COMPLETED
+                    self.context.finished_at = now
 
-            # Evaluar propagación y marcar ramas excluidas como SKIPPED
-            self._propagate_skips(node_id)
-            return True
-        else:
-            # Manejo de política de reintentos
-            retries = self.context.node_retries.get(node_id, 0)
-            if retries < node.retry_policy.max_retries:
-                self.context.node_retries[node_id] = retries + 1
-                self.context.node_states[node_id] = NodeStatus.READY
-                return False
+                # Evaluar propagación y marcar ramas excluidas como SKIPPED
+                self._propagate_skips(node_id)
+                return True
             else:
-                self.context.node_states[node_id] = NodeStatus.FAILED
-                self.context.status = WorkflowStatus.FAILED
-                self.context.error_message = f"Fallo en nodo '{node_id}': {output.get('error')}"
-                self.context.finished_at = datetime.now(timezone.utc)
-                return False
+                # Manejo de política de reintentos
+                retries = self.context.node_retries.get(node_id, 0)
+                if retries < node.retry_policy.max_retries:
+                    self.context.node_retries[node_id] = retries + 1
+                    delay = node.retry_policy.delay_seconds * (node.retry_policy.backoff_multiplier ** retries)
+                    if delay > 0:
+                        self.context.node_states[node_id] = NodeStatus.RETRYING
+                        self.context.node_retry_after[node_id] = now + timedelta(seconds=delay)
+                    else:
+                        self.context.node_states[node_id] = NodeStatus.READY
+                    return False
+                else:
+                    self.context.node_states[node_id] = NodeStatus.FAILED
+                    self.context.status = WorkflowStatus.FAILED
+                    self.context.error_message = f"Fallo en nodo '{node_id}': {output.get('error')}"
+                    self.context.finished_at = now
+                    return False
 
     def _propagate_skips(self, completed_node_id: str) -> None:
         """Marca como SKIPPED los nodos downstream cuyas condiciones nunca se satisficieron."""
@@ -336,7 +445,103 @@ class WorkflowEngine:
                     if not self.is_node_ready(target_id) and self.context.node_states[target_id] == NodeStatus.PENDING:
                         self.context.node_states[target_id] = NodeStatus.SKIPPED
 
-    def step(self) -> Optional[str]:
+    def _check_agent_responses(self) -> List[str]:
+        """Revisa si hay mensajes de respuesta en el AgentMessageBus para nodos en estado WAITING_RESULT."""
+        if not self.agent_bus:
+            return []
+
+        completed_nodes = []
+        while True:
+            msg = self.agent_bus.receive("praxeon_supervisor")
+            if not msg:
+                break
+
+            task_node_id = msg.task_id or msg.correlation_id
+            if task_node_id and task_node_id in self.workflow.nodes:
+                st = self.context.node_states.get(task_node_id)
+                if st in (NodeStatus.WAITING_RESULT, NodeStatus.RUNNING):
+                    self.context.node_outputs[task_node_id] = msg.payload
+                    self.context.node_states[task_node_id] = NodeStatus.COMPLETED
+                    self.context.execution_history.append(task_node_id)
+                    self._propagate_skips(task_node_id)
+                    completed_nodes.append(task_node_id)
+        return completed_nodes
+
+    def handle_agent_response(self, msg: AgentMessage) -> bool:
+        """Permite inyectar o procesar directamente la respuesta de un agente para un nodo en espera."""
+        task_node_id = msg.task_id or msg.correlation_id
+        if not task_node_id or task_node_id not in self.workflow.nodes:
+            return False
+
+        st = self.context.node_states.get(task_node_id)
+        if st in (NodeStatus.WAITING_RESULT, NodeStatus.RUNNING):
+            self.context.node_outputs[task_node_id] = msg.payload
+            self.context.node_states[task_node_id] = NodeStatus.COMPLETED
+            self.context.execution_history.append(task_node_id)
+            self._propagate_skips(task_node_id)
+            return True
+        return False
+
+    def check_scheduled_retries_and_timeouts(
+        self,
+        current_time: Optional[datetime] = None,
+    ) -> Dict[str, List[str]]:
+        """Evalúa deadlines de timeout y programas de reintento para nodos activos o pendientes.
+
+        Retorna un diccionario con:
+        - 'ready_from_retry': lista de node_ids reactivados a NodeStatus.READY.
+        - 'timed_out': lista de node_ids marcados con TIMEOUT o programados para reintento tras timeout.
+        """
+        now = current_time or datetime.now(timezone.utc)
+        if now.tzinfo is None:
+            now = now.replace(tzinfo=timezone.utc)
+
+        ready_from_retry: List[str] = []
+        timed_out: List[str] = []
+
+        # 1. Evaluar reintentos programados (RETRYING -> READY cuando now >= retry_after)
+        for node_id, status in list(self.context.node_states.items()):
+            if status == NodeStatus.RETRYING:
+                retry_after = self.context.node_retry_after.get(node_id)
+                if retry_after is None or now >= retry_after:
+                    self.context.node_states[node_id] = NodeStatus.READY
+                    self.context.node_retry_after.pop(node_id, None)
+                    ready_from_retry.append(node_id)
+
+        # 2. Evaluar timeouts en nodos activos (RUNNING, WAITING_RESULT)
+        for node_id, status in list(self.context.node_states.items()):
+            if status in (NodeStatus.RUNNING, NodeStatus.WAITING_RESULT):
+                node = self.workflow.nodes.get(node_id)
+                if not node or node.timeout_seconds is None:
+                    continue
+                started_at = self.context.node_started_at.get(node_id)
+                if not started_at:
+                    continue
+                if (now - started_at).total_seconds() >= node.timeout_seconds:
+                    timed_out.append(node_id)
+                    retries = self.context.node_retries.get(node_id, 0)
+                    if retries < node.retry_policy.max_retries:
+                        self.context.node_retries[node_id] = retries + 1
+                        delay = node.retry_policy.delay_seconds * (node.retry_policy.backoff_multiplier ** retries)
+                        if delay > 0:
+                            self.context.node_states[node_id] = NodeStatus.RETRYING
+                            self.context.node_retry_after[node_id] = now + timedelta(seconds=delay)
+                        else:
+                            self.context.node_states[node_id] = NodeStatus.READY
+                    else:
+                        self.context.node_states[node_id] = NodeStatus.TIMEOUT
+                        self.context.status = WorkflowStatus.FAILED
+                        self.context.error_message = (
+                            f"Timeout de {node.timeout_seconds}s excedido en nodo '{node_id}' tras {retries} reintentos."
+                        )
+                        self.context.finished_at = now
+
+        return {
+            "ready_from_retry": ready_from_retry,
+            "timed_out": timed_out,
+        }
+
+    def step(self, current_time: Optional[datetime] = None) -> Optional[str]:
         """Avanza la ejecución un paso ejecutando el siguiente nodo elegible."""
         if self.context.status not in (WorkflowStatus.RUNNING, WorkflowStatus.IDLE):
             return None
@@ -344,25 +549,140 @@ class WorkflowEngine:
         if self.context.status == WorkflowStatus.IDLE:
             self.start()
 
-        next_nid = self.find_next_ready_node()
-        if not next_nid:
-            # Si no hay nodos listos y no se ha alcanzado END, verificar si terminó
+        # 0. Evaluar timeouts y reintentos programados
+        self.check_scheduled_retries_and_timeouts(current_time=current_time)
+        if self.context.status not in (WorkflowStatus.RUNNING, WorkflowStatus.IDLE):
+            return None
+
+        # 1. Comprobar si hay respuestas de agentes que resuelvan nodos en WAITING_RESULT
+        resolved_from_bus = self._check_agent_responses()
+        if resolved_from_bus:
             end_nodes = self.workflow.get_end_nodes()
             if any(self.context.node_states.get(e.node_id) == NodeStatus.COMPLETED for e in end_nodes):
                 self.context.status = WorkflowStatus.COMPLETED
+                self.context.finished_at = datetime.now(timezone.utc)
+            return resolved_from_bus[0]
+
+        # 2. Localizar siguiente nodo listo para ejecutarse
+        next_nid = self.find_next_ready_node()
+        if not next_nid:
+            # Si hay nodos en espera asíncrona o reintento, el workflow sigue esperando
+            waiting_nodes = [
+                nid for nid, st in self.context.node_states.items()
+                if st in (NodeStatus.WAITING_RESULT, NodeStatus.WAITING_APPROVAL, NodeStatus.RETRYING)
+            ]
+            if waiting_nodes:
+                return None
+
+            # Si no hay nodos listos ni esperando, verificar si concluyó
+            end_nodes = self.workflow.get_end_nodes()
+            if any(self.context.node_states.get(e.node_id) == NodeStatus.COMPLETED for e in end_nodes):
+                self.context.status = WorkflowStatus.COMPLETED
+                self.context.finished_at = datetime.now(timezone.utc)
             return None
 
-        self.execute_node(next_nid)
+        self.execute_node(next_nid, current_time=current_time)
         return next_nid
 
-    def run_to_completion(self, max_steps: int = 100) -> WorkflowExecutionContext:
+    def step_concurrent(
+        self,
+        max_workers: int = 8,
+        current_time: Optional[datetime] = None,
+    ) -> List[str]:
+        """Avanza la ejecución despachando concurrentemente todos los nodos listos.
+
+        Si existen ramas paralelas activas (ej. tras un PARALLEL_FORK), despacha sus
+        tareas a un pool de hilos para ejecución física simultánea en lugar de serial.
+        """
+        with self._lock:
+            if self.context.status not in (WorkflowStatus.RUNNING, WorkflowStatus.IDLE):
+                return []
+
+            if self.context.status == WorkflowStatus.IDLE:
+                self.start()
+
+            # 0. Evaluar timeouts y reintentos programados
+            self.check_scheduled_retries_and_timeouts(current_time=current_time)
+            if self.context.status not in (WorkflowStatus.RUNNING, WorkflowStatus.IDLE):
+                return []
+
+            # 1. Comprobar si hay respuestas de agentes que resuelvan nodos en WAITING_RESULT
+            resolved_from_bus = self._check_agent_responses()
+            if resolved_from_bus:
+                end_nodes = self.workflow.get_end_nodes()
+                if any(self.context.node_states.get(e.node_id) == NodeStatus.COMPLETED for e in end_nodes):
+                    self.context.status = WorkflowStatus.COMPLETED
+                    self.context.finished_at = datetime.now(timezone.utc)
+                return resolved_from_bus
+
+            # 2. Localizar todos los nodos listos
+            ready_nodes = self.find_all_ready_nodes()
+            if not ready_nodes:
+                waiting_nodes = [
+                    nid for nid, st in self.context.node_states.items()
+                    if st in (NodeStatus.WAITING_RESULT, NodeStatus.WAITING_APPROVAL, NodeStatus.RETRYING)
+                ]
+                if waiting_nodes:
+                    return []
+
+                end_nodes = self.workflow.get_end_nodes()
+                if any(self.context.node_states.get(e.node_id) == NodeStatus.COMPLETED for e in end_nodes):
+                    self.context.status = WorkflowStatus.COMPLETED
+                    self.context.finished_at = datetime.now(timezone.utc)
+                return []
+
+        # Si solo hay 1 nodo listo, ejecución directa
+        if len(ready_nodes) == 1:
+            self.execute_node(ready_nodes[0], current_time=current_time)
+            return ready_nodes
+
+        # Si hay múltiples nodos listos en paralelo, despachar concurrentemente
+        workers = min(max_workers, len(ready_nodes))
+        executed_nodes: List[str] = []
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            future_to_node = {
+                executor.submit(self.execute_node, nid, current_time): nid
+                for nid in ready_nodes
+            }
+            for future in as_completed(future_to_node):
+                nid = future_to_node[future]
+                try:
+                    future.result()
+                    executed_nodes.append(nid)
+                except Exception as exc:
+                    with self._lock:
+                        self.context.node_states[nid] = NodeStatus.FAILED
+                        self.context.status = WorkflowStatus.FAILED
+                        self.context.error_message = f"Fallo en ejecución concurrente de nodo '{nid}': {exc}"
+                    executed_nodes.append(nid)
+
+        with self._lock:
+            end_nodes = self.workflow.get_end_nodes()
+            if any(self.context.node_states.get(e.node_id) == NodeStatus.COMPLETED for e in end_nodes):
+                self.context.status = WorkflowStatus.COMPLETED
+                if not self.context.finished_at:
+                    self.context.finished_at = datetime.now(timezone.utc)
+
+        return executed_nodes
+
+    def run_to_completion(
+        self,
+        max_steps: int = 100,
+        current_time: Optional[datetime] = None,
+        concurrent: bool = True,
+        max_workers: int = 8,
+    ) -> WorkflowExecutionContext:
         """Ejecuta iterativamente el flujo hasta su conclusión o bloqueo."""
         if self.context.status == WorkflowStatus.IDLE:
             self.start()
 
         steps = 0
         while self.context.status == WorkflowStatus.RUNNING and steps < max_steps:
-            executed = self.step()
+            if concurrent:
+                executed = self.step_concurrent(max_workers=max_workers, current_time=current_time)
+            else:
+                res = self.step(current_time=current_time)
+                executed = [res] if res else []
             steps += 1
             if not executed:
                 break
@@ -370,13 +690,14 @@ class WorkflowEngine:
         return self.context
 
     def retry_node(self, node_id: str) -> bool:
-        """Reinicia manualmente un nodo fallido o cancelado para reintentar su ejecución."""
+        """Reinicia manualmente un nodo fallido, cancelado o en timeout para reintentar su ejecución."""
         if node_id not in self.workflow.nodes:
             return False
 
         current_st = self.context.node_states.get(node_id)
-        if current_st in (NodeStatus.FAILED, NodeStatus.CANCELLED):
+        if current_st in (NodeStatus.FAILED, NodeStatus.CANCELLED, NodeStatus.TIMEOUT, NodeStatus.RETRYING):
             self.context.node_states[node_id] = NodeStatus.READY
+            self.context.node_retry_after.pop(node_id, None)
             if self.context.status in (WorkflowStatus.FAILED, WorkflowStatus.CANCELLED):
                 self.context.status = WorkflowStatus.RUNNING
                 self.context.error_message = None

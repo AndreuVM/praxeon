@@ -2,22 +2,13 @@ import React, { useState } from 'react';
 import {
   FolderKanban,
   Plus,
-  Clock,
-  Cpu,
-  CheckCircle,
-  XCircle,
-  AlertTriangle,
   ArrowRight,
   Search,
   RefreshCw,
   Shield,
   Bot,
   Play,
-  Pause,
-  Terminal,
-  Layers,
   Sparkles,
-  ExternalLink,
   Trash2,
 } from 'lucide-react';
 

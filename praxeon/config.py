@@ -85,6 +85,30 @@ class TelemetryConfig(BaseModel):
     log_file_path: Optional[str] = Field(default=None, description="Ruta para el archivo de logs de eventos")
 
 
+class AdaptiveBranchingConfig(BaseModel):
+    """Configuración de branching adaptativo y exploración multirruta (Sección 23 de auditoría)."""
+    enabled: bool = Field(
+        default=False,
+        description="Habilitar branching adaptativo experimental (desactivado por defecto para baseline determinista)",
+    )
+    strategy: str = Field(
+        default="deterministic",
+        description="Estrategia base del sistema: 'deterministic' (baseline k=1) o 'adaptive' (multirruta)",
+    )
+    max_branching_factor: int = Field(
+        default=3,
+        description="Factor máximo de ramificación k cuando el branching está habilitado",
+    )
+    fallback_to_deterministic: bool = Field(
+        default=True,
+        description="Fallback automático a baseline determinista si branching experimental no está habilitado",
+    )
+    tag_as_experimental: bool = Field(
+        default=True,
+        description="Marcar decisiones y resultados adaptativos con metadatos experimentales",
+    )
+
+
 class PraxeonConfig(BaseModel):
     """Configuración global compuesta para PRAXEON Runtime Platform."""
 
@@ -95,6 +119,8 @@ class PraxeonConfig(BaseModel):
     retry: RetryConfig = Field(default_factory=RetryConfig)
     security: SecurityConfig = Field(default_factory=SecurityConfig)
     telemetry: TelemetryConfig = Field(default_factory=TelemetryConfig)
+    adaptive: AdaptiveBranchingConfig = Field(default_factory=AdaptiveBranchingConfig)
+    fallback_mode: str = Field(default="BEST_EFFORT", description="Modo de gobernanza ante fallo de LLM: 'FAIL_CLOSED' o 'BEST_EFFORT'")
 
     @model_validator(mode="before")
     @classmethod
@@ -105,6 +131,21 @@ class PraxeonConfig(BaseModel):
             chunk_data = dict(data.get("chunk", {}) if isinstance(data.get("chunk"), dict) else (data.get("chunk").model_dump() if isinstance(data.get("chunk"), BaseModel) else {}))
             retry_data = dict(data.get("retry", {}) if isinstance(data.get("retry"), dict) else (data.get("retry").model_dump() if isinstance(data.get("retry"), BaseModel) else {}))
             security_data = dict(data.get("security", {}) if isinstance(data.get("security"), dict) else (data.get("security").model_dump() if isinstance(data.get("security"), BaseModel) else {}))
+            adaptive_data = dict(data.get("adaptive", {}) if isinstance(data.get("adaptive"), dict) else (data.get("adaptive").model_dump() if isinstance(data.get("adaptive"), BaseModel) else {}))
+
+            if "branching" in data:
+                b_val = data.pop("branching")
+                if isinstance(b_val, dict):
+                    adaptive_data.update(b_val)
+                elif isinstance(b_val, BaseModel):
+                    adaptive_data.update(b_val.model_dump())
+
+            if "adaptive_branching" in data:
+                ab_val = data.pop("adaptive_branching")
+                if isinstance(ab_val, dict):
+                    adaptive_data.update(ab_val)
+                elif isinstance(ab_val, BaseModel):
+                    adaptive_data.update(ab_val.model_dump())
 
             if "typesafe_api_key" in data:
                 provider_data["api_key"] = data.pop("typesafe_api_key")
@@ -138,6 +179,7 @@ class PraxeonConfig(BaseModel):
             data["chunk"] = chunk_data
             data["retry"] = retry_data
             data["security"] = security_data
+            data["adaptive"] = adaptive_data
         return data
 
     # --- Propiedades de conveniencia y compatibilidad con versiones previas ---
@@ -229,6 +271,14 @@ class PraxeonConfig(BaseModel):
     def laya_backend(self, value: str) -> None:
         self.provider.laya_backend = value
 
+    @property
+    def branching(self) -> AdaptiveBranchingConfig:
+        return self.adaptive
+
+    @branching.setter
+    def branching(self, value: AdaptiveBranchingConfig) -> None:
+        self.adaptive = value
+
     @classmethod
     def from_env(cls, load_env_file: bool = False) -> "PraxeonConfig":
         """Instancia la configuración leyendo variables de entorno de forma explícita."""
@@ -248,6 +298,10 @@ class PraxeonConfig(BaseModel):
             model = os.getenv("LAYA_MODEL", "laya-v1-calibrated")
 
         use_api = bool(api_key and os.getenv("USE_TYPESAFE_API", "true").lower() in ("true", "1", "yes"))
+
+        adaptive_enabled = os.getenv("PRAXEON_ADAPTIVE_BRANCHING", os.getenv("PRAXEON_BRANCHING_ENABLED", "false")).lower() in ("true", "1", "yes")
+        adaptive_strategy = os.getenv("PRAXEON_BRANCHING_STRATEGY", "deterministic")
+        adaptive_max_k = int(os.getenv("PRAXEON_MAX_BRANCHING_FACTOR", "3"))
 
         return cls(
             provider=ProviderConfig(
@@ -270,6 +324,11 @@ class PraxeonConfig(BaseModel):
             security=SecurityConfig(
                 max_history_steps=int(os.getenv("JEV_MAX_HISTORY_STEPS", "50")),
             ),
+            adaptive=AdaptiveBranchingConfig(
+                enabled=adaptive_enabled,
+                strategy=adaptive_strategy,
+                max_branching_factor=adaptive_max_k,
+            ),
         )
 
 
@@ -287,3 +346,40 @@ class JEVConfig(PraxeonConfig):
 
 # Instancia canónica por defecto cargando entorno local
 default_config = PraxeonConfig.from_env(load_env_file=True)
+
+
+def resolve_cache_dir(custom_dir: Optional[str] = None) -> str:
+    """Resuelve la ruta del directorio de caché local.
+
+    Por defecto utiliza '.praxeon_cache'. Si no existe pero existe '.jev_cache' con datos,
+    mantiene compatibilidad transparente reutilizando el directorio legado.
+    """
+    if custom_dir:
+        return custom_dir
+    env_dir = os.environ.get("PRAXEON_CACHE_DIR")
+    if env_dir:
+        return env_dir
+    legacy_env = os.environ.get("JEV_CACHE_DIR")
+    if legacy_env:
+        return legacy_env
+
+    from pathlib import Path
+    prax_path = Path(".praxeon_cache")
+    legacy_path = Path(".jev_cache")
+
+    if prax_path.exists():
+        return str(prax_path)
+    if legacy_path.exists() and any(legacy_path.iterdir()):
+        return str(legacy_path)
+
+    return str(prax_path)
+
+
+def resolve_db_path(filename: str, custom_path: Optional[str] = None) -> str:
+    """Resuelve la ruta de un archivo de base de datos SQLite dentro del cache dir canónico."""
+    if custom_path:
+        return custom_path
+    cache_dir = resolve_cache_dir()
+    os.makedirs(cache_dir, exist_ok=True)
+    return os.path.join(cache_dir, filename)
+

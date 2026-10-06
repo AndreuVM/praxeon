@@ -1,5 +1,5 @@
 import React from 'react';
-import { ChevronDown, User, Layers, Cpu, Play, Shield, AlertTriangle, Box, Terminal, Plus } from 'lucide-react';
+import { ChevronDown, User, Cpu, Shield, AlertTriangle, Box, Plus, Key } from 'lucide-react';
 
 export default function Header({
   sessionId = '7f3a2c',
@@ -8,8 +8,9 @@ export default function Header({
   operatorId = 'operator_admin',
   operatorRole = 'operator',
   onOpenSessions,
-  onOpenPropose,
+  onOpenPropose: _onOpenPropose,
   onNewSession,
+  onOpenAuth,
 }) {
   const getModeBadge = () => {
     const mode = (executionMode || '').toLowerCase();
@@ -211,6 +212,39 @@ export default function Header({
           <Plus size={12} />
           <span>Nueva Sesión</span>
         </button>
+
+        {/* API Key / Auth Status Button */}
+        {onOpenAuth && (
+          <button
+            type="button"
+            onClick={onOpenAuth}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '5px',
+              padding: '4px 10px',
+              borderRadius: '9999px',
+              backgroundColor: '#161c26',
+              border: '1px solid #242c3b',
+              fontSize: '11px',
+              color: '#8b949e',
+              cursor: 'pointer',
+              transition: 'all 0.15s ease',
+            }}
+            title="Configurar Clave Maestra de PRAXEON"
+            onMouseEnter={(e) => {
+              e.currentTarget.style.borderColor = '#58a6ff';
+              e.currentTarget.style.color = '#58a6ff';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.borderColor = '#242c3b';
+              e.currentTarget.style.color = '#8b949e';
+            }}
+          >
+            <Key size={12} style={{ color: '#ebb338' }} />
+            <span>API Key</span>
+          </button>
+        )}
 
         {/* Operator Role / Profile */}
         <div style={{

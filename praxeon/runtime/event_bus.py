@@ -25,12 +25,16 @@ from praxeon.domain.events import EventType, RuntimeEvent, make_event
 class EventStore:
     """Almacén durable de eventos basado en SQLite WAL."""
 
-    def __init__(self, db_path: str = ".jev_cache/events.db"):
-        self.db_path = str(db_path)
-        if self.db_path != ":memory:":
+    def __init__(self, db_path: Optional[str] = None):
+        from praxeon.config import resolve_db_path
+        if db_path == ":memory:":
+            self.db_path = ":memory:"
+        else:
+            self.db_path = str(resolve_db_path("events.db", db_path))
             os.makedirs(os.path.dirname(os.path.abspath(self.db_path)), exist_ok=True)
         self._lock = threading.Lock()
         self._init_db()
+
 
     def _get_connection(self) -> sqlite3.Connection:
         if self.db_path == ":memory:":

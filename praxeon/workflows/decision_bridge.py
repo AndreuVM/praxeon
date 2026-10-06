@@ -53,7 +53,7 @@ class WorkflowDecisionBridge:
     ):
         self.engine = engine
         self.event_bus = event_bus or EventBus()
-        self.session_id = session_id or f"wf_sess_{engine.workflow.workflow_id}_{int(time.time()*1000)%100000}"
+        self.session_id = session_id or f"wf_sess_{engine.workflow.workflow_id}_{uuid.uuid4().hex[:8]}"
         self.policy_evaluator = policy_evaluator
 
         # Árbol de razonamiento activo vinculado al workflow

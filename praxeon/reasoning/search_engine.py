@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from enum import Enum
 import time
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
+import uuid
 from pydantic import BaseModel, ConfigDict, Field
 
 from praxeon.domain.action import ActionCandidate, ToolCall
@@ -39,15 +40,16 @@ class SearchStrategy(str, Enum):
 
 
 class SearchConfig(BaseModel):
-    """Configuración operativa del motor de búsqueda."""
+    """Configuración operativa del motor de búsqueda (Sección 23: Baseline determinista por defecto)."""
     model_config = ConfigDict(frozen=True)
 
-    branching_factor: int = Field(default=3, ge=1, le=10, description="Factor de ramificación k")
-    beam_width: int = Field(default=3, ge=1, le=10, description="Ancho de haz para Beam Search")
+    branching_factor: int = Field(default=1, ge=1, le=10, description="Factor de ramificación k (1 por defecto para baseline determinista)")
+    beam_width: int = Field(default=1, ge=1, le=10, description="Ancho de haz para Beam Search (1 por defecto)")
     max_depth: int = Field(default=10, ge=1, le=50, description="Profundidad máxima de búsqueda")
-    strategy: SearchStrategy = SearchStrategy.BEAM_SEARCH
+    strategy: SearchStrategy = SearchStrategy.GREEDY
     speculative_simulation: bool = True
     min_score_threshold: float = 0.20
+    is_experimental: bool = Field(default=False, description="Marca si la búsqueda utiliza exploración multirrama experimental")
 
 
 class SearchResult(BaseModel):
@@ -57,6 +59,7 @@ class SearchResult(BaseModel):
     strategy: SearchStrategy
     branching_factor: int
     success: bool
+    is_experimental: bool = False
     committed_branch: Optional[BranchPath] = None
     all_branches: List[BranchPath] = Field(default_factory=list)
     explored_branches_count: int = 0
@@ -70,6 +73,7 @@ class SearchResult(BaseModel):
             "strategy": self.strategy.value,
             "branching_factor": self.branching_factor,
             "success": self.success,
+            "is_experimental": self.is_experimental,
             "committed_branch_id": self.committed_branch.branch_id if self.committed_branch else None,
             "committed_branch_score": self.committed_branch.score.composite_score if self.committed_branch else 0.0,
             "committed_depth": self.committed_branch.depth if self.committed_branch else 0,
@@ -215,7 +219,7 @@ class TreeSearchEngine:
         start_wall = time.perf_counter()
 
         root_branch = BranchPath(
-            branch_id=f"branch_root_{int(time.time()*1000)%10000}",
+            branch_id=f"branch_root_{uuid.uuid4().hex[:8]}",
             parent_branch_id=None,
             root_session_id=initial_state.session_id,
             status=BranchStatus.ACTIVE,
@@ -322,10 +326,17 @@ class TreeSearchEngine:
             committed_branch.status in (BranchStatus.COMMITTED, BranchStatus.SUCCEEDED)
         )
 
+        is_experimental_run = (
+            self.config.is_experimental
+            or self.config.branching_factor > 1
+            or self.config.strategy != SearchStrategy.GREEDY
+        )
+
         return SearchResult(
             strategy=self.config.strategy,
             branching_factor=current_k,
             success=is_success,
+            is_experimental=is_experimental_run,
             committed_branch=committed_branch,
             all_branches=all_branches,
             explored_branches_count=explored_count,

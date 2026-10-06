@@ -268,15 +268,24 @@ export default function SessionKPIs({ session }) {
             border: '1px solid rgba(56, 189, 248, 0.25)',
             fontSize: '11px',
           }}
-          title="Optimización de tokens y Context Caching L1/L2 activo"
+          title={
+            session?.contextMetrics?.actual_billed_tokens != null && session?.contextMetrics?.actual_billed_tokens > 0
+              ? `Estimado ahorrado: ${session?.contextMetrics?.estimated_context_tokens_saved ?? session?.contextMetrics?.context_tokens_saved ?? 0} tok | Facturado real: ${session.contextMetrics.actual_billed_tokens} tok (Caché LLM: ${session.contextMetrics.actual_cached_tokens ?? 0} tok)`
+              : "Optimización de tokens y Context Caching L1/L2 activo"
+          }
         >
           <Zap size={11} style={{ color: '#38bdf8' }} />
           <span style={{ color: '#8b949e', fontSize: '10.5px' }}>Context Cache:</span>
           <strong style={{ color: '#38bdf8', fontWeight: '700', fontFamily: 'var(--font-mono)' }}>
-            {session?.contextMetrics?.context_tokens_saved != null
-              ? `${session.contextMetrics.context_tokens_saved} tok`
+            {(session?.contextMetrics?.estimated_context_tokens_saved ?? session?.contextMetrics?.context_tokens_saved) != null
+              ? `${session.contextMetrics.estimated_context_tokens_saved ?? session.contextMetrics.context_tokens_saved} tok`
               : 'Active'}
           </strong>
+          {session?.contextMetrics?.actual_billed_tokens > 0 && (
+            <span style={{ color: '#a3e635', fontSize: '10px', marginLeft: '2px', borderLeft: '1px solid rgba(255,255,255,0.15)', paddingLeft: '4px' }}>
+              {session.contextMetrics.actual_billed_tokens} billed
+            </span>
+          )}
         </div>
       </div>
     </div>

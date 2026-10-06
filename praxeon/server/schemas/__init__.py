@@ -1,6 +1,13 @@
 """Exportación consolidada de esquemas de datos del Web Server PRAXEON 1.0."""
 
 from praxeon.server.schemas.action import ProposeActionRequest
+from praxeon.server.schemas.agent import (
+    AgentDTO,
+    AgentVersionSummaryDTO,
+    CreateAgentRequest,
+    CreateAgentVersionRequest,
+    UpdateAgentRequest,
+)
 from praxeon.server.schemas.common import APIErrorResponse, APIResponse, PaginationMeta
 from praxeon.server.schemas.decision import (
     ConfirmDecisionRequest,
@@ -12,6 +19,11 @@ from praxeon.server.schemas.decision import (
     PolicyDTO,
     ProviderEvaluationDTO,
     RiskDTO,
+)
+from praxeon.server.schemas.context import (
+    ActualLLMTokenMetricsDTO,
+    ContextMetricsDTO,
+    EstimatedContextMetricsDTO,
 )
 from praxeon.server.schemas.event import EventsListResponse, WebSocketMessage
 from praxeon.server.schemas.session import (
@@ -39,4 +51,13 @@ __all__ = [
     "ExecuteDecisionResponse",
     "EventsListResponse",
     "WebSocketMessage",
+    "ContextMetricsDTO",
+    "EstimatedContextMetricsDTO",
+    "ActualLLMTokenMetricsDTO",
+    "CreateAgentRequest",
+    "UpdateAgentRequest",
+    "CreateAgentVersionRequest",
+    "AgentDTO",
+    "AgentVersionSummaryDTO",
 ]
+

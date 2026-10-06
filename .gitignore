@@ -37,9 +37,7 @@ htmlcov/
 .jev_cache/
 
 # Scratch & temporary test artifacts
+scratch/
 historia_tortuga.txt
 proceso.txt
 *.tmp
-
-# Local CI workflows (stored in .ci/ to allow push with repo OAuth scope)
-.github/

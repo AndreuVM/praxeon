@@ -6,6 +6,9 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 
+from praxeon.domain.governance import ActionProvenance, FallbackMode
+
+
 class ToolCall(BaseModel):
     """Llamada a herramienta física propuesta."""
     model_config = ConfigDict(frozen=True)
@@ -25,6 +28,9 @@ class ActionCandidate(BaseModel):
     requires_evidence: List[str] = Field(default_factory=list)
     estimated_cost: float = 0.0
     metadata: Dict[str, Any] = Field(default_factory=dict)
+    synthetic_fallback: bool = False
+    model_source: Optional[str] = None
+    provenance: Optional[ActionProvenance] = None
 
 
 def compute_action_hash(action: ActionCandidate) -> str:

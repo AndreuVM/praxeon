@@ -157,7 +157,7 @@ class DynamicEscalationEngine:
 
         # 5. Generar nueva decisión formal de enrutamiento con nivel de escalado incrementado
         new_decision = RoutingDecision(
-            decision_id=f"rd_esc_{int(time.time()*1000)%100000}",
+            decision_id=f"rd_esc_{uuid.uuid4().hex[:12]}",
             task_id=context.task.task_id,
             selected_agent_id=target_agent.agent_id,
             confidence=min(0.99, max(0.70, context.current_decision.confidence + 0.1)),
@@ -198,7 +198,7 @@ class DynamicEscalationEngine:
 
         # Despachar mensaje de alta prioridad con contexto del fallo previo
         msg = AgentMessage(
-            message_id=f"msg_esc_{context.task.task_id}_{int(time.time()*1000)%10000}",
+            message_id=f"msg_esc_{context.task.task_id}_{uuid.uuid4().hex[:8]}",
             sender_id="supervisor_escalation_engine",
             receiver_id=result.new_decision.selected_agent_id,
             session_id=session_id,

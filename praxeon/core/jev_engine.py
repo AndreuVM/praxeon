@@ -370,3 +370,8 @@ class JEVEngine:
             steps=self.graph.get_all_steps(),
         )
         return self.typesafe_client.diagnose_trajectory(traj)
+
+
+# Nomenclatura canónica PRAXEON 1.0 (JEVEngine conservado para retrocompatibilidad)
+PraxeonEngine = JEVEngine
+

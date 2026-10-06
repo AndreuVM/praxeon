@@ -8,7 +8,7 @@ export function computeTreeLayout(nodes) {
   if (!nodes || nodes.length === 0) return [];
 
   const NODE_WIDTH = 205;
-  const NODE_HEIGHT = 44;
+  const _NODE_HEIGHT = 44;
   const START_WIDTH = 80;
   const HORIZONTAL_GAP = 35; // Gap between sibling branch cards
   const VERTICAL_STEP = 80;  // Vertical distance between tree levels

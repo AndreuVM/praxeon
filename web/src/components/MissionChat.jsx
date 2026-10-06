@@ -6,7 +6,6 @@ import {
   Square,
   Sparkles,
   Bot,
-  User,
   Cpu,
   Shield,
   Terminal,
@@ -83,12 +82,12 @@ export default function MissionChat({
   ]);
 
   const messages = chatMessages !== undefined ? chatMessages : localMessages;
-  const setMessages = (updater) => {
+  const setMessages = React.useCallback((updater) => {
     if (onMessagesChange) {
       onMessagesChange(updater);
     }
     setLocalMessages(updater);
-  };
+  }, [onMessagesChange]);
 
   const messagesEndRef = useRef(null);
   const prevSessionIdRef = useRef(session.sessionId);
@@ -116,67 +115,69 @@ export default function MissionChat({
 
       if (session.sessionId === '7f3a2c') {
         // Carga de demo interactiva
-        setMessages([
-          {
-            id: 'msg-demo-user',
-            role: 'user',
-            text: session.goal || 'Fix authentication bug in the API',
-            time: '14:32:00',
-            config: {
-              llm_provider: 'JEV (Claude-3.5-sonnet)',
-              supervisor: 'LAYA System-1',
-              execution_mode: 'local_restricted',
+        queueMicrotask(() => {
+          setMessages([
+            {
+              id: 'msg-demo-user',
+              role: 'user',
+              text: session.goal || 'Fix authentication bug in the API',
+              time: '14:32:00',
+              config: {
+                llm_provider: 'JEV (Claude-3.5-sonnet)',
+                supervisor: 'LAYA System-1',
+                execution_mode: 'local_restricted',
+              },
             },
-          },
-          {
-            id: 'msg-demo-assistant',
-            role: 'assistant',
-            status: 'completed',
-            time: '14:32:45',
-            thoughts: [
-              {
-                step: 1,
-                tool: 'analyze_codebase',
-                thought: 'Analizar el middleware de autenticación para comprobar la validación del token y los flujos de bypass reportados.',
-                verdict: 'ALLOW',
-                score: 0.92,
-              },
-              {
-                step: 2,
-                tool: 'create_remediation_plan',
-                thought: 'Formular un plan de remediación quirúrgico para corregir la cabecera X-API-Key y validar expiración de credenciales.',
-                verdict: 'ALLOW',
-                score: 0.89,
-              },
-              {
-                step: 3,
-                tool: 'read_file',
-                thought: 'Leer auth/middleware.py para inspeccionar la implementación actual de la firma HMAC y los nonces.',
-                verdict: 'ALLOW',
-                score: 0.95,
-              },
-              {
-                step: 4,
-                tool: 'edit_file',
-                thought: 'Aplicar parche de seguridad con validación estricta de capabilities y tiempo constante.',
-                verdict: 'ALLOW',
-                score: 0.85,
-              },
-              {
-                step: 5,
-                tool: 'git',
-                thought: 'Intentar git push origin main sin aprobación previa de seguridad.',
-                verdict: 'REVIEW',
-                score: 0.64,
-                reason: 'Acción de alto riesgo retenida para confirmación humana obligatoria.',
-              },
-            ],
-            finalAnswer: session.finalAnswer || 'El parche de autenticación ha sido validado satisfactoriamente contra la suite de tests. El intento de push directo fue interceptado preventivamente por la política de precedencia estricta de PRAXEON.',
-          },
-        ]);
+            {
+              id: 'msg-demo-assistant',
+              role: 'assistant',
+              status: 'completed',
+              time: '14:32:45',
+              thoughts: [
+                {
+                  step: 1,
+                  tool: 'analyze_codebase',
+                  thought: 'Analizar el middleware de autenticación para comprobar la validación del token y los flujos de bypass reportados.',
+                  verdict: 'ALLOW',
+                  score: 0.92,
+                },
+                {
+                  step: 2,
+                  tool: 'create_remediation_plan',
+                  thought: 'Formular un plan de remediación quirúrgico para corregir la cabecera X-API-Key y validar expiración de credenciales.',
+                  verdict: 'ALLOW',
+                  score: 0.89,
+                },
+                {
+                  step: 3,
+                  tool: 'read_file',
+                  thought: 'Leer auth/middleware.py para inspeccionar la implementación actual de la firma HMAC y los nonces.',
+                  verdict: 'ALLOW',
+                  score: 0.95,
+                },
+                {
+                  step: 4,
+                  tool: 'edit_file',
+                  thought: 'Aplicar parche de seguridad con validación estricta de capabilities y tiempo constante.',
+                  verdict: 'ALLOW',
+                  score: 0.85,
+                },
+                {
+                  step: 5,
+                  tool: 'git',
+                  thought: 'Intentar git push origin main sin aprobación previa de seguridad.',
+                  verdict: 'REVIEW',
+                  score: 0.64,
+                  reason: 'Acción de alto riesgo retenida para confirmación humana obligatoria.',
+                },
+              ],
+              finalAnswer: session.finalAnswer || 'El parche de autenticación ha sido validado satisfactoriamente contra la suite de tests. El intento de push directo fue interceptado preventivamente por la política de precedencia estricta de PRAXEON.',
+            },
+          ]);
+        });
       }
     }
-  }, [session.sessionId, session.goal, session.finalAnswer]);
+  }, [session.sessionId, session.goal, session.finalAnswer, setMessages]);
 
   // Capturar razonamiento en tiempo real desde los eventos WebSocket
   useEffect(() => {
@@ -224,43 +225,47 @@ export default function MissionChat({
       }
     }
 
-    setMessages((prev) => {
-      const lastMsg = prev[prev.length - 1];
-      if (lastMsg && lastMsg.role === 'assistant' && (lastMsg.status === 'running' || isRunning)) {
-        return [
-          ...prev.slice(0, -1),
-          {
-            ...lastMsg,
-            thoughts: thoughts.length > 0 ? thoughts : lastMsg.thoughts,
-            currentThought: currentThoughtText || lastMsg.currentThought,
-            status: session.status === 'Completed' || session.finalAnswer ? 'completed' : 'running',
-            finalAnswer: session.finalAnswer || lastMsg.finalAnswer,
-          },
-        ];
-      }
-      return prev;
-    });
-  }, [events, isRunning, session.status, session.finalAnswer]);
-
-  // Si la sesión concluye, asegurar que el mensaje del asistente refleje el estado completado
-  useEffect(() => {
-    if (session.status === 'Completed' || session.finalAnswer) {
+    queueMicrotask(() => {
       setMessages((prev) => {
         const lastMsg = prev[prev.length - 1];
-        if (lastMsg && lastMsg.role === 'assistant' && lastMsg.status !== 'completed') {
+        if (lastMsg && lastMsg.role === 'assistant' && (lastMsg.status === 'running' || isRunning)) {
           return [
             ...prev.slice(0, -1),
             {
               ...lastMsg,
-              status: 'completed',
-              finalAnswer: session.finalAnswer || lastMsg.finalAnswer || 'Misión completada satisfactoriamente bajo la supervisión de PRAXEON.',
+              thoughts: thoughts.length > 0 ? thoughts : lastMsg.thoughts,
+              currentThought: currentThoughtText || lastMsg.currentThought,
+              status: session.status === 'Completed' || session.finalAnswer ? 'completed' : 'running',
+              finalAnswer: session.finalAnswer || lastMsg.finalAnswer,
             },
           ];
         }
         return prev;
       });
+    });
+  }, [events, isRunning, session.status, session.finalAnswer, setMessages]);
+
+  // Si la sesión concluye, asegurar que el mensaje del asistente refleje el estado completado
+  useEffect(() => {
+    if (session.status === 'Completed' || session.finalAnswer) {
+      queueMicrotask(() => {
+        setMessages((prev) => {
+          const lastMsg = prev[prev.length - 1];
+          if (lastMsg && lastMsg.role === 'assistant' && lastMsg.status !== 'completed') {
+            return [
+              ...prev.slice(0, -1),
+              {
+                ...lastMsg,
+                status: 'completed',
+                finalAnswer: session.finalAnswer || lastMsg.finalAnswer || 'Misión completada satisfactoriamente bajo la supervisión de PRAXEON.',
+              },
+            ];
+          }
+          return prev;
+        });
+      });
     }
-  }, [session.status, session.finalAnswer]);
+  }, [session.status, session.finalAnswer, setMessages]);
 
   const handleSend = (e) => {
     e?.preventDefault();

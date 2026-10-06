@@ -13,7 +13,7 @@ import {
 export default function TopNav({
   activeNav = 'live',
   onNavSelect,
-  session,
+  _session,
   currentDecisionCount = 0,
 }) {
   const navItems = [

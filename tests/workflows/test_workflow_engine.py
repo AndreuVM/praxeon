@@ -12,7 +12,9 @@ Valida:
 import pytest
 
 from praxeon.agents import (
+    AgentMessage,
     AgentMessageBus,
+    MessageType,
     TopologyType,
 )
 from praxeon.workflows import (
@@ -87,6 +89,8 @@ def test_engine_pause_and_resume():
     """Valida la detención pausada y la posterior reanudación fluida."""
     wf = build_sample_workflow()
     engine = WorkflowEngine(workflow=wf)
+    engine.register_task_handler("build_tool", lambda inputs: {"binary": "/bin/app"})
+    engine.register_task_handler("test_tool", lambda inputs: {"status": "ok"})
 
     # Ejecutar primer paso (start)
     step1 = engine.step()
@@ -228,6 +232,8 @@ def test_engine_conditional_branching_and_skips():
 
     wf = WorkflowDefinition(workflow_id="wf_branching", name="Branching Flow", nodes=nodes, edges=edges)
     engine = WorkflowEngine(workflow=wf)
+    engine.register_task_handler("Auto Deploy", lambda inputs: {"deployed": True})
+    engine.register_task_handler("Escalate SecOps", lambda inputs: {"escalated": True})
 
     # Iniciar con variable de riesgo bajo
     ctx = engine.start(initial_variables={"risk_level": "LOW"})
@@ -242,9 +248,10 @@ def test_engine_conditional_branching_and_skips():
 
 
 def test_engine_agent_bus_integration():
-    """Valida el despacho directo de tareas desde nodos AGENT al AgentMessageBus."""
+    """Valida el despacho directo de tareas desde nodos AGENT al AgentMessageBus y su resolución asíncrona."""
     bus = AgentMessageBus(default_topology=TopologyType.MESH)
     bus.register_agent("ag_reviewer")
+    bus.register_agent("praxeon_supervisor")
 
     nodes = {
         "start": WorkflowNode(node_id="start", name="Start", node_type=NodeType.START),
@@ -266,13 +273,37 @@ def test_engine_agent_bus_integration():
     wf = WorkflowDefinition(workflow_id="wf_agent_dispatch", name="Agent Dispatch", nodes=nodes, edges=edges)
     engine = WorkflowEngine(workflow=wf, agent_bus=bus)
 
-    ctx = engine.run_to_completion()
+    # Paso 1: start
+    engine.step()
+    assert engine.context.node_states["start"] == NodeStatus.COMPLETED
 
-    assert ctx.status == WorkflowStatus.COMPLETED
-    assert ctx.node_states["agent_review"] == NodeStatus.COMPLETED
+    # Paso 2: dispatch a agente -> el nodo pasa a WAITING_RESULT (no completado falsamente)
+    engine.step()
+    assert engine.context.node_states["agent_review"] == NodeStatus.WAITING_RESULT
+    assert engine.context.status == WorkflowStatus.RUNNING
 
     # Comprobar que en el buzón de ag_reviewer se depositó el mensaje de delegación
     received_msg = bus.receive("ag_reviewer")
     assert received_msg is not None
     assert received_msg.task_id == "agent_review"
     assert received_msg.payload["pull_request_id"] == 42
+
+    # Agente procesa y deposita la respuesta dirigida a praxeon_supervisor
+    reply = AgentMessage(
+        message_id="wf_resp_001",
+        sender_id="ag_reviewer",
+        receiver_id="praxeon_supervisor",
+        session_id=engine.context.execution_id,
+        task_id="agent_review",
+        message_type=MessageType.RESPONSE,
+        payload={"review_verdict": "APPROVED", "comments": "Code approved by agent."},
+    )
+    bus.send(reply)
+
+    # Paso 3: el engine procesa la respuesta en el step y concluye el workflow
+    ctx = engine.run_to_completion()
+
+    assert ctx.status == WorkflowStatus.COMPLETED
+    assert ctx.node_states["agent_review"] == NodeStatus.COMPLETED
+    assert ctx.node_outputs["agent_review"]["review_verdict"] == "APPROVED"
+    assert ctx.node_states["end"] == NodeStatus.COMPLETED
