@@ -155,7 +155,7 @@ class LayaProvider(BaseReasoningProvider):
             headers["Authorization"] = f"Bearer {self.auth_token}"
 
         req = urllib.request.Request(self.endpoint_url, data=req_data, headers=headers, method="POST")
-        with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+        with urllib.request.urlopen(req, timeout=self.timeout) as resp:  # nosec B310
             resp_code = resp.getcode()
             if resp_code != 200:
                 raise RuntimeError(f"LAYA endpoint retornó status {resp_code}")

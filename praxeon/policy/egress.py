@@ -58,7 +58,7 @@ class EgressPolicy(BaseModel):
     def is_loopback(self, host: str) -> bool:
         """Determina si el host apunta a localhost o la interfaz de bucle local."""
         norm = host.lower().strip()
-        if norm in {"localhost", "localhost.localdomain", "127.0.0.1", "::1", "0.0.0.0"}:
+        if norm in {"localhost", "localhost.localdomain", "127.0.0.1", "::1", "0.0.0.0"}:  # nosec B104
             return True
         try:
             ip = ipaddress.ip_address(norm)

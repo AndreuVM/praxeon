@@ -173,11 +173,13 @@ class RuntimeApplicationService:
             self.provider = ReplayProvider()
         elif self.config.provider.name.lower() == "laya":
             self.provider = LayaProvider(backend=self.config.provider.laya_backend)
-        else:
+        elif self.config.provider.use_api and self.config.provider.api_key:
             self.provider = TypeSafeAdapter(
                 api_key=self.config.provider.api_key,
                 model_name=self.config.provider.model,
             )
+        else:
+            self.provider = MockProvider()
 
         self._lock = threading.Lock()
         self._sessions_meta: Dict[str, Dict[str, Any]] = {}
@@ -811,6 +813,7 @@ class RuntimeApplicationService:
             operation_assessment=op_assessment,
             session_id=session_id,
             execution_mode=ExecutionMode(session_mode),
+            decision_id=decision_id,
         )
 
         # Obtener configuración de autonomía de la sesión

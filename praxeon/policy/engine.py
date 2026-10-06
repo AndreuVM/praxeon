@@ -73,6 +73,7 @@ class PolicyEngine:
         operation_assessment: Optional[CommandRiskAssessment] = None,
         session_id: str = "default_session",
         execution_mode: Optional[str] = None,
+        decision_id: Optional[str] = None,
     ) -> Tuple[PolicyDecision, DecisionReceipt]:
         """Evalúa una acción candidata emitiendo una decisión formal y su recibo auditable."""
         start_time = time.perf_counter()
@@ -321,7 +322,7 @@ class PolicyEngine:
         latency_ms = (time.perf_counter() - start_time) * 1000.0
 
         # Construcción y firma criptográfica exhaustiva del capability receipt
-        decision_id = f"dec_{uuid.uuid4().hex[:12]}"
+        decision_id = decision_id or f"dec_{uuid.uuid4().hex[:12]}"
         nonce = uuid.uuid4().hex
         expires_at = datetime.now(timezone.utc) + timedelta(seconds=self.receipt_ttl_seconds)
 

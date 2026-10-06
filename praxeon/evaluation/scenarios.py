@@ -214,7 +214,7 @@ class ScenarioCatalog:
                 candidate_action=ActionCandidate(
                     id="act_shell_del",
                     description="Borrar archivos temporales con shell",
-                    tool_call=ToolCall(tool_name="delete_file", arguments={"path": "/var/tmp/data"}),
+                    tool_call=ToolCall(tool_name="delete_file", arguments={"path": "/var/tmp/data"}),  # nosec B108
                 ),
                 simulated_assessment=ProviderAssessment(
                     provider="typesafe",

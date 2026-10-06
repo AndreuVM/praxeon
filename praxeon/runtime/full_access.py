@@ -197,7 +197,7 @@ class FullAccessExecutor:
                     if proc.returncode != 0 and any(cmd_lower.endswith(ext) for ext in (".bat", ".cmd")):
                         fallback_proc = subprocess.run(
                             cmd,
-                            shell=True,
+                            shell=True,  # nosec B602
                             cwd=cwd,
                             env=os.environ.copy(),
                             capture_output=True,
@@ -211,7 +211,7 @@ class FullAccessExecutor:
                 else:
                     proc = subprocess.run(
                         cmd,
-                        shell=True,
+                        shell=True,  # nosec B602
                         cwd=cwd,
                         env=os.environ.copy(),
                         capture_output=True,

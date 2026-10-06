@@ -615,7 +615,7 @@ class ContainerSandboxAdapter(SandboxAdapter):
         self.runtime_binary = self._detect_runtime()
 
     def _detect_runtime(self) -> Optional[str]:
-        if self.config.runtime_binary in ("docker", "podman"):
+        if self.config.runtime_binary and self.config.runtime_binary != "auto":
             return self.config.runtime_binary if shutil.which(self.config.runtime_binary) else None
         for candidate in ("docker", "podman"):
             if shutil.which(candidate):

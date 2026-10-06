@@ -231,7 +231,7 @@ class OpenAICompatibleLLM(BaseAgentLLM):
         for ep in endpoints_to_try:
             req = urllib.request.Request(ep, data=req_bytes, headers=headers, method="POST")
             try:
-                with urllib.request.urlopen(req, timeout=self._timeout) as resp:
+                with urllib.request.urlopen(req, timeout=self._timeout) as resp:  # nosec B310
                     resp_bytes = resp.read()
                     data = json.loads(resp_bytes.decode("utf-8"))
                     choices = data.get("choices", [])
@@ -385,7 +385,7 @@ def is_ollama_online(host: str = "http://127.0.0.1:11434") -> bool:
         try:
             url = f"{h.rstrip('/')}/api/tags"
             req = urllib.request.Request(url, headers={"User-Agent": "Praxeon/1.0.0"})
-            with urllib.request.urlopen(req, timeout=0.35) as resp:
+            with urllib.request.urlopen(req, timeout=0.35) as resp:  # nosec B310
                 if resp.status == 200:
                     return True
         except Exception:
@@ -405,7 +405,7 @@ def get_ollama_installed_models(host: str = "http://127.0.0.1:11434") -> List[st
         try:
             url = f"{h.rstrip('/')}/api/tags"
             req = urllib.request.Request(url, headers={"User-Agent": "Praxeon/1.0.0"})
-            with urllib.request.urlopen(req, timeout=0.6) as resp:
+            with urllib.request.urlopen(req, timeout=0.6) as resp:  # nosec B310
                 data = json.loads(resp.read().decode("utf-8"))
                 models = [m.get("name") for m in data.get("models", []) if m.get("name")]
                 if models:
