@@ -1,11 +1,11 @@
-# PRAXEON v1.0.0
+# PRAXEON v1.1.0
 
 **Runtime supervision for autonomous AI agents**
 
 > **The model proposes. The runtime decides what gets executed.**
 
-[![Tests](https://img.shields.io/badge/tests-527%20passed-brightgreen.svg)](https://github.com/AndreuVM/praxeon)
-[![Version](https://img.shields.io/badge/version-v1.0.0-blue.svg)](https://github.com/AndreuVM/praxeon)
+[![Tests](https://img.shields.io/badge/tests-839%20passed-brightgreen.svg)](https://github.com/AndreuVM/praxeon)
+[![Version](https://img.shields.io/badge/version-v1.1.0-blue.svg)](https://github.com/AndreuVM/praxeon)
 [![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](https://github.com/AndreuVM/praxeon)
 [![Context Caching](https://img.shields.io/badge/context%20caching-L1%20%2F%20L2%20Prefix%20Cache-blueviolet.svg)](https://github.com/AndreuVM/praxeon)
 [![Security](https://img.shields.io/badge/security-sandbox%20%26%20container%20hardened-green.svg)](https://github.com/AndreuVM/praxeon/blob/main/SECURITY.md)
@@ -563,6 +563,22 @@ Para una exposición exhaustiva de los fundamentos teóricos, la arquitectura t�
 
 ---
 
+## ⚠️ Deprecación de Binarios Históricos (`jev-*`)
+
+Conforme a la política de gobernanza y estabilización de PRAXEON v1.1.0, los binarios y comandos con prefijo histórico `jev-*` (`jev-nav`, `jev-live`, `jev-dash`, `jev-mcp`) se encuentran formalmente en estado de **obsolescencia (deprecated)**:
+
+| Comando Legacy (Deprecated) | Comando Canónico (Recomendado) | Estado | Retirada Definitiva |
+| :--- | :--- | :---: | :---: |
+| `jev-nav` | `praxeon` | ⚠️ Deprecated (emite `DeprecationWarning`) | **v2.0.0** |
+| `jev-live` | `praxeon-live` | ⚠️ Deprecated (emite `DeprecationWarning`) | **v2.0.0** |
+| `jev-dash` | `praxeon-dash` | ⚠️ Deprecated (emite `DeprecationWarning`) | **v2.0.0** |
+| `jev-mcp` | `praxeon-mcp` | ⚠️ Deprecated (emite `DeprecationWarning`) | **v2.0.0** |
+
+Recomendamos actualizar scripts, integraciones de CI/CD y automatizaciones a los comandos canónicos `praxeon*`.
+
+---
+
 ## Licencia
 
 Distribuido bajo licencia MIT. Consulta `LICENSE` para más detalles.
+

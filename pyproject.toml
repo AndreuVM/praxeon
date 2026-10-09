@@ -60,11 +60,11 @@ praxeon-dash = "praxeon.dashboard:main"
 praxeon-server = "praxeon.server.app:start"
 praxeon-web = "praxeon.server.app:launch_web"
 praxeon-mcp = "praxeon.integrations.mcp.server:main"
-# Legacy aliases (deprecated, maintained for backward compatibility)
-jev-nav = "praxeon.cli:main"
-jev-live = "praxeon.live_agent:main"
-jev-dash = "praxeon.dashboard:main"
-jev-mcp = "praxeon.integrations.mcp.server:main"
+# Legacy aliases (deprecated, scheduled for removal in v2.0)
+jev-nav = "praxeon.legacy_cli:jev_nav_main"
+jev-live = "praxeon.legacy_cli:jev_live_main"
+jev-dash = "praxeon.legacy_cli:jev_dash_main"
+jev-mcp = "praxeon.legacy_cli:jev_mcp_main"
 
 [build-system]
 requires = ["hatchling"]
