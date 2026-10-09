@@ -4,6 +4,26 @@ Todas las modificaciones notables de este proyecto están documentadas en este a
 
 ---
 
+## [1.1.0] — 2026-10-09
+
+### Añadido
+- **Independencia Total de Modelos de Decisión (Fase 1)**:
+  - `typesafe-sdk` y `laya` convertidos en dependencias opcionales (`[project.optional-dependencies]`).
+  - Implementación del protocolo abstracto `DecisionProvider` y registro dinámico `DecisionProviderRegistry`.
+  - Contenedor de ejecución `SessionRuntime` multi-sesión, eliminando el provider global mutable y permitiendo misiones concurrentes aisladas con proveedores heterogéneos.
+- **Motor Visual de Workflows Multiagente y Semántica de Control Declarativa (Fase 4)**:
+  - Soporte tipado de primer orden para nodos `START`, `END`, `TASK`, `AGENT`, `DECISION`/`IF`, `WHILE`, `DELEGATE`, `HUMAN_APPROVAL`, `PARALLEL_FORK`, `PARALLEL_JOIN`.
+  - Árbol de condiciones declarativas (`AtomicCondition`, `CompoundCondition`) sobre namespaces aislados sin invocar `eval()`.
+  - Bucles estructurados acotados (`WHILE`) con invariante `INV-03` (`max_iterations >= 1`) y resolución en algoritmos topológicos del DAG.
+  - Pausa y reanudación supervisada en nodos `HUMAN_APPROVAL` (`WAITING_APPROVAL`) y retroceso determinista (`backtrack_workflow`).
+  - Catálogo de plantillas canónicas: *Code Review Loop*, *Research → Writer → Reviewer* y *Triage Router*, accesibles vía API REST y modal interactivo en el frontend.
+- **Coordinadores Modulares de Servidor (`ServerCoordinators`)**:
+  - Descomposición de la lógica de servidor en `SessionLifecycleCoordinator`, `StepExecutionCoordinator`, `CheckpointCoordinator` y `DiagnosticsCoordinator`.
+- **Suite de Pruebas de Calidad**:
+  - 839 tests automatizados pasando al 100% en plataformas Linux y Windows.
+
+---
+
 ## [1.0.0] — 2026-10-02
 
 ### Añadido
