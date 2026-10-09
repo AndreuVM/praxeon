@@ -7,21 +7,8 @@ invalidando descendientes y prohibiendo transiciones fallidas.
 from datetime import datetime, timezone
 import uuid
 from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, ConfigDict, Field
+from praxeon.domain.checkpoint import Checkpoint
 from praxeon.runtime.state import SessionState
-
-
-class Checkpoint(BaseModel):
-    """Snapshot inmutable de un estado recuperable."""
-    model_config = ConfigDict(frozen=True)
-
-    id: str
-    step_index: int
-    state_hash: str
-    reason: str
-    snapshot_data: Dict[str, Any]
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-
 
 
 class CheckpointManager:
@@ -31,19 +18,26 @@ class CheckpointManager:
         self._checkpoints: Dict[str, Checkpoint] = {}
         self.rollback_history: List[Dict[str, Any]] = []
 
+    def save_checkpoint(self, checkpoint: Checkpoint) -> None:
+        """Almacena un checkpoint directamente en el almacén."""
+        self._checkpoints[checkpoint.id] = checkpoint
+
     def create_checkpoint(self, state: SessionState, reason: str = "Punto de restauración") -> Checkpoint:
         """Crea un snapshot inmutable del estado actual."""
         chk_id = f"chk_{len(self._checkpoints)}_{uuid.uuid4().hex[:6]}"
         checkpoint = Checkpoint(
             id=chk_id,
+            session_id=state.session_id,
             step_index=len(state.steps),
             state_hash=state.compute_hash(),
             reason=reason,
             snapshot_data=state.to_snapshot(),
+            forbidden_tools=list(state.forbidden_tools),
         )
         self._checkpoints[chk_id] = checkpoint
         state.checkpoint_ids.append(chk_id)
         return checkpoint
+
 
     def get_checkpoint(self, checkpoint_id: str) -> Optional[Checkpoint]:
         """Recupera un checkpoint específico por ID."""

@@ -400,6 +400,17 @@ export async function fetchContext(workspaceRoot = null) {
   }
 }
 
+export async function fetchProviders() {
+  try {
+    const res = await authFetch(`${API_BASE}/providers`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+  } catch (err) {
+    console.warn('Error fetching dynamic providers catalog:', err);
+    return null;
+  }
+}
+
 // ==========================================
 // AGENTS REST API (PRAXEON 1.0)
 // ==========================================

@@ -6,6 +6,9 @@ import {
   RefreshCw,
   Server,
   Cloud,
+  Shield,
+  Activity,
+  Layers,
 } from 'lucide-react';
 import * as api from '../../services/api';
 
@@ -13,17 +16,22 @@ export default function ProvidersView() {
   const [healthStatus, setHealthStatus] = useState(null);
   const [testingEndpoint, setTestingEndpoint] = useState(false);
   const [testResult, setTestResult] = useState(null);
+  const [dynamicProviders, setDynamicProviders] = useState(null);
 
   const checkHealth = async () => {
     setTestingEndpoint(true);
     const start = performance.now();
     try {
       const res = await api.fetchHealth();
+      const provs = await api.fetchProviders();
       const elapsed = Math.round(performance.now() - start);
       setHealthStatus({ ...res, latency: elapsed });
+      if (provs?.data) {
+        setDynamicProviders(provs.data);
+      }
       setTestResult({
         success: res && (!res.data || res.data.status !== 'offline'),
-        message: `Servidor PRAXEON activo (${elapsed}ms)`,
+        message: `Servidor PRAXEON activo (${elapsed}ms) — Catálogo de Decision Providers sincronizado`,
       });
     } catch (err) {
       setTestResult({
@@ -41,9 +49,13 @@ export default function ProvidersView() {
       const start = performance.now();
       try {
         const res = await api.fetchHealth();
+        const provs = await api.fetchProviders();
         const elapsed = Math.round(performance.now() - start);
         if (mounted) {
           setHealthStatus({ ...res, latency: elapsed });
+          if (provs?.data) {
+            setDynamicProviders(provs.data);
+          }
           setTestResult({
             success: res && (!res.data || res.data.status !== 'offline'),
             message: `Servidor PRAXEON activo (${elapsed}ms)`,
@@ -63,70 +75,64 @@ export default function ProvidersView() {
     };
   }, []);
 
-  const supervisors = [
+  const decisionProviders = dynamicProviders?.decision_providers || [
     {
-      id: 'laya',
-      name: 'LAYA Provider',
-      role: 'System-1 Primario (Fast-Path Local)',
-      model: 'praxLaya-v1-calibrated',
-      latency: '< 15ms',
-      status: 'Activo / Integrado',
-      calibration: '0.041 (Excelente)',
-      agreementRate: '94.8%',
-      features: [
-        'Detección de bucles invariante (n-gram entropy)',
-        'Evaluación de groundedness estructural',
-        'Failsafe local sin latencia de red',
-      ],
+      provider_id: 'laya',
+      name: 'LAYA System-1',
+      model_id: 'laya-v1',
+      version: '0.3.0',
+      backend: 'local',
+      supported_backends: ['local', 'api'],
+      description: 'Evaluación semántica ultrarrápida in-process sin latencia de red',
+      available: true,
+      average_latency_display: 'N/A',
+      fallbacks: ['mock', 'replay'],
     },
     {
-      id: 'typesafe',
-      name: 'TypeSafe AI / JEV-as-a-Judge',
-      role: 'System-2 Secundario (Escalación Semántica)',
-      model: 'typesafe-reasoning-v2',
-      latency: '75ms - 150ms',
-      status: 'Ready / Conectado',
-      calibration: '0.038 (Calibrado)',
-      agreementRate: '92.4%',
-      features: [
-        'Diagnóstico profundo de trayectorias divergentes',
-        'Cálculo de probabilidad de alucinación',
-        'Reconciliación de planes conflictivos',
-      ],
+      provider_id: 'typesafe',
+      name: 'TypeSafe AI (Legacy / KEV)',
+      model_id: 'typesafe-v1',
+      version: '0.7.0',
+      backend: 'api',
+      supported_backends: ['api'],
+      description: 'Adaptador de compatibilidad histórica y supervisión remota',
+      available: true,
+      average_latency_display: 'N/A',
+      fallbacks: ['mock', 'replay'],
+    },
+    {
+      provider_id: 'replay',
+      name: 'Replay Provider',
+      model_id: 'replay-v1',
+      version: '1.0.0',
+      backend: 'local',
+      supported_backends: ['local'],
+      description: 'Ejecución determinista para benchmarks científicos reproducibles',
+      available: true,
+      average_latency_display: 'N/A',
+      fallbacks: ['mock'],
+    },
+    {
+      provider_id: 'mock',
+      name: 'Mock Provider',
+      model_id: 'mock-v1',
+      version: '1.0.0',
+      backend: 'local',
+      supported_backends: ['local'],
+      description: 'Supervisor de tests unitarios y CI/CD',
+      available: true,
+      average_latency_display: 'N/A',
+      fallbacks: [],
     },
   ];
 
-  const inferenceEngines = [
-    {
-      id: 'ollama',
-      name: 'Ollama Inferencia Local',
-      type: 'Local Server',
-      endpoint: 'http://localhost:11434',
-      models: 'qwen2.5-coder:7b, llama3.1:8b, deepseek-r1',
-      status: 'Recomendado para desarrollo privado',
-      privacy: '100% Local (Zero data egress)',
-      icon: Server,
-    },
-    {
-      id: 'groq',
-      name: 'Groq Cloud Inference',
-      type: 'LPU Ultra-Fast Cloud',
-      endpoint: 'api.groq.com/openai/v1',
-      models: 'llama-3.3-70b-versatile, qwen-2.5-coder-32b',
-      status: 'Inferencia a >200 tokens/segundo',
-      privacy: 'Conexión SSL Encriptada',
-      icon: Cloud,
-    },
-    {
-      id: 'simulator',
-      name: 'Simulador Determinista PRAXEON',
-      type: 'Local Testbed Harness',
-      endpoint: 'En memoria (Runtime)',
-      models: 'deterministic-replay-v1',
-      status: '100% Reproducible para Tests CI/CD',
-      privacy: 'Completamente aislado',
-      icon: Cpu,
-    },
+  const inferenceEngines = dynamicProviders?.llm_providers || [
+    { provider_id: 'simulator', name: 'Simulador Determinista PRAXEON', default_model: 'deterministic-replay-v1', type: 'offline' },
+    { provider_id: 'ollama', name: 'Ollama Inferencia Local', default_model: 'qwen2.5-coder:7b', type: 'local' },
+    { provider_id: 'groq', name: 'Groq Cloud Inference', default_model: 'llama-3.3-70b-versatile', type: 'cloud' },
+    { provider_id: 'gemini', name: 'Google Gemini', default_model: 'gemini-1.5-flash', type: 'cloud' },
+    { provider_id: 'openai', name: 'OpenAI', default_model: 'gpt-4o-mini', type: 'cloud' },
+    { provider_id: 'openrouter', name: 'OpenRouter Cloud', default_model: 'anthropic/claude-3.5-sonnet', type: 'cloud' },
   ];
 
   return (
@@ -163,11 +169,11 @@ export default function ProvidersView() {
               <Cpu size={18} />
             </div>
             <h1 style={{ fontSize: '18px', fontWeight: '700', color: '#f8fafc', letterSpacing: '-0.01em' }}>
-              Proveedores Semánticos y Motores de Inferencia
+              Catálogo de Decision Providers y Motores de Inferencia
             </h1>
           </div>
           <p style={{ fontSize: '12px', color: '#73849c', marginTop: '6px' }}>
-            Supervisores cognitivos System-1 / System-2, calibración de confianza y adaptadores LLM soportados.
+            Telemetría real obtenida dinámicamente vía <code>GET /v1/providers</code> (PRAXEON 1.1 Decision Model Independence).
           </p>
         </div>
 
@@ -180,7 +186,7 @@ export default function ProvidersView() {
             style={{ padding: '8px 14px', fontSize: '12px' }}
           >
             <RefreshCw size={13} className={testingEndpoint ? 'spin' : ''} />
-            Probar Conectividad
+            Actualizar Telemetría Real
           </button>
         </div>
       </div>
@@ -215,16 +221,16 @@ export default function ProvidersView() {
         </div>
       )}
 
-      {/* Section 1: Cognitive Supervisors */}
+      {/* Section 1: Cognitive Decision Providers */}
       <div>
         <h2 style={{ fontSize: '14px', fontWeight: '700', color: '#f8fafc', marginBottom: '12px' }}>
-          1. Motores de Supervisión Cognitiva (Guardrails & Calibración)
+          1. Supervisores System-1 (Decision Providers Registrados)
         </h2>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(380px, 1fr))', gap: '16px' }}>
-          {supervisors.map((s) => (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '16px' }}>
+          {decisionProviders.map((s) => (
             <div
-              key={s.id}
+              key={s.provider_id}
               style={{
                 backgroundColor: '#121824',
                 borderRadius: '10px',
@@ -238,14 +244,14 @@ export default function ProvidersView() {
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <div>
                   <h3 style={{ fontSize: '14px', fontWeight: '700', color: '#f0f6fc' }}>
-                    {s.name}
+                    {s.name} {s.version ? `(v${s.version})` : ''}
                   </h3>
                   <span style={{ fontSize: '11.5px', color: '#8b949e' }}>
-                    {s.role}
+                    Modelo: <code>{s.model_id}</code> · Backend: <code>{s.backend}</code>
                   </span>
                 </div>
-                <span className="badge badge-success">
-                  {s.status}
+                <span className={`badge ${s.available ? 'badge-success' : 'badge-danger'}`}>
+                  {s.available ? 'Operativo' : 'No Instalado'}
                 </span>
               </div>
 
@@ -261,34 +267,30 @@ export default function ProvidersView() {
                 textAlign: 'center',
               }}>
                 <div>
-                  <span style={{ fontSize: '10px', color: '#73849c', display: 'block' }}>Latencia</span>
+                  <span style={{ fontSize: '10px', color: '#73849c', display: 'block' }}>Latencia Observada</span>
                   <span style={{ fontSize: '13px', fontWeight: '700', color: '#58a6ff', fontFamily: 'var(--font-mono)' }}>
-                    {s.latency}
+                    {s.average_latency_display || 'N/A'}
                   </span>
                 </div>
                 <div>
-                  <span style={{ fontSize: '10px', color: '#73849c', display: 'block' }}>Concordancia</span>
-                  <span style={{ fontSize: '13px', fontWeight: '700', color: '#3fb950', fontFamily: 'var(--font-mono)' }}>
-                    {s.agreementRate}
+                  <span style={{ fontSize: '10px', color: '#73849c', display: 'block' }}>Fallbacks</span>
+                  <span style={{ fontSize: '11px', fontWeight: '600', color: '#a78bfa' }}>
+                    {s.fallbacks && s.fallbacks.length > 0 ? s.fallbacks.join(', ') : 'Ninguno'}
                   </span>
                 </div>
                 <div>
-                  <span style={{ fontSize: '10px', color: '#73849c', display: 'block' }}>ECE Score</span>
-                  <span style={{ fontSize: '13px', fontWeight: '700', color: '#d29922', fontFamily: 'var(--font-mono)' }}>
-                    {s.calibration.split(' ')[0]}
+                  <span style={{ fontSize: '10px', color: '#73849c', display: 'block' }}>Backends</span>
+                  <span style={{ fontSize: '11px', fontWeight: '600', color: '#38bdf8' }}>
+                    {s.supported_backends && s.supported_backends.length > 0 ? s.supported_backends.join(', ') : s.backend}
                   </span>
                 </div>
               </div>
 
-              {/* Features list */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                {s.features.map((f, idx) => (
-                  <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: '#94a3b8' }}>
-                    <span style={{ color: '#3fb950' }}>✓</span>
-                    <span>{f}</span>
-                  </div>
-                ))}
-              </div>
+              {s.description && (
+                <p style={{ margin: 0, fontSize: '11.5px', color: '#94a3b8', lineHeight: '1.4' }}>
+                  {s.description}
+                </p>
+              )}
             </div>
           ))}
         </div>
@@ -301,75 +303,61 @@ export default function ProvidersView() {
         </h2>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '16px' }}>
-          {inferenceEngines.map((eng) => {
-            const Icon = eng.icon;
-            return (
-              <div
-                key={eng.id}
-                style={{
-                  backgroundColor: '#121824',
-                  borderRadius: '10px',
-                  border: '1px solid #1e293b',
-                  padding: '18px',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  justifyContent: 'space-between',
-                  gap: '14px',
-                }}
-              >
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
-                    <div style={{
-                      width: '34px',
-                      height: '34px',
-                      borderRadius: '8px',
-                      backgroundColor: '#1a2336',
-                      border: '1px solid #2a3c5a',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      color: '#58a6ff',
-                    }}>
-                      <Icon size={18} />
-                    </div>
-                    <div>
-                      <h3 style={{ fontSize: '13.5px', fontWeight: '700', color: '#f0f6fc' }}>
-                        {eng.name}
-                      </h3>
-                      <span style={{ fontSize: '11px', color: '#64748b' }}>
-                        {eng.type}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '11.5px' }}>
-                    <div style={{ color: '#94a3b8' }}>
-                      <strong style={{ color: '#cbd5e1' }}>Endpoint:</strong> {eng.endpoint}
-                    </div>
-                    <div style={{ color: '#94a3b8' }}>
-                      <strong style={{ color: '#cbd5e1' }}>Modelos:</strong> {eng.models}
-                    </div>
-                  </div>
-                </div>
-
+          {inferenceEngines.map((eng) => (
+            <div
+              key={eng.provider_id}
+              style={{
+                backgroundColor: '#121824',
+                borderRadius: '10px',
+                border: '1px solid #1e293b',
+                padding: '18px',
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'space-between',
+                gap: '14px',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <div style={{
-                  borderTop: '1px solid #1a2436',
-                  paddingTop: '10px',
+                  width: '34px',
+                  height: '34px',
+                  borderRadius: '8px',
+                  backgroundColor: '#1a2336',
+                  border: '1px solid #2a3c5a',
                   display: 'flex',
                   alignItems: 'center',
-                  justifyContent: 'space-between',
-                  fontSize: '11px',
+                  justifyContent: 'center',
+                  color: '#58a6ff',
                 }}>
-                  <span style={{ color: '#3fb950', fontWeight: '500' }}>
-                    ● {eng.privacy}
-                  </span>
-                  <span style={{ color: '#64748b' }}>
-                    {eng.status}
+                  {eng.type === 'local' ? <Server size={18} /> : eng.type === 'offline' ? <Cpu size={18} /> : <Cloud size={18} />}
+                </div>
+                <div>
+                  <h3 style={{ fontSize: '13.5px', fontWeight: '700', color: '#f0f6fc' }}>
+                    {eng.name}
+                  </h3>
+                  <span style={{ fontSize: '11px', color: '#64748b' }}>
+                    Default: <code>{eng.default_model}</code>
                   </span>
                 </div>
               </div>
-            );
-          })}
+
+              <div style={{
+                borderTop: '1px solid #1a2436',
+                paddingTop: '10px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                fontSize: '11px',
+              }}>
+                <span style={{ color: '#3fb950', fontWeight: '500' }}>
+                  ● Tipo: {eng.type ? eng.type.toUpperCase() : 'CLOUD'}
+                </span>
+                <span style={{ color: '#8b949e' }}>
+                  Provider ID: {eng.provider_id}
+                </span>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     </div>

@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
-import { Play, Pause, Square, Sparkles, Terminal, Cpu, Shield, RefreshCw, AlertTriangle } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Play, Pause, Square, Sparkles, Terminal, Cpu, Shield, RefreshCw, AlertTriangle, Activity, Settings2 } from 'lucide-react';
+import { fetchProviders } from '../services/api';
 
 export default function MissionLauncher({
   isRunning = false,
@@ -13,15 +14,102 @@ export default function MissionLauncher({
   const [goal, setGoal] = useState('Fix authentication bug in the API');
   const [executionMode, setExecutionMode] = useState('local_restricted');
   const [fullAccessConfirmed, setFullAccessConfirmed] = useState(false);
+
+  // LLM Generator state
   const [llmProvider, setLlmProvider] = useState('simulator');
-  const [supervisor, setSupervisor] = useState('laya');
-  const [maxSteps, setMaxSteps] = useState(25);
-  const [apiKey, setApiKey] = useState('');
+  const [llmModel, setLlmModel] = useState('');
   const [customModel, setCustomModel] = useState('');
+  const [apiKey, setApiKey] = useState('');
   const [baseUrl, setBaseUrl] = useState('');
+  const [llmFailurePolicy, setLlmFailurePolicy] = useState('synthetic_fallback');
+
+  // System-1 Decision Provider state
+  const [decisionProvider, setDecisionProvider] = useState('laya');
+  const [decisionBackend, setDecisionBackend] = useState('local');
+  const [decisionDevice, setDecisionDevice] = useState('auto');
+  const [decisionFallback, setDecisionFallback] = useState('mock');
+  const [customDecisionModel, setCustomDecisionModel] = useState('');
+
+  // General state
+  const [maxSteps, setMaxSteps] = useState(25);
   const [workspaceRoot, setWorkspaceRoot] = useState('');
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [isExpanded, setIsExpanded] = useState(true);
+
+  // Dynamic Providers Catalog loaded from GET /v1/providers
+  const [providersCatalog, setProvidersCatalog] = useState({
+    decision_providers: [
+      {
+        provider_id: 'laya',
+        name: 'LAYA System-1',
+        model_id: 'laya-v1',
+        version: '0.3.0',
+        backend: 'local',
+        available: true,
+        average_latency_display: 'N/A',
+        fallbacks: ['mock', 'replay'],
+      },
+      {
+        provider_id: 'typesafe',
+        name: 'TypeSafe AI (Legacy)',
+        model_id: 'typesafe-v1',
+        version: '0.7.0',
+        backend: 'api',
+        available: true,
+        average_latency_display: 'N/A',
+        fallbacks: ['mock', 'replay'],
+      },
+      {
+        provider_id: 'replay',
+        name: 'Replay Provider',
+        model_id: 'replay-v1',
+        version: '1.0.0',
+        backend: 'local',
+        available: true,
+        average_latency_display: 'N/A',
+        fallbacks: ['mock'],
+      },
+      {
+        provider_id: 'mock',
+        name: 'Mock Provider',
+        model_id: 'mock-v1',
+        version: '1.0.0',
+        backend: 'local',
+        available: true,
+        average_latency_display: 'N/A',
+        fallbacks: [],
+      },
+    ],
+    llm_providers: [
+      { provider_id: 'simulator', name: 'Simulated Agent (Offline)', default_model: 'simulator-agent' },
+      { provider_id: 'groq', name: 'Groq Cloud', default_model: 'llama-3.3-70b-versatile' },
+      { provider_id: 'ollama', name: 'Ollama Local', default_model: 'qwen2.5-coder:7b' },
+      { provider_id: 'gemini', name: 'Google Gemini', default_model: 'gemini-1.5-flash' },
+      { provider_id: 'openai', name: 'OpenAI', default_model: 'gpt-4o-mini' },
+      { provider_id: 'openrouter', name: 'OpenRouter', default_model: 'anthropic/claude-3.5-sonnet' },
+    ],
+  });
+
+  useEffect(() => {
+    let isMounted = true;
+    async function loadCatalog() {
+      try {
+        const resp = await fetchProviders();
+        if (isMounted && resp?.data) {
+          setProvidersCatalog({
+            decision_providers: resp.data.decision_providers || [],
+            llm_providers: resp.data.llm_providers || [],
+          });
+        }
+      } catch (e) {
+        console.warn('Could not load dynamic provider catalog:', e);
+      }
+    }
+    loadCatalog();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const presetGoals = [
     'Fix authentication bug in the API',
@@ -29,23 +117,42 @@ export default function MissionLauncher({
     'Inspeccionar contención de red y variables de entorno',
   ];
 
+  const selectedDecisionMeta =
+    providersCatalog.decision_providers.find((p) => p.provider_id === decisionProvider) || {};
+
   const handleSubmit = (e) => {
     e?.preventDefault();
     if (!goal.trim()) return;
-    if (executionMode === 'full_access' && !fullAccessConfirmed) {
-      alert('Debes confirmar que comprendes que el aislamiento de proceso del SO está deshabilitado para usar Full Access.');
+
+    const isFullAccess = executionMode.startsWith('full_access');
+    const isAutonomous = executionMode === 'full_access_autonomous';
+
+    if (isFullAccess && !fullAccessConfirmed) {
+      alert('Debes confirmar que comprendes que el aislamiento de procesos del SO está deshabilitado para usar Full Access.');
       return;
     }
+
     onStartMission?.({
       goal: goal.trim(),
       workspace_root: workspaceRoot.trim() || undefined,
-      execution_mode: executionMode,
+      execution_mode: isFullAccess ? 'full_access' : executionMode,
+      autonomous: isAutonomous,
+      allow_unattended_execution: isAutonomous,
+      confirmation_required_for_full_access: isFullAccess && !isAutonomous,
       llm_provider: llmProvider,
-      llm_model: customModel.trim() || undefined,
+      llm_model: customModel.trim() || llmModel || undefined,
       api_key: apiKey.trim() || undefined,
       base_url: baseUrl.trim() || undefined,
-      supervisor: supervisor,
+      decision_model: {
+        provider: decisionProvider,
+        model_id: customDecisionModel.trim() || selectedDecisionMeta.model_id || `${decisionProvider}-v1`,
+        backend: decisionBackend,
+        device: decisionDevice,
+        fallback_policy: decisionFallback,
+      },
+      supervisor: decisionProvider,
       max_steps: Number(maxSteps),
+      llm_failure_policy: llmFailurePolicy,
     });
   };
 
@@ -160,15 +267,19 @@ export default function MissionLauncher({
             </div>
           </div>
 
-          {/* Model and Supervisor Selectors */}
+          {/* Dual Desacoplado: LLM Generador + System-1 Supervisor Selectors */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-            {/* LLM Provider / Model */}
+            {/* 1. LLM Generator Provider */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <Cpu size={13} style={{ color: '#8b949e' }} />
-              <label style={{ fontSize: '11px', color: '#8b949e', fontWeight: '500' }}>Modelo LLM:</label>
+              <Cpu size={13} style={{ color: '#58a6ff' }} />
+              <label style={{ fontSize: '11px', color: '#8b949e', fontWeight: '500' }}>Generador LLM:</label>
               <select
                 value={llmProvider}
-                onChange={(e) => setLlmProvider(e.target.value)}
+                onChange={(e) => {
+                  setLlmProvider(e.target.value);
+                  const found = providersCatalog.llm_providers.find((l) => l.provider_id === e.target.value);
+                  if (found) setLlmModel(found.default_model);
+                }}
                 disabled={isRunning}
                 style={{
                   backgroundColor: '#0c0f14',
@@ -181,22 +292,25 @@ export default function MissionLauncher({
                   outline: 'none',
                 }}
               >
-                <option value="simulator">Simulated Agent (Offline)</option>
-                <option value="groq">Groq Cloud (llama-3.3-70b)</option>
-                <option value="ollama">Ollama Local (qwen2.5-coder)</option>
-                <option value="gemini">Google Gemini (gemini-1.5-flash)</option>
-                <option value="openai">OpenAI (gpt-4o-mini)</option>
-                <option value="openrouter">OpenRouter (claude-3.5-sonnet)</option>
+                {providersCatalog.llm_providers.map((lp) => (
+                  <option key={lp.provider_id} value={lp.provider_id}>
+                    {lp.name}
+                  </option>
+                ))}
               </select>
             </div>
 
-            {/* Supervisor Engine */}
+            {/* 2. System-1 Decision Provider (Supervisor) */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <Shield size={13} style={{ color: '#8b949e' }} />
-              <label style={{ fontSize: '11px', color: '#8b949e', fontWeight: '500' }}>Supervisión:</label>
+              <Shield size={13} style={{ color: '#c084fc' }} />
+              <label style={{ fontSize: '11px', color: '#8b949e', fontWeight: '500' }}>Supervisor System-1:</label>
               <select
-                value={supervisor}
-                onChange={(e) => setSupervisor(e.target.value)}
+                value={decisionProvider}
+                onChange={(e) => {
+                  setDecisionProvider(e.target.value);
+                  const p = providersCatalog.decision_providers.find((item) => item.provider_id === e.target.value);
+                  if (p?.backend) setDecisionBackend(p.backend);
+                }}
                 disabled={isRunning}
                 style={{
                   backgroundColor: '#0c0f14',
@@ -209,42 +323,85 @@ export default function MissionLauncher({
                   outline: 'none',
                 }}
               >
-                <option value="laya">LAYA System-1 (Semántico Rápido)</option>
-                <option value="typesafe">TypeSafe AI (Reglas Formales & AST)</option>
-                <option value="cascade">Cascade JEV (Dual LAYA + TypeSafe)</option>
+                {providersCatalog.decision_providers.map((dp) => (
+                  <option key={dp.provider_id} value={dp.provider_id}>
+                    {dp.name} {dp.version ? `(v${dp.version})` : ''}
+                  </option>
+                ))}
               </select>
+
+              {/* Observed Latency Badge (Real Telemetry / "N/A") */}
+              <span
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  fontSize: '10px',
+                  padding: '2px 6px',
+                  borderRadius: '4px',
+                  backgroundColor: 'rgba(192, 132, 252, 0.12)',
+                  color: '#c084fc',
+                  border: '1px solid rgba(192, 132, 252, 0.25)',
+                }}
+                title="Latencia media observada en evaluaciones reales (N/A si no se ha medido aún)"
+              >
+                <Activity size={10} />
+                <span>{selectedDecisionMeta.average_latency_display || 'N/A'}</span>
+              </span>
             </div>
 
-            {/* Execution Environment Selector */}
+            {/* 3. Execution Environment & Full Access Selector */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <Terminal size={13} style={{ color: executionMode === 'full_access' ? '#f87171' : '#8b949e' }} />
+              <Terminal
+                size={13}
+                style={{
+                  color:
+                    executionMode === 'full_access_autonomous'
+                      ? '#f87171'
+                      : executionMode === 'full_access_manual'
+                      ? '#fbbf24'
+                      : '#8b949e',
+                }}
+              />
               <label style={{ fontSize: '11px', color: '#8b949e', fontWeight: '500' }}>Entorno:</label>
               <select
                 value={executionMode}
                 onChange={(e) => {
                   setExecutionMode(e.target.value);
-                  if (e.target.value !== 'full_access') setFullAccessConfirmed(false);
+                  if (!e.target.value.startsWith('full_access')) setFullAccessConfirmed(false);
                 }}
                 disabled={isRunning}
                 style={{
                   backgroundColor: '#0c0f14',
-                  border: `1px solid ${executionMode === 'full_access' ? 'rgba(239, 68, 68, 0.5)' : '#202737'}`,
+                  border: `1px solid ${
+                    executionMode === 'full_access_autonomous'
+                      ? 'rgba(239, 68, 68, 0.5)'
+                      : executionMode === 'full_access_manual'
+                      ? 'rgba(245, 158, 11, 0.5)'
+                      : '#202737'
+                  }`,
                   borderRadius: '6px',
                   padding: '5px 8px',
-                  color: executionMode === 'full_access' ? '#f87171' : '#f0f6fc',
+                  color:
+                    executionMode === 'full_access_autonomous'
+                      ? '#f87171'
+                      : executionMode === 'full_access_manual'
+                      ? '#fbbf24'
+                      : '#f0f6fc',
                   fontSize: '11.5px',
                   cursor: 'pointer',
                   outline: 'none',
-                  fontWeight: executionMode === 'full_access' ? '600' : 'normal',
+                  fontWeight: executionMode.startsWith('full_access') ? '600' : 'normal',
                 }}
               >
                 <option value="local_restricted">Local Restricted Sandbox (Defecto)</option>
                 <option value="container">Container Sandbox (Docker)</option>
-                <option value="full_access">Full Access (Host Direct) ⚠</option>
+                <option value="full_access_manual">Full Access (Host Direct - MANUAL) ⚠</option>
+                <option value="full_access_autonomous">Full Access (Host Direct - AUTONOMOUS) ⚡</option>
               </select>
             </div>
 
-            {/* Steps limit */}
+            {/* 4. Steps limit */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <label style={{ fontSize: '11px', color: '#8b949e', fontWeight: '500' }}>Pasos:</label>
               <select
@@ -271,7 +428,7 @@ export default function MissionLauncher({
               </select>
             </div>
 
-            {/* Toggle Configuración Avanzada de LLM */}
+            {/* Advanced Settings Toggle */}
             <button
               type="button"
               onClick={() => setShowAdvanced(!showAdvanced)}
@@ -287,8 +444,8 @@ export default function MissionLauncher({
                 padding: '4px 6px',
               }}
             >
-              <span>⚙</span>
-              <span>{showAdvanced ? 'Ocultar ajustes LLM' : 'Ajustes LLM / API Key'}</span>
+              <Settings2 size={12} />
+              <span>{showAdvanced ? 'Ocultar ajustes avanzados' : 'Ajustes avanzados (Backend / Fallbacks)'}</span>
             </button>
 
             {/* Primary Action Button */}
@@ -296,15 +453,17 @@ export default function MissionLauncher({
               {!isRunning ? (
                 <button
                   type="submit"
-                  disabled={executionMode === 'full_access' && !fullAccessConfirmed}
+                  disabled={executionMode.startsWith('full_access') && !fullAccessConfirmed}
                   className="btn btn-primary"
                   style={{
                     padding: '6px 14px',
                     fontSize: '12px',
-                    backgroundColor: executionMode === 'full_access' && !fullAccessConfirmed ? '#3b1c1c' : '#202837',
-                    borderColor: executionMode === 'full_access' && !fullAccessConfirmed ? '#5c2222' : '#384558',
-                    cursor: executionMode === 'full_access' && !fullAccessConfirmed ? 'not-allowed' : 'pointer',
-                    opacity: executionMode === 'full_access' && !fullAccessConfirmed ? 0.6 : 1,
+                    backgroundColor:
+                      executionMode.startsWith('full_access') && !fullAccessConfirmed ? '#3b1c1c' : '#202837',
+                    borderColor:
+                      executionMode.startsWith('full_access') && !fullAccessConfirmed ? '#5c2222' : '#384558',
+                    cursor: executionMode.startsWith('full_access') && !fullAccessConfirmed ? 'not-allowed' : 'pointer',
+                    opacity: executionMode.startsWith('full_access') && !fullAccessConfirmed ? 0.6 : 1,
                   }}
                 >
                   <Play size={13} style={{ fill: '#f0f6fc' }} />
@@ -345,168 +504,267 @@ export default function MissionLauncher({
           </div>
 
           {/* Full Access Warning Banner & Confirmation */}
-          {executionMode === 'full_access' && (
-            <div style={{
-              backgroundColor: 'rgba(239, 68, 68, 0.08)',
-              border: '1px solid rgba(239, 68, 68, 0.35)',
-              borderRadius: '6px',
-              padding: '10px 14px',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '6px',
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#f87171', fontSize: '12px', fontWeight: '700' }}>
+          {executionMode.startsWith('full_access') && (
+            <div
+              style={{
+                backgroundColor:
+                  executionMode === 'full_access_autonomous'
+                    ? 'rgba(239, 68, 68, 0.09)'
+                    : 'rgba(245, 158, 11, 0.08)',
+                border: `1px solid ${
+                  executionMode === 'full_access_autonomous'
+                    ? 'rgba(239, 68, 68, 0.38)'
+                    : 'rgba(245, 158, 11, 0.35)'
+                }`,
+                borderRadius: '6px',
+                padding: '10px 14px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '6px',
+              }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  color: executionMode === 'full_access_autonomous' ? '#f87171' : '#fbbf24',
+                  fontSize: '12px',
+                  fontWeight: '700',
+                }}
+              >
                 <AlertTriangle size={15} />
-                <span>ADVERTENCIA DE SEGURIDAD: Ejecución Host Direct (Full Access)</span>
+                <span>
+                  ADVERTENCIA DE SEGURIDAD:{' '}
+                  {executionMode === 'full_access_autonomous'
+                    ? 'Ejecución Host Direct Autónomo (Sin confirmación por paso)'
+                    : 'Ejecución Host Direct Manual (Confirmación obligatoria por paso)'}
+                </span>
               </div>
               <p style={{ margin: 0, fontSize: '11px', color: '#cbd5e1', lineHeight: '1.45' }}>
-                En este modo, el agente opera directamente sobre el sistema operativo anfitrión sin aislamiento de proceso ni chroot. Aunque la cadena de custodia formal de PRAXEON supervisa cada acción con capabilities criptográficas, <strong>no existe contención de red ni de sistema de archivos</strong>.
+                En este modo el agente opera directamente sobre el sistema operativo anfitrión sin contenedor ni chroot.
+                {executionMode === 'full_access_autonomous' ? (
+                  <span>
+                    {' '}
+                    El modo <strong>AUTÓNOMO</strong> ejecutará acciones aprobadas por política sin solicitar confirmación humana interactiva.
+                  </span>
+                ) : (
+                  <span>
+                    {' '}
+                    El modo <strong>MANUAL</strong> detendrá toda acción en estado REVIEW para requerir la aprobación criptográfica de un operador.
+                  </span>
+                )}
               </p>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '11.5px', color: '#fca5a5', cursor: 'pointer', marginTop: '4px' }}>
+              <label
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  fontSize: '11.5px',
+                  color: executionMode === 'full_access_autonomous' ? '#fca5a5' : '#fde68a',
+                  cursor: 'pointer',
+                  marginTop: '4px',
+                }}
+              >
                 <input
                   type="checkbox"
                   checked={fullAccessConfirmed}
                   onChange={(e) => setFullAccessConfirmed(e.target.checked)}
                   style={{ cursor: 'pointer', width: '14px', height: '14px' }}
                 />
-                <span style={{ fontWeight: '600' }}>Entiendo y acepto que el aislamiento de procesos del SO está deshabilitado.</span>
+                <span style={{ fontWeight: '600' }}>
+                  Entiendo y autorizo la ejecución directa sobre el sistema operativo anfitrión.
+                </span>
               </label>
             </div>
           )}
 
-          {/* Provider Info Banner & Advanced Config */}
-          <div
-            style={{
-              padding: '6px 10px',
-              borderRadius: '6px',
-              backgroundColor: '#121620',
-              border: '1px solid #1a2232',
-              fontSize: '11px',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '8px',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <span style={{ color: '#8b949e' }}>
-                {llmProvider === 'simulator' && '⚡ Modo Simulado Dinámico: Genera pasos y decisiones coherentes adaptadas estrictamente a tu prompt.'}
-                {llmProvider === 'ollama' && '🦙 Ollama Local: Ejecuta llamadas LLM reales offline hacia tu servidor local.'}
-                {llmProvider === 'groq' && '⚡ Groq Cloud: Ejecuta llamadas LLM reales de alta velocidad (usa GROQ_API_KEY o introduce tu clave abajo).'}
-                {llmProvider === 'openai' && '🧠 OpenAI Oficial: Ejecuta llamadas LLM reales a la API de OpenAI (usa OPENAI_API_KEY o introduce clave).'}
-                {llmProvider === 'gemini' && '✨ Google Gemini: Ejecuta llamadas LLM reales a la API de Gemini (usa GEMINI_API_KEY o introduce clave).'}
-                {llmProvider === 'openrouter' && '🌐 OpenRouter: Catálogo multimodelo con inferencia en la nube (usa OPENROUTER_API_KEY o introduce clave).'}
-              </span>
-            </div>
-
-            {showAdvanced && (
-              <div
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-                  gap: '8px',
-                  paddingTop: '6px',
-                  borderTop: '1px solid #1c2436',
-                }}
-              >
-                {llmProvider !== 'simulator' && llmProvider !== 'ollama' && (
-                  <div>
-                    <label style={{ display: 'block', fontSize: '10.5px', color: '#8b949e', marginBottom: '3px' }}>
-                      API Key {llmProvider.toUpperCase()}:
-                    </label>
-                    <input
-                      type="password"
-                      value={apiKey}
-                      onChange={(e) => setApiKey(e.target.value)}
-                      placeholder="sk-... (o dejar en blanco para usar .env)"
-                      style={{
-                        width: '100%',
-                        backgroundColor: '#0c0f14',
-                        border: '1px solid #202737',
-                        borderRadius: '4px',
-                        padding: '4px 8px',
-                        color: '#f0f6fc',
-                        fontSize: '11px',
-                        outline: 'none',
-                      }}
-                    />
-                  </div>
-                )}
-
-                <div>
-                  <label style={{ display: 'block', fontSize: '10.5px', color: '#8b949e', marginBottom: '3px' }}>
-                    Modelo Específico (opcional):
-                  </label>
-                  <input
-                    type="text"
-                    value={customModel}
-                    onChange={(e) => setCustomModel(e.target.value)}
-                    placeholder={
-                      llmProvider === 'groq' ? 'llama-3.3-70b-versatile' :
-                      llmProvider === 'ollama' ? 'qwen2.5-coder:7b' :
-                      llmProvider === 'gemini' ? 'gemini-1.5-flash' :
-                      llmProvider === 'openai' ? 'gpt-4o-mini' : 'modelo personalizado'
-                    }
-                    style={{
-                      width: '100%',
-                      backgroundColor: '#0c0f14',
-                      border: '1px solid #202737',
-                      borderRadius: '4px',
-                      padding: '4px 8px',
-                      color: '#f0f6fc',
-                      fontSize: '11px',
-                      outline: 'none',
-                    }}
-                  />
-                </div>
-
-                {llmProvider === 'ollama' && (
-                  <div>
-                    <label style={{ display: 'block', fontSize: '10.5px', color: '#8b949e', marginBottom: '3px' }}>
-                      URL Base de Ollama:
-                    </label>
-                    <input
-                      type="text"
-                      value={baseUrl}
-                      onChange={(e) => setBaseUrl(e.target.value)}
-                      placeholder="http://localhost:11434"
-                      style={{
-                        width: '100%',
-                        backgroundColor: '#0c0f14',
-                        border: '1px solid #202737',
-                        borderRadius: '4px',
-                        padding: '4px 8px',
-                        color: '#f0f6fc',
-                        fontSize: '11px',
-                        outline: 'none',
-                      }}
-                    />
-                  </div>
-                )}
-
-                <div>
-                  <label style={{ display: 'block', fontSize: '10.5px', color: '#8b949e', marginBottom: '3px' }}>
-                    Workspace Root (opcional):
-                  </label>
-                  <input
-                    type="text"
-                    value={workspaceRoot}
-                    onChange={(e) => setWorkspaceRoot(e.target.value)}
-                    placeholder="Directorio de trabajo (ej. ./ o C:/path)"
-                    style={{
-                      width: '100%',
-                      backgroundColor: '#0c0f14',
-                      border: '1px solid #202737',
-                      borderRadius: '4px',
-                      padding: '4px 8px',
-                      color: '#f0f6fc',
-                      fontSize: '11px',
-                      outline: 'none',
-                    }}
-                  />
-                </div>
+          {/* Advanced Configuration Panel: System-1 Details & LLM Endpoints */}
+          {showAdvanced && (
+            <div
+              style={{
+                padding: '10px 14px',
+                borderRadius: '6px',
+                backgroundColor: '#121620',
+                border: '1px solid #1a2232',
+                fontSize: '11px',
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+                gap: '12px',
+              }}
+            >
+              {/* System-1 Backend */}
+              <div>
+                <label style={{ display: 'block', fontSize: '10.5px', color: '#8b949e', marginBottom: '3px' }}>
+                  Backend System-1 ({decisionProvider.toUpperCase()}):
+                </label>
+                <select
+                  value={decisionBackend}
+                  onChange={(e) => setDecisionBackend(e.target.value)}
+                  style={{
+                    width: '100%',
+                    backgroundColor: '#0c0f14',
+                    border: '1px solid #202737',
+                    borderRadius: '4px',
+                    padding: '4px 8px',
+                    color: '#f0f6fc',
+                    fontSize: '11px',
+                    outline: 'none',
+                  }}
+                >
+                  <option value="local">Local (In-Process / CPU / ONNX)</option>
+                  <option value="api">API Remota / HTTP Supervisor</option>
+                </select>
               </div>
-            )}
-          </div>
+
+              {/* System-1 Device */}
+              <div>
+                <label style={{ display: 'block', fontSize: '10.5px', color: '#8b949e', marginBottom: '3px' }}>
+                  Dispositivo de Inferencia System-1:
+                </label>
+                <select
+                  value={decisionDevice}
+                  onChange={(e) => setDecisionDevice(e.target.value)}
+                  style={{
+                    width: '100%',
+                    backgroundColor: '#0c0f14',
+                    border: '1px solid #202737',
+                    borderRadius: '4px',
+                    padding: '4px 8px',
+                    color: '#f0f6fc',
+                    fontSize: '11px',
+                    outline: 'none',
+                  }}
+                >
+                  <option value="auto">Auto (Detección Óptima)</option>
+                  <option value="cpu">CPU (Aislado)</option>
+                  <option value="cuda">CUDA / GPU Acelerado</option>
+                </select>
+              </div>
+
+              {/* System-1 Fallback Policy */}
+              <div>
+                <label style={{ display: 'block', fontSize: '10.5px', color: '#8b949e', marginBottom: '3px' }}>
+                  Política de Fallback de Decisión:
+                </label>
+                <select
+                  value={decisionFallback}
+                  onChange={(e) => setDecisionFallback(e.target.value)}
+                  style={{
+                    width: '100%',
+                    backgroundColor: '#0c0f14',
+                    border: '1px solid #202737',
+                    borderRadius: '4px',
+                    padding: '4px 8px',
+                    color: '#f0f6fc',
+                    fontSize: '11px',
+                    outline: 'none',
+                  }}
+                >
+                  <option value="mock">Fallback a Mock (Seguro)</option>
+                  <option value="replay">Fallback a Replay (Determinista)</option>
+                  <option value="none">Sin Fallback (Fail-Closed Estricto)</option>
+                </select>
+              </div>
+
+              {/* LLM Failure Policy */}
+              <div>
+                <label style={{ display: 'block', fontSize: '10.5px', color: '#8b949e', marginBottom: '3px' }}>
+                  Política ante Fallo del LLM:
+                </label>
+                <select
+                  value={llmFailurePolicy}
+                  onChange={(e) => setLlmFailurePolicy(e.target.value)}
+                  style={{
+                    width: '100%',
+                    backgroundColor: '#0c0f14',
+                    border: '1px solid #202737',
+                    borderRadius: '4px',
+                    padding: '4px 8px',
+                    color: '#f0f6fc',
+                    fontSize: '11px',
+                    outline: 'none',
+                  }}
+                >
+                  <option value="synthetic_fallback">Synthetic Fallback (Planificador Sintético ⚠)</option>
+                  <option value="fail_closed">Fail-Closed (Detener Misión Inmediatamente)</option>
+                </select>
+              </div>
+
+              {/* LLM API Key */}
+              {llmProvider !== 'simulator' && llmProvider !== 'ollama' && (
+                <div>
+                  <label style={{ display: 'block', fontSize: '10.5px', color: '#8b949e', marginBottom: '3px' }}>
+                    API Key {llmProvider.toUpperCase()}:
+                  </label>
+                  <input
+                    type="password"
+                    value={apiKey}
+                    onChange={(e) => setApiKey(e.target.value)}
+                    placeholder="sk-... (o dejar en blanco para usar .env)"
+                    style={{
+                      width: '100%',
+                      backgroundColor: '#0c0f14',
+                      border: '1px solid #202737',
+                      borderRadius: '4px',
+                      padding: '4px 8px',
+                      color: '#f0f6fc',
+                      fontSize: '11px',
+                      outline: 'none',
+                    }}
+                  />
+                </div>
+              )}
+
+              {/* Base URL */}
+              {llmProvider === 'ollama' && (
+                <div>
+                  <label style={{ display: 'block', fontSize: '10.5px', color: '#8b949e', marginBottom: '3px' }}>
+                    URL Base de Ollama:
+                  </label>
+                  <input
+                    type="text"
+                    value={baseUrl}
+                    onChange={(e) => setBaseUrl(e.target.value)}
+                    placeholder="http://localhost:11434"
+                    style={{
+                      width: '100%',
+                      backgroundColor: '#0c0f14',
+                      border: '1px solid #202737',
+                      borderRadius: '4px',
+                      padding: '4px 8px',
+                      color: '#f0f6fc',
+                      fontSize: '11px',
+                      outline: 'none',
+                    }}
+                  />
+                </div>
+              )}
+
+              {/* Workspace Root */}
+              <div>
+                <label style={{ display: 'block', fontSize: '10.5px', color: '#8b949e', marginBottom: '3px' }}>
+                  Workspace Root (Directorio de Trabajo):
+                </label>
+                <input
+                  type="text"
+                  value={workspaceRoot}
+                  onChange={(e) => setWorkspaceRoot(e.target.value)}
+                  placeholder="Directorio local (ej. ./ o C:/path)"
+                  style={{
+                    width: '100%',
+                    backgroundColor: '#0c0f14',
+                    border: '1px solid #202737',
+                    borderRadius: '4px',
+                    padding: '4px 8px',
+                    color: '#f0f6fc',
+                    fontSize: '11px',
+                    outline: 'none',
+                  }}
+                />
+              </div>
+            </div>
+          )}
         </form>
       )}
     </div>

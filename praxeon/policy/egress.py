@@ -11,6 +11,7 @@ from enum import Enum
 import ipaddress
 import re
 from typing import List, Optional, Set, Tuple
+from urllib.parse import urlparse
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -154,3 +155,115 @@ class EgressPolicy(BaseModel):
                 pass
 
         return True, None
+
+
+CANONICAL_PROVIDER_HOSTS: Set[str] = {
+    "api.groq.com",
+    "generativelanguage.googleapis.com",
+    "api.openai.com",
+    "openrouter.ai",
+    "api.anthropic.com",
+    "api.deepseek.com",
+    "api.typesafe.ai",
+    "huggingface.co",
+}
+
+
+class SSRFProtectionViolation(ValueError):
+    """Excepción lanzada cuando una URL de endpoint remoto viola las políticas perimetrales anti-SSRF."""
+    pass
+
+
+def validate_provider_endpoint(
+    url: Optional[str],
+    allow_custom: bool = False,
+    profile: str = "dev",
+    allowed_hosts: Optional[Set[str]] = None,
+) -> Optional[str]:
+    """Valida y filtra exhaustivamente una URL de endpoint remoto contra ataques SSRF (SEC-01).
+
+    Garantiza:
+    1. Esquema seguro: https:// obligatorio en perfil 'production'; http/https en perfiles de desarrollo.
+    2. Prohibición de credenciales en URL (user:pass@host).
+    3. Bloqueo estricto de metadatos cloud (169.254.169.254, metadata.google.internal).
+    4. Bloqueo de loopback e IPs privadas en producción.
+    5. Política segura allow_custom_endpoints: Si allow_custom=False, exige que el host resida en la allowlist canónica.
+
+    Retorna la URL normalizada o None si la entrada era None.
+    Lanza SSRFProtectionViolation ante cualquier incumplimiento.
+    """
+    if url is None:
+        return None
+
+    raw_url = str(url).strip()
+    if not raw_url:
+        return None
+
+    parsed = urlparse(raw_url)
+    scheme = (parsed.scheme or "").lower().strip()
+
+    if scheme not in ("http", "https"):
+        raise SSRFProtectionViolation(
+            f"Esquema de URL no permitido: '{parsed.scheme}'. Solo se admiten protocolos seguros 'https' y 'http'."
+        )
+
+    norm_profile = (profile or "dev").lower().strip()
+    if norm_profile == "production" and scheme != "https":
+        raise SSRFProtectionViolation(
+            f"El perfil de seguridad 'production' exige estrictamente el esquema 'https://'. Se recibió '{scheme}://'."
+        )
+
+    if parsed.username or parsed.password:
+        raise SSRFProtectionViolation(
+            "URLs con credenciales embebidas (user:pass@host) están estrictamente prohibidas por política de seguridad."
+        )
+
+    hostname = (parsed.hostname or "").lower().strip()
+    if not hostname:
+        raise SSRFProtectionViolation("La URL especificada no contiene un hostname o dominio válido.")
+
+    # 1. Bloqueo estricto de endpoints de metadatos cloud (AWS / GCP / Azure)
+    cloud_metadata_hosts = {"169.254.169.254", "metadata.google.internal"}
+    if hostname in cloud_metadata_hosts or hostname.startswith("169.254."):
+        raise SSRFProtectionViolation(
+            f"Intento de acceso a endpoint de metadatos cloud bloqueado por protección anti-SSRF: '{hostname}'."
+        )
+
+    # 2. Evaluación de direcciones de bucle local e IPs privadas
+    is_loopback = hostname in {"localhost", "localhost.localdomain", "127.0.0.1", "::1", "0.0.0.0"}
+    is_private = False
+    try:
+        ip_obj = ipaddress.ip_address(hostname)
+        is_loopback = is_loopback or ip_obj.is_loopback or ip_obj.is_unspecified
+        is_private = ip_obj.is_private or ip_obj.is_reserved or ip_obj.is_link_local
+    except ValueError:
+        pass
+
+    # En producción, loopback y redes privadas están terminantemente bloqueadas
+    if norm_profile == "production":
+        if is_loopback:
+            raise SSRFProtectionViolation(
+                f"Acceso a interfaces locales o loopback ('{hostname}') bloqueado por perfil de seguridad 'production'."
+            )
+        if is_private:
+            raise SSRFProtectionViolation(
+                f"Acceso a subredes privadas RFC 1918 / locales ('{hostname}') bloqueado en perfil de seguridad 'production'."
+            )
+
+    # 3. Control de endpoints personalizados vs lista blanca canónica
+    effective_allowed = set(h.lower() for h in CANONICAL_PROVIDER_HOSTS)
+    if allowed_hosts:
+        effective_allowed.update(h.lower() for h in allowed_hosts)
+
+    # En dev/test, Ollama local en localhost/127.0.0.1 está permitido si se utiliza
+    if norm_profile in ("dev", "test") and is_loopback:
+        effective_allowed.update({"localhost", "127.0.0.1", "::1"})
+
+    if not allow_custom and hostname not in effective_allowed:
+        raise SSRFProtectionViolation(
+            f"Endpoints personalizados deshabilitados por defecto (allow_custom_endpoints=False). "
+            f"El host '{hostname}' no pertenece a la lista blanca autorizada de proveedores reconocidos: "
+            f"{sorted(list(CANONICAL_PROVIDER_HOSTS))}."
+        )
+
+    return raw_url

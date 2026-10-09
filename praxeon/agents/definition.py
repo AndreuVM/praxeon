@@ -15,6 +15,7 @@ import json
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, ConfigDict, Field, computed_field
 
+from praxeon.domain.decision_provider import DecisionModelConfig
 from praxeon.domain.models import RiskLevel
 
 
@@ -76,6 +77,10 @@ class AgentDefinition(BaseModel):
     skills: List[str] = Field(default_factory=list, description="Catálogo de habilidades especializadas")
     risk_profile: RiskProfile = Field(default_factory=RiskProfile)
     context_policy: AgentContextPolicy = Field(default_factory=AgentContextPolicy)
+    decision_model: Optional[DecisionModelConfig] = Field(
+        default=None,
+        description="Configuración tipada del modelo System-1 preferido para supervisar este agente",
+    )
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     metadata: Dict[str, Any] = Field(default_factory=dict)
@@ -90,15 +95,21 @@ class AgentDefinition(BaseModel):
             "role": self.role,
             "system_prompt": self.system_prompt.strip(),
             "version": self.version,
-            "model": self.model.model_dump(),
+            "model": self.model.model_dump(mode="json"),
+            "decision_model": self.decision_model.model_dump(mode="json") if self.decision_model else None,
             "allowed_tools": sorted(self.allowed_tools),
             "forbidden_tools": sorted(self.forbidden_tools),
             "capabilities": sorted(self.capabilities),
             "skills": sorted(self.skills),
-            "risk_profile": self.risk_profile.model_dump(),
-            "context_policy": self.context_policy.model_dump(),
+            "risk_profile": self.risk_profile.model_dump(mode="json"),
+            "context_policy": self.context_policy.model_dump(mode="json"),
         }
-        encoded = json.dumps(canonical_payload, sort_keys=True, ensure_ascii=True).encode("utf-8")
+        encoded = json.dumps(
+            canonical_payload,
+            sort_keys=True,
+            ensure_ascii=True,
+            default=lambda o: sorted(list(o)) if isinstance(o, (set, frozenset)) else str(o),
+        ).encode("utf-8")
         return hashlib.sha256(encoded).hexdigest()[:16]
 
     def is_tool_allowed(self, tool_name: str) -> bool:

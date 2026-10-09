@@ -1,0 +1,113 @@
+{
+  "5_steps": {
+    "baseline": {
+      "num_steps": 5,
+      "enable_caching": false,
+      "total_tokens": 1366,
+      "avg_tokens_per_step": 273.2,
+      "avg_latency_ms": 0.116,
+      "cache_hits": 0,
+      "hit_rate": 0.0,
+      "manager_metrics": {}
+    },
+    "cached": {
+      "num_steps": 5,
+      "enable_caching": true,
+      "total_tokens": 1666,
+      "avg_tokens_per_step": 333.2,
+      "avg_latency_ms": 0.356,
+      "cache_hits": 0,
+      "hit_rate": 0.0,
+      "manager_metrics": {
+        "context_builds_total": 5,
+        "context_cache_hits_total": 0,
+        "context_cache_misses_total": 5,
+        "context_cache_hit_rate": 0.0,
+        "context_invalidations_total": 0,
+        "context_tokens_before": 1417,
+        "context_tokens_after": 1417,
+        "context_tokens_saved": 0,
+        "context_reduction_ratio": 0.0,
+        "context_fragments_reused": 0,
+        "context_build_latency_ms": 0.323,
+        "cache_entries": 5
+      }
+    },
+    "tokens_saved": 0,
+    "context_reduction_ratio": 0.0
+  },
+  "15_steps": {
+    "baseline": {
+      "num_steps": 15,
+      "enable_caching": false,
+      "total_tokens": 9270,
+      "avg_tokens_per_step": 618.0,
+      "avg_latency_ms": 0.104,
+      "cache_hits": 0,
+      "hit_rate": 0.0,
+      "manager_metrics": {}
+    },
+    "cached": {
+      "num_steps": 15,
+      "enable_caching": true,
+      "total_tokens": 10974,
+      "avg_tokens_per_step": 731.6,
+      "avg_latency_ms": 0.508,
+      "cache_hits": 0,
+      "hit_rate": 0.0,
+      "manager_metrics": {
+        "context_builds_total": 15,
+        "context_cache_hits_total": 0,
+        "context_cache_misses_total": 15,
+        "context_cache_hit_rate": 0.0,
+        "context_invalidations_total": 0,
+        "context_tokens_before": 10085,
+        "context_tokens_after": 10085,
+        "context_tokens_saved": 0,
+        "context_reduction_ratio": 0.0,
+        "context_fragments_reused": 0,
+        "context_build_latency_ms": 0.473,
+        "cache_entries": 15
+      }
+    },
+    "tokens_saved": 0,
+    "context_reduction_ratio": 0.0
+  },
+  "30_steps": {
+    "baseline": {
+      "num_steps": 30,
+      "enable_caching": false,
+      "total_tokens": 23078,
+      "avg_tokens_per_step": 769.3,
+      "avg_latency_ms": 0.132,
+      "cache_hits": 0,
+      "hit_rate": 0.0,
+      "manager_metrics": {}
+    },
+    "cached": {
+      "num_steps": 30,
+      "enable_caching": true,
+      "total_tokens": 27270,
+      "avg_tokens_per_step": 909.0,
+      "avg_latency_ms": 0.55,
+      "cache_hits": 0,
+      "hit_rate": 0.0,
+      "manager_metrics": {
+        "context_builds_total": 30,
+        "context_cache_hits_total": 0,
+        "context_cache_misses_total": 30,
+        "context_cache_hit_rate": 0.0,
+        "context_invalidations_total": 0,
+        "context_tokens_before": 25385,
+        "context_tokens_after": 25385,
+        "context_tokens_saved": 0,
+        "context_reduction_ratio": 0.0,
+        "context_fragments_reused": 0,
+        "context_build_latency_ms": 0.508,
+        "cache_entries": 30
+      }
+    },
+    "tokens_saved": 0,
+    "context_reduction_ratio": 0.0
+  }
+}

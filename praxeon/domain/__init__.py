@@ -41,6 +41,13 @@ from praxeon.domain.interfaces import (
     ReasoningProvider,
     StateStore,
 )
+from praxeon.domain.decision_provider import (
+    DecisionModelConfig,
+    DecisionProvider,
+    DecisionProviderError,
+    DecisionProviderMetadata,
+    DecisionProviderUnavailableError,
+)
 from praxeon.domain.observation import Observation, ToolObservation
 from praxeon.domain.state import StateSnapshot, StateStepRecord, TrajectoryState
 
@@ -71,6 +78,11 @@ __all__ = [
     "StateSnapshot",
     "StateStepRecord",
     "TrajectoryState",
+    "DecisionProvider",
+    "DecisionModelConfig",
+    "DecisionProviderMetadata",
+    "DecisionProviderError",
+    "DecisionProviderUnavailableError",
     "ReasoningProvider",
     "Executor",
     "EvidenceStore",

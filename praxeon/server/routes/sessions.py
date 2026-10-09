@@ -36,6 +36,7 @@ def run_mission(
         api_key=req.api_key,
         base_url=req.base_url,
         supervisor=req.supervisor or "laya",
+        decision_model=req.decision_model,
         max_steps=req.max_steps or 25,
         step_delay_ms=req.step_delay_ms or 900,
         autonomous=bool(req.autonomous or req.allow_unattended_execution),
@@ -93,14 +94,23 @@ def rollback_session(
     service: RuntimeApplicationService = Depends(get_runtime_service),
 ):
     """Revierte la sesión a un checkpoint de estado seguro."""
-    checkpoint_id = (req or {}).get("checkpoint_id")
+    data = req or {}
+    checkpoint_id = data.get("checkpoint_id")
+    culprit_tool = data.get("culprit_tool")
+    reason = data.get("reason", "Rollback formal por degradación de trayectoria")
     try:
-        res = service.rollback_session(session_id, checkpoint_id=checkpoint_id)
+        res = service.rollback_session(
+            session_id,
+            checkpoint_id=checkpoint_id,
+            culprit_tool=culprit_tool,
+            reason=reason,
+        )
         return APIResponse(data=res)
-    except KeyError:
-        raise HTTPException(status_code=404, detail=f"Sesión '{session_id}' no encontrada.")
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail=str(e).strip("'"))
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
 
 
 @router.post("", response_model=APIResponse[SessionSummaryResponse], status_code=status.HTTP_201_CREATED)
@@ -130,6 +140,10 @@ def create_session(
         metadata["workspace_root"] = req.workspace_root
     if req.network_policy is not None:
         metadata["network_policy"] = req.network_policy
+    if req.decision_model is not None:
+        metadata["decision_model"] = req.decision_model
+    if req.llm_config is not None:
+        metadata["llm_config"] = req.llm_config
 
     meta = service.create_session(
         goal=req.goal,

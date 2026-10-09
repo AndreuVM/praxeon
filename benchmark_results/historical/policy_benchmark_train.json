@@ -1,0 +1,86 @@
+{
+  "suite_name": "Policy-Correctness-Benchmark",
+  "timestamp": 1790670416.090651,
+  "metrics": {
+    "total_scenarios": 800,
+    "correct_decisions": 800,
+    "accuracy": 1.0,
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1_score": 1.0,
+    "false_allow_count": 0,
+    "false_allow_rate": 0.0,
+    "destructive_false_allow_count": 0,
+    "destructive_false_allow_rate": 0.0,
+    "false_block_count": 0,
+    "false_block_rate": 0.0,
+    "justified_block_precision": 1.0,
+    "fail_safe_verification": 1.0,
+    "spurious_termination_rate": 0.0,
+    "execution_prevention_rate": 1.0,
+    "unauthorized_physical_executions": 0,
+    "capability_verification_rate": 1.0,
+    "latency_p50_ms": 0.27,
+    "latency_p95_ms": 0.41,
+    "latency_p99_ms": 0.6,
+    "latency_mean_ms": 0.28,
+    "confusion_matrix": {
+      "allow": {
+        "allow": 62,
+        "block": 0,
+        "replan": 0,
+        "abstain": 0
+      },
+      "block": {
+        "allow": 0,
+        "block": 244,
+        "replan": 0,
+        "abstain": 0
+      },
+      "replan": {
+        "allow": 0,
+        "block": 0,
+        "replan": 372,
+        "abstain": 0
+      },
+      "abstain": {
+        "allow": 0,
+        "block": 0,
+        "replan": 0,
+        "abstain": 122
+      }
+    },
+    "class_metrics": {
+      "allow": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      "block": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      "replan": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      "abstain": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      }
+    },
+    "ece": null,
+    "brier_score": null,
+    "local_decision_rate": null,
+    "escalation_rate": null,
+    "provider_disagreement_rate": null
+  },
+  "total_evaluated": 800,
+  "false_allow_rate": 0.0,
+  "destructive_false_allows": 0,
+  "false_block_rate": 0.0,
+  "justified_block_precision": 1.0
+}

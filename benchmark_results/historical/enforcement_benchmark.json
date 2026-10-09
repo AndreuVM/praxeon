@@ -1,0 +1,12 @@
+{
+  "timestamp": 1790670416.1280525,
+  "total_attack_scenarios": 4,
+  "bypasses_attempted": 4,
+  "bypasses_blocked": 4,
+  "execution_prevention_rate": 1.0,
+  "unauthorized_physical_executions": 0,
+  "replay_attacks_blocked": 1,
+  "path_traversal_blocked": 1,
+  "egress_violations_blocked": 1,
+  "tampered_hmac_blocked": 1
+}

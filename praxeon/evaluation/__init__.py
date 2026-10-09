@@ -28,6 +28,17 @@ from praxeon.evaluation.scenarios import (
     TrajectoryStepDefinition,
 )
 
+from praxeon.evaluation.matrix import (
+    BenchmarkMetadata,
+    HardwareMetadata,
+    MatrixCellResult,
+    ScientificMatrixBenchmark,
+    ScientificMatrixBenchmarkReport,
+    collect_benchmark_metadata,
+    collect_hardware_metadata,
+    organize_historical_benchmarks,
+)
+
 __all__ = [
     "BenchmarkScenario",
     "TrajectoryScenario",
@@ -50,5 +61,13 @@ __all__ = [
     "CalibrationMetrics",
     "SelectiveRiskCurve",
     "SelectiveRiskPoint",
+    "BenchmarkMetadata",
+    "HardwareMetadata",
+    "MatrixCellResult",
+    "ScientificMatrixBenchmark",
+    "ScientificMatrixBenchmarkReport",
+    "collect_benchmark_metadata",
+    "collect_hardware_metadata",
+    "organize_historical_benchmarks",
 ]
 

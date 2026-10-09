@@ -13,7 +13,6 @@ dependencies = [
     "python-dotenv>=1.2.3",
     "pyyaml>=6.0",
     "rich>=15.0.0",
-    "typesafe-sdk>=0.7.0",
     "uvicorn>=0.30.0",
     "websockets>=12.0",
 ]
@@ -36,8 +35,21 @@ server = [
     "uvicorn>=0.30.0",
     "websockets>=12.0",
 ]
+decision-laya = [
+    "laya>=0.3.0",
+]
+decision-typesafe = [
+    "typesafe-sdk>=0.7.0",
+]
+decision-all = [
+    "laya>=0.3.0",
+    "typesafe-sdk>=0.7.0",
+]
 laya = [
     "laya>=0.3.0",
+]
+typesafe = [
+    "typesafe-sdk>=0.7.0",
 ]
 
 [project.scripts]

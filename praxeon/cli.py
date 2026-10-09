@@ -261,6 +261,8 @@ def run_benchmark_cli(
     ablation: bool = False,
     compare_v1: bool = False,
     compare_providers: bool = False,
+    matrix: bool = False,
+    archive_historical: bool = False,
     provider_name: str = "replay",
     count: Optional[int] = None,
     output_file: Optional[str] = None,
@@ -272,6 +274,54 @@ def run_benchmark_cli(
     from praxeon.providers.replay import ReplayProvider
     from praxeon.providers.laya import LayaProvider
     from praxeon.providers.typesafe import TypeSafeAdapter
+
+    if archive_historical:
+        from praxeon.evaluation.matrix import organize_historical_benchmarks
+        archived = organize_historical_benchmarks(output_file or "benchmark_results")
+        console.print(f"[bold green]Archivado histórico completado:[/] {len(archived)} ejecuciones organizadas en 'benchmark_results/historical'.")
+        if not matrix and not ablation and not compare_v1 and not compare_providers:
+            return
+
+    if matrix:
+        from praxeon.evaluation.matrix import ScientificMatrixBenchmark
+        bench = ScientificMatrixBenchmark(seed=42)
+        out_dir = str(Path(output_file).parent if output_file and Path(output_file).suffix else (output_file or "benchmark_results"))
+        report = bench.run_matrix(output_dir=out_dir, archive_historical=archive_historical)
+
+        table = Table(title="🔬 [bold white]Matriz Científica de Evaluación: [LLMs] × [System-1 Supervisores][/]", border_style="cyan")
+        table.add_column("LLM Generador", style="bold cyan")
+        table.add_column("Supervisor", style="bold magenta")
+        table.add_column("Éxito Tarea", justify="center")
+        table.add_column("False Allow (Crítico)", justify="center")
+        table.add_column("Latencia Media", justify="right")
+        table.add_column("Coste Rel.", justify="center")
+        table.add_column("Veredicto", justify="left")
+
+        for r in report.summary_table:
+            fa_color = "bold green" if "0.0%" in r["false_allow_rate"] else "bold red"
+            table.add_row(
+                r["llm"],
+                r["system1"],
+                r["success_rate"],
+                f"[{fa_color}]{r['false_allow_rate']}[/]",
+                r["latency_ms"],
+                r["cost_index"],
+                r["verdict"],
+            )
+        console.print(table)
+
+        panel = Panel(
+            f"[bold white]Commit SHA:[/] `{report.metadata.commit_sha}`\n"
+            f"[bold white]Config Hash:[/] `{report.metadata.config_hash}`\n"
+            f"[bold white]Hardware:[/] {report.metadata.hardware.cpu} ({report.metadata.hardware.cpu_cores} cores) | {report.metadata.hardware.ram_gb} GB RAM | {report.metadata.hardware.gpu}\n"
+            f"[bold white]Seguridad Crítica:[/] [bold green]{report.false_allow_critical_verdict}[/]\n"
+            f"[bold yellow]Recomendación:[/] {report.recommendation}\n"
+            f"[bold cyan]Archivos Generados:[/] `{out_dir}/matrix_evaluation.json` y `{out_dir}/MATRIX_REPORT.md`",
+            title="📊 [bold green]Metadatos Reproducibles y Resumen Ejecutivo (BENCH-01 / BENCH-02)[/]",
+            border_style="green",
+        )
+        console.print(panel)
+        return
 
     if provider_name == "laya":
         prov = LayaProvider(backend="simulated")
@@ -524,6 +574,8 @@ def main() -> None:
 
     # Subcomando benchmark
     bench_parser = subparsers.add_parser("benchmark", help="Ejecuta la suite formal de benchmarks y ablaciones")
+    bench_parser.add_argument("--matrix", action="store_true", help="Ejecutar la matriz científica formal LLMs × Supervisores System-1")
+    bench_parser.add_argument("--archive-historical", action="store_true", help="Archivar resultados previos en benchmark_results/historical")
     bench_parser.add_argument("--ablation", action="store_true", help="Ejecutar el estudio formal de ablaciones de las 5 capas")
     bench_parser.add_argument("--compare-v1", "--compare-baseline", dest="compare_v1", action="store_true", help="Comparar métricas de seguridad frente a baseline sin supervisor")
     bench_parser.add_argument("--compare-providers", action="store_true", help="Comparar concordancia y latencia entre proveedores (JEV vs LAYA)")
@@ -586,6 +638,8 @@ def main() -> None:
             ablation=getattr(args, "ablation", False),
             compare_v1=getattr(args, "compare_v1", False),
             compare_providers=getattr(args, "compare_providers", False),
+            matrix=getattr(args, "matrix", False),
+            archive_historical=getattr(args, "archive_historical", False),
             provider_name=getattr(args, "provider", "replay"),
             count=getattr(args, "count", None),
             output_file=getattr(args, "output", None),

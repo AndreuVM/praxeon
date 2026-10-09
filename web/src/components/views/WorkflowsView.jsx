@@ -48,6 +48,7 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
   const [activeWorkflowId, setActiveWorkflowId] = useState(null);
   const [workflow, setWorkflow] = useState(null);
   const [_loading, setLoading] = useState(true);
+  const [connectionError, setConnectionError] = useState(null);
   const [executing, setExecuting] = useState(false);
   const [validationResult, setValidationResult] = useState(null);
   const [viewMode, setViewMode] = useState('native'); // 'native' | 'iframe'
@@ -124,12 +125,14 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
       const res = await fetchWorkflows();
       if (res && res.data) {
         setWorkflows(res.data);
+        setConnectionError(null);
         if (!activeWorkflowId && res.data.length > 0) {
           setActiveWorkflowId(res.data[0].workflow_id);
         }
       }
     } catch (err) {
       console.error('Error al listar workflows:', err);
+      setConnectionError(err.message);
       addLog('ERROR', `Error al listar workflows: ${err.message}`);
     } finally {
       setLoading(false);
@@ -248,7 +251,14 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
   // Manejador para añadir un nodo nuevo
   const handleAddNode = async (e) => {
     e.preventDefault();
-    if (!activeWorkflowId || !createNodeForm.name.trim()) return;
+    if (!activeWorkflowId) {
+      alert('No hay un workflow seleccionado. Selecciona o crea un workflow primero, y comprueba que el backend esté ejecutándose.');
+      return;
+    }
+    if (!createNodeForm.name.trim()) {
+      alert('Introduce un nombre para el nuevo nodo.');
+      return;
+    }
     try {
       const payload = {
         name: createNodeForm.name.trim(),
@@ -268,11 +278,16 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
       }
     } catch (err) {
       alert(`Error al añadir nodo: ${err.message}`);
+      addLog('ERROR', `Fallo al añadir nodo: ${err.message}`);
     }
   };
 
   // Crear nodo rápido desde la paleta de componentes
   const handleQuickAddNode = (type, defaultName) => {
+    if (!activeWorkflowId) {
+      alert('No hay ningún workflow seleccionado o activo. Comprueba que el servidor backend (puerto 8000) esté en ejecución y crea o selecciona un workflow.');
+      return;
+    }
     setCreateNodeForm({
       name: defaultName,
       node_type: type,
@@ -913,6 +928,46 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
           </button>
         </div>
       </div>
+
+      {/* Banner de Desconexión de Backend */}
+      {connectionError && (
+        <div
+          style={{
+            backgroundColor: 'rgba(239, 68, 68, 0.15)',
+            borderBottom: '1px solid rgba(239, 68, 68, 0.4)',
+            padding: '8px 16px',
+            fontSize: '11.5px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            color: '#fca5a5',
+            flexShrink: 0,
+            zIndex: 35,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <AlertTriangle size={14} color="#ef4444" />
+            <span>
+              <strong>Backend Desconectado ({connectionError}):</strong> Asegúrate de que el servidor PRAXEON esté ejecutándose en el puerto 8000 (<code>uv run praxeon-server --port 8000</code>).
+            </span>
+          </div>
+          <button
+            onClick={() => loadWorkflows()}
+            style={{
+              padding: '3px 8px',
+              borderRadius: '4px',
+              backgroundColor: '#b91c1c',
+              border: '1px solid #ef4444',
+              color: '#ffffff',
+              fontSize: '10.5px',
+              cursor: 'pointer',
+              fontWeight: '600',
+            }}
+          >
+            Reintentar Conexión
+          </button>
+        </div>
+      )}
 
       {/* Banner de Validación */}
       {validationResult && (

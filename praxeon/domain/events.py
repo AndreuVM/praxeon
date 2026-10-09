@@ -55,6 +55,7 @@ class EventType(str, Enum):
     APPROVAL_COMPLETED = "approval.completed"
     DECISION_PRUNED = "decision.pruned"
     INTERVENTION_APPLIED = "intervention.applied"
+    SESSION_ROLLBACK = "session.rollback"
     SESSION_COMPLETED = "session.completed"
 
 

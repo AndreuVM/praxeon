@@ -26,6 +26,11 @@ from praxeon.server.schemas.context import (
     EstimatedContextMetricsDTO,
 )
 from praxeon.server.schemas.event import EventsListResponse, WebSocketMessage
+from praxeon.server.schemas.provider import (
+    DecisionProviderInfo,
+    LLMProviderInfo,
+    ProvidersCatalogResponse,
+)
 from praxeon.server.schemas.session import (
     CreateSessionRequest,
     SessionSnapshotResponse,
@@ -59,5 +64,8 @@ __all__ = [
     "CreateAgentVersionRequest",
     "AgentDTO",
     "AgentVersionSummaryDTO",
+    "DecisionProviderInfo",
+    "LLMProviderInfo",
+    "ProvidersCatalogResponse",
 ]
 

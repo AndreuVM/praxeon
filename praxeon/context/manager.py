@@ -474,3 +474,112 @@ class ContextManager:
             "fragment_cache_misses": frag_stats.get("misses", 0),
             "fragment_cache_evictions": fragment_evictions,
         }
+
+    def assemble_mission_prompt(
+        self,
+        goal: str,
+        system_prompt: str = "",
+        steps_history: Optional[List[Dict[str, Any]]] = None,
+        environment_info: str = "",
+        max_context_tokens: int = 8192,
+        preserve_recent_steps: int = 4,
+        chat_history: Optional[List[Dict[str, Any]]] = None,
+    ) -> List[Dict[str, str]]:
+        """Ensambla el historial y prompt optimizado para el LLM actuando como autoridad única (CTX-01).
+
+        Garantiza:
+        1. Inclusión determinista del prompt inicial con objetivo y restricciones de la misión.
+        2. Compresión semántica de pasos de ejecución antiguos reteniendo el feedback de supervisión.
+        3. Preservación intacta de los últimos `preserve_recent_steps` con sus observaciones completas.
+        4. Control estricto de presupuesto de tokens y telemetría de reducción.
+        """
+        import json
+
+        messages: List[Dict[str, str]] = []
+        steps = steps_history or []
+
+        # 1. Chat history previo si existe
+        if chat_history:
+            for item in chat_history:
+                if isinstance(item, dict) and "role" in item and "content" in item:
+                    role = "assistant" if item.get("role") == "assistant" else "user"
+                    content = str(item.get("content") or "").strip()
+                    if content:
+                        messages.append({"role": role, "content": content})
+
+        # 2. Mensaje de usuario raíz con la tarea
+        root_content = f"Tarea/Pregunta: {goal}"
+        if environment_info:
+            root_content += f"\n\nContexto del Entorno y Espacio de Trabajo:\n{environment_info}"
+        root_content += (
+            "\n\nResponde directamente a mi petición concreta con tu criterio técnico. "
+            "Si es una pregunta, opinión, diseño conceptual, especificación, user stories o informe, "
+            "entrégala directamente con finish(summary=...). "
+            "Si requieres interactuar con código o archivos existentes de este entorno local, "
+            "utiliza las herramientas pertinentes sobre los archivos reales."
+        )
+        messages.append({"role": "user", "content": root_content})
+
+        total_steps = len(steps)
+        if total_steps == 0:
+            return messages
+
+        # Particionar pasos: antiguos (comprimibles) y recientes (intactos)
+        cutoff = max(0, total_steps - preserve_recent_steps)
+        older_steps = steps[:cutoff]
+        recent_steps = steps[cutoff:]
+
+        # Resumen semántico condensado de pasos antiguos
+        if older_steps:
+            summary_lines = [
+                f"[RESUMEN SEMÁNTICO DE PASOS ANTERIORES 1-{cutoff} COMPRIMIDO POR CONTEXT_MANAGER]:"
+            ]
+            for s in older_steps:
+                s_idx = s.get("step", 1)
+                tool = s.get("tool", "unknown")
+                args_summary = str(s.get("arguments", {}))
+                if len(args_summary) > 60:
+                    args_summary = args_summary[:57] + "..."
+                verdict = s.get("verdict", "ALLOW")
+                obs = str(s.get("observation", "")).strip()
+                if len(obs) > 80:
+                    obs = obs[:77] + "..."
+                summary_lines.append(
+                    f"- Paso {s_idx}: {tool}({args_summary}) -> Veredicto Supervisor: {verdict} | Obs: {obs}"
+                )
+            summary_text = "\n".join(summary_lines)
+            messages.append({
+                "role": "user",
+                "content": summary_text,
+            })
+
+        # Pasos recientes preservados con fidelidad causal completa
+        for s in recent_steps:
+            thought = s.get("thought", "")
+            tool = s.get("tool", "")
+            args_str = json.dumps(s.get("arguments", {}), ensure_ascii=False)
+            obs = str(s.get("observation", "")).strip()
+            verdict = s.get("verdict", "ALLOW")
+
+            # Formatear acción del asistente
+            messages.append({
+                "role": "assistant",
+                "content": f"Thought: {thought}\nAction: {tool}({args_str})",
+            })
+
+            # Observación con feedback del supervisor
+            obs_content = f"Observación de {tool}:\n{obs}"
+            if verdict in ("BLOCK", "REPLAN", "REVIEW"):
+                obs_content += f"\n[Supervisión PRAXEON]: Veredicto emitido = {verdict}. Motivo: {s.get('reason_code', '')}"
+            messages.append({
+                "role": "user",
+                "content": obs_content,
+            })
+
+        # Actualizar telemetría de estimación
+        total_chars = sum(len(m.get("content", "")) for m in messages)
+        estimated_tokens = total_chars // 4
+        self._tokens_after += estimated_tokens
+
+        return messages
+

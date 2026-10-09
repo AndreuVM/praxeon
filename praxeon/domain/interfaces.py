@@ -14,11 +14,18 @@ from praxeon.domain.models import (
     ProviderAssessment,
     StateSnapshot,
 )
+from praxeon.domain.decision_provider import (
+    DecisionModelConfig,
+    DecisionProvider,
+    DecisionProviderError,
+    DecisionProviderMetadata,
+    DecisionProviderUnavailableError,
+)
 
 
 @runtime_checkable
 class ReasoningProvider(Protocol):
-    """Protocolo abstracto para proveedores de evaluación semántica (TypeSafe AI, Replay, etc.)."""
+    """Protocolo abstracto para proveedores de evaluación semántica (retrocompatible con DecisionProvider)."""
 
     def evaluate(
         self,
@@ -69,15 +76,41 @@ class Executor(Protocol):
 
 @runtime_checkable
 class CheckpointStore(Protocol):
-    """Protocolo para persistencia y restauración de checkpoints atómicos."""
+    """Protocolo unificado para persistencia, consulta y restauración de checkpoints atómicos."""
 
     def save_checkpoint(self, checkpoint: Checkpoint) -> None:
+        """Almacena una instantánea atómica de checkpoint."""
         ...
 
     def get_checkpoint(self, checkpoint_id: str) -> Optional[Checkpoint]:
+        """Obtiene un checkpoint específico por ID."""
         ...
 
-    def get_latest_checkpoint(self) -> Optional[Checkpoint]:
+    def get_latest_checkpoint(self, session_id: Optional[str] = None) -> Optional[Checkpoint]:
+        """Devuelve el checkpoint más reciente de una sesión o globalmente."""
+        ...
+
+    def list_checkpoints(self, session_id: Optional[str] = None) -> List[Checkpoint]:
+        """Devuelve la lista ordenada de checkpoints registrados."""
+        ...
+
+    def create_checkpoint(
+        self,
+        session_id: str,
+        label: Optional[str] = None,
+        state: Optional[Any] = None,
+    ) -> Checkpoint:
+        """Crea y persiste un nuevo checkpoint snapshot del estado actual."""
+        ...
+
+    def restore_checkpoint(
+        self,
+        session_id: str,
+        checkpoint_id: str,
+        culprit_tool: Optional[str] = None,
+        reason: str = "Restauración de checkpoint",
+    ) -> Optional[Any]:
+        """Restaura el estado de la sesión al checkpoint especificado y persiste el estado restaurado."""
         ...
 
 

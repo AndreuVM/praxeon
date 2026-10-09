@@ -77,6 +77,10 @@ from praxeon.runtime.sandbox import (
     SandboxTier,
     get_default_workspace_root,
 )
+from praxeon.domain.decision_provider import DecisionModelConfig
+from praxeon.providers.registry import DecisionProviderRegistry, default_registry
+from praxeon.runtime.decision_runtime import DecisionRuntime
+from praxeon.runtime.session_runtime import SessionRuntime
 from praxeon.runtime.state import SessionState, StepRecord
 from praxeon.runtime.state_store import SqliteStateStore
 from praxeon.runtime.tree_reducer import TreeReducer, reduce_events_to_tree
@@ -164,22 +168,24 @@ class RuntimeApplicationService:
         self.command_classifier = CommandClassifier()
         self.evidence_engine = EvidenceEngine()
 
-        # Configurar proveedor supervisor semántico
+        # Configurar proveedor supervisor semántico por defecto
         if provider is not None:
-            self.provider = provider
+            self._default_provider = provider
         elif self.config.provider.name.lower() in ("mock", "mockprovider", "test", "testing"):
-            self.provider = MockProvider()
+            self._default_provider = MockProvider()
         elif self.config.provider.name.lower() in ("replay", "replayprovider"):
-            self.provider = ReplayProvider()
+            self._default_provider = ReplayProvider()
         elif self.config.provider.name.lower() == "laya":
-            self.provider = LayaProvider(backend=self.config.provider.laya_backend)
+            self._default_provider = LayaProvider(backend=self.config.provider.laya_backend)
         elif self.config.provider.use_api and self.config.provider.api_key:
-            self.provider = TypeSafeAdapter(
+            self._default_provider = TypeSafeAdapter(
                 api_key=self.config.provider.api_key,
                 model_name=self.config.provider.model,
             )
         else:
-            self.provider = MockProvider()
+            self._default_provider = MockProvider()
+
+        self._session_runtimes: Dict[str, SessionRuntime] = {}
 
         self._lock = threading.Lock()
         self._sessions_meta: Dict[str, Dict[str, Any]] = {}
@@ -240,6 +246,123 @@ class RuntimeApplicationService:
             evidence_engine=self.evidence_engine,
             command_classifier=self.command_classifier,
         )
+
+        # REC-01: Reconciliación transaccional automática de misiones tras reinicio del proceso
+        if hasattr(self.state_store, "reconcile_interrupted_missions"):
+            try:
+                recovered = self.state_store.reconcile_interrupted_missions()
+                if recovered:
+                    logger.info("[RECOVERY] Reconciliadas %d misiones interrumpidas tras reinicio de PRAXEON.", len(recovered))
+                    for m in recovered:
+                        sid_rec = m.get("session_id")
+                        if sid_rec:
+                            with self._lock:
+                                self._running_missions[sid_rec] = m
+            except Exception as ex:
+                logger.warning("Fallo durante la reconciliación de misiones tras reinicio: %s", ex)
+
+        # ---------------------------------------------------------------------
+        # COORDINADORES MODULARES DE DOMINIO (REF-02)
+        # ---------------------------------------------------------------------
+        from praxeon.server.coordinators import (
+            SessionLifecycleCoordinator,
+            StepExecutionCoordinator,
+            CheckpointCoordinator,
+            DiagnosticsCoordinator,
+        )
+        self.session_coordinator = SessionLifecycleCoordinator(self)
+        self.step_coordinator = StepExecutionCoordinator(self)
+        self.checkpoint_coordinator = CheckpointCoordinator(self)
+        self.diagnostics_coordinator = DiagnosticsCoordinator(self)
+
+    @property
+    def provider(self) -> Any:
+        """Acceso al proveedor por defecto preservando compatibilidad retroactiva."""
+        return self._default_provider
+
+    @provider.setter
+    def provider(self, value: Any) -> None:
+        """Permite actualizar el proveedor por defecto preservando compatibilidad retroactiva."""
+        self._default_provider = value
+
+    def register_session_runtime(
+        self,
+        session_id: str,
+        provider: Any,
+        llm_runtime: Optional[Any] = None,
+        context_manager: Optional[Any] = None,
+        policy_profile: str = "default",
+        execution_profile: str = "local_restricted",
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> SessionRuntime:
+        """Registra un runtime de ejecución y supervisión aislado para una sesión."""
+        with self._lock:
+            runtime = SessionRuntime(
+                session_id=session_id,
+                decision_provider=provider,
+                llm_runtime=llm_runtime,
+                context_manager=context_manager,
+                policy_profile=policy_profile,
+                execution_profile=execution_profile,
+                metadata=metadata or {},
+            )
+            self._session_runtimes[session_id] = runtime
+            return runtime
+
+    def get_session_provider(self, session_id: str) -> Any:
+        """Obtiene el proveedor de decisiones exclusivo para la sesión solicitada.
+        
+        Garantiza que misiones heterogéneas concurrentes no contaminen sus evaluaciones
+        semánticas ni compartan un provider global mutable.
+        """
+        with self._lock:
+            if session_id in self._session_runtimes:
+                return self._session_runtimes[session_id].decision_provider
+
+        meta: Dict[str, Any] = {}
+        with self._lock:
+            if session_id in self._sessions_meta:
+                meta = dict(self._sessions_meta[session_id].get("metadata") or {})
+        if not meta:
+            st = self.state_store.load_state(session_id)
+            if st and st.metadata:
+                meta = dict(st.metadata)
+
+        supervisor = meta.get("supervisor") or meta.get("decision_provider")
+        decision_model = meta.get("decision_model")
+
+        cfg: Optional[DecisionModelConfig] = None
+        if isinstance(decision_model, DecisionModelConfig):
+            cfg = decision_model
+        elif isinstance(decision_model, dict):
+            try:
+                cfg = DecisionModelConfig(**decision_model)
+            except Exception as e:
+                logger.warning(f"Error parseando decision_model dict: {e}")
+        elif supervisor:
+            cfg = DecisionModelConfig(provider=str(supervisor), model_id=str(supervisor))
+
+        dec_runtime: Optional[DecisionRuntime] = None
+        if cfg:
+            try:
+                dec_runtime = DecisionRuntime.from_config(cfg, registry=default_registry)
+                provider_instance = dec_runtime.provider
+            except Exception as e:
+                logger.warning(f"Error resolviendo DecisionRuntime para sesión '{session_id}': {e}. Usando fallback.")
+                provider_instance = self._default_provider
+        else:
+            provider_instance = self._default_provider
+
+        with self._lock:
+            if session_id not in self._session_runtimes:
+                self._session_runtimes[session_id] = SessionRuntime(
+                    session_id=session_id,
+                    decision_provider=provider_instance,
+                    decision_runtime=dec_runtime,
+                    metadata=meta,
+                )
+            return self._session_runtimes[session_id].decision_provider
+
 
     # =========================================================================
     # ACCESORES DEL CONTROL PLANE CANÓNICO Y SERVICIOS MODULARES
@@ -337,6 +460,12 @@ class RuntimeApplicationService:
 
         state = SessionState(session_id=sid, goal=Goal(objective=goal), metadata=meta)
         self.state_store.save_state(state)
+        # Checkpoint Génesis canónico
+        self.state_store.create_checkpoint(session_id=sid, label="Genesis checkpoint", state=state)
+
+        # Inicializar SessionRuntime exclusivo si se declaró supervisor
+        if meta.get("supervisor") or meta.get("decision_provider") or meta.get("decision_model"):
+            self.get_session_provider(sid)
 
         with self._lock:
             self._sessions_meta[sid] = {
@@ -435,6 +564,16 @@ class RuntimeApplicationService:
         execution_mode = sess.get("execution_mode") or meta.get("execution_mode", "local_restricted")
         ws_root = meta.get("workspace_root") or meta.get("working_directory") or get_default_workspace_root()
 
+        # Obtener configuración efectiva del DecisionRuntime si existe
+        dec_effective = None
+        with self._lock:
+            s_runtime = self._session_runtimes.get(session_id)
+            if s_runtime and s_runtime.decision_runtime:
+                dec_effective = s_runtime.decision_runtime.config.model_dump()
+            elif meta.get("decision_model"):
+                d_m = meta.get("decision_model")
+                dec_effective = d_m.model_dump() if hasattr(d_m, "model_dump") else d_m
+
         return {
             "session_id": session_id,
             "goal": sess.get("goal", ""),
@@ -452,6 +591,7 @@ class RuntimeApplicationService:
             "waiting_count": waiting,
             "event_count": len(events),
             "node_count": tree.node_count,
+            "decision_model_effective": dec_effective,
         }
 
     def get_session_snapshot(self, session_id: str) -> Optional[Dict[str, Any]]:
@@ -531,7 +671,15 @@ class RuntimeApplicationService:
         session_id: str,
         proposal: ProposeActionRequest,
     ) -> DecisionResponse:
-        """Punto de entrada de una propuesta externa pasando por todo el pipeline formal."""
+        """Punto de entrada de una propuesta externa pasando por todo el pipeline formal (delegado en StepExecutionCoordinator)."""
+        return self.step_coordinator.propose_action(session_id, proposal)
+
+    def _propose_action_impl(
+        self,
+        session_id: str,
+        proposal: ProposeActionRequest,
+    ) -> DecisionResponse:
+        """Implementación interna del pipeline formal de propuestas."""
         state = self.state_store.load_state(session_id)
         if not state:
             # Crear sesión sobre la marcha si no existiese
@@ -728,10 +876,11 @@ class RuntimeApplicationService:
             payload=risk_dto.model_dump(),
         )
 
-        # 4. Evaluación de Proveedores Semánticos (LAYA / TypeSafe)
-        assessments = self.provider.evaluate(state, [action])
+        # 4. Evaluación de Proveedores Semánticos aislada por sesión (LAYA / TypeSafe / Mock)
+        session_provider = self.get_session_provider(session_id)
+        assessments = session_provider.evaluate(state, [action])
         assessment = assessments[0] if assessments else ProviderAssessment(
-            provider=self.config.provider.name,
+            provider=getattr(session_provider, "name", self.config.provider.name),
             available=False,
             confidence=0.0,
             loop_probability=None,
@@ -773,13 +922,19 @@ class RuntimeApplicationService:
         else:
             verdict_val = "ALLOW"
 
-        prov_name = getattr(self.provider, "name", "").lower()
+        raw_name = getattr(session_provider, "name", None) or getattr(session_provider, "provider_name", None) or session_provider.__class__.__name__
+        prov_name = str(raw_name).lower().replace("provider", "").replace("adapter", "").strip()
         if prov_name in ("mock", "replay"):
             provider_name_display = prov_name
-        elif self.config.provider.name.lower() == "laya" or prov_name == "laya":
+        elif "laya" in prov_name:
+            provider_name_display = "LAYA"
+        elif "typesafe" in prov_name:
+            provider_name_display = "TypeSafe"
+        elif self.config.provider.name.lower() == "laya":
             provider_name_display = "LAYA"
         else:
             provider_name_display = "TypeSafe"
+
 
         provider_dtos = [
             ProviderEvaluationDTO(
@@ -997,7 +1152,11 @@ class RuntimeApplicationService:
     # =========================================================================
 
     def get_decision_detail(self, decision_id: str) -> Optional[DecisionDetailResponse]:
-        """Recupera los datos estructurados en las 4 pestañas requeridas por la Sección 6.3."""
+        """Recupera los datos estructurados en las 4 pestañas requeridas por la Sección 6.3 (delegado en DiagnosticsCoordinator)."""
+        return self.diagnostics_coordinator.get_decision_detail(decision_id)
+
+    def _get_decision_detail_impl(self, decision_id: str) -> Optional[DecisionDetailResponse]:
+        """Implementación interna de recuperación de detalle de decisión."""
         with self._lock:
             record = self._decisions.get(decision_id)
 
@@ -1253,7 +1412,32 @@ class RuntimeApplicationService:
         caller_is_verified_operator: bool = False,
         security_profile: Optional[str] = None,
     ) -> ConfirmDecisionResponse:
-        """Autoriza o bloquea una decisión en espera de aprobación humana (REVIEW)."""
+        """Autoriza o bloquea una decisión en espera de aprobación humana (delegado en StepExecutionCoordinator)."""
+        return self.step_coordinator.confirm_decision(
+            decision_id=decision_id,
+            approved=approved,
+            reason=reason,
+            actor=actor,
+            operator_id=operator_id,
+            role=role,
+            operator_token=operator_token,
+            caller_is_verified_operator=caller_is_verified_operator,
+            security_profile=security_profile,
+        )
+
+    def _confirm_decision_impl(
+        self,
+        decision_id: str,
+        approved: bool,
+        reason: Optional[str] = None,
+        actor: str = "human_operator",
+        operator_id: Optional[str] = None,
+        role: str = "operator",
+        operator_token: Optional[str] = None,
+        caller_is_verified_operator: bool = False,
+        security_profile: Optional[str] = None,
+    ) -> ConfirmDecisionResponse:
+        """Implementación interna de autorización o bloqueo de decisión."""
         with self._lock:
             record = self._decisions.get(decision_id)
         if not record:
@@ -1424,7 +1608,22 @@ class RuntimeApplicationService:
         operator_id: Optional[str] = None,
         role: str = "operator",
     ) -> ExecuteDecisionResponse:
-        """Ejecuta físicamente la herramienta autorizada en el sandbox o host."""
+        """Ejecuta físicamente la herramienta autorizada en el sandbox o host (delegado en StepExecutionCoordinator)."""
+        return self.step_coordinator.execute_decision(
+            decision_id=decision_id,
+            capability_token=capability_token,
+            operator_id=operator_id,
+            role=role,
+        )
+
+    def _execute_decision_impl(
+        self,
+        decision_id: str,
+        capability_token: Optional[Dict[str, Any]] = None,
+        operator_id: Optional[str] = None,
+        role: str = "operator",
+    ) -> ExecuteDecisionResponse:
+        """Implementación interna de ejecución de decisión."""
         if role == "viewer":
             raise PermissionError("El rol 'viewer' tiene permisos de solo lectura y no puede ejecutar decisiones.")
 
@@ -1630,6 +1829,7 @@ class RuntimeApplicationService:
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
         supervisor: str = "laya",
+        decision_model: Optional[Any] = None,
         max_steps: int = 25,
         step_delay_ms: int = 900,
         autonomous: bool = False,
@@ -1641,13 +1841,47 @@ class RuntimeApplicationService:
         """Inicia una misión interactiva supervisada en tiempo real."""
         sid = session_id or f"s-{uuid.uuid4().hex[:8]}"
 
-        # Configurar proveedor supervisor semántico si difiere
-        if supervisor.lower() in ("laya", "laya-system1", "laya-v1"):
-            self.provider = LayaProvider(backend="auto")
-        else:
-            self.provider = TypeSafeAdapter(
-                api_key=self.config.provider.api_key,
-                model_name=self.config.provider.model,
+        # Validación anti-SSRF estricta para endpoint remoto o base_url (SEC-01)
+        if base_url:
+            from praxeon.policy.egress import validate_provider_endpoint
+            prof = (os.environ.get("PRAXEON_PROFILE") or os.environ.get("PRAXEON_ENV") or "dev").lower().strip()
+            allow_custom = getattr(self.config.security, "allow_custom_endpoints", False)
+            allowed_hosts = getattr(self.config.security, "allowed_custom_hosts", set())
+            base_url = validate_provider_endpoint(
+                url=base_url,
+                allow_custom=allow_custom,
+                profile=prof,
+                allowed_hosts=allowed_hosts,
+            )
+
+        # Resolver DecisionModelConfig y DecisionRuntime aislado para esta misión
+        cfg: Optional[DecisionModelConfig] = None
+        if isinstance(decision_model, DecisionModelConfig):
+            cfg = decision_model
+        elif isinstance(decision_model, dict):
+            try:
+                cfg = DecisionModelConfig(**decision_model)
+            except Exception as e:
+                logger.warning(f"Error parseando decision_model dict en start_mission: {e}")
+        if not cfg:
+            cfg = DecisionModelConfig(provider=supervisor, model_id=supervisor)
+
+        dec_runtime: Optional[DecisionRuntime] = None
+        try:
+            dec_runtime = DecisionRuntime.from_config(cfg, registry=default_registry)
+            sess_provider = dec_runtime.provider
+        except Exception as e:
+            logger.warning(f"Error instanciando DecisionRuntime para misión: {e}. Usando fallback.")
+            sess_provider = self._default_provider
+
+        with self._lock:
+            self._session_runtimes[sid] = SessionRuntime(
+                session_id=sid,
+                decision_provider=sess_provider,
+                decision_runtime=dec_runtime,
+                policy_profile="default",
+                execution_profile=execution_mode,
+                metadata={"supervisor": supervisor, "decision_model": cfg.model_dump() if cfg else None},
             )
 
         effective_ws = workspace_root or get_default_workspace_root()
@@ -1706,6 +1940,11 @@ class RuntimeApplicationService:
 
         with self._lock:
             self._running_missions[sid] = mission_state
+        if hasattr(self.state_store, "save_mission"):
+            try:
+                self.state_store.save_mission(mission_state)
+            except Exception as ex:
+                logger.warning("Fallo al persistir misión '%s' en SQLite: %s", sid, ex)
 
         worker_thread = threading.Thread(
             target=self._run_mission_worker,
@@ -1722,6 +1961,8 @@ class RuntimeApplicationService:
         with self._lock:
             if session_id in self._running_missions:
                 self._running_missions[session_id]["paused"] = True
+                if hasattr(self.state_store, "save_mission"):
+                    self.state_store.save_mission(self._running_missions[session_id])
                 return True
         return False
 
@@ -1730,6 +1971,8 @@ class RuntimeApplicationService:
         with self._lock:
             if session_id in self._running_missions:
                 self._running_missions[session_id]["paused"] = False
+                if hasattr(self.state_store, "save_mission"):
+                    self.state_store.save_mission(self._running_missions[session_id])
                 return True
         return False
 
@@ -1738,30 +1981,123 @@ class RuntimeApplicationService:
         with self._lock:
             if session_id in self._running_missions:
                 self._running_missions[session_id]["stopped"] = True
+                if hasattr(self.state_store, "save_mission"):
+                    self.state_store.save_mission(self._running_missions[session_id])
                 return True
         return False
 
-    def rollback_session(self, session_id: str, checkpoint_id: Optional[str] = None) -> Dict[str, Any]:
-        """Revierte el estado de una sesión al último checkpoint válido o al checkpoint especificado."""
+    def create_checkpoint(self, session_id: str, label: Optional[str] = None) -> Dict[str, Any]:
+        """Crea un checkpoint atómico persistente del estado actual de la sesión (delegado en CheckpointCoordinator)."""
+        return self.checkpoint_coordinator.create_checkpoint(session_id=session_id, label=label)
+
+    def rollback_session(
+        self,
+        session_id: str,
+        checkpoint_id: Optional[str] = None,
+        culprit_tool: Optional[str] = None,
+        reason: str = "Rollback formal por degradación de trayectoria",
+    ) -> Dict[str, Any]:
+        """Revierte físicamente el estado de una sesión al checkpoint especificado o al más reciente (delegado en CheckpointCoordinator)."""
+        return self.checkpoint_coordinator.rollback_session(
+            session_id=session_id,
+            checkpoint_id=checkpoint_id,
+            culprit_tool=culprit_tool,
+            reason=reason,
+        )
+
+    def _rollback_session_impl(
+        self,
+        session_id: str,
+        checkpoint_id: Optional[str] = None,
+        culprit_tool: Optional[str] = None,
+        reason: str = "Rollback formal por degradación de trayectoria",
+    ) -> Dict[str, Any]:
+        """Implementación interna de reversión de sesión."""
         state = self.state_store.load_state(session_id)
         if not state:
             raise KeyError(f"Sesión '{session_id}' no encontrada para reversión.")
 
-        target_chk = checkpoint_id or (f"chk_{len(state.steps)}" if state.steps else "genesis")
+        if checkpoint_id:
+            target_chk_id = checkpoint_id
+        else:
+            latest_chk = self.state_store.get_latest_checkpoint(session_id)
+            if not latest_chk:
+                latest_chk = self.state_store.create_checkpoint(
+                    session_id=session_id, label="Genesis checkpoint", state=state
+                )
+            target_chk_id = latest_chk.id
+
+        chk = self.state_store.get_checkpoint(target_chk_id)
+        if not chk:
+            raise KeyError(f"Checkpoint '{target_chk_id}' no encontrado en el almacén de checkpoints.")
+
+        # Restauración física real del estado
+        restored_state = self.state_store.restore_checkpoint(
+            session_id=session_id,
+            checkpoint_id=target_chk_id,
+            culprit_tool=culprit_tool,
+            reason=reason,
+        )
+        if not restored_state:
+            raise RuntimeError(f"Fallo al restaurar el estado desde el checkpoint '{target_chk_id}'.")
+
+        # Invalidar decisiones posteriores en memoria
+        target_step_idx = chk.step_index
+        with self._lock:
+            discarded_action_ids = {
+                st.id for st in state.steps[target_step_idx:]
+            }
+            to_remove = [
+                d_id for d_id, d_rec in self._decisions.items()
+                if d_rec.get("session_id") == session_id
+                and d_rec.get("action_id") in discarded_action_ids
+            ]
+            for d_id in to_remove:
+                self._decisions.pop(d_id, None)
+
+        now_iso = datetime.now(timezone.utc).isoformat()
         self.event_bus.emit(
             session_id=session_id,
             event_type=EventType.INTERVENTION_APPLIED,
-            node_id=f"rollback_{session_id}",
-            payload={"action": "rollback", "checkpoint_id": target_chk},
+            node_id=f"rollback_{session_id}_{target_chk_id}",
+            payload={
+                "action": "rollback",
+                "checkpoint_id": target_chk_id,
+                "step_index": target_step_idx,
+                "culprit_tool": culprit_tool,
+                "reason": reason,
+                "restored_at": now_iso,
+            },
         )
-        return {"session_id": session_id, "checkpoint_id": target_chk, "status": "RolledBack"}
+        self.event_bus.emit(
+            session_id=session_id,
+            event_type=EventType.SESSION_ROLLBACK,
+            node_id=f"rollback_{target_chk_id}",
+            payload={
+                "checkpoint_id": target_chk_id,
+                "step_index": target_step_idx,
+                "culprit_tool": culprit_tool,
+                "reason": reason,
+                "restored_at": now_iso,
+            },
+        )
+
+        return {
+            "session_id": session_id,
+            "checkpoint_id": target_chk_id,
+            "step_index": target_step_idx,
+            "status": "RolledBack",
+            "steps_count": len(restored_state.steps),
+            "forbidden_tools": list(restored_state.forbidden_tools),
+        }
+
 
     def _run_mission_worker(self, mission: Dict[str, Any]) -> None:
-        """Worker asíncrono que genera y propone pasos interactivos para la sesión.
-        
-        Soporta modelos LLM reales (Ollama, Groq, OpenAI, Gemini, OpenRouter) con bucle ReAct
-        completo, y un planificador contextual dinámico adaptado estrictamente al objetivo del usuario.
-        """
+        """Worker asíncrono delegado en SessionLifecycleCoordinator."""
+        return self.session_coordinator.run_mission_worker(mission)
+
+    def _run_mission_worker_impl(self, mission: Dict[str, Any]) -> None:
+        """Implementación del worker asíncrono de misiones interactivas."""
         from praxeon.agent_llm import BaseAgentLLM, SimulatedAgentLLM, create_agent_llm
         from praxeon.live_agent import parse_llm_steps
 
@@ -1876,25 +2212,7 @@ class RuntimeApplicationService:
                 "6. RETROCESO: Si una acción falla o es vetada por el supervisor, reflexiona en 'Thought:' y propone una alternativa válida."
             )
 
-            conversation: List[Dict[str, str]] = []
-            chat_hist = mission.get("chat_history") or []
-            for h_item in chat_hist:
-                if isinstance(h_item, dict) and "role" in h_item and "content" in h_item:
-                    h_role = "assistant" if h_item.get("role") == "assistant" else "user"
-                    h_txt = str(h_item.get("content") or "").strip()
-                    if h_txt:
-                        conversation.append({"role": h_role, "content": h_txt})
-
-            conversation.append({
-                "role": "user",
-                "content": (
-                    f"Tarea/Pregunta: {goal}\n\n"
-                    "Responde directamente a mi petición concreta con tu criterio técnico. "
-                    "Si es una pregunta, opinión, diseño conceptual, especificación, user stories, requisitos o informe de proyecto, entrégala directamente con finish(summary=...). "
-                    "Solo si requieres interactuar con código o archivos existentes de este entorno local (modificar o probar), utiliza las herramientas pertinentes sobre los archivos reales."
-                ),
-            })
-
+            step_records: List[Dict[str, Any]] = []
             active_parent_id = f"root_{sid}"
             consecutive_failures = 0
             technical_failures = 0
@@ -1912,6 +2230,22 @@ class RuntimeApplicationService:
 
                 step_idx += 1
                 mission["current_step"] = step_idx
+
+                # Reconciliación / persistencia periódica en SQLite
+                if hasattr(self.state_store, "save_mission"):
+                    try:
+                        self.state_store.save_mission(dict(mission))
+                    except Exception as save_err:
+                        logger.debug("Error persistiendo misión en SQLite: %s", save_err)
+
+                # ContextManager como única autoridad de ensamblado de prompt y compresión semántica
+                conversation = self.context_manager.assemble_mission_prompt(
+                    goal=goal,
+                    system_prompt=system_prompt,
+                    steps_history=step_records,
+                    environment_info=None,
+                    chat_history=mission.get("chat_history"),
+                )
 
                 # Invocar LLM real
                 llm_output = ""
@@ -2047,13 +2381,19 @@ class RuntimeApplicationService:
                             "backtrack_to": active_parent_id,
                         },
                     )
-                    conversation.append({
-                        "role": "user",
-                        "content": (
+                    step_records.append({
+                        "step": step_idx,
+                        "thought": thought,
+                        "tool": tool,
+                        "arguments": args,
+                        "verdict": "REPLAN",
+                        "reason_code": "SEMANTIC_CIRCUIT_BREAKER_LOOP",
+                        "observation": (
                             f"🚨 [SUPERVISOR PRAXEON - SEMANTIC CIRCUIT BREAKER]: Bucle de fijación semántica detectado.\n"
                             f"Has propuesto '{tool}' con argumentos idénticos repetidamente sin avance comprobable. Esta rama queda PODADA.\n"
                             "DEBES formular una alternativa de razonamiento diferente, inspeccionar otros archivos o cambiar tu estrategia."
                         ),
+                        "success": False,
                     })
                     semantic_fixations = 0
                     time.sleep(delay_sec)
@@ -2152,14 +2492,13 @@ class RuntimeApplicationService:
                     obs_output = str(err)
                     executed_successfully = False
 
+                step_verdict = getattr(resp, "status", "ERROR") if 'resp' in locals() and resp else "ERROR"
+                step_reasons = ", ".join(getattr(getattr(resp, "policy", None), "reason_codes", []) or []) if 'resp' in locals() and resp else ""
+
                 if executed_successfully:
                     # Acción exitosa: el cursor activo del árbol avanza
                     consecutive_failures = 0
                     active_parent_id = action_node_id
-                    conversation.append({
-                        "role": "assistant",
-                        "content": f"Thought: {thought}\nAction: {tool}({json.dumps(args, ensure_ascii=False)})",
-                    })
                     raw_obs = obs_output or "Acción ejecutada correctamente."
                     if len(raw_obs) > 50_000:
                         keep_h = 35_000
@@ -2169,13 +2508,15 @@ class RuntimeApplicationService:
                     else:
                         llm_obs = raw_obs
 
-                    conversation.append({
-                        "role": "user",
-                        "content": (
-                            f"Observación de {tool}:\n{llm_obs}\n\n"
-                            f"[Supervisión]: Responde de forma directa, natural y enfocada a la petición del usuario: '{goal}'. "
-                            "Si es una especificación, diseño, requisitos o informe de otro proyecto o arquitectura, responde a ese proyecto sin confundirlo con el repositorio local."
-                        ),
+                    step_records.append({
+                        "step": step_idx,
+                        "thought": thought,
+                        "tool": tool,
+                        "arguments": args,
+                        "verdict": step_verdict,
+                        "reason_code": step_reasons,
+                        "observation": llm_obs,
+                        "success": True,
                     })
                 else:
                     consecutive_failures += 1
@@ -2193,10 +2534,8 @@ class RuntimeApplicationService:
                             "failed_node": action_node_id,
                         },
                     )
-                    conversation.append({
-                        "role": "assistant",
-                        "content": f"Thought: {thought}\nAction: {tool}({json.dumps(args, ensure_ascii=False)})",
-                    })
+
+                    obs_fail = obs_output or "Acción no autorizada o fallida."
 
                     # CIRCUITO DE BLOQUEO Y DETECCIÓN DE BUCLE PERSISTENTE (JEV CIRCUIT BREAKER)
                     if consecutive_failures >= 2 and not circuit_breaker_triggered:
@@ -2222,19 +2561,16 @@ class RuntimeApplicationService:
                             },
                         )
 
-                        conversation.append({
-                            "role": "user",
-                            "content": (
-                                f"🚨 [INTERVENCIÓN JEV - CIRCUIT BREAKER ACTIVADO]:\n"
-                                f"Has acumulado {consecutive_failures} acciones fallidas o vetadas intentando acceder a archivos o scripts inexistentes.\n"
-                                f"El supervisor ha PODADO esa rama inválida y forzado un RETROCESO al nodo raíz.\n\n"
-                                f"ARCHIVOS Y CARPETAS REALES EN EL ENTORNO ANFITRIÓN:\n"
-                                f"[{real_files_str}]\n\n"
-                                "DIRECTIVA ESTRICTA DEL SUPERVISOR:\n"
-                                "1. NO intentes inventar nombres de archivos ni scripts inexistentes.\n"
-                                "2. Si la tarea requiere interactuar con el código de este espacio de trabajo anfitrión, trabaja exclusivamente sobre rutas reales comprobadas.\n"
-                                "3. Si la tarea es de diseño, especificación conceptual o sobre otro proyecto, entrega tu solución o informe directamente mediante 'finish'."
-                            ),
+                        obs_fail += f"\n🚨 [CIRCUIT BREAKER GROUNDING]: Archivos reales: [{real_files_str}]. Trabaja exclusivamente sobre rutas reales o usa 'finish'."
+                        step_records.append({
+                            "step": step_idx,
+                            "thought": thought,
+                            "tool": tool,
+                            "arguments": args,
+                            "verdict": step_verdict if step_verdict != "ALLOW" else "BLOCK",
+                            "reason_code": step_reasons or "CIRCUIT_BREAKER_GROUNDING",
+                            "observation": obs_fail,
+                            "success": False,
                         })
                         active_parent_id = f"root_{sid}"
                         time.sleep(delay_sec)
@@ -2263,16 +2599,27 @@ class RuntimeApplicationService:
                             if sid in self._sessions_meta:
                                 self._sessions_meta[sid]["status"] = "Completed"
                                 self._sessions_meta[sid]["final_answer"] = summary_final
+                        step_records.append({
+                            "step": step_idx,
+                            "thought": thought,
+                            "tool": tool,
+                            "arguments": args,
+                            "verdict": "BLOCK",
+                            "reason_code": "SUPERVISOR_FORCED_TERMINATION",
+                            "observation": summary_final,
+                            "success": False,
+                        })
                         break
                     else:
-                        conversation.append({
-                            "role": "user",
-                            "content": (
-                                f"[ALERTA SUPERVISOR PRAXEON]: La acción {tool} no tuvo éxito ({obs_output[:350]}).\n"
-                                f"El supervisor ha aplicado un RETROCESO (Backtrack) al nodo '{active_parent_id}'. "
-                                "Formula una HIPÓTESIS ALTERNATIVA (Bifurcación) para abordar el objetivo por otra vía. "
-                                "Explica tu retroceso en 'Thought:' y propone tu nueva 'Action:'."
-                            ),
+                        step_records.append({
+                            "step": step_idx,
+                            "thought": thought,
+                            "tool": tool,
+                            "arguments": args,
+                            "verdict": step_verdict if step_verdict != "ALLOW" else "BLOCK",
+                            "reason_code": step_reasons or "EXECUTION_FAILURE",
+                            "observation": obs_fail,
+                            "success": False,
                         })
 
                 if tool in ("finish", "complete_task", "done", "complete", "task_completed"):
@@ -2306,6 +2653,13 @@ class RuntimeApplicationService:
                 step_data = steps_to_run[step_idx]
                 step_idx += 1
                 mission["current_step"] = step_idx
+
+                # Reconciliación / persistencia periódica en SQLite
+                if hasattr(self.state_store, "save_mission"):
+                    try:
+                        self.state_store.save_mission(dict(mission))
+                    except Exception:
+                        pass
 
                 # Usar parent_id explícito del plan o el active_parent_id actual
                 target_parent = step_data.get("parent_id") or active_parent_id
@@ -2357,7 +2711,7 @@ class RuntimeApplicationService:
                                     reason="Auto-aprobado por sesión Full Access Autónomo",
                                     operator_id="operator_full_access_auto",
                                     role="operator",
-                                )
+                                    )
                                 if conf_res.status == "ALLOW":
                                     exec_res = self.execute_decision(decision_id=resp.decision_id)
                                     executed_successfully = exec_res.success and not exec_res.is_error
@@ -2429,6 +2783,14 @@ class RuntimeApplicationService:
             if sid in self._sessions_meta:
                 self._sessions_meta[sid]["status"] = "Completed"
 
+        mission["status"] = "Completed"
+        mission["stopped"] = True
+        if hasattr(self.state_store, "save_mission"):
+            try:
+                self.state_store.save_mission(dict(mission))
+            except Exception:
+                pass
+
         final_summary = None
         with self._lock:
             if sid in self._sessions_meta:
@@ -2440,6 +2802,110 @@ class RuntimeApplicationService:
             node_id=f"root_{sid}",
             payload={"status": "completed", "summary": final_summary or f"Misión '{goal}' finalizada exitosamente."},
         )
+
+    def get_available_providers(self) -> Dict[str, Any]:
+        """Obtiene dinámicamente el catálogo de providers disponibles (delegado en DiagnosticsCoordinator)."""
+        return self.diagnostics_coordinator.get_available_providers()
+
+    def _get_available_providers_impl(self) -> Dict[str, Any]:
+        """Implementación interna del catálogo dinámico de providers."""
+        from praxeon.providers.registry import default_registry
+
+        # Calcular telemetría observada agregada por provider
+        latency_stats: Dict[str, Dict[str, Any]] = {}
+        with self._lock:
+            for sid, sess_rt in getattr(self, "_session_runtimes", {}).items():
+                if hasattr(sess_rt, "decision_runtime"):
+                    tel = sess_rt.decision_runtime.get_telemetry()
+                    pid = tel.get("provider_id")
+                    avg = tel.get("average_latency_ms")
+                    cnt = tel.get("evaluations_count", 0)
+                    if pid and avg is not None and cnt > 0:
+                        if pid not in latency_stats:
+                            latency_stats[pid] = {"total_ms": 0.0, "count": 0}
+                        latency_stats[pid]["total_ms"] += float(avg) * int(cnt)
+                        latency_stats[pid]["count"] += int(cnt)
+
+        raw_providers = default_registry.list_providers()
+        decision_providers = []
+        for p in raw_providers:
+            pid = p["provider_id"]
+            stats = latency_stats.get(pid)
+            if stats and stats["count"] > 0:
+                avg_ms = round(stats["total_ms"] / stats["count"], 2)
+                avg_disp = f"{avg_ms} ms"
+            else:
+                avg_ms = None
+                avg_disp = "N/A"
+
+            meta = {
+                "laya": {
+                    "name": "LAYA System-1",
+                    "model_id": "laya-v1",
+                    "version": "0.3.0",
+                    "supported_backends": ["local", "api"],
+                    "fallbacks": ["mock", "replay"],
+                },
+                "typesafe": {
+                    "name": "TypeSafe AI (Legacy)",
+                    "model_id": "typesafe-v1",
+                    "version": "0.7.0",
+                    "supported_backends": ["api"],
+                    "fallbacks": ["mock", "replay"],
+                },
+                "replay": {
+                    "name": "Replay Provider",
+                    "model_id": "replay-v1",
+                    "version": "1.0.0",
+                    "supported_backends": ["local"],
+                    "fallbacks": ["mock"],
+                },
+                "mock": {
+                    "name": "Mock Provider",
+                    "model_id": "mock-v1",
+                    "version": "1.0.0",
+                    "supported_backends": ["local"],
+                    "fallbacks": [],
+                },
+            }.get(pid, {
+                "name": pid.title(),
+                "model_id": f"{pid}-v1",
+                "version": "1.0.0",
+                "supported_backends": ["local"],
+                "fallbacks": ["mock"],
+            })
+
+            decision_providers.append({
+                "provider_id": pid,
+                "name": meta["name"],
+                "model_id": meta["model_id"],
+                "version": meta["version"],
+                "backend": p.get("default_backend") or "local",
+                "supported_backends": meta["supported_backends"],
+                "description": p.get("description", ""),
+                "available": bool(p.get("installed", False)),
+                "installed": bool(p.get("installed", False)),
+                "required_extra": p.get("required_extra"),
+                "average_latency_ms": avg_ms,
+                "average_latency_display": avg_disp,
+                "fallbacks": meta["fallbacks"],
+                "category": "decision_provider",
+            })
+
+        llm_providers = [
+            {"provider_id": "simulator", "name": "Simulated Agent (Offline)", "default_model": "simulator-agent", "type": "offline"},
+            {"provider_id": "groq", "name": "Groq Cloud", "default_model": "llama-3.3-70b-versatile", "type": "cloud"},
+            {"provider_id": "ollama", "name": "Ollama Local", "default_model": "qwen2.5-coder:7b", "type": "local"},
+            {"provider_id": "gemini", "name": "Google Gemini", "default_model": "gemini-1.5-flash", "type": "cloud"},
+            {"provider_id": "openai", "name": "OpenAI", "default_model": "gpt-4o-mini", "type": "cloud"},
+            {"provider_id": "openrouter", "name": "OpenRouter", "default_model": "anthropic/claude-3.5-sonnet", "type": "cloud"},
+        ]
+
+        return {
+            "decision_providers": decision_providers,
+            "llm_providers": llm_providers,
+        }
+
 
 
 # generate_goal_tailored_steps ha sido modularizado formalmente en:

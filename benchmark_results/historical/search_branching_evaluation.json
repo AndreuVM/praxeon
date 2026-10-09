@@ -1,0 +1,77 @@
+{
+  "metadata": {
+    "benchmark_name": "PRAXEON Multi-Path Reasoning & Tree Search Benchmark",
+    "praxeon_version": "1.0.0",
+    "timestamp": "2026-10-04T15:53:50.418323+00:00",
+    "tasks_evaluated": 10,
+    "seed": 42,
+    "hardware_environment": {
+      "os": "Windows-10-10.0.26200-SP0",
+      "processor": "Intel64 Family 6 Model 183 Stepping 1, GenuineIntel",
+      "python_version": "3.11.15"
+    },
+    "workload_scope_disclaimer": "NOTE: The success rate and pruning efficiency metrics reported herein are evaluated on a controlled synthetic multi-path environment with deliberate dead-ends, destructive traps, and non-linear branching. They demonstrate algorithmic resilience and safety-bounded search benefits over unguided linear execution."
+  },
+  "results": {
+    "GREEDY_K1": {
+      "mode": "GREEDY_K1",
+      "scenarios_count": 10,
+      "success_count": 0,
+      "success_rate": 0.0,
+      "total_tokens": 350,
+      "total_branches_explored": 20,
+      "total_branches_pruned": 10,
+      "total_branches_abandoned": 0,
+      "pruning_efficiency": 0.5,
+      "false_pruning_rate": 0.0,
+      "avg_latency_ms": 0.111,
+      "total_wall_ms": 1.11,
+      "token_overhead_ratio": 1.0
+    },
+    "BEAM_K3": {
+      "mode": "BEAM_K3",
+      "scenarios_count": 10,
+      "success_count": 10,
+      "success_rate": 1.0,
+      "total_tokens": 8010,
+      "total_branches_explored": 100,
+      "total_branches_pruned": 10,
+      "total_branches_abandoned": 70,
+      "pruning_efficiency": 0.1,
+      "false_pruning_rate": 0.0,
+      "avg_latency_ms": 3.136,
+      "total_wall_ms": 31.36,
+      "token_overhead_ratio": 22.89
+    },
+    "BEST_FIRST_K5": {
+      "mode": "BEST_FIRST_K5",
+      "scenarios_count": 10,
+      "success_count": 10,
+      "success_rate": 1.0,
+      "total_tokens": 18840,
+      "total_branches_explored": 210,
+      "total_branches_pruned": 10,
+      "total_branches_abandoned": 180,
+      "pruning_efficiency": 0.0476,
+      "false_pruning_rate": 0.0,
+      "avg_latency_ms": 6.125,
+      "total_wall_ms": 61.25,
+      "token_overhead_ratio": 53.83
+    },
+    "ADAPTIVE_K": {
+      "mode": "ADAPTIVE_K",
+      "scenarios_count": 10,
+      "success_count": 10,
+      "success_rate": 1.0,
+      "total_tokens": 8010,
+      "total_branches_explored": 100,
+      "total_branches_pruned": 10,
+      "total_branches_abandoned": 70,
+      "pruning_efficiency": 0.1,
+      "false_pruning_rate": 0.0,
+      "avg_latency_ms": 2.511,
+      "total_wall_ms": 25.11,
+      "token_overhead_ratio": 22.89
+    }
+  }
+}

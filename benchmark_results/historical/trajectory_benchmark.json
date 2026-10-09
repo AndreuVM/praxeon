@@ -1,0 +1,11 @@
+{
+  "timestamp": 1790670416.186164,
+  "total_trajectories": 3,
+  "completed_trajectories": 3,
+  "completion_rate": 1.0,
+  "total_steps": 11,
+  "rollbacks_triggered": 1,
+  "rollbacks_successful": 1,
+  "recovery_rate": 1.0,
+  "premature_finishes_prevented": 1
+}

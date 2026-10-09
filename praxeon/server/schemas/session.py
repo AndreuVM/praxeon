@@ -16,6 +16,8 @@ class CreateSessionRequest(BaseModel):
     autonomous: Optional[bool] = Field(False, description="Activa ejecución autónoma desatendida")
     workspace_root: Optional[str] = Field(None, description="Ruta raíz del espacio de trabajo")
     network_policy: Optional[str] = Field("isolated", description="Política de red ('isolated', 'restricted', 'host')")
+    decision_model: Optional[Any] = Field(None, description="Configuración tipada del modelo System-1 (DecisionModelConfig)")
+    llm_config: Optional[Dict[str, Any]] = Field(None, description="Configuración explícita del LLM que razona")
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Metadatos contextuales adicionales")
 
 
@@ -39,6 +41,7 @@ class SessionSummaryResponse(BaseModel):
     waiting_count: int = 0
     event_count: int = 0
     node_count: int = 0
+    decision_model_effective: Optional[Dict[str, Any]] = None
 
 
 class SessionSnapshotResponse(BaseModel):
@@ -68,6 +71,7 @@ class RunMissionRequest(BaseModel):
     api_key: Optional[str] = Field(None, description="Clave de API opcional para el proveedor LLM")
     base_url: Optional[str] = Field(None, description="URL base opcional para endpoints locales o personalizados")
     supervisor: Optional[str] = Field("laya", description="Motor de supervisión ('laya', 'typesafe', 'cascade')")
+    decision_model: Optional[Any] = Field(None, description="Configuración tipada del modelo System-1 (DecisionModelConfig)")
     max_steps: Optional[int] = Field(25, ge=1, le=500, description="Límite máximo de pasos para la misión (por defecto 25, ampliable hasta 500)")
     step_delay_ms: Optional[int] = Field(900, description="Retardo en ms entre pasos para visualización en tiempo real")
     allow_unattended_execution: Optional[bool] = Field(False, description="Permite omitir confirmación humana interactiva en full_access (Modo Autónomo)")

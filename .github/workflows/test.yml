@@ -90,3 +90,41 @@ jobs:
 
       - name: Verify Package Metadata
         run: twine check dist/*
+
+      - name: Clean Install from Wheel (Pure Core without Optional Extras)
+        run: |
+          python -m venv clean_env
+          clean_env/bin/python -m pip install --upgrade pip
+          clean_env/bin/pip install dist/*.whl
+
+      - name: CLI Smoke Test from Installed Wheel
+        run: |
+          clean_env/bin/praxeon --help
+          clean_env/bin/praxeon benchmark --help
+          clean_env/bin/praxeon-server --help
+
+      - name: Verify Clean Core Import (Zero Mandatory TypeSafe/LAYA Dependency)
+        run: |
+          clean_env/bin/python -c "import praxeon; from praxeon.providers.registry import default_registry; print('Loaded providers:', [p['provider_id'] for p in default_registry.list_providers()]); print('PRAXEON core wheel verified successfully!')"
+
+  core-independence:
+    name: Pure Core Independence Verification
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Pure Core (Without Optional Extras)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+          pip install pytest httpx
+
+      - name: Run Core Tests Without Optional Extras
+        run: |
+          pytest tests/test_sec01_ssrf_protection.py tests/test_p2_ui_context_resilience.py tests/test_properties.py -v

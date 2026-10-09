@@ -6,11 +6,21 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class ProviderAssessment(BaseModel):
-    """Juicio semántico multidimensional emitido por un ReasoningProvider (TypeSafe AI, LAYA o Replay)."""
-    model_config = ConfigDict(frozen=True)
+    """Juicio semántico multidimensional emitido por un DecisionProvider (LAYA, TypeSafe, Replay, Mock)."""
+    model_config = ConfigDict(frozen=True, populate_by_name=True)
 
     provider: str
+    provider_id: Optional[str] = None
     model: Optional[str] = None
+    model_name: Optional[str] = None
+    model_version: Optional[str] = None
+    backend: Optional[str] = None
+    latency_ms: float = 0.0
+    tokens_evaluated: Optional[int] = None
+    is_fallback: bool = False
+    degradation_reason: Optional[str] = None
+    calibration_profile: Optional[str] = None
+
     available: bool = True
     confidence: float = 0.0
     loop_probability: Optional[float] = None
@@ -21,6 +31,20 @@ class ProviderAssessment(BaseModel):
     failure_reason: Optional[str] = None
     reason_codes: List[str] = Field(default_factory=list)
     metadata: Dict[str, Any] = Field(default_factory=dict)
+
+    def __init__(self, **data: Any):
+        # Sincronización automática de alias canónicos
+        if "provider" in data and "provider_id" not in data:
+            data["provider_id"] = data["provider"]
+        elif "provider_id" in data and "provider" not in data:
+            data["provider"] = data["provider_id"]
+
+        if "model" in data and "model_name" not in data:
+            data["model_name"] = data["model"]
+        elif "model_name" in data and "model" not in data:
+            data["model"] = data["model_name"]
+
+        super().__init__(**data)
 
 
 class RiskLevel(str, Enum):

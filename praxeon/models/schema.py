@@ -98,14 +98,23 @@ class Trajectory(BaseModel):
         self.steps.append(step)
 
 
-class JEVScore(BaseModel):
-    """Desglose analítico del cálculo de Joint Expected Value para un candidato o paso."""
+class DecisionScore(BaseModel):
+    """Desglose analítico del cálculo de Joint Expected Value / Decision Score para un candidato o paso."""
     candidate_id: str = Field(description="ID del candidato evaluado")
     p_progress: float = Field(description="Probabilidad / Puntuación de progreso hacia la meta [0, 1]")
     delta_u: float = Field(description="Ganancia de información / reducción de incertidumbre [0, 1]")
     loop_penalty: float = Field(description="Penalización por bucles o redundancia en historial [0, 1]")
-    total_jev: float = Field(description="Puntuación JEV combinada normalizada [-1.0, 1.0]")
+    total_jev: float = Field(description="Puntuación combinada normalizada [-1.0, 1.0]")
     details: Dict[str, Any] = Field(default_factory=dict, description="Desglose interno de similitudes y pesos")
+
+    @property
+    def total_score(self) -> float:
+        """Alias canónico de total_jev (REF-01)."""
+        return self.total_jev
+
+
+# Alias de retrocompatibilidad controlada (REF-01)
+JEVScore = DecisionScore
 
 
 # --- Taxonomía Segregada de Anomalías (Hallazgo 3.13) ---

@@ -59,6 +59,7 @@ class LayaProvider(BaseReasoningProvider):
         timeout: float = 5.0,
         device: str = "cpu",
     ):
+        self.name = "laya"
         self.requested_backend = backend.lower()
         self.model_name = model_name
 

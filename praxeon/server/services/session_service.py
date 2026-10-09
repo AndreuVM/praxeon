@@ -62,6 +62,7 @@ class SessionService:
 
         state = SessionState(session_id=sid, goal=Goal(objective=goal), metadata=meta)
         self.state_store.save_state(state)
+        self.state_store.create_checkpoint(session_id=sid, label="Genesis checkpoint", state=state)
 
         with self._lock:
             self._sessions_meta[sid] = {

@@ -2,7 +2,7 @@
 
 import argparse
 import os
-from typing import List, Optional
+from typing import Any, List, Optional
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -59,10 +59,13 @@ def validate_security_profile(profile: Optional[str] = None) -> List[str]:
     ]
 
 
-def create_app(profile: Optional[str] = None) -> FastAPI:
+def create_app(
+    profile: Optional[str] = None,
+    service: Optional[Any] = None,
+) -> FastAPI:
     """Crea y configura la aplicación FastAPI con rutas y middleware."""
     prof = (profile or os.environ.get("PRAXEON_PROFILE") or os.environ.get("PRAXEON_ENV") or "dev").lower().strip()
-    from praxeon.server.dependencies import set_active_security_profile
+    from praxeon.server.dependencies import set_active_security_profile, get_runtime_service
     set_active_security_profile(prof)
 
     origins = validate_security_profile(prof)
@@ -105,6 +108,9 @@ def create_app(profile: Optional[str] = None) -> FastAPI:
     if target_static_dir:
         from fastapi.staticfiles import StaticFiles
         app.mount("/", StaticFiles(directory=target_static_dir, html=True), name="frontend")
+
+    if service is not None:
+        app.dependency_overrides[get_runtime_service] = lambda: service
 
     return app
 

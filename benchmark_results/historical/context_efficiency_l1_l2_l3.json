@@ -1,0 +1,59 @@
+{
+  "benchmark_suite": "PRAXEON Context Efficiency Benchmark (L1/L2/L3)",
+  "version": "1.0.0",
+  "timestamp": "2026-10-05T13:36:07.544869+00:00",
+  "levels": {
+    "L1": {
+      "level": "L1",
+      "description": "Local Context Optimization (DAG-aware pruning & budgeting)",
+      "steps_evaluated": 15,
+      "unpruned_tokens_total": 8792,
+      "optimized_tokens_total": 7828,
+      "tokens_saved_l1": 964,
+      "context_reduction_ratio_l1": 0.1096,
+      "percentage_savings": "10.96%"
+    },
+    "L2": {
+      "level": "L2",
+      "description": "Provider Prefix Caching & Incremental Delta Reuse",
+      "steps_evaluated": 15,
+      "branches_evaluated_total": 45,
+      "cache_hits_total": 30,
+      "cache_misses_total": 15,
+      "cache_hit_rate": 0.6667,
+      "prefix_cache_hits": 30,
+      "estimated_tokens_saved": 7436,
+      "estimated_reduction_ratio": 0.6962,
+      "deltas_generated": 45,
+      "elapsed_ms": 21.08
+    },
+    "L3": {
+      "level": "L3",
+      "description": "A/B End-to-End Billed Tokens, Latency & Cost Comparison",
+      "model": "gemini-2.5-flash",
+      "steps_evaluated": 10,
+      "baseline": {
+        "total_tokens": 16750,
+        "prompt_tokens": 15250,
+        "output_tokens": 1500,
+        "cost_usd": 0.016672
+      },
+      "praxeon": {
+        "prompt_tokens": 4830,
+        "cached_tokens": 3136,
+        "output_tokens": 1500,
+        "billed_tokens": 3194,
+        "cost_usd": 0.009646
+      },
+      "token_reduction_ratio": 0.8093,
+      "cost_reduction_ratio": 0.4214,
+      "cost_savings_usd": 0.007026
+    }
+  },
+  "summary": {
+    "l1_crr": 0.1096,
+    "l2_chr": 0.6667,
+    "l3_token_reduction": 0.8093,
+    "l3_cost_reduction": 0.4214
+  }
+}

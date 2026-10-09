@@ -1,0 +1,38 @@
+{
+  "5_steps": {
+    "num_steps": 5,
+    "total_input_tokens": 1366,
+    "avg_tokens_per_step": 273.2,
+    "min_tokens_per_step": 111,
+    "max_tokens_per_step": 435,
+    "total_prompt_chars": 5475,
+    "avg_latency_ms": 0.111,
+    "total_latency_ms": 0.554,
+    "truncation_events": 0,
+    "truncation_rate": 0.0
+  },
+  "15_steps": {
+    "num_steps": 15,
+    "total_input_tokens": 9270,
+    "avg_tokens_per_step": 618.0,
+    "min_tokens_per_step": 111,
+    "max_tokens_per_step": 919,
+    "total_prompt_chars": 37106,
+    "avg_latency_ms": 0.116,
+    "total_latency_ms": 1.735,
+    "truncation_events": 4,
+    "truncation_rate": 0.27
+  },
+  "30_steps": {
+    "num_steps": 30,
+    "total_input_tokens": 23078,
+    "avg_tokens_per_step": 769.3,
+    "min_tokens_per_step": 111,
+    "max_tokens_per_step": 922,
+    "total_prompt_chars": 92349,
+    "avg_latency_ms": 0.124,
+    "total_latency_ms": 3.723,
+    "truncation_events": 19,
+    "truncation_rate": 0.63
+  }
+}

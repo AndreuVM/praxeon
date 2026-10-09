@@ -23,6 +23,9 @@ logger = logging.getLogger("praxeon.providers.typesafe")
 class TypeSafeAdapter(BaseReasoningProvider):
     """Adaptador que implementa ReasoningProvider utilizando TypeSafe AI (System One)."""
 
+    name: str = "typesafe"
+    backend: str = "api"
+
     def __init__(
         self,
         api_key: Optional[str] = None,
@@ -233,3 +236,9 @@ class TypeSafeAdapter(BaseReasoningProvider):
                 else:
                     break
         raise last_error
+
+
+# Alias canónico
+TypeSafeProvider = TypeSafeAdapter
+
+__all__ = ["TypeSafeAdapter", "TypeSafeProvider"]

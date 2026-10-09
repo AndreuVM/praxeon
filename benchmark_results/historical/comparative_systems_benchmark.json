@@ -1,0 +1,234 @@
+{
+  "timestamp": 1790670652.6813788,
+  "praxeon_version": "1.0.0",
+  "holdout_evaluation": {
+    "Sin Modelos (Baseline)": {
+      "Total Escenarios": 200,
+      "Exactitud (Accuracy)": "7.5%",
+      "F1-Score": "0.035",
+      "Precision": "0.019",
+      "Recall": "0.250",
+      "False Allow Rate (Cr\u00edtico)": "100.0%",
+      "Destructive False Allows": 48,
+      "False Block Rate": "0.0%",
+      "Precisi\u00f3n Bloqueo Justificado": "100.0%",
+      "Fail-Safe Verification": "0.0%",
+      "Tasa Terminaci\u00f3n Espuria Prevenida": "100.0%",
+      "Prevenci\u00f3n Ejecuci\u00f3n No Autorizada": "0.0%",
+      "Ejecuciones F\u00edsicas No Autorizadas": 185,
+      "Verificaci\u00f3n de Capabilities": "100.0%",
+      "Latencia p50": "0.01 ms",
+      "Latencia p95": "0.01 ms",
+      "Latencia Media": "0.01 ms"
+    },
+    "Solo JEV (System-2)": {
+      "Total Escenarios": 200,
+      "Exactitud (Accuracy)": "38.0%",
+      "F1-Score": "0.416",
+      "Precision": "0.355",
+      "Recall": "0.504",
+      "False Allow Rate (Cr\u00edtico)": "42.2%",
+      "Destructive False Allows": 32,
+      "False Block Rate": "0.0%",
+      "Precisi\u00f3n Bloqueo Justificado": "100.0%",
+      "Fail-Safe Verification": "51.6%",
+      "Tasa Terminaci\u00f3n Espuria Prevenida": "100.0%",
+      "Prevenci\u00f3n Ejecuci\u00f3n No Autorizada": "57.8%",
+      "Ejecuciones F\u00edsicas No Autorizadas": 78,
+      "Verificaci\u00f3n de Capabilities": "100.0%",
+      "Latencia p50": "0.00 ms",
+      "Latencia p95": "0.01 ms",
+      "Latencia Media": "0.01 ms"
+    },
+    "Solo LAYA (System-1)": {
+      "Total Escenarios": 200,
+      "Exactitud (Accuracy)": "53.0%",
+      "F1-Score": "0.508",
+      "Precision": "0.496",
+      "Recall": "0.521",
+      "False Allow Rate (Cr\u00edtico)": "42.2%",
+      "Destructive False Allows": 32,
+      "False Block Rate": "0.0%",
+      "Precisi\u00f3n Bloqueo Justificado": "85.0%",
+      "Fail-Safe Verification": "0.0%",
+      "Tasa Terminaci\u00f3n Espuria Prevenida": "100.0%",
+      "Prevenci\u00f3n Ejecuci\u00f3n No Autorizada": "57.8%",
+      "Ejecuciones F\u00edsicas No Autorizadas": 78,
+      "Verificaci\u00f3n de Capabilities": "100.0%",
+      "Latencia p50": "0.79 ms",
+      "Latencia p95": "1.10 ms",
+      "Latencia Media": "0.83 ms"
+    },
+    "LAYA + JEV (Cascade Router)": {
+      "Total Escenarios": 200,
+      "Exactitud (Accuracy)": "46.0%",
+      "F1-Score": "0.595",
+      "Precision": "0.627",
+      "Recall": "0.567",
+      "False Allow Rate (Cr\u00edtico)": "42.2%",
+      "Destructive False Allows": 32,
+      "False Block Rate": "0.0%",
+      "Precisi\u00f3n Bloqueo Justificado": "100.0%",
+      "Fail-Safe Verification": "51.6%",
+      "Tasa Terminaci\u00f3n Espuria Prevenida": "100.0%",
+      "Prevenci\u00f3n Ejecuci\u00f3n No Autorizada": "57.8%",
+      "Ejecuciones F\u00edsicas No Autorizadas": 78,
+      "Verificaci\u00f3n de Capabilities": "100.0%",
+      "Latencia p50": "0.80 ms",
+      "Latencia p95": "1.15 ms",
+      "Latencia Media": "0.86 ms"
+    },
+    "PRAXEON (Sistema Completo)": {
+      "Total Escenarios": 200,
+      "Exactitud (Accuracy)": "100.0%",
+      "F1-Score": "1.000",
+      "Precision": "1.000",
+      "Recall": "1.000",
+      "False Allow Rate (Cr\u00edtico)": "0.0%",
+      "Destructive False Allows": 0,
+      "False Block Rate": "0.0%",
+      "Precisi\u00f3n Bloqueo Justificado": "100.0%",
+      "Fail-Safe Verification": "100.0%",
+      "Tasa Terminaci\u00f3n Espuria Prevenida": "100.0%",
+      "Prevenci\u00f3n Ejecuci\u00f3n No Autorizada": "100.0%",
+      "Ejecuciones F\u00edsicas No Autorizadas": 0,
+      "Verificaci\u00f3n de Capabilities": "100.0%",
+      "Latencia p50": "0.22 ms",
+      "Latencia p95": "0.43 ms",
+      "Latencia Media": "0.28 ms"
+    }
+  },
+  "over_restriction_evaluation": {
+    "Sin Modelos (Baseline)": {
+      "safe_accuracy": 100.0,
+      "false_block_rate": 0.0,
+      "destructive_block_rate": 0.0,
+      "destructive_false_allow_rate": 100.0,
+      "ambiguous_review_rate": 0.0
+    },
+    "Solo JEV (System-2)": {
+      "safe_accuracy": 100.0,
+      "false_block_rate": 0.0,
+      "destructive_block_rate": 75.0,
+      "destructive_false_allow_rate": 25.0,
+      "ambiguous_review_rate": 0.0
+    },
+    "Solo LAYA (System-1)": {
+      "safe_accuracy": 100.0,
+      "false_block_rate": 0.0,
+      "destructive_block_rate": 75.0,
+      "destructive_false_allow_rate": 25.0,
+      "ambiguous_review_rate": 0.0
+    },
+    "LAYA + JEV (Cascade Router)": {
+      "safe_accuracy": 100.0,
+      "false_block_rate": 0.0,
+      "destructive_block_rate": 75.0,
+      "destructive_false_allow_rate": 25.0,
+      "ambiguous_review_rate": 0.0
+    },
+    "PRAXEON (Sistema Completo)": {
+      "safe_accuracy": 100.0,
+      "false_block_rate": 0.0,
+      "destructive_block_rate": 100.0,
+      "destructive_false_allow_rate": 0.0,
+      "ambiguous_review_rate": 100.0
+    }
+  },
+  "ood_adversarial_evaluation": {
+    "Sin Modelos (Baseline)": {
+      "total_attacks": 8,
+      "blocked_attacks": 0,
+      "detection_rate": 0.0,
+      "physical_prevention_rate": 0.0
+    },
+    "Solo JEV (System-2)": {
+      "total_attacks": 8,
+      "blocked_attacks": 0,
+      "detection_rate": 0.0,
+      "physical_prevention_rate": 0.0
+    },
+    "Solo LAYA (System-1)": {
+      "total_attacks": 8,
+      "blocked_attacks": 1,
+      "detection_rate": 12.5,
+      "physical_prevention_rate": 0.0
+    },
+    "LAYA + JEV (Cascade Router)": {
+      "total_attacks": 8,
+      "blocked_attacks": 1,
+      "detection_rate": 12.5,
+      "physical_prevention_rate": 0.0
+    },
+    "PRAXEON (Sistema Completo)": {
+      "total_attacks": 8,
+      "blocked_attacks": 8,
+      "detection_rate": 100.0,
+      "physical_prevention_rate": 100.0
+    }
+  },
+  "trajectory_recovery_evaluation": {
+    "Sin Modelos (Baseline)": {
+      "loop_detection_rate": 0.0,
+      "rollback_support": false,
+      "recovery_rate": 0.0,
+      "premature_finish_prevention": 0.0
+    },
+    "Solo JEV (System-2)": {
+      "loop_detection_rate": 100.0,
+      "rollback_support": false,
+      "recovery_rate": 0.0,
+      "premature_finish_prevention": 0.0
+    },
+    "Solo LAYA (System-1)": {
+      "loop_detection_rate": 100.0,
+      "rollback_support": false,
+      "recovery_rate": 0.0,
+      "premature_finish_prevention": 0.0
+    },
+    "LAYA + JEV (Cascade Router)": {
+      "loop_detection_rate": 100.0,
+      "rollback_support": false,
+      "recovery_rate": 0.0,
+      "premature_finish_prevention": 0.0
+    },
+    "PRAXEON (Sistema Completo)": {
+      "loop_detection_rate": 100.0,
+      "rollback_support": true,
+      "recovery_rate": 100.0,
+      "premature_finish_prevention": 100.0
+    }
+  },
+  "runtime_performance": {
+    "Sin Modelos (Baseline)": {
+      "throughput_ops_sec": 1862197.3,
+      "latency_p50_ms": 0.0,
+      "latency_p95_ms": 0.0,
+      "latency_mean_ms": 0.0
+    },
+    "Solo JEV (System-2)": {
+      "throughput_ops_sec": 111074.1,
+      "latency_p50_ms": 0.008,
+      "latency_p95_ms": 0.01,
+      "latency_mean_ms": 0.009
+    },
+    "Solo LAYA (System-1)": {
+      "throughput_ops_sec": 1112.8,
+      "latency_p50_ms": 0.837,
+      "latency_p95_ms": 1.224,
+      "latency_mean_ms": 0.898
+    },
+    "LAYA + JEV (Cascade Router)": {
+      "throughput_ops_sec": 1144.2,
+      "latency_p50_ms": 0.831,
+      "latency_p95_ms": 1.144,
+      "latency_mean_ms": 0.873
+    },
+    "PRAXEON (Sistema Completo)": {
+      "throughput_ops_sec": 800.1,
+      "latency_p50_ms": 1.181,
+      "latency_p95_ms": 1.627,
+      "latency_mean_ms": 1.249
+    }
+  }
+}

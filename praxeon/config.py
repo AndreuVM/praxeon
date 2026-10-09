@@ -10,7 +10,7 @@ Implementa los requisitos de la Sección 23 de la Auditoría Técnica:
 import os
 import warnings
 from typing import Any, List, Literal, Optional, Set
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class ProviderConfig(BaseModel):
@@ -20,11 +20,36 @@ class ProviderConfig(BaseModel):
     use_api: bool = Field(default=False, description="Activar invocación real del proveedor")
     model: str = Field(default="jev-latest", description="Identificador del modelo de inferencia")
     base_url: Optional[str] = Field(default=None, description="URL base alternativa para el proveedor")
+    allow_custom_endpoints: bool = Field(
+        default=False,
+        description="Permitir endpoints remotos personalizados fuera de la allowlist canónica (SEC-01)",
+    )
+    allowed_custom_hosts: Set[str] = Field(
+        default_factory=set,
+        description="Allowlist explícita de dominios de endpoints autorizados",
+    )
     laya_backend: str = Field(default="auto", description="Backend para LAYA (auto, local, simulated, hosted)")
     llm_failure_policy: Literal["fail_closed", "synthetic_fallback"] = Field(
         default="synthetic_fallback",
         description="Política ante fallos críticos del LLM: 'fail_closed' o 'synthetic_fallback'",
     )
+
+    @field_validator("base_url")
+    @classmethod
+    def _validate_base_url(cls, v: Optional[str], info: Any) -> Optional[str]:
+        if not v:
+            return None
+        from praxeon.policy.egress import validate_provider_endpoint
+        data = info.data if hasattr(info, "data") else {}
+        allow_custom = bool(data.get("allow_custom_endpoints", False))
+        allowed_hosts = data.get("allowed_custom_hosts")
+        profile = (os.environ.get("PRAXEON_PROFILE") or os.environ.get("PRAXEON_ENV") or "dev").lower().strip()
+        return validate_provider_endpoint(
+            url=v,
+            allow_custom=allow_custom,
+            profile=profile,
+            allowed_hosts=allowed_hosts,
+        )
 
 
 class DecisionConfig(BaseModel):
@@ -76,6 +101,14 @@ class SecurityConfig(BaseModel):
     redact_pii: bool = Field(default=True, description="Enmascarar emails y direcciones IP sensibles")
     max_payload_bytes: int = Field(default=100_000, description="Límite máximo de bytes por payload de herramienta")
     max_history_steps: int = Field(default=50, description="Número máximo de pasos retenidos en contexto")
+    allow_custom_endpoints: bool = Field(
+        default=False,
+        description="Permitir URLs base/endpoints personalizados fuera de la allowlist canónica de proveedores (SEC-01)",
+    )
+    allowed_custom_hosts: Set[str] = Field(
+        default_factory=set,
+        description="Allowlist explícita de dominios de endpoints autorizados",
+    )
 
 
 class TelemetryConfig(BaseModel):
@@ -303,6 +336,10 @@ class PraxeonConfig(BaseModel):
         adaptive_strategy = os.getenv("PRAXEON_BRANCHING_STRATEGY", "deterministic")
         adaptive_max_k = int(os.getenv("PRAXEON_MAX_BRANCHING_FACTOR", "3"))
 
+        allow_custom_endpoints = os.getenv("PRAXEON_ALLOW_CUSTOM_ENDPOINTS", "false").lower() in ("true", "1", "yes")
+        raw_allowed_hosts = os.getenv("PRAXEON_ALLOWED_CUSTOM_HOSTS", "")
+        allowed_custom_hosts = set(h.strip().lower() for h in raw_allowed_hosts.split(",") if h.strip())
+
         return cls(
             provider=ProviderConfig(
                 name=supervisor_name,
@@ -310,6 +347,8 @@ class PraxeonConfig(BaseModel):
                 use_api=use_api,
                 model=model,
                 laya_backend=laya_backend,
+                allow_custom_endpoints=allow_custom_endpoints,
+                allowed_custom_hosts=allowed_custom_hosts,
             ),
             decision=DecisionConfig(
                 critical_jev_threshold=float(os.getenv("JEV_CRITICAL_THRESHOLD", "0.0")),
@@ -323,6 +362,8 @@ class PraxeonConfig(BaseModel):
             ),
             security=SecurityConfig(
                 max_history_steps=int(os.getenv("JEV_MAX_HISTORY_STEPS", "50")),
+                allow_custom_endpoints=allow_custom_endpoints,
+                allowed_custom_hosts=allowed_custom_hosts,
             ),
             adaptive=AdaptiveBranchingConfig(
                 enabled=adaptive_enabled,

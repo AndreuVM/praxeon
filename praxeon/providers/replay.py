@@ -61,11 +61,15 @@ class ReplayProvider(BaseReasoningProvider):
         default_scenario: str = "safe_read",
         provider_name: str = "replay",
         model_name: str = "replay-mock-v1",
+        trace_path: Optional[str] = None,
     ):
         self.provider_name = provider_name
+        self.name = provider_name
         self.model_name = model_name
         self.default_scenario = default_scenario
+        self.trace_path = trace_path
         self.is_available = True
+        self.available = True
         self.action_overrides: Dict[str, ProviderAssessment] = {}
         self.scenario_queue: List[str] = []
         self.evaluation_history: List[Dict[str, Any]] = []
@@ -73,6 +77,7 @@ class ReplayProvider(BaseReasoningProvider):
     def set_available(self, available: bool) -> None:
         """Modifica dinámicamente la disponibilidad del proveedor."""
         self.is_available = available
+        self.available = available
 
     def override_for_action(self, action_id: str, assessment: ProviderAssessment) -> None:
         """Asigna una evaluación específica para un action_id concreto."""

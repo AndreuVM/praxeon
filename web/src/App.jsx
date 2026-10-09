@@ -610,10 +610,15 @@ export default function App() {
   const handleStartMission = async ({
     goal,
     execution_mode,
+    autonomous = false,
+    allow_unattended_execution = false,
+    confirmation_required_for_full_access = false,
     llm_provider,
+    llm_model,
+    decision_model,
     supervisor,
     max_steps,
-    llm_model,
+    llm_failure_policy,
     api_key,
     base_url,
     workspace_root,
@@ -628,12 +633,17 @@ export default function App() {
       const res = await api.runMission({
         goal,
         execution_mode,
+        autonomous,
+        allow_unattended_execution,
+        confirmation_required_for_full_access,
         llm_provider,
         llm_model,
+        decision_model,
         api_key,
         base_url,
-        supervisor,
+        supervisor: decision_model?.provider || supervisor,
         max_steps,
+        llm_failure_policy,
         step_delay_ms: 1000,
         workspace_root,
         chat_history,
@@ -641,17 +651,24 @@ export default function App() {
 
       if (res?.data) {
         const sid = res.data.session_id;
+        const effModel = res.data.decision_model_effective || decision_model;
         const newSess = {
           sessionId: sid,
           status: 'Active',
           agent: 'CodingAgent',
           goal: goal,
           execution_mode: res.data.execution_mode || execution_mode || 'local_restricted',
+          autonomous: Boolean(autonomous || res.data.autonomous),
+          isAutonomous: Boolean(autonomous || res.data.autonomous),
+          isDegraded: Boolean(res.data.is_fallback || res.data.status === 'Degraded'),
+          fallbackReason: res.data.degradation_reason || null,
+          decisionModel: effModel,
+          decision_model_effective: effModel,
           metrics: { totalDecisions: 0, allowed: 0, blocked: 0, review: 0 },
           runtime: {
-            provider: `${llm_provider.toUpperCase()} + ${supervisor.toUpperCase()}`,
-            version: 'v1.0.0',
-            latencyP50: '92ms',
+            provider: `${(llm_provider || 'SIMULATOR').toUpperCase()} + ${(effModel?.provider || supervisor || 'LAYA').toUpperCase()}`,
+            version: 'v1.1.0',
+            latencyP50: 'N/A',
             executionTime: 'Live',
           },
           finalAnswer: null,
@@ -1128,6 +1145,10 @@ export default function App() {
         sessionId={session.sessionId}
         runtimeActive={runtimeActive}
         executionMode={session.execution_mode || 'local_restricted'}
+        isAutonomous={Boolean(session.autonomous || session.isAutonomous || session.execution_mode === 'full_access_autonomous')}
+        isDegraded={Boolean(session.isDegraded || session.fallbackActive || session.status === 'Degraded')}
+        fallbackReason={session.fallbackReason}
+        decisionModel={session.decision_model_effective || session.decisionModel}
         operatorId="operator_admin"
         operatorRole="operator"
         onOpenSessions={() => setIsSessionsOpen(true)}

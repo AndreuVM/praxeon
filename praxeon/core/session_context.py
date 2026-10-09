@@ -201,7 +201,7 @@ class SessionContextManager:
         except Exception as e:
             file_tree.append(f"- (Error explorando directorio: {e})")
 
-        tree_str = "\n  ".join(file_tree[:25]) if file_tree else "- (Directorio vacío)"
+        tree_str = "\n  ".join(file_tree[:60]) if file_tree else "- (Directorio vacío)"
 
         env_lines = [
             "🖥️ [INFORMACIÓN DEL ENTORNO DE EJECUCIÓN Y SISTEMA]:",

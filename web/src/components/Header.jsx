@@ -7,6 +7,10 @@ export default function Header({
   executionMode = 'local_restricted',
   operatorId = 'operator_admin',
   operatorRole = 'operator',
+  isAutonomous = false,
+  isDegraded = false,
+  fallbackReason = null,
+  decisionModel = null,
   onOpenSessions,
   onOpenPropose: _onOpenPropose,
   onNewSession,
@@ -14,7 +18,8 @@ export default function Header({
 }) {
   const getModeBadge = () => {
     const mode = (executionMode || '').toLowerCase();
-    if (mode === 'full_access') {
+    if (mode === 'full_access' || mode.startsWith('full_access')) {
+      const isAuto = isAutonomous || mode === 'full_access_autonomous';
       return (
         <div style={{
           display: 'flex',
@@ -22,15 +27,15 @@ export default function Header({
           gap: '6px',
           padding: '3px 10px',
           borderRadius: '9999px',
-          backgroundColor: 'rgba(239, 68, 68, 0.15)',
-          border: '1px solid rgba(239, 68, 68, 0.35)',
+          backgroundColor: isAuto ? 'rgba(239, 68, 68, 0.18)' : 'rgba(245, 158, 11, 0.16)',
+          border: `1px solid ${isAuto ? 'rgba(239, 68, 68, 0.45)' : 'rgba(245, 158, 11, 0.4)'}`,
           fontSize: '11px',
           fontWeight: '700',
-          color: '#f87171',
+          color: isAuto ? '#f87171' : '#fbbf24',
           letterSpacing: '0.04em',
-        }} title="Modo Host sin contención de SO ni aislamiento de procesos">
+        }} title={isAuto ? "Full Access Autónomo: ejecución directa supervisada sin parada interactiva humana" : "Full Access Manual: ejecución directa requiriendo confirmación interactiva del operador"}>
           <AlertTriangle size={12} />
-          <span>FULL ACCESS ⚠</span>
+          <span>{isAuto ? 'FULL ACCESS (AUTONOMOUS)' : 'FULL ACCESS (MANUAL)'}</span>
         </div>
       );
     }
@@ -124,6 +129,29 @@ export default function Header({
 
       {/* Right Controls */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+        {/* Synthetic Fallback / Degraded Mode Badge */}
+        {isDegraded && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '3px 10px',
+              borderRadius: '9999px',
+              backgroundColor: 'rgba(234, 179, 8, 0.16)',
+              border: '1px solid rgba(234, 179, 8, 0.45)',
+              fontSize: '11px',
+              fontWeight: '700',
+              color: '#eab308',
+              letterSpacing: '0.03em',
+            }}
+            title={fallbackReason || "LLM no disponible o fallo en inferencia. Operando bajo planificador degradado SYNTHETIC_FALLBACK"}
+          >
+            <AlertTriangle size={12} />
+            <span>SYNTHETIC FALLBACK ⚠</span>
+          </div>
+        )}
+
         {/* Execution Mode Badge */}
         {getModeBadge()}
 

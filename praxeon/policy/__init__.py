@@ -1,6 +1,13 @@
 """Motor de políticas y gobierno de acceso v0.2."""
 
-from praxeon.policy.egress import EgressMode, EgressPolicy, EgressViolation
+from praxeon.policy.egress import (
+    CANONICAL_PROVIDER_HOSTS,
+    EgressMode,
+    EgressPolicy,
+    EgressViolation,
+    SSRFProtectionViolation,
+    validate_provider_endpoint,
+)
 from praxeon.policy.engine import PolicyEngine
 from praxeon.policy.failsafe import FailSafePolicy
 from praxeon.policy.permissions import PermissionManager
@@ -19,4 +26,7 @@ __all__ = [
     "EgressPolicy",
     "EgressMode",
     "EgressViolation",
+    "SSRFProtectionViolation",
+    "CANONICAL_PROVIDER_HOSTS",
+    "validate_provider_endpoint",
 ]

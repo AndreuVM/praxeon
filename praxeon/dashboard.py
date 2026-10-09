@@ -55,8 +55,8 @@ def render_noul_bar(prob: float, width: int = 16) -> str:
     return f"[{bar}] [{style}]{prob:.2f} ({tag})[/]"
 
 
-class JEVDashboard:
-    """Gestor del visualizador CLI de supervisión cognitiva basado puramente en TypeSafe AI."""
+class PraxeonDashboard:
+    """Gestor del visualizador CLI de supervisión cognitiva basado en TypeSafe AI y LAYA (REF-01)."""
 
     def __init__(self, goal: str, model_name: str = "Gemini / Antigravity", config: Optional[PraxeonConfig] = None):
 
@@ -305,9 +305,13 @@ class JEVDashboard:
         })
 
 
-def _execute_single_demo_task(goal: str) -> JEVDashboard:
+# Alias de retrocompatibilidad temporal (REF-01)
+JEVDashboard = PraxeonDashboard
+
+
+def _execute_single_demo_task(goal: str) -> PraxeonDashboard:
     """Ejecuta una corrida individual de demostración en el visualizador TUI."""
-    dash = JEVDashboard(goal=goal, model_name="Antigravity / Gemini 3.8")
+    dash = PraxeonDashboard(goal=goal, model_name="Antigravity / Gemini 3.8")
     console.clear()
 
     demo_sequence = [
@@ -1115,7 +1119,7 @@ def main():
 
 
 # Nomenclatura canónica PRAXEON 1.0 (JEVDashboard conservado para retrocompatibilidad)
-PraxeonDashboard = JEVDashboard
+JEVDashboard = PraxeonDashboard
 
 
 if __name__ == "__main__":
