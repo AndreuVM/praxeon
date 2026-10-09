@@ -22,6 +22,8 @@ import {
   Flag,
   Cpu,
   Settings2,
+  LayoutTemplate,
+  Check,
 } from 'lucide-react';
 import {
   fetchWorkflows,
@@ -39,6 +41,9 @@ import {
   stepWorkflow,
   backtrackWorkflow,
   resetWorkflow,
+  approveWorkflowNode,
+  fetchCanonicalTemplates,
+  instantiateCanonicalTemplate,
   getApiKey,
   fetchAgents,
 } from '../../services/api';
@@ -74,6 +79,8 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
   const [showCreateWfModal, setShowCreateWfModal] = useState(false);
   const [showAddNodeModal, setShowAddNodeModal] = useState(false);
   const [showConnectModal, setShowConnectModal] = useState(false);
+  const [showTemplatesModal, setShowTemplatesModal] = useState(false);
+  const [canonicalTemplates, setCanonicalTemplates] = useState([]);
 
   // Formularios de creación
   const [newWfName, setNewWfName] = useState('');
@@ -118,6 +125,34 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
     }
   };
 
+  // Cargar plantillas canónicas del sistema
+  const loadTemplates = async () => {
+    try {
+      const res = await fetchCanonicalTemplates();
+      if (res && res.data) {
+        setCanonicalTemplates(res.data);
+      }
+    } catch (err) {
+      console.warn('No se pudieron cargar las plantillas canónicas:', err);
+    }
+  };
+
+  // Instanciar una plantilla canónica
+  const handleInstantiateTemplate = async (templateKey, templateName) => {
+    try {
+      const res = await instantiateCanonicalTemplate(templateKey, `${templateName} (Instancia)`);
+      setShowTemplatesModal(false);
+      addLog('TEMPLATE', `Plantilla '${templateName}' instanciada exitosamente.`);
+      await loadWorkflows();
+      if (res.data?.workflow_id) {
+        setActiveWorkflowId(res.data.workflow_id);
+      }
+    } catch (err) {
+      alert(`Error al instanciar plantilla: ${err.message}`);
+      addLog('ERROR', `Fallo al instanciar plantilla: ${err.message}`);
+    }
+  };
+
   // Cargar lista de workflows
   const loadWorkflows = async () => {
     try {
@@ -157,6 +192,7 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
   useEffect(() => {
     loadAgents();
     loadWorkflows();
+    loadTemplates();
   }, []);
 
   useEffect(() => {
@@ -189,6 +225,8 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
     }
     const node = nodesArray.find((n) => (n.node_id || n.id) === selectedNodeId);
     if (node) {
+      const cfg = node.control_config || {};
+      const cond = cfg.condition || {};
       setNodeEditForm({
         node_id: node.node_id || node.id,
         name: node.name || '',
@@ -198,6 +236,18 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
         inputs_json: JSON.stringify(node.inputs || {}, null, 2),
         status: node.status || 'PENDING',
         outputs_json: JSON.stringify(node.outputs || {}, null, 2),
+        // Campos de Semántica de Control
+        max_iterations: cfg.max_iterations ?? 3,
+        on_limit: cfg.on_limit || 'ABORT',
+        prompt: cfg.prompt || 'Se requiere aprobación de un supervisor humano.',
+        timeout_seconds: cfg.timeout_seconds || 3600,
+        strategy: cfg.strategy || 'MANUAL',
+        candidate_agents: Array.isArray(cfg.candidate_agents) ? cfg.candidate_agents.join(', ') : '',
+        join_policy: cfg.join_policy || 'all',
+        merge_policy: cfg.merge_policy || 'namespace',
+        condition_field: cond.field || '',
+        condition_operator: cond.operator || '==',
+        condition_expected_value: cond.expected_value !== undefined ? (typeof cond.expected_value === 'object' ? JSON.stringify(cond.expected_value) : String(cond.expected_value)) : '',
       });
       setSelectedEdgeId(null);
     }
@@ -312,12 +362,70 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
         return;
       }
 
+      // Ensamblar control_config según el tipo de nodo
+      let controlConfig = null;
+      const nt = nodeEditForm.node_type;
+
+      if (nt === 'WHILE') {
+        let cond = null;
+        if (nodeEditForm.condition_field?.trim()) {
+          let expVal = nodeEditForm.condition_expected_value;
+          if (expVal === 'true') expVal = true;
+          else if (expVal === 'false') expVal = false;
+          else if (!isNaN(Number(expVal)) && expVal.trim() !== '') expVal = Number(expVal);
+          cond = {
+            field: nodeEditForm.condition_field.trim(),
+            operator: nodeEditForm.condition_operator || '==',
+            expected_value: expVal,
+          };
+        }
+        controlConfig = {
+          max_iterations: Number(nodeEditForm.max_iterations) || 3,
+          on_limit: nodeEditForm.on_limit || 'ABORT',
+          ...(cond ? { condition: cond } : {}),
+        };
+      } else if (nt === 'IF' || nt === 'DECISION') {
+        let cond = null;
+        if (nodeEditForm.condition_field?.trim()) {
+          let expVal = nodeEditForm.condition_expected_value;
+          if (expVal === 'true') expVal = true;
+          else if (expVal === 'false') expVal = false;
+          else if (!isNaN(Number(expVal)) && expVal.trim() !== '') expVal = Number(expVal);
+          cond = {
+            field: nodeEditForm.condition_field.trim(),
+            operator: nodeEditForm.condition_operator || '==',
+            expected_value: expVal,
+          };
+        }
+        controlConfig = cond ? { condition: cond } : {};
+      } else if (nt === 'HUMAN_APPROVAL') {
+        controlConfig = {
+          prompt: nodeEditForm.prompt?.trim() || 'Aprobación requerida para continuar.',
+          timeout_seconds: Number(nodeEditForm.timeout_seconds) || 3600,
+        };
+      } else if (nt === 'DELEGATE') {
+        const candidates = (nodeEditForm.candidate_agents || '')
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean);
+        controlConfig = {
+          strategy: nodeEditForm.strategy || 'MANUAL',
+          candidate_agents: candidates,
+        };
+      } else if (nt === 'PARALLEL_JOIN') {
+        controlConfig = {
+          join_policy: nodeEditForm.join_policy || 'all',
+          merge_policy: nodeEditForm.merge_policy || 'namespace',
+        };
+      }
+
       await updateWorkflowNode(activeWorkflowId, nodeEditForm.node_id, {
         name: nodeEditForm.name.trim(),
         node_type: nodeEditForm.node_type,
         agent_id: nodeEditForm.node_type === 'AGENT' ? (nodeEditForm.agent_id.trim() || null) : null,
         tool_name: nodeEditForm.node_type === 'TASK' ? (nodeEditForm.tool_name.trim() || null) : null,
         inputs: parsedInputs,
+        ...(controlConfig ? { control_config: controlConfig } : {}),
       });
 
       addLog('NODE', `Propiedades de nodo '${nodeEditForm.name}' actualizadas.`);
@@ -566,6 +674,24 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
     }
   };
 
+  const handleApproveNode = async (nodeId, approved) => {
+    if (!activeWorkflowId) return;
+    try {
+      await approveWorkflowNode(
+        activeWorkflowId,
+        nodeId,
+        approved,
+        approved ? 'Aprobado desde supervisor visual' : 'Rechazado desde supervisor visual'
+      );
+      addLog('APPROVAL', `Nodo '${nodeId}' ${approved ? 'APROBADO' : 'RECHAZADO'}.`);
+      await loadActiveWorkflow(activeWorkflowId);
+    } catch (err) {
+      alert(`Error al procesar aprobación: ${err.message}`);
+      addLog('ERROR', `Fallo al aprobar nodo: ${err.message}`);
+    }
+  };
+
+
   // Drag and drop interactivo en lienzo nativo
   const handleMouseDownNode = (e, nodeId, currentX, currentY) => {
     e.stopPropagation();
@@ -631,7 +757,14 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
       case 'TASK':
         return { color: '#38bdf8', bg: 'rgba(56, 189, 248, 0.12)', border: '#38bdf8', icon: <Terminal size={13} />, label: 'Tarea / Tool' };
       case 'DECISION':
-        return { color: '#f59e0b', bg: 'rgba(245, 158, 11, 0.12)', border: '#f59e0b', icon: <GitBranch size={13} />, label: 'Decisión / Gate' };
+      case 'IF':
+        return { color: '#f59e0b', bg: 'rgba(245, 158, 11, 0.12)', border: '#f59e0b', icon: <GitBranch size={13} />, label: 'Decisión / IF' };
+      case 'WHILE':
+        return { color: '#06b6d4', bg: 'rgba(6, 182, 212, 0.12)', border: '#06b6d4', icon: <RotateCcw size={13} />, label: 'Bucle WHILE' };
+      case 'DELEGATE':
+        return { color: '#a855f7', bg: 'rgba(168, 85, 247, 0.12)', border: '#a855f7', icon: <Bot size={13} />, label: 'Delegar / Router' };
+      case 'HUMAN_APPROVAL':
+        return { color: '#ec4899', bg: 'rgba(236, 72, 153, 0.12)', border: '#ec4899', icon: <ShieldCheck size={13} />, label: 'Aprobación Humana' };
       case 'PARALLEL_FORK':
         return { color: '#c084fc', bg: 'rgba(192, 132, 252, 0.12)', border: '#c084fc', icon: <GitFork size={13} />, label: 'Fork Paralelo' };
       case 'PARALLEL_JOIN':
@@ -657,10 +790,17 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
         return { color: '#8b949e', bg: 'rgba(139, 148, 158, 0.2)' };
       case 'READY':
         return { color: '#e3b341', bg: 'rgba(227, 179, 65, 0.2)' };
+      case 'WAITING_APPROVAL':
+        return { color: '#ec4899', bg: 'rgba(236, 72, 153, 0.2)' };
+      case 'WAITING_RESULT':
+        return { color: '#a855f7', bg: 'rgba(168, 85, 247, 0.2)' };
+      case 'RETRYING':
+        return { color: '#f59e0b', bg: 'rgba(245, 158, 11, 0.2)' };
       default:
         return { color: '#64748b', bg: 'rgba(100, 116, 139, 0.2)' };
     }
   };
+
 
   const apiKey = getApiKey();
   const iframeUrl = apiKey
@@ -774,6 +914,30 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
           >
             <Plus size={12} />
             <span>Nuevo Flujo</span>
+          </button>
+
+          <button
+            onClick={() => {
+              loadTemplates();
+              setShowTemplatesModal(true);
+            }}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              padding: '4px 8px',
+              borderRadius: '5px',
+              backgroundColor: '#1b1b3a',
+              border: '1px solid #4338ca',
+              color: '#a5b4fc',
+              fontSize: '11px',
+              cursor: 'pointer',
+              fontWeight: '500',
+            }}
+            title="Cargar flujos estructurados canónicos (Code Review, Writer-Reviewer, Triage Router)"
+          >
+            <LayoutTemplate size={12} />
+            <span>Plantillas Canónicas</span>
           </button>
         </div>
 
@@ -1148,10 +1312,89 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
                 <GitBranch size={12} />
               </div>
               <div>
-                <div style={{ fontWeight: '600' }}>Decisión</div>
+                <div style={{ fontWeight: '600' }}>Decisión / IF</div>
                 <div style={{ fontSize: '9px', color: '#64748b' }}>Bifurcación</div>
               </div>
             </button>
+
+            <button
+              onClick={() => handleQuickAddNode('WHILE', 'Control Bucle')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '7px 8px',
+                backgroundColor: '#121824',
+                border: '1px solid #233147',
+                borderRadius: '6px',
+                color: '#f8fafc',
+                fontSize: '11px',
+                cursor: 'pointer',
+                textAlign: 'left',
+              }}
+              title="Añadir bucle WHILE estructurado con límite de iteraciones"
+            >
+              <div style={{ width: '20px', height: '20px', borderRadius: '4px', backgroundColor: 'rgba(6, 182, 212, 0.2)', color: '#06b6d4', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <RotateCcw size={12} />
+              </div>
+              <div>
+                <div style={{ fontWeight: '600' }}>Bucle WHILE</div>
+                <div style={{ fontSize: '9px', color: '#64748b' }}>Iteración acotada</div>
+              </div>
+            </button>
+
+            <button
+              onClick={() => handleQuickAddNode('DELEGATE', 'Router de Agentes')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '7px 8px',
+                backgroundColor: '#121824',
+                border: '1px solid #233147',
+                borderRadius: '6px',
+                color: '#f8fafc',
+                fontSize: '11px',
+                cursor: 'pointer',
+                textAlign: 'left',
+              }}
+              title="Añadir router de delegación dinámica a agentes"
+            >
+              <div style={{ width: '20px', height: '20px', borderRadius: '4px', backgroundColor: 'rgba(168, 85, 247, 0.2)', color: '#a855f7', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Bot size={12} />
+              </div>
+              <div>
+                <div style={{ fontWeight: '600' }}>Router</div>
+                <div style={{ fontSize: '9px', color: '#64748b' }}>Delegación</div>
+              </div>
+            </button>
+
+            <button
+              onClick={() => handleQuickAddNode('HUMAN_APPROVAL', 'Aprobación Humana')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '7px 8px',
+                backgroundColor: '#121824',
+                border: '1px solid #233147',
+                borderRadius: '6px',
+                color: '#f8fafc',
+                fontSize: '11px',
+                cursor: 'pointer',
+                textAlign: 'left',
+              }}
+              title="Añadir pausa supervisada esperando autorización humana"
+            >
+              <div style={{ width: '20px', height: '20px', borderRadius: '4px', backgroundColor: 'rgba(236, 72, 153, 0.2)', color: '#ec4899', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <ShieldCheck size={12} />
+              </div>
+              <div>
+                <div style={{ fontWeight: '600' }}>Aprobación</div>
+                <div style={{ fontSize: '9px', color: '#64748b' }}>Supervisión</div>
+              </div>
+            </button>
+
 
             <button
               onClick={() => handleQuickAddNode('PARALLEL_FORK', 'Parallel Fork')}
@@ -1523,6 +1766,87 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
                     </div>
                   )}
 
+                  {node.node_type === 'WHILE' && (
+                    <div style={{ fontSize: '10px', color: '#06b6d4', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '3px' }}>
+                      <RotateCcw size={11} />
+                      <span>Iteración máx: {node.control_config?.max_iterations ?? 3} ({node.control_config?.on_limit || 'ABORT'})</span>
+                    </div>
+                  )}
+
+                  {(node.node_type === 'IF' || node.node_type === 'DECISION') && node.control_config?.condition && (
+                    <div style={{ fontSize: '9.5px', color: '#f59e0b', fontFamily: 'var(--font-mono)', marginTop: '3px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {typeof node.control_config.condition === 'string'
+                        ? node.control_config.condition
+                        : `${node.control_config.condition.field || ''} ${node.control_config.condition.operator || '=='} ${node.control_config.condition.expected_value ?? ''}`}
+                    </div>
+                  )}
+
+                  {node.node_type === 'DELEGATE' && (
+                    <div style={{ fontSize: '10px', color: '#a855f7', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '3px' }}>
+                      <Bot size={11} />
+                      <span>Estrategia: {node.control_config?.strategy || 'MANUAL'}</span>
+                    </div>
+                  )}
+
+                  {node.node_type === 'HUMAN_APPROVAL' && node.status !== 'WAITING_APPROVAL' && (
+                    <div style={{ fontSize: '9.5px', color: '#ec4899', marginTop: '3px', fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {node.control_config?.prompt || 'Pausa supervisada'}
+                    </div>
+                  )}
+
+                  {/* Banner Interactivo si está en Espera de Aprobación */}
+                  {node.status === 'WAITING_APPROVAL' && (
+                    <div
+                      style={{
+                        marginTop: '6px',
+                        marginBottom: '6px',
+                        padding: '6px',
+                        backgroundColor: 'rgba(236, 72, 153, 0.15)',
+                        border: '1px solid rgba(236, 72, 153, 0.4)',
+                        borderRadius: '6px',
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div style={{ fontSize: '9.5px', color: '#f472b6', fontWeight: '600', marginBottom: '4px' }}>
+                        {node.control_config?.prompt || 'Requiere Aprobación'}
+                      </div>
+                      <div style={{ display: 'flex', gap: '4px' }}>
+                        <button
+                          onClick={() => handleApproveNode(nid, true)}
+                          style={{
+                            flex: 1,
+                            padding: '3px 4px',
+                            fontSize: '9.5px',
+                            fontWeight: '700',
+                            backgroundColor: '#10b981',
+                            color: '#ffffff',
+                            border: 'none',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          Aprobar
+                        </button>
+                        <button
+                          onClick={() => handleApproveNode(nid, false)}
+                          style={{
+                            flex: 1,
+                            padding: '3px 4px',
+                            fontSize: '9.5px',
+                            fontWeight: '700',
+                            backgroundColor: '#ef4444',
+                            color: '#ffffff',
+                            border: 'none',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          Rechazar
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Acciones al pie del nodo */}
                   <div
                     style={{
@@ -1662,9 +1986,13 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
                     >
                       <option value="AGENT">AGENT (Agente Autónomo)</option>
                       <option value="TASK">TASK (Tarea / Herramienta)</option>
+                      <option value="IF">IF (Bifurcación Condicional)</option>
                       <option value="DECISION">DECISION (Compuerta Condicional)</option>
+                      <option value="WHILE">WHILE (Bucle Acotado)</option>
+                      <option value="DELEGATE">DELEGATE (Router / Delegación)</option>
+                      <option value="HUMAN_APPROVAL">HUMAN_APPROVAL (Aprobación Humana)</option>
                       <option value="PARALLEL_FORK">PARALLEL_FORK (Bifurcación Concurrente)</option>
-                      <option value="PARALLEL_JOIN">PARALLEL_JOIN (Sincronización / Unión)</option>
+                      <option value="PARALLEL_JOIN">PARALLEL_JOIN (Sincronización / Join)</option>
                       <option value="START">START (Inicio)</option>
                       <option value="END">END (Fin)</option>
                     </select>
@@ -1705,6 +2033,193 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
                         onChange={(e) => setNodeEditForm({ ...nodeEditForm, tool_name: e.target.value })}
                         style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '5px', padding: '5px 8px', fontSize: '11.5px', color: '#38bdf8' }}
                       />
+                    </div>
+                  )}
+
+                  {/* Panel Especial: Bucle WHILE */}
+                  {nodeEditForm.node_type === 'WHILE' && (
+                    <div style={{ backgroundColor: '#0d1926', border: '1px solid rgba(6, 182, 212, 0.3)', borderRadius: '6px', padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <div style={{ fontSize: '11px', fontWeight: '700', color: '#06b6d4', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                        <RotateCcw size={12} />
+                        <span>Configuración de Bucle (WHILE)</span>
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                        <div>
+                          <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Máx. Iteraciones:</label>
+                          <input
+                            type="number"
+                            min="1"
+                            max="100"
+                            value={nodeEditForm.max_iterations}
+                            onChange={(e) => setNodeEditForm({ ...nodeEditForm, max_iterations: e.target.value })}
+                            style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#06b6d4' }}
+                          />
+                        </div>
+                        <div>
+                          <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Al superar límite:</label>
+                          <select
+                            value={nodeEditForm.on_limit}
+                            onChange={(e) => setNodeEditForm({ ...nodeEditForm, on_limit: e.target.value })}
+                            style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#f8fafc' }}
+                          >
+                            <option value="ABORT">ABORT (Detener)</option>
+                            <option value="ESCALATE">ESCALATE (Escalar)</option>
+                          </select>
+                        </div>
+                      </div>
+                      <div>
+                        <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Campo condición retorno (opcional):</label>
+                        <input
+                          type="text"
+                          placeholder="ej. outputs.reviewer.needs_revision"
+                          value={nodeEditForm.condition_field}
+                          onChange={(e) => setNodeEditForm({ ...nodeEditForm, condition_field: e.target.value })}
+                          style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#f8fafc', fontFamily: 'var(--font-mono)' }}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Panel Especial: Bifurcación Condicional IF / DECISION */}
+                  {(nodeEditForm.node_type === 'IF' || nodeEditForm.node_type === 'DECISION') && (
+                    <div style={{ backgroundColor: '#1c1917', border: '1px solid rgba(245, 158, 11, 0.3)', borderRadius: '6px', padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <div style={{ fontSize: '11px', fontWeight: '700', color: '#f59e0b', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                        <GitBranch size={12} />
+                        <span>Condición de Decisión (IF)</span>
+                      </div>
+                      <div>
+                        <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Campo a evaluar:</label>
+                        <input
+                          type="text"
+                          placeholder="ej. outputs.triage.category"
+                          value={nodeEditForm.condition_field}
+                          onChange={(e) => setNodeEditForm({ ...nodeEditForm, condition_field: e.target.value })}
+                          style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#f8fafc', fontFamily: 'var(--font-mono)' }}
+                        />
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                        <div>
+                          <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Operador:</label>
+                          <select
+                            value={nodeEditForm.condition_operator}
+                            onChange={(e) => setNodeEditForm({ ...nodeEditForm, condition_operator: e.target.value })}
+                            style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#f8fafc' }}
+                          >
+                            <option value="==">==</option>
+                            <option value="!=">!=</option>
+                            <option value=">">&gt;</option>
+                            <option value="<">&lt;</option>
+                            <option value="contains">contains</option>
+                            <option value="is_true">is_true</option>
+                            <option value="is_false">is_false</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Valor esperado:</label>
+                          <input
+                            type="text"
+                            placeholder="deep"
+                            value={nodeEditForm.condition_expected_value}
+                            onChange={(e) => setNodeEditForm({ ...nodeEditForm, condition_expected_value: e.target.value })}
+                            style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#f8fafc' }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Panel Especial: Aprobación Humana */}
+                  {nodeEditForm.node_type === 'HUMAN_APPROVAL' && (
+                    <div style={{ backgroundColor: '#21101d', border: '1px solid rgba(236, 72, 153, 0.3)', borderRadius: '6px', padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <div style={{ fontSize: '11px', fontWeight: '700', color: '#ec4899', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                        <ShieldCheck size={12} />
+                        <span>Compuerta de Aprobación Humana</span>
+                      </div>
+                      <div>
+                        <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Prompt / Pregunta de Aprobación:</label>
+                        <textarea
+                          rows={2}
+                          value={nodeEditForm.prompt}
+                          onChange={(e) => setNodeEditForm({ ...nodeEditForm, prompt: e.target.value })}
+                          placeholder="¿Autorizar la publicación del informe?"
+                          style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#f8fafc', resize: 'vertical' }}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Timeout (segundos):</label>
+                        <input
+                          type="number"
+                          value={nodeEditForm.timeout_seconds}
+                          onChange={(e) => setNodeEditForm({ ...nodeEditForm, timeout_seconds: e.target.value })}
+                          style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#ec4899' }}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Panel Especial: DELEGATE / Router */}
+                  {nodeEditForm.node_type === 'DELEGATE' && (
+                    <div style={{ backgroundColor: '#1a102b', border: '1px solid rgba(168, 85, 247, 0.3)', borderRadius: '6px', padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <div style={{ fontSize: '11px', fontWeight: '700', color: '#a855f7', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                        <Bot size={12} />
+                        <span>Router de Delegación</span>
+                      </div>
+                      <div>
+                        <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Estrategia:</label>
+                        <select
+                          value={nodeEditForm.strategy}
+                          onChange={(e) => setNodeEditForm({ ...nodeEditForm, strategy: e.target.value })}
+                          style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#f8fafc' }}
+                        >
+                          <option value="MANUAL">MANUAL</option>
+                          <option value="AUTOMATIC">AUTOMATIC</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Agentes Candidatos (separados por coma):</label>
+                        <input
+                          type="text"
+                          placeholder="agent_alpha, agent_beta"
+                          value={nodeEditForm.candidate_agents}
+                          onChange={(e) => setNodeEditForm({ ...nodeEditForm, candidate_agents: e.target.value })}
+                          style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#f8fafc' }}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Panel Especial: PARALLEL_JOIN */}
+                  {nodeEditForm.node_type === 'PARALLEL_JOIN' && (
+                    <div style={{ backgroundColor: '#13182e', border: '1px solid rgba(129, 140, 248, 0.3)', borderRadius: '6px', padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <div style={{ fontSize: '11px', fontWeight: '700', color: '#818cf8', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                        <GitMerge size={12} />
+                        <span>Sincronización Parallel Join</span>
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                        <div>
+                          <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Política de Espera:</label>
+                          <select
+                            value={nodeEditForm.join_policy}
+                            onChange={(e) => setNodeEditForm({ ...nodeEditForm, join_policy: e.target.value })}
+                            style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#f8fafc' }}
+                          >
+                            <option value="all">all (Espera todas)</option>
+                            <option value="any">any (Primera en llegar)</option>
+                            <option value="quorum">quorum (Mayoría)</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Mezcla de Salidas:</label>
+                          <select
+                            value={nodeEditForm.merge_policy}
+                            onChange={(e) => setNodeEditForm({ ...nodeEditForm, merge_policy: e.target.value })}
+                            style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#f8fafc' }}
+                          >
+                            <option value="namespace">namespace (Aislado)</option>
+                            <option value="shallow">shallow (Directo)</option>
+                          </select>
+                        </div>
+                      </div>
                     </div>
                   )}
 
@@ -2113,7 +2628,11 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
                   >
                     <option value="AGENT">AGENT (Agente IA)</option>
                     <option value="TASK">TASK (Tarea / Herramienta)</option>
+                    <option value="IF">IF (Bifurcación Condicional)</option>
                     <option value="DECISION">DECISION (Compuerta)</option>
+                    <option value="WHILE">WHILE (Bucle Acotado)</option>
+                    <option value="DELEGATE">DELEGATE (Router)</option>
+                    <option value="HUMAN_APPROVAL">HUMAN_APPROVAL (Aprobación Humana)</option>
                     <option value="PARALLEL_FORK">PARALLEL_FORK (Fork)</option>
                     <option value="PARALLEL_JOIN">PARALLEL_JOIN (Join)</option>
                     <option value="END">END (Fin)</option>
@@ -2329,6 +2848,169 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
           </div>
         </div>
       )}
+
+      {/* MODAL: Plantillas Canónicas de Workflows */}
+      {showTemplatesModal && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(0,0,0,0.8)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: '#101522',
+              border: '1px solid #28354d',
+              borderRadius: '12px',
+              padding: '24px',
+              width: '680px',
+              maxWidth: '92vw',
+              maxHeight: '85vh',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '16px',
+              boxShadow: '0 20px 40px rgba(0,0,0,0.6)',
+              overflowY: 'auto',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #1e293b', paddingBottom: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{ width: '28px', height: '28px', borderRadius: '6px', backgroundColor: 'rgba(165, 180, 252, 0.15)', color: '#a5b4fc', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <LayoutTemplate size={16} />
+                </div>
+                <div>
+                  <h3 style={{ fontSize: '15px', fontWeight: '700', color: '#f8fafc', margin: 0 }}>
+                    Plantillas Canónicas de Orquestación
+                  </h3>
+                  <p style={{ fontSize: '11px', color: '#94a3b8', margin: 0 }}>
+                    Flujos de control multiagente preconfigurados según la semántica PRAXEON
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowTemplatesModal(false)}
+                style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: '4px' }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {canonicalTemplates.length > 0 ? (
+                canonicalTemplates.map((tpl) => (
+                  <div
+                    key={tpl.template_id || tpl.key}
+                    style={{
+                      backgroundColor: '#161d2d',
+                      border: '1px solid #233148',
+                      borderRadius: '8px',
+                      padding: '14px 16px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '8px',
+                      transition: 'border-color 0.2s ease',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ fontSize: '13.5px', fontWeight: '700', color: '#f8fafc' }}>
+                          {tpl.name}
+                        </span>
+                        <span
+                          style={{
+                            fontSize: '9.5px',
+                            fontWeight: '600',
+                            padding: '2px 6px',
+                            borderRadius: '4px',
+                            backgroundColor: 'rgba(56, 189, 248, 0.15)',
+                            color: '#38bdf8',
+                            fontFamily: 'var(--font-mono)',
+                          }}
+                        >
+                          {tpl.template_id || tpl.key}
+                        </span>
+                      </div>
+                      <div style={{ fontSize: '11px', color: '#64748b' }}>
+                        {tpl.node_count} nodos &bull; {tpl.edge_count} aristas
+                      </div>
+                    </div>
+
+                    <p style={{ fontSize: '11.5px', color: '#94a3b8', margin: 0, lineHeight: 1.4 }}>
+                      {tpl.description}
+                    </p>
+
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '4px', paddingTop: '8px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        {(tpl.template_id || tpl.key) === 'code_review_loop' && (
+                          <span style={{ fontSize: '10px', color: '#06b6d4', backgroundColor: 'rgba(6, 182, 212, 0.12)', padding: '2px 6px', borderRadius: '4px' }}>
+                            Bucle Acotado (WHILE &le; 3)
+                          </span>
+                        )}
+                        {(tpl.template_id || tpl.key) === 'research_writer_reviewer' && (
+                          <span style={{ fontSize: '10px', color: '#ec4899', backgroundColor: 'rgba(236, 72, 153, 0.12)', padding: '2px 6px', borderRadius: '4px' }}>
+                            Compuerta Humana (Approval)
+                          </span>
+                        )}
+                        {(tpl.template_id || tpl.key) === 'triage_router' && (
+                          <span style={{ fontSize: '10px', color: '#a855f7', backgroundColor: 'rgba(168, 85, 247, 0.12)', padding: '2px 6px', borderRadius: '4px' }}>
+                            Router IF + Parallel Join
+                          </span>
+                        )}
+                      </div>
+
+                      <button
+                        onClick={() => handleInstantiateTemplate(tpl.template_id || tpl.key, tpl.name)}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          padding: '6px 12px',
+                          borderRadius: '6px',
+                          backgroundColor: '#2563eb',
+                          border: 'none',
+                          color: '#ffffff',
+                          fontSize: '11px',
+                          fontWeight: '600',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <Plus size={12} />
+                        <span>Usar Plantilla</span>
+                      </button>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div style={{ textAlign: 'center', padding: '30px', color: '#64748b' }}>
+                  <LayoutTemplate size={32} style={{ margin: '0 auto 8px', opacity: 0.5 }} />
+                  <div>No se han cargado las plantillas o el backend no está disponible.</div>
+                  <button
+                    onClick={() => loadTemplates()}
+                    style={{
+                      marginTop: '10px',
+                      padding: '5px 12px',
+                      borderRadius: '5px',
+                      backgroundColor: '#1e293b',
+                      border: '1px solid #334155',
+                      color: '#f8fafc',
+                      fontSize: '11px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Reintentar
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+

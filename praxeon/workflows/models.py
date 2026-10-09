@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from enum import Enum
 import json
 import re
-from typing import Any, Callable, Dict, List, Optional, Set
+from typing import Any, Callable, Dict, List, Optional, Set, Union
 import uuid
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 import yaml
@@ -27,6 +27,10 @@ class NodeType(str, Enum):
     TASK = "TASK"                      # Tarea operativa o herramienta estándar
     AGENT = "AGENT"                    # Tarea delegada a un agente especializado
     DECISION = "DECISION"              # Bifurcación condicional basada en reglas
+    IF = "IF"                          # Bifurcación condicional booleana (alias semántico de DECISION)
+    WHILE = "WHILE"                    # Bucle estructurado acotado con salida garantizada
+    DELEGATE = "DELEGATE"              # Delegación a agente por router/política
+    HUMAN_APPROVAL = "HUMAN_APPROVAL"  # Pausa supervisada para aprobación humana
     PARALLEL_FORK = "PARALLEL_FORK"    # División concurrente en múltiples ramas
     PARALLEL_JOIN = "PARALLEL_JOIN"    # Sincronización y unificación de ramas concurrentes
 
@@ -81,19 +85,24 @@ class EdgeCondition(BaseModel):
     operator: str = Field(default="==", description="Operador de comparación: ==, !=, >, >=, <, <=, in, contains, is_true, is_false")
     expected_value: Any = Field(default=None, description="Valor de referencia para la comparación")
 
-    def evaluate(self, context: Dict[str, Any]) -> bool:
-        """Evalúa la condición de manera segura contra un diccionario de contexto."""
-        # Extraer valor por clave (soporta puntos anidados ej. 'output.status')
-        keys = self.field.split(".")
-        val = context
-        for k in keys:
-            if isinstance(val, dict) and k in val:
-                val = val[k]
-            else:
-                val = None
-                break
+    def evaluate(self, context: Union[Dict[str, Any], Any]) -> bool:
+        """Evalúa la condición de manera segura contra un diccionario de contexto o EvaluationContext."""
+        if hasattr(context, "resolve_field"):
+            val = context.resolve_field(self.field)
+        elif isinstance(context, dict):
+            # Extraer valor por clave (soporta puntos anidados ej. 'output.status')
+            keys = self.field.split(".")
+            val = context
+            for k in keys:
+                if isinstance(val, dict) and k in val:
+                    val = val[k]
+                else:
+                    val = None
+                    break
+        else:
+            val = None
 
-        op = self.operator.strip()
+        op = self.operator.strip().lower()
         expected = self.expected_value
 
         if op in ("==", "eq"):
@@ -120,6 +129,10 @@ class EdgeCondition(BaseModel):
             return bool(val) is True
         elif op in ("is_false", "false"):
             return bool(val) is False
+        elif op in ("is_null", "null"):
+            return val is None
+        elif op in ("not_null", "is_not_null"):
+            return val is not None
         else:
             return False
 
@@ -150,6 +163,9 @@ class WorkflowNode(BaseModel):
     retry_policy: RetryPolicy = Field(default_factory=RetryPolicy)
     timeout_seconds: Optional[int] = Field(default=120, ge=1)
     position: UIPosition = Field(default_factory=UIPosition)
+    control_config: Optional[Dict[str, Any]] = Field(default=None, description="Configuración de control de flujo declarativa")
+    input_mapping: Optional[Dict[str, str]] = Field(default=None, description="Mapeo explícito de entradas desde namespaces")
+    output_mapping: Optional[Dict[str, str]] = Field(default=None, description="Mapeo explícito de salidas hacia namespaces")
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
     def with_status(self, new_status: NodeStatus, outputs: Optional[Dict[str, Any]] = None) -> "WorkflowNode":
@@ -266,7 +282,26 @@ class WorkflowDefinition(BaseModel):
         if unreachable:
             errors.append(f"Nodos inalcanzables desde START: {sorted(unreachable)}.")
 
-        # 7. Detección de ciclos infinitos no controlados (Validación DAG mediante algoritmo de Kahn o DFS)
+        # 7. Detección de ciclos estructurados vs dependencias circulares no controladas
+        while_nodes = {nid: n for nid, n in self.nodes.items() if n.node_type == NodeType.WHILE}
+
+        # Validar configuración obligatoria de nodos WHILE
+        for wn_id, wn in while_nodes.items():
+            ctrl = wn.control_config or wn.metadata.get("control_config", {})
+            max_iter = ctrl.get("max_iterations") or wn.metadata.get("max_iterations")
+            if max_iter is None or not isinstance(max_iter, int) or max_iter < 1:
+                errors.append(f"El nodo WHILE '{wn_id}' debe definir un límite obligatorio de iteraciones ('max_iterations' >= 1).")
+            exit_target = ctrl.get("exit_target") or wn.metadata.get("exit_target")
+            outgoing = self.get_outgoing_edges(wn_id)
+            if not exit_target and not outgoing:
+                errors.append(f"El nodo WHILE '{wn_id}' carece de ruta de salida ('exit_target' o aristas salientes).")
+
+        # Separar candidatas a aristas de retorno estructuradas hacia nodos WHILE
+        loop_back_edge_ids: Set[str] = {
+            edge.edge_id for edge in self.edges if edge.to_node in while_nodes
+        }
+
+        # Validación DAG inicial con todas las aristas
         in_degree = {nid: len(self.get_incoming_edges(nid)) for nid in node_ids}
         kahn_queue = deque([nid for nid, deg in in_degree.items() if deg == 0])
         processed_count = 0
@@ -280,7 +315,28 @@ class WorkflowDefinition(BaseModel):
                     kahn_queue.append(nxt)
 
         if processed_count != len(node_ids):
-            errors.append("El grafo contiene dependencias circulares (ciclos) no resolubles.")
+            # Probar si los ciclos corresponden exclusivamente a aristas de bucle estructurado a nodos WHILE válidos
+            if loop_back_edge_ids:
+                in_degree_dag = {
+                    nid: len([e for e in self.get_incoming_edges(nid) if e.edge_id not in loop_back_edge_ids])
+                    for nid in node_ids
+                }
+                kahn_queue_dag = deque([nid for nid, deg in in_degree_dag.items() if deg == 0])
+                processed_dag = 0
+                while kahn_queue_dag:
+                    curr = kahn_queue_dag.popleft()
+                    processed_dag += 1
+                    for edge in self.get_outgoing_edges(curr):
+                        if edge.edge_id not in loop_back_edge_ids:
+                            nxt = edge.to_node
+                            in_degree_dag[nxt] -= 1
+                            if in_degree_dag[nxt] == 0:
+                                kahn_queue_dag.append(nxt)
+
+                if processed_dag != len(node_ids):
+                    errors.append("El grafo contiene dependencias circulares (ciclos) no estructuradas.")
+            else:
+                errors.append("El grafo contiene dependencias circulares (ciclos) no resolubles.")
 
         return errors
 
@@ -291,17 +347,27 @@ class WorkflowDefinition(BaseModel):
             raise ValueError(f"No se puede ordenar un grafo inválido: {'; '.join(errors)}")
 
         node_ids = set(self.nodes.keys())
-        in_degree = {nid: len(self.get_incoming_edges(nid)) for nid in node_ids}
+        while_nodes = {nid for nid, n in self.nodes.items() if n.node_type == NodeType.WHILE}
+        loop_back_edge_ids: Set[str] = {
+            edge.edge_id for edge in self.edges if edge.to_node in while_nodes
+        }
+
+        in_degree = {
+            nid: len([e for e in self.get_incoming_edges(nid) if e.edge_id not in loop_back_edge_ids])
+            for nid in node_ids
+        }
         kahn_queue = deque([nid for nid, deg in in_degree.items() if deg == 0])
         order: List[str] = []
 
         while kahn_queue:
             curr = kahn_queue.popleft()
             order.append(curr)
-            for nxt in self.get_downstream_node_ids(curr):
-                in_degree[nxt] -= 1
-                if in_degree[nxt] == 0:
-                    kahn_queue.append(nxt)
+            for edge in self.get_outgoing_edges(curr):
+                if edge.edge_id not in loop_back_edge_ids:
+                    nxt = edge.to_node
+                    in_degree[nxt] -= 1
+                    if in_degree[nxt] == 0:
+                        kahn_queue.append(nxt)
 
         return order
 

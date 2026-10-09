@@ -33,6 +33,15 @@ from praxeon.workflows.models import (
     WorkflowNode,
     WorkflowStatus,
 )
+from praxeon.workflows.semantics import (
+    AtomicCondition,
+    CompoundCondition,
+    ConditionResult,
+    ControlConfig,
+    EvaluationContext,
+    parse_condition,
+)
+
 
 
 class ExecutionCheckpoint(BaseModel):
@@ -242,40 +251,107 @@ class WorkflowEngine:
             if st in (NodeStatus.PENDING, NodeStatus.READY, NodeStatus.RUNNING):
                 self.context.node_states[nid] = NodeStatus.CANCELLED
 
+    def get_evaluation_context(self, upstream_node_id: Optional[str] = None) -> EvaluationContext:
+        """Construye un EvaluationContext formal y estructurado con namespaces aislados."""
+        last_res = self.context.node_outputs.get(upstream_node_id) if upstream_node_id else None
+        if not last_res and self.context.execution_history:
+            last_res = self.context.node_outputs.get(self.context.execution_history[-1])
+
+        loop_info = dict(self.context.variables.get("_active_loop", {}))
+        budget_info = dict(self.context.variables.get("_budget", {}))
+        agent_state = dict(self.context.variables.get("_agent_state", {}))
+        semantic_assessment = self.context.variables.get("_semantic_assessment")
+
+        return EvaluationContext(
+            variables=dict(self.context.variables),
+            outputs={nid: dict(out) for nid, out in self.context.node_outputs.items()},
+            last_result=last_res,
+            loop=loop_info,
+            budget=budget_info,
+            agent_state=agent_state,
+            semantic_assessment=semantic_assessment,
+        )
+
     def is_node_ready(self, node_id: str) -> bool:
         """Evalúa si todas las dependencias entrantes de un nodo se han satisfecho."""
         node = self.workflow.nodes[node_id]
         if self.context.node_states[node_id] not in (NodeStatus.PENDING, NodeStatus.READY):
             return False
 
+        # Invariante INV-05: El nodo terminal END no se considera listo mientras existan ramas activas requeridas
+        if node.node_type == NodeType.END:
+            active_nodes = [
+                nid for nid, st in self.context.node_states.items()
+                if st in (NodeStatus.RUNNING, NodeStatus.WAITING_RESULT, NodeStatus.WAITING_APPROVAL)
+            ]
+            if active_nodes:
+                return False
+
         incoming_edges = self.workflow.get_incoming_edges(node_id)
         if not incoming_edges:
             # Si no tiene predecesores y es START, está listo
             return node.node_type == NodeType.START
 
-        # Si el nodo es PARALLEL_JOIN, todas las ramas activas deben haber terminado
+        # Si el nodo es PARALLEL_JOIN, evaluar según política de join
         if node.node_type == NodeType.PARALLEL_JOIN:
-            for edge in incoming_edges:
-                up_st = self.context.node_states.get(edge.from_node)
-                if up_st not in (NodeStatus.COMPLETED, NodeStatus.SKIPPED):
-                    return False
-            return True
+            ctrl = node.control_config or node.metadata.get("control_config", {})
+            join_policy = (ctrl.get("join_policy") or "all").lower()
 
-        # En nodos normales o DECISION, al menos una arista entrante debe estar satisfecha
-        # y su nodo origen completado
+            if join_policy == "all":
+                for edge in incoming_edges:
+                    up_st = self.context.node_states.get(edge.from_node)
+                    if up_st not in (NodeStatus.COMPLETED, NodeStatus.SKIPPED):
+                        return False
+                return True
+            elif join_policy == "any":
+                return any(
+                    self.context.node_states.get(edge.from_node) == NodeStatus.COMPLETED
+                    for edge in incoming_edges
+                )
+            elif join_policy == "quorum":
+                quorum_needed = ctrl.get("quorum_count") or (len(incoming_edges) // 2 + 1)
+                completed_count = sum(
+                    1 for edge in incoming_edges
+                    if self.context.node_states.get(edge.from_node) == NodeStatus.COMPLETED
+                )
+                return completed_count >= quorum_needed
+
+        # En nodos normales, DECISION, IF, WHILE: al menos una arista entrante debe estar satisfecha
         for edge in incoming_edges:
             up_st = self.context.node_states.get(edge.from_node)
             if up_st == NodeStatus.COMPLETED:
+                upstream_node = self.workflow.nodes[edge.from_node]
+                upstream_output = self.context.node_outputs.get(edge.from_node, {})
+
+                # Si el predecesor fue un nodo de bifurcación condicional DECISION / IF
+                if upstream_node.node_type in (NodeType.DECISION, NodeType.IF):
+                    branch_taken = upstream_output.get("branch_taken")
+                    if branch_taken is not None:
+                        b_str = str(branch_taken).strip().lower()
+                        edge_label = (edge.label or "").strip().lower()
+                        if edge.edge_id == branch_taken or edge_label == b_str:
+                            return True
+                        if b_str == "true" and edge_label in ("true", "yes", "si", "1"):
+                            return True
+                        if b_str == "false" and edge_label in ("false", "no", "0"):
+                            return True
+                        if b_str == "default" and edge_label in ("default", "else"):
+                            return True
+                        # Si no coincide con la rama seleccionada pero tiene etiqueta explícita de rama, no satisface
+                        if edge_label in ("true", "false", "yes", "no", "default", "else"):
+                            continue
+
                 if edge.condition is None:
                     return True
-                # Evaluar condición de la arista
-                upstream_output = self.context.node_outputs.get(edge.from_node, {})
-                eval_ctx = {
+
+                # Evaluar condición de la arista con EvaluationContext y retrocompatibilidad
+                eval_ctx = self.get_evaluation_context(upstream_node_id=edge.from_node)
+                legacy_ctx = {
                     "output": upstream_output,
                     **self.context.variables,
                     **upstream_output,
                 }
-                if edge.condition.evaluate(eval_ctx):
+                if edge.condition.evaluate(eval_ctx) or edge.condition.evaluate(legacy_ctx):
                     return True
 
         return False
@@ -385,11 +461,214 @@ class WorkflowEngine:
                         f"No AgentMessageBus or execution handler configured for agent '{node.agent_id}' in node '{node_id}'."
                     )
 
-            elif node.node_type == NodeType.DECISION:
-                # Nodo de ramificación condicional
-                output = {"evaluated_at": datetime.now(timezone.utc).isoformat(), "status": "evaluated"}
+            elif node.node_type in (NodeType.DECISION, NodeType.IF):
+                ctrl = node.control_config or node.metadata.get("control_config")
+                eval_ctx = self.get_evaluation_context(upstream_node_id=node_id)
+                matched = False
+                branch_taken = None
+                reason = "Decisión evaluada"
 
-            elif node.node_type in (NodeType.PARALLEL_FORK, NodeType.PARALLEL_JOIN):
+                if ctrl and ctrl.get("condition") is not None:
+                    parsed_cond = parse_condition(ctrl.get("condition"))
+                    if parsed_cond:
+                        try:
+                            matched = parsed_cond.evaluate(eval_ctx)
+                            reason = f"Condición evaluada a {matched}"
+                        except Exception as exc:
+                            matched = False
+                            reason = f"Error en evaluación de condición: {str(exc)}"
+                            if ctrl.get("on_error"):
+                                branch_taken = ctrl.get("on_error")
+                    else:
+                        matched = False
+
+                    if branch_taken is None:
+                        if matched:
+                            branch_taken = ctrl.get("true_edge") or "true"
+                        else:
+                            branch_taken = ctrl.get("false_edge") or "false"
+                else:
+                    # Si no hay condición explícita en control_config, evaluar aristas salientes
+                    outgoing = self.workflow.get_outgoing_edges(node_id)
+                    for edge in outgoing:
+                        if edge.condition:
+                            legacy_ctx = {**self.context.variables, **resolved_inputs}
+                            if edge.condition.evaluate(eval_ctx) or edge.condition.evaluate(legacy_ctx):
+                                matched = True
+                                branch_taken = edge.label or edge.edge_id
+                                reason = f"Arista '{edge.edge_id}' satisfecha"
+                                break
+                    if not branch_taken and outgoing:
+                        branch_taken = "default"
+
+                output = {
+                    "evaluated_at": now.isoformat(),
+                    "status": "evaluated",
+                    "matched": matched,
+                    "branch": "true" if matched else "false",
+                    "branch_taken": branch_taken,
+                    "reason": reason,
+                }
+
+
+            elif node.node_type == NodeType.WHILE:
+                ctrl = node.control_config or node.metadata.get("control_config", {})
+                max_iter = ctrl.get("max_iterations") or node.metadata.get("max_iterations", 10)
+                on_limit = (ctrl.get("on_limit") or "ABORT").upper()
+                body_entry = ctrl.get("body_entry")
+                exit_target = ctrl.get("exit_target")
+
+                loops_state = self.context.variables.setdefault("_loops", {})
+                current_loop = loops_state.setdefault(node_id, {"iteration": 0, "started_at": now.isoformat()})
+                current_iter = current_loop["iteration"]
+
+                self.context.variables["_active_loop"] = {
+                    "node_id": node_id,
+                    "iteration": current_iter,
+                    "max_iterations": max_iter,
+                }
+
+                eval_ctx = self.get_evaluation_context(upstream_node_id=node_id)
+                condition_spec = ctrl.get("condition")
+                loop_matched = True
+
+                if condition_spec is not None:
+                    parsed_cond = parse_condition(condition_spec)
+                    if parsed_cond:
+                        loop_matched = parsed_cond.evaluate(eval_ctx)
+                else:
+                    loop_matched = current_iter < max_iter
+
+                if current_iter >= max_iter:
+                    if on_limit == "ABORT":
+                        raise RuntimeError(f"Límite de iteraciones alcanzado en bucle WHILE '{node_id}' ({max_iter} iteraciones).")
+                    elif on_limit == "ESCALATE":
+                        with self._lock:
+                            self.context.node_states[node_id] = NodeStatus.WAITING_APPROVAL
+                            self.context.node_outputs[node_id] = {
+                                "status": "escalated_on_limit",
+                                "iteration": current_iter,
+                                "max_iterations": max_iter,
+                                "branch_taken": "escalate",
+                            }
+                        return True
+                    else:
+                        loop_matched = False
+
+                if loop_matched:
+                    current_loop["iteration"] = current_iter + 1
+                    self.context.variables["_active_loop"]["iteration"] = current_iter + 1
+                    branch_taken = body_entry or "body"
+
+                    # Resetear nodos del cuerpo del bucle para la nueva iteración
+                    self._reset_loop_body_nodes(node_id, exit_target=exit_target)
+
+                    output = {
+                        "iteration": current_iter + 1,
+                        "max_iterations": max_iter,
+                        "condition_matched": True,
+                        "branch_taken": branch_taken,
+                        "action": "repeat_body",
+                        "status": "looping",
+                    }
+                else:
+                    branch_taken = exit_target or "exit"
+                    output = {
+                        "iteration": current_iter,
+                        "max_iterations": max_iter,
+                        "condition_matched": False,
+                        "branch_taken": branch_taken,
+                        "action": "exit_loop",
+                        "status": "completed",
+                    }
+
+            elif node.node_type == NodeType.DELEGATE:
+                ctrl = node.control_config or node.metadata.get("control_config", {})
+                routing_mode = (ctrl.get("routing_mode") or "MANUAL").upper()
+                target_agent = node.agent_id or ctrl.get("target_agent_id")
+
+                if routing_mode == "AUTOMATIC":
+                    candidates = ctrl.get("candidate_agents") or []
+                    if candidates:
+                        target_agent = candidates[0]
+
+                if not target_agent:
+                    raise ValueError(f"Nodo DELEGATE '{node_id}' no tiene agente asignado ni candidatos válidos.")
+
+                if self.agent_bus:
+                    msg = AgentMessage(
+                        message_id=f"wf_delegate_{node_id}_{uuid.uuid4().hex[:8]}",
+                        sender_id="praxeon_supervisor",
+                        receiver_id=target_agent,
+                        session_id=self.context.execution_id,
+                        task_id=node_id,
+                        message_type=MessageType.DELEGATE,
+                        priority=MessagePriority.HIGH,
+                        payload=resolved_inputs,
+                    )
+                    self.agent_bus.send(msg)
+                    with self._lock:
+                        self.context.node_states[node_id] = NodeStatus.WAITING_RESULT
+                        self.context.node_outputs[node_id] = {
+                            "delegated_to": target_agent,
+                            "routing_mode": routing_mode,
+                            "message_id": msg.message_id,
+                            "status": "waiting_result",
+                        }
+                    return True
+                elif target_agent in self._handlers:
+                    output = self._handlers[target_agent](resolved_inputs)
+                    output["delegated_to"] = target_agent
+                elif self.allow_synthetic_fallback:
+                    output = {
+                        "delegated_to": target_agent,
+                        "routing_mode": routing_mode,
+                        "status": "completed",
+                        "response": f"Agent {target_agent} completed delegated task",
+                    }
+                else:
+                    raise NotImplementedError(
+                        f"No handler or bus configured for delegated agent '{target_agent}' in node '{node_id}'."
+                    )
+
+            elif node.node_type == NodeType.HUMAN_APPROVAL:
+                ctrl = node.control_config or node.metadata.get("control_config", {})
+                prompt = ctrl.get("prompt") or node.inputs.get("prompt") or "Aprobación requerida"
+                approver_role = ctrl.get("approver_role") or "supervisor"
+
+                with self._lock:
+                    self.context.node_states[node_id] = NodeStatus.WAITING_APPROVAL
+                    self.context.node_outputs[node_id] = {
+                        "prompt": prompt,
+                        "approver_role": approver_role,
+                        "status": "waiting_approval",
+                        "requested_at": now.isoformat(),
+                    }
+                return True
+
+            elif node.node_type == NodeType.PARALLEL_JOIN:
+                ctrl = node.control_config or node.metadata.get("control_config", {})
+                merge_policy = ctrl.get("merge_policy", "shallow")
+                cancel_remaining = ctrl.get("cancel_remaining", False)
+
+                incoming_edges = self.workflow.get_incoming_edges(node_id)
+                if cancel_remaining:
+                    with self._lock:
+                        for edge in incoming_edges:
+                            st = self.context.node_states.get(edge.from_node)
+                            if st in (NodeStatus.RUNNING, NodeStatus.PENDING, NodeStatus.READY):
+                                self.context.node_states[edge.from_node] = NodeStatus.CANCELLED
+
+                merged: Dict[str, Any] = {"parallel_sync": True, "status": "completed"}
+                if merge_policy == "namespace":
+                    for edge in incoming_edges:
+                        merged[edge.from_node] = self.context.node_outputs.get(edge.from_node, {})
+                else:
+                    for edge in incoming_edges:
+                        merged.update(self.context.node_outputs.get(edge.from_node, {}))
+                output = merged
+
+            elif node.node_type == NodeType.PARALLEL_FORK:
                 output = {"parallel_sync": True, "status": "completed"}
 
         except Exception as exc:
@@ -408,6 +687,12 @@ class WorkflowEngine:
                 if node.node_type == NodeType.END:
                     self.context.status = WorkflowStatus.COMPLETED
                     self.context.finished_at = now
+
+                # Si una arista saliente apunta a un bucle WHILE, reactivar el nodo WHILE para la siguiente iteración
+                for out_edge in self.workflow.get_outgoing_edges(node_id):
+                    target_node = self.workflow.nodes[out_edge.to_node]
+                    if target_node.node_type == NodeType.WHILE:
+                        self.context.node_states[out_edge.to_node] = NodeStatus.READY
 
                 # Evaluar propagación y marcar ramas excluidas como SKIPPED
                 self._propagate_skips(node_id)
@@ -431,19 +716,123 @@ class WorkflowEngine:
                     self.context.finished_at = now
                     return False
 
-    def _propagate_skips(self, completed_node_id: str) -> None:
-        """Marca como SKIPPED los nodos downstream cuyas condiciones nunca se satisficieron."""
-        outgoing = self.workflow.get_outgoing_edges(completed_node_id)
-        if len(outgoing) > 1:
-            node_output = self.context.node_outputs.get(completed_node_id, {})
-            eval_ctx = {"output": node_output, **self.context.variables, **node_output}
+    def _reset_loop_body_nodes(self, while_node_id: str, exit_target: Optional[str] = None) -> None:
+        """Reinicia los estados de los nodos que forman parte del cuerpo de un bucle WHILE."""
+        visited: Set[str] = set()
+        queue = deque([while_node_id])
+        body_nodes: Set[str] = set()
 
-            for edge in outgoing:
-                if edge.condition and not edge.condition.evaluate(eval_ctx):
-                    target_id = edge.to_node
-                    # Si no tiene otras aristas satisfechas
-                    if not self.is_node_ready(target_id) and self.context.node_states[target_id] == NodeStatus.PENDING:
+        while queue:
+            curr = queue.popleft()
+            for edge in self.workflow.get_outgoing_edges(curr):
+                nxt = edge.to_node
+                if nxt == exit_target:
+                    continue
+                if nxt == while_node_id:
+                    continue
+                if nxt not in visited:
+                    visited.add(nxt)
+                    body_nodes.add(nxt)
+                    queue.append(nxt)
+
+        with self._lock:
+            for nid in body_nodes:
+                self.context.node_states[nid] = NodeStatus.PENDING
+                self.context.node_retries[nid] = 0
+
+    def approve_node(self, node_id: str, approved: bool = True, comment: str = "") -> bool:
+        """Aprueba o rechaza un nodo en estado WAITING_APPROVAL."""
+        with self._lock:
+            st = self.context.node_states.get(node_id)
+            if st != NodeStatus.WAITING_APPROVAL:
+                return False
+
+            node = self.workflow.nodes.get(node_id)
+            ctrl = node.control_config or node.metadata.get("control_config", {}) if node else {}
+            now = datetime.now(timezone.utc)
+
+            if approved:
+                self.context.node_states[node_id] = NodeStatus.COMPLETED
+                self.context.node_outputs[node_id] = {
+                    "status": "approved",
+                    "approved": True,
+                    "branch_taken": "approved",
+                    "comment": comment,
+                    "approved_at": now.isoformat(),
+                }
+                self.context.execution_history.append(node_id)
+                self._propagate_skips(node_id)
+                return True
+            else:
+                reject_target = ctrl.get("reject_target")
+                if reject_target:
+                    self.context.node_states[node_id] = NodeStatus.COMPLETED
+                    self.context.node_outputs[node_id] = {
+                        "status": "rejected",
+                        "approved": False,
+                        "branch_taken": "rejected",
+                        "comment": comment,
+                        "rejected_at": now.isoformat(),
+                    }
+                    self.context.execution_history.append(node_id)
+                    self._propagate_skips(node_id)
+                    return True
+                else:
+                    self.context.node_states[node_id] = NodeStatus.FAILED
+                    self.context.status = WorkflowStatus.FAILED
+                    self.context.error_message = f"Nodo '{node_id}' rechazado por supervisión: {comment}"
+                    self.context.finished_at = now
+                    return False
+
+    def _propagate_skips(self, completed_node_id: str) -> None:
+        """Marca como SKIPPED los nodos downstream cuyas condiciones nunca se satisficieron o cuyas ramas no fueron tomadas."""
+        outgoing = self.workflow.get_outgoing_edges(completed_node_id)
+        if not outgoing:
+            return
+
+        node = self.workflow.nodes[completed_node_id]
+        node_output = self.context.node_outputs.get(completed_node_id, {})
+        eval_ctx = self.get_evaluation_context(upstream_node_id=completed_node_id)
+        branch_taken = node_output.get("branch_taken")
+
+        for edge in outgoing:
+            is_taken = True
+            edge_label = (edge.label or "").strip().lower()
+
+            if branch_taken is not None:
+                b_str = str(branch_taken).strip().lower()
+                if node.node_type in (NodeType.DECISION, NodeType.IF):
+                    if edge.edge_id == branch_taken or edge_label == b_str:
+                        is_taken = True
+                    elif b_str == "true" and edge_label in ("true", "yes", "si", "1"):
+                        is_taken = True
+                    elif b_str == "false" and edge_label in ("false", "no", "0"):
+                        is_taken = True
+                    elif b_str == "default" and edge_label in ("default", "else"):
+                        is_taken = True
+                    elif edge_label in ("true", "false", "yes", "no", "default", "else"):
+                        is_taken = False
+                elif node.node_type == NodeType.WHILE:
+                    if b_str in ("repeat_body", "body") and edge_label in ("exit", "false"):
+                        is_taken = False
+                    elif b_str in ("exit_loop", "exit") and edge_label in ("body", "true"):
+                        is_taken = False
+
+            if is_taken and edge.condition:
+                legacy_ctx = {"output": node_output, **self.context.variables, **node_output}
+                is_taken = edge.condition.evaluate(eval_ctx) or edge.condition.evaluate(legacy_ctx)
+
+            if not is_taken:
+                target_id = edge.to_node
+                if not self.is_node_ready(target_id) and self.context.node_states[target_id] in (NodeStatus.PENDING, NodeStatus.READY):
+                    other_satisfied = any(
+                        other_edge.from_node != completed_node_id and
+                        self.context.node_states.get(other_edge.from_node) == NodeStatus.COMPLETED
+                        for other_edge in self.workflow.get_incoming_edges(target_id)
+                    )
+                    if not other_satisfied:
                         self.context.node_states[target_id] = NodeStatus.SKIPPED
+                        self._propagate_skips(target_id)
 
     def _check_agent_responses(self) -> List[str]:
         """Revisa si hay mensajes de respuesta en el AgentMessageBus para nodos en estado WAITING_RESULT."""

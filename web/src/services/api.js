@@ -602,4 +602,31 @@ export async function resetWorkflow(workflowId) {
   return await res.json();
 }
 
+export async function approveWorkflowNode(workflowId, nodeId, approved = true, comment = '') {
+  const res = await authFetch(`${API_BASE}/workflows/${encodeURIComponent(workflowId)}/nodes/${encodeURIComponent(nodeId)}/approve`, {
+    method: 'POST',
+    body: JSON.stringify({ approved, comment }),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+  return await res.json();
+}
+
+export async function fetchCanonicalTemplates() {
+  const res = await authFetch(`${API_BASE}/workflows/templates/canonical`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+  return await res.json();
+}
+
+export async function instantiateCanonicalTemplate(templateKey, name = null) {
+  const url = name 
+    ? `${API_BASE}/workflows/templates/${encodeURIComponent(templateKey)}/instantiate?name=${encodeURIComponent(name)}`
+    : `${API_BASE}/workflows/templates/${encodeURIComponent(templateKey)}/instantiate`;
+  const res = await authFetch(url, {
+    method: 'POST',
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+  return await res.json();
+}
+
+
 

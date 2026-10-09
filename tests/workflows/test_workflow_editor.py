@@ -184,3 +184,16 @@ def test_fastapi_workflow_endpoints(api_client):
     assert "PRAXEON - Visual Workflow Orchestrator" in res_ui.text
     assert "id=\"canvas\"" in res_ui.text
     assert "id=\"btn-run\"" in res_ui.text
+
+    # 8. Listar e instanciar plantillas canónicas
+    res_tpls = api_client.get("/v1/workflows/templates/canonical")
+    assert res_tpls.status_code == 200
+    tpl_list = res_tpls.json()["data"]
+    assert any(t["template_id"] == "code_review_loop" for t in tpl_list)
+
+    res_inst = api_client.post("/v1/workflows/templates/code_review_loop/instantiate?name=MyReviewLoop")
+    assert res_inst.status_code == 200
+    inst_data = res_inst.json()["data"]
+    assert inst_data["name"] == "MyReviewLoop"
+    assert "review_loop" in inst_data["nodes"]
+

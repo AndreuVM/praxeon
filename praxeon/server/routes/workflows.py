@@ -45,6 +45,7 @@ class AddNodeRequest(BaseModel):
     agent_id: Optional[str] = None
     tool_name: Optional[str] = None
     inputs: Dict[str, Any] = Field(default_factory=dict)
+    control_config: Optional[Dict[str, Any]] = None
 
 
 class UpdateNodePositionRequest(BaseModel):
@@ -58,7 +59,14 @@ class UpdateNodeRequest(BaseModel):
     agent_id: Optional[str] = None
     tool_name: Optional[str] = None
     inputs: Optional[Dict[str, Any]] = None
+    control_config: Optional[Dict[str, Any]] = None
     metadata: Optional[Dict[str, Any]] = None
+
+
+class ApproveNodeRequest(BaseModel):
+    approved: bool = True
+    comment: str = ""
+
 
 
 class ConnectNodesRequest(BaseModel):
@@ -122,6 +130,7 @@ def add_node(workflow_id: str, payload: AddNodeRequest):
             agent_id=payload.agent_id,
             tool_name=payload.tool_name,
             inputs=payload.inputs,
+            control_config=payload.control_config,
         )
         return APIResponse(data=node.model_dump(mode="json"))
     except ValueError as exc:
@@ -146,7 +155,7 @@ def update_node_position(workflow_id: str, node_id: str, payload: UpdateNodePosi
 
 @router.put("/{workflow_id}/nodes/{node_id}", response_model=APIResponse[Dict[str, Any]])
 def update_node(workflow_id: str, node_id: str, payload: UpdateNodeRequest):
-    """Actualiza las propiedades de un nodo (nombre, agente asignado, tipo, herramienta, inputs)."""
+    """Actualiza las propiedades de un nodo (nombre, agente asignado, tipo, herramienta, inputs, control_config)."""
     service = get_workflow_editor_service()
     try:
         updated = service.update_node(
@@ -157,11 +166,13 @@ def update_node(workflow_id: str, node_id: str, payload: UpdateNodeRequest):
             agent_id=payload.agent_id,
             tool_name=payload.tool_name,
             inputs=payload.inputs,
+            control_config=payload.control_config,
             metadata=payload.metadata,
         )
         return APIResponse(data=updated.model_dump(mode="json"))
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
 
 
 @router.delete("/{workflow_id}/nodes/{node_id}", response_model=APIResponse[Dict[str, Any]])
@@ -273,7 +284,42 @@ def reset_workflow(workflow_id: str):
     return APIResponse(data={"reset": True, "workflow_id": workflow_id})
 
 
+@router.post("/{workflow_id}/nodes/{node_id}/approve", response_model=APIResponse[Dict[str, Any]])
+def approve_workflow_node(workflow_id: str, node_id: str, payload: ApproveNodeRequest):
+    """Aprueba o rechaza la ejecución de un nodo en estado WAITING_APPROVAL."""
+    service = get_workflow_editor_service()
+    try:
+        res = service.approve_node(
+            workflow_id=workflow_id,
+            node_id=node_id,
+            approved=payload.approved,
+            comment=payload.comment,
+        )
+        return APIResponse(data=res)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+
+@router.get("/templates/canonical", response_model=APIResponse[List[Dict[str, Any]]])
+def list_canonical_templates():
+    """Lista las plantillas canónicas de flujos de trabajo multiagente."""
+    service = get_workflow_editor_service()
+    return APIResponse(data=service.list_templates())
+
+
+@router.post("/templates/{template_key}/instantiate", response_model=APIResponse[Dict[str, Any]])
+def instantiate_canonical_template(template_key: str, name: Optional[str] = None):
+    """Crea un nuevo workflow a partir de una plantilla canónica."""
+    service = get_workflow_editor_service()
+    try:
+        wf = service.instantiate_template(template_key=template_key, name=name)
+        return APIResponse(data=wf.to_dict())
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+
 @router.get("/editor/ui", response_class=HTMLResponse)
+
 def get_workflow_editor_ui():
     """Sirve la interfaz web interactiva drag & drop del editor de workflows."""
     import os

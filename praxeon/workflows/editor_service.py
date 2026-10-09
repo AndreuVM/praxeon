@@ -28,6 +28,8 @@ from praxeon.workflows.models import (
     WorkflowEdge,
     WorkflowNode,
 )
+from praxeon.workflows.templates import CANONICAL_TEMPLATES
+
 
 
 class WorkflowEditorService:
@@ -205,6 +207,7 @@ class WorkflowEditorService:
         agent_id: Optional[str] = None,
         tool_name: Optional[str] = None,
         inputs: Optional[Dict[str, Any]] = None,
+        control_config: Optional[Dict[str, Any]] = None,
     ) -> WorkflowNode:
         """Añade un nodo al flujo de trabajo."""
         wf = self.get_workflow(workflow_id)
@@ -219,6 +222,7 @@ class WorkflowEditorService:
             agent_id=agent_id,
             tool_name=tool_name,
             inputs=inputs or {},
+            control_config=control_config,
             position=position or UIPosition(x=300.0, y=250.0),
         )
 
@@ -280,6 +284,7 @@ class WorkflowEditorService:
         agent_id: Optional[str] = None,
         tool_name: Optional[str] = None,
         inputs: Optional[Dict[str, Any]] = None,
+        control_config: Optional[Dict[str, Any]] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> WorkflowNode:
         """Actualiza las propiedades operativas y de configuración de un nodo."""
@@ -299,6 +304,8 @@ class WorkflowEditorService:
             dump["tool_name"] = tool_name.strip() if tool_name.strip() else None
         if inputs is not None:
             dump["inputs"] = inputs
+        if control_config is not None:
+            dump["control_config"] = control_config
         if metadata is not None:
             dump["metadata"] = metadata
 
@@ -525,3 +532,55 @@ class WorkflowEditorService:
         """Reinicia el motor de ejecución del workflow a estado IDLE."""
         self._active_engines.pop(workflow_id, None)
         self._active_bridges.pop(workflow_id, None)
+
+    def approve_node(
+        self,
+        workflow_id: str,
+        node_id: str,
+        approved: bool = True,
+        comment: str = "",
+    ) -> Dict[str, Any]:
+        """Autoriza o rechaza la ejecución de un nodo en estado WAITING_APPROVAL."""
+        engine = self.get_or_create_engine(workflow_id)
+        success = engine.approve_node(node_id, approved=approved, comment=comment)
+        if self.persistence_store and hasattr(self.persistence_store, "save_workflow_execution"):
+            try:
+                self.persistence_store.save_workflow_execution(engine.get_execution())
+            except Exception:
+                pass
+        return {
+            "success": success,
+            "node_id": node_id,
+            "approved": approved,
+            "status": engine.context.status.value,
+            "context": engine.context.to_dict(),
+        }
+
+    def list_templates(self) -> List[Dict[str, Any]]:
+        """Lista las plantillas canónicas de flujos de trabajo disponibles."""
+        result = []
+        for key, factory in CANONICAL_TEMPLATES.items():
+            wf = factory()
+            result.append({
+                "template_id": key,
+                "name": wf.name,
+                "description": wf.description,
+                "node_count": len(wf.nodes),
+                "edge_count": len(wf.edges),
+            })
+        return result
+
+    def instantiate_template(self, template_key: str, name: Optional[str] = None) -> WorkflowDefinition:
+        """Instancia una plantilla canónica y la registra como un nuevo workflow."""
+        if template_key not in CANONICAL_TEMPLATES:
+            raise ValueError(f"Plantilla '{template_key}' no reconocida. Disponibles: {list(CANONICAL_TEMPLATES.keys())}")
+        wf = CANONICAL_TEMPLATES[template_key]()
+        new_id = f"wf_{template_key}_{uuid.uuid4().hex[:8]}"
+        wf_dump = wf.model_dump()
+        wf_dump["workflow_id"] = new_id
+        if name:
+            wf_dump["name"] = name
+        new_wf = WorkflowDefinition(**wf_dump)
+        self.register_workflow(new_wf)
+        return new_wf
+
