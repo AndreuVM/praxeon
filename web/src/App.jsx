@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, Suspense } from 'react';
 import Header from './components/Header';
 import TopNav from './components/TopNav';
 import SessionKPIs from './components/SessionKPIs';
@@ -9,13 +9,13 @@ import ProposeActionModal from './components/ProposeActionModal';
 import SessionsModal from './components/SessionsModal';
 import UnauthorizedModal from './components/UnauthorizedModal';
 
-import SessionsView from './components/views/SessionsView';
-import DecisionsView from './components/views/DecisionsView';
-import AgentsView from './components/views/AgentsView';
-import ProvidersView from './components/views/ProvidersView';
-import SecurityView from './components/views/SecurityView';
-import SettingsView from './components/views/SettingsView';
-import WorkflowsView from './components/views/WorkflowsView';
+const SessionsView = React.lazy(() => import('./components/views/SessionsView'));
+const DecisionsView = React.lazy(() => import('./components/views/DecisionsView'));
+const AgentsView = React.lazy(() => import('./components/views/AgentsView'));
+const ProvidersView = React.lazy(() => import('./components/views/ProvidersView'));
+const SecurityView = React.lazy(() => import('./components/views/SecurityView'));
+const SettingsView = React.lazy(() => import('./components/views/SettingsView'));
+const WorkflowsView = React.lazy(() => import('./components/views/WorkflowsView'));
 
 import {
   INITIAL_SESSION,
@@ -1205,88 +1205,90 @@ export default function App() {
             )}
 
             {/* Supplementary Views */}
-            {activeNav === 'sessions' && (
-              <SessionsView
-                sessions={sessionsList}
-                currentSessionId={session.sessionId}
-                onSelectSession={handleLoadSession}
-                onCreateSession={(cfg) => {
-                  handleStartMission(cfg);
-                  setActiveNav('live');
-                }}
-                onRefreshSessions={refreshSessionsList}
-                onDeleteSession={handleDeleteSession}
-                onClearOldSessions={handleClearOldSessions}
-                onNewCleanSession={handleNewCleanSession}
-              />
-            )}
+            <Suspense fallback={<div className="flex items-center justify-center h-full text-slate-400 p-8">Cargando vista...</div>}>
+              {activeNav === 'sessions' && (
+                <SessionsView
+                  sessions={sessionsList}
+                  currentSessionId={session.sessionId}
+                  onSelectSession={handleLoadSession}
+                  onCreateSession={(cfg) => {
+                    handleStartMission(cfg);
+                    setActiveNav('live');
+                  }}
+                  onRefreshSessions={refreshSessionsList}
+                  onDeleteSession={handleDeleteSession}
+                  onClearOldSessions={handleClearOldSessions}
+                  onNewCleanSession={handleNewCleanSession}
+                />
+              )}
 
-            {activeNav === 'decisions' && (
-              <DecisionsView
-                decisions={nodes.map((n) => ({
-                  decision_id: n.id,
-                  sequence: n.sequence,
-                  session_id: session.sessionId,
-                  tool: n.tool,
-                  command: n.command || n.title,
-                  status: n.verdict || n.status,
-                  risk_level: n.risk,
-                  created_at: n.timestamp,
-                }))}
-                currentSessionId={session.sessionId}
-                sessions={sessionsList}
-                onSelectDecision={(nodeId, sid) => {
-                  if (sid && sid !== session.sessionId) {
-                    handleLoadSession(sid);
-                  }
-                  setSelectedNodeId(nodeId);
-                  setInspectorTab('decision');
-                  setActiveNav('live');
-                }}
-              />
-            )}
+              {activeNav === 'decisions' && (
+                <DecisionsView
+                  decisions={nodes.map((n) => ({
+                    decision_id: n.id,
+                    sequence: n.sequence,
+                    session_id: session.sessionId,
+                    tool: n.tool,
+                    command: n.command || n.title,
+                    status: n.verdict || n.status,
+                    risk_level: n.risk,
+                    created_at: n.timestamp,
+                  }))}
+                  currentSessionId={session.sessionId}
+                  sessions={sessionsList}
+                  onSelectDecision={(nodeId, sid) => {
+                    if (sid && sid !== session.sessionId) {
+                      handleLoadSession(sid);
+                    }
+                    setSelectedNodeId(nodeId);
+                    setInspectorTab('decision');
+                    setActiveNav('live');
+                  }}
+                />
+              )}
 
-            {activeNav === 'agents' && (
-              <AgentsView
-                session={session}
-                sessionsList={sessionsList}
-                missionConfig={missionConfig}
-                isRunning={isRunning}
-                isPaused={isPaused}
-                onSelectSession={handleLoadSession}
-                onLaunchAgentMission={(cfg) => {
-                  handleStartMission(cfg);
-                  setActiveNav('live');
-                }}
-              />
-            )}
+              {activeNav === 'agents' && (
+                <AgentsView
+                  session={session}
+                  sessionsList={sessionsList}
+                  missionConfig={missionConfig}
+                  isRunning={isRunning}
+                  isPaused={isPaused}
+                  onSelectSession={handleLoadSession}
+                  onLaunchAgentMission={(cfg) => {
+                    handleStartMission(cfg);
+                    setActiveNav('live');
+                  }}
+                />
+              )}
 
-            {activeNav === 'workflows' && <WorkflowsView />}
+              {activeNav === 'workflows' && <WorkflowsView />}
 
-            {activeNav === 'providers' && <ProvidersView />}
+              {activeNav === 'providers' && <ProvidersView />}
 
-            {activeNav === 'security' && (
-              <SecurityView
-                session={session}
-                sessionsList={sessionsList}
-                decisions={nodes.map((n) => ({
-                  decision_id: n.id,
-                  session_id: session.sessionId,
-                  tool: n.tool,
-                  command: n.command || n.title,
-                  status: n.verdict || n.status,
-                  risk_level: n.risk,
-                  created_at: n.timestamp,
-                }))}
-              />
-            )}
+              {activeNav === 'security' && (
+                <SecurityView
+                  session={session}
+                  sessionsList={sessionsList}
+                  decisions={nodes.map((n) => ({
+                    decision_id: n.id,
+                    session_id: session.sessionId,
+                    tool: n.tool,
+                    command: n.command || n.title,
+                    status: n.verdict || n.status,
+                    risk_level: n.risk,
+                    created_at: n.timestamp,
+                  }))}
+                />
+              )}
 
-            {activeNav === 'settings' && (
-              <SettingsView
-                missionConfig={missionConfig}
-                onConfigChange={setMissionConfig}
-              />
-            )}
+              {activeNav === 'settings' && (
+                <SettingsView
+                  missionConfig={missionConfig}
+                  onConfigChange={setMissionConfig}
+                />
+              )}
+            </Suspense>
           </div>
         </div>
 
