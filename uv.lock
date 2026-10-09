@@ -1167,6 +1167,7 @@ dev = [
     { name = "httpx" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
+    { name = "typesafe-sdk" },
 ]
 laya = [
     { name = "laya" },
@@ -1198,6 +1199,7 @@ requires-dist = [
     { name = "rich", specifier = ">=15.0.0" },
     { name = "typesafe-sdk", marker = "extra == 'decision-all'", specifier = ">=0.7.0" },
     { name = "typesafe-sdk", marker = "extra == 'decision-typesafe'", specifier = ">=0.7.0" },
+    { name = "typesafe-sdk", marker = "extra == 'dev'", specifier = ">=0.7.0" },
     { name = "typesafe-sdk", marker = "extra == 'typesafe'", specifier = ">=0.7.0" },
     { name = "uvicorn", specifier = ">=0.30.0" },
     { name = "uvicorn", marker = "extra == 'server'", specifier = ">=0.30.0" },

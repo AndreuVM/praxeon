@@ -10,6 +10,27 @@ from praxeon.models.schema import ActionCandidate, LoopType, Step, StepType
 
 logger = logging.getLogger("praxeon.typesafe")
 
+# Fallback limpio si typesafe-sdk no está instalado en el entorno
+try:
+    from typesafe_sdk import Choice, Noul, Score, TypeSafeClient
+except ImportError:
+    class Choice:  # type: ignore
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            self.args = args
+            self.kwargs = kwargs
+
+    class Noul:  # type: ignore
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            self.args = args
+            self.kwargs = kwargs
+
+    class Score:  # type: ignore
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            self.args = args
+            self.kwargs = kwargs
+
+    TypeSafeClient = None  # type: ignore
+
 
 class TypeSafeJEVClient:
     """Cliente para evaluar razonamiento y decisiones usando el modelo Jev de TypeSafe AI."""
@@ -29,8 +50,11 @@ class TypeSafeJEVClient:
     def _init_client(self) -> None:
         """Inicializa TypeSafeClient desde typesafe-sdk."""
         try:
-            from typesafe_sdk import TypeSafeClient
-            self._client = TypeSafeClient(api_key=self.api_key)
+            if TypeSafeClient is not None:
+                self._client = TypeSafeClient(api_key=self.api_key)
+            else:
+                from typesafe_sdk import TypeSafeClient as _TSC
+                self._client = _TSC(api_key=self.api_key)
         except Exception as e:
             logger.warning(f"No se pudo inicializar TypeSafeClient: {e}")
             self._client = None
@@ -119,8 +143,6 @@ class TypeSafeJEVClient:
             }
 
         try:
-            from typesafe_sdk import Choice, Noul, Score
-
             recent_steps = [
                 {
                     "step_id": s.id,
@@ -324,8 +346,6 @@ class TypeSafeJEVClient:
             return None
 
         try:
-            from typesafe_sdk import Choice, Noul, Score
-
             # Construir estado estructurado del programa para el modelo Jev
             recent_steps = [
                 {

@@ -230,7 +230,7 @@ def validate_provider_endpoint(
         )
 
     # 2. Evaluación de direcciones de bucle local e IPs privadas
-    is_loopback = hostname in {"localhost", "localhost.localdomain", "127.0.0.1", "::1", "0.0.0.0"}
+    is_loopback = hostname in {"localhost", "localhost.localdomain", "127.0.0.1", "::1", "0.0.0.0"}  # nosec B104
     is_private = False
     try:
         ip_obj = ipaddress.ip_address(hostname)
