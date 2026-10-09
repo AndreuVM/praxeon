@@ -2,6 +2,8 @@
 Valida el ciclo de vida completo: REST + WebSocket + Policy + Capabilities + Sandbox + Frontend.
 """
 
+from pathlib import Path
+import shutil
 import uuid
 import pytest
 from fastapi.testclient import TestClient
@@ -83,42 +85,48 @@ def test_complete_platform_lifecycle_e2e(test_app):
 
     # 5. Propuesta de comando de alto riesgo (mutación local controlada que exige confirmación humana)
     temp_dir_name = f"e2e_dir_{uuid.uuid4().hex[:8]}"
-    risk_prop = test_app.post(f"/v1/sessions/{session_id}/actions", json={
-        "tool": "run_command",
-        "operation": f"mkdir {temp_dir_name}",
-        "arguments": {"command": f"mkdir {temp_dir_name}"},
-        "thought_rationale": "Create temporary directory for workspace execution",
-        "provenance": {"source": "E2ETestAgent", "step": 2},
-    })
-    assert risk_prop.status_code == 200
-    risk_data = risk_prop.json()["data"]
-    assert risk_data["status"] == "REVIEW"
-    assert risk_data["capability"] is None
-    risk_decision_id = risk_data["decision_id"]
+    target_dir = Path.cwd() / temp_dir_name
+    cmd = f"mkdir {temp_dir_name}"
+    try:
+        risk_prop = test_app.post(f"/v1/sessions/{session_id}/actions", json={
+            "tool": "run_command",
+            "operation": cmd,
+            "arguments": {"command": cmd},
+            "thought_rationale": "Create temporary directory for workspace execution",
+            "provenance": {"source": "E2ETestAgent", "step": 2},
+        })
+        assert risk_prop.status_code == 200
+        risk_data = risk_prop.json()["data"]
+        assert risk_data["status"] == "REVIEW"
+        assert risk_data["capability"] is None
+        risk_decision_id = risk_data["decision_id"]
 
-    # 6. Intento de ejecución directa de acción no confirmada -> 400 Bad Request
-    unconfirmed_exec = test_app.post(f"/v1/decisions/{risk_decision_id}/execute")
-    assert unconfirmed_exec.status_code in (400, 403)
+        # 6. Intento de ejecución directa de acción no confirmada -> 400 Bad Request
+        unconfirmed_exec = test_app.post(f"/v1/decisions/{risk_decision_id}/execute")
+        assert unconfirmed_exec.status_code in (400, 403)
 
-    # 7. Operador humano aprueba la acción
-    confirm_res = test_app.post(f"/v1/decisions/{risk_decision_id}/confirm", json={
-        "approved": True,
-        "reason": "Verified by security lead",
-        "actor": "operator_admin_e2e",
-    })
-    assert confirm_res.status_code == 200
-    confirm_data = confirm_res.json()["data"]
-    assert confirm_data["status"] == "ALLOW"
-    assert confirm_data["capability"] is not None
+        # 7. Operador humano aprueba la acción
+        confirm_res = test_app.post(f"/v1/decisions/{risk_decision_id}/confirm", json={
+            "approved": True,
+            "reason": "Verified by security lead",
+            "actor": "operator_admin_e2e",
+        })
+        assert confirm_res.status_code == 200
+        confirm_data = confirm_res.json()["data"]
+        assert confirm_data["status"] == "ALLOW"
+        assert confirm_data["capability"] is not None
 
-    # 8. Ejecución en sandbox con capability confirmada
-    risk_exec = test_app.post(f"/v1/decisions/{risk_decision_id}/execute")
-    assert risk_exec.status_code == 200
-    assert risk_exec.json()["data"]["success"] is True
+        # 8. Ejecución en sandbox con capability confirmada
+        risk_exec = test_app.post(f"/v1/decisions/{risk_decision_id}/execute")
+        assert risk_exec.status_code == 200
+        assert risk_exec.json()["data"]["success"] is True
 
-    # 9. Intento de Replay con la misma capability -> Rechazado por NonceStore (403)
-    replay_exec = test_app.post(f"/v1/decisions/{risk_decision_id}/execute")
-    assert replay_exec.status_code == 403
+        # 9. Intento de Replay con la misma capability -> Rechazado por NonceStore (403)
+        replay_exec = test_app.post(f"/v1/decisions/{risk_decision_id}/execute")
+        assert replay_exec.status_code == 403
+    finally:
+        if target_dir.exists():
+            shutil.rmtree(target_dir, ignore_errors=True)
 
     # 10. Inspección de eventos auditados
     events_res = test_app.get(f"/v1/sessions/{session_id}/events?limit=50")
