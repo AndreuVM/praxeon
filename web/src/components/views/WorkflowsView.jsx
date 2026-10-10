@@ -24,6 +24,7 @@ import {
   Settings2,
   LayoutTemplate,
   Check,
+  Focus,
 } from 'lucide-react';
 import {
   fetchWorkflows,
@@ -216,6 +217,35 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
     if (!workflow || !workflow.edges) return [];
     return Array.isArray(workflow.edges) ? workflow.edges : [];
   }, [workflow]);
+
+  // Dimensiones dinámicas del espacio del lienzo para permitir scroll infinito y colocación libre
+  const canvasDimensions = useMemo(() => {
+    let maxX = 4200;
+    let maxY = 3200;
+    nodesArray.forEach((n) => {
+      const x = (n.position?.x ?? 100) + 500;
+      const y = (n.position?.y ?? 100) + 400;
+      if (x > maxX) maxX = x;
+      if (y > maxY) maxY = y;
+    });
+    return { width: maxX, height: maxY };
+  }, [nodesArray]);
+
+  // Centrar vista suavemente sobre el grupo de nodos
+  const handleCenterView = () => {
+    if (!canvasRef.current) return;
+    if (nodesArray.length > 0) {
+      const minX = Math.min(...nodesArray.map((n) => n.position?.x ?? 100));
+      const minY = Math.min(...nodesArray.map((n) => n.position?.y ?? 100));
+      canvasRef.current.scrollTo({
+        left: Math.max(0, minX - 100),
+        top: Math.max(0, minY - 100),
+        behavior: 'smooth',
+      });
+    } else {
+      canvasRef.current.scrollTo({ left: 0, top: 0, behavior: 'smooth' });
+    }
+  };
 
   // Sincronizar formulario de edición de nodo cuando cambia la selección
   useEffect(() => {
@@ -692,25 +722,73 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
   };
 
 
-  // Drag and drop interactivo en lienzo nativo
+  // Drag and drop interactivo en lienzo nativo con soporte de scroll y espacio infinito
+  const draggingStateRef = useRef({
+    nodeId: null,
+    offset: { x: 0, y: 0 },
+    currentPosition: { x: 0, y: 0 },
+  });
+
   const handleMouseDownNode = (e, nodeId, currentX, currentY) => {
     e.stopPropagation();
     if (e.target.classList.contains('port-circle')) return;
+    const canvasEl = canvasRef.current;
+    if (!canvasEl) return;
+
+    const canvasRect = canvasEl.getBoundingClientRect();
+    const scrollLeft = canvasEl.scrollLeft || 0;
+    const scrollTop = canvasEl.scrollTop || 0;
+    const mouseCanvasX = e.clientX - canvasRect.left + scrollLeft;
+    const mouseCanvasY = e.clientY - canvasRect.top + scrollTop;
+
+    const offset = {
+      x: mouseCanvasX - currentX,
+      y: mouseCanvasY - currentY,
+    };
+
     setDraggingNodeId(nodeId);
-    const canvasRect = canvasRef.current?.getBoundingClientRect();
-    if (canvasRect) {
-      setDragOffset({
-        x: e.clientX - canvasRect.left - currentX,
-        y: e.clientY - canvasRect.top - currentY,
-      });
-    }
+    setDragOffset(offset);
+    draggingStateRef.current = {
+      nodeId,
+      offset,
+      currentPosition: { x: currentX, y: currentY },
+    };
   };
 
   const handleMouseMoveCanvas = (e) => {
-    if (!draggingNodeId || !workflow || !canvasRef.current) return;
-    const canvasRect = canvasRef.current.getBoundingClientRect();
-    const newX = Math.max(20, Math.min(canvasRect.width - 240, e.clientX - canvasRect.left - dragOffset.x));
-    const newY = Math.max(20, Math.min(canvasRect.height - 130, e.clientY - canvasRect.top - dragOffset.y));
+    const { nodeId, offset } = draggingStateRef.current;
+    if (!nodeId || !canvasRef.current) return;
+
+    const canvasEl = canvasRef.current;
+    const canvasRect = canvasEl.getBoundingClientRect();
+
+    // Auto-scroll fluido al acercarse a los márgenes visibles de la ventana
+    const edgeMargin = 45;
+    const scrollSpeed = 18;
+    if (e.clientX > canvasRect.right - edgeMargin) {
+      canvasEl.scrollLeft += scrollSpeed;
+    } else if (e.clientX < canvasRect.left + edgeMargin && canvasEl.scrollLeft > 0) {
+      canvasEl.scrollLeft -= scrollSpeed;
+    }
+    if (e.clientY > canvasRect.bottom - edgeMargin) {
+      canvasEl.scrollTop += scrollSpeed;
+    } else if (e.clientY < canvasRect.top + edgeMargin && canvasEl.scrollTop > 0) {
+      canvasEl.scrollTop -= scrollSpeed;
+    }
+
+    const mouseCanvasX = e.clientX - canvasRect.left + canvasEl.scrollLeft;
+    const mouseCanvasY = e.clientY - canvasRect.top + canvasEl.scrollTop;
+
+    const rawX = mouseCanvasX - offset.x;
+    const rawY = mouseCanvasY - offset.y;
+
+    // Permitir colocación libre en todo el lienzo amplio
+    const maxX = Math.max(canvasDimensions.width - 240, 4000);
+    const maxY = Math.max(canvasDimensions.height - 140, 3000);
+    const newX = Math.max(20, Math.min(maxX, rawX));
+    const newY = Math.max(20, Math.min(maxY, rawY));
+
+    draggingStateRef.current.currentPosition = { x: newX, y: newY };
 
     setWorkflow((prev) => {
       if (!prev) return prev;
@@ -718,7 +796,7 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
         return {
           ...prev,
           nodes: prev.nodes.map((n) =>
-            (n.node_id || n.id) === draggingNodeId ? { ...n, position: { x: newX, y: newY } } : n
+            (n.node_id || n.id) === nodeId ? { ...n, position: { x: newX, y: newY } } : n
           ),
         };
       }
@@ -726,8 +804,8 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
         ...prev,
         nodes: {
           ...prev.nodes,
-          [draggingNodeId]: {
-            ...prev.nodes[draggingNodeId],
+          [nodeId]: {
+            ...prev.nodes[nodeId],
             position: { x: newX, y: newY },
           },
         },
@@ -736,18 +814,38 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
   };
 
   const handleMouseUpCanvas = async () => {
-    if (draggingNodeId && activeWorkflowId && workflow) {
-      const node = nodesArray.find((n) => (n.node_id || n.id) === draggingNodeId);
-      if (node && node.position) {
-        try {
-          await updateWorkflowNodePosition(activeWorkflowId, draggingNodeId, node.position.x, node.position.y);
-        } catch (err) {
-          console.error('Error al persistir posición:', err);
-        }
+    const { nodeId, currentPosition } = draggingStateRef.current;
+    if (nodeId && activeWorkflowId) {
+      try {
+        await updateWorkflowNodePosition(activeWorkflowId, nodeId, currentPosition.x, currentPosition.y);
+      } catch (err) {
+        console.error('Error al persistir posición del nodo:', err);
       }
     }
+    draggingStateRef.current = { nodeId: null, offset: { x: 0, y: 0 }, currentPosition: { x: 0, y: 0 } };
     setDraggingNodeId(null);
   };
+
+  // Escuchar eventos globales para garantizar arrastre ininterrumpido
+  useEffect(() => {
+    if (!draggingNodeId) return;
+
+    const onGlobalMouseMove = (e) => {
+      handleMouseMoveCanvas(e);
+    };
+
+    const onGlobalMouseUp = () => {
+      handleMouseUpCanvas();
+    };
+
+    window.addEventListener('mousemove', onGlobalMouseMove);
+    window.addEventListener('mouseup', onGlobalMouseUp);
+
+    return () => {
+      window.removeEventListener('mousemove', onGlobalMouseMove);
+      window.removeEventListener('mouseup', onGlobalMouseUp);
+    };
+  }, [draggingNodeId, activeWorkflowId, canvasDimensions]);
 
   // Estilo e icono según tipo de nodo
   const getNodeTypeMeta = (type) => {
@@ -1025,6 +1123,26 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
             >
               <RotateCcw size={12} />
               <span>Reset</span>
+            </button>
+
+            <button
+              onClick={handleCenterView}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+                padding: '4px 9px',
+                borderRadius: '5px',
+                backgroundColor: '#161c28',
+                border: '1px solid #243044',
+                color: '#94a3b8',
+                fontSize: '11px',
+                cursor: 'pointer',
+              }}
+              title="Centrar vista sobre los nodos del workflow"
+            >
+              <Focus size={12} />
+              <span>Centrar</span>
             </button>
           </div>
         )}
@@ -1512,24 +1630,32 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
               flex: 1,
               position: 'relative',
               backgroundColor: '#080c14',
-              backgroundImage: 'radial-gradient(circle, rgba(255, 255, 255, 0.04) 1px, transparent 1px)',
-              backgroundSize: '24px 24px',
               overflow: 'auto',
               userSelect: draggingNodeId ? 'none' : 'auto',
             }}
           >
-            {/* Capa SVG para Aristas y Conexiones */}
-            <svg
+            {/* Espacio Amplio de Trabajo Multidimensional */}
+            <div
               style={{
-                position: 'absolute',
-                inset: 0,
-                width: '100%',
-                height: '100%',
-                pointerEvents: 'none',
-                minWidth: '1600px',
-                minHeight: '1000px',
+                position: 'relative',
+                minWidth: `${canvasDimensions.width}px`,
+                minHeight: `${canvasDimensions.height}px`,
+                width: `${canvasDimensions.width}px`,
+                height: `${canvasDimensions.height}px`,
+                backgroundImage: 'radial-gradient(circle, rgba(255, 255, 255, 0.04) 1px, transparent 1px)',
+                backgroundSize: '24px 24px',
               }}
             >
+              {/* Capa SVG para Aristas y Conexiones */}
+              <svg
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  width: '100%',
+                  height: '100%',
+                  pointerEvents: 'none',
+                }}
+              >
               <defs>
                 <marker
                   id="wf-arrow"
@@ -1922,6 +2048,7 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
                 </p>
               </div>
             )}
+            </div>
           </div>
 
           {/* Inspector Lateral Derecho (Propiedades de Nodo o Arista) */}
