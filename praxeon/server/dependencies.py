@@ -2204,12 +2204,12 @@ class RuntimeApplicationService:
                 "- git(command: str) -> Ejecuta comandos git en el repositorio (status, diff, log, etc.).\n"
                 "- finish(summary: str) -> Concluye entregando la respuesta directa a la pregunta, especificación, diseño, informe o solución solicitada por el usuario.\n\n"
                 "PRINCIPIOS OPERATIVOS Y RAZONAMIENTO COGNITIVO:\n"
-                "1. COMPRENSIÓN DEL ÁMBITO DEL PROYECTO (ANTI-SESGO DETERMINISTA): Atiende estrictamente a lo que el usuario solicita. Si el usuario te pide un informe, especificación, arquitectura, estructura de carpetas, requisitos funcionales/no funcionales o user stories para OTRO proyecto, una nueva aplicación o una propuesta de software conceptual, NO asumas jamás que se refiere al proyecto local de PRAXEON ni leas el README local. Elabora y entrega el diseño o informe completo de dicho proyecto directamente mediante finish(summary=\"...\").\n"
-                "2. SIN RESPUESTAS NI ASUNCIONES DETERMINISTAS: Palabras como 'proyecto', 'informe', 'documentación', 'guía' o 'estructura' NO deben disparar de forma automática la lectura de README.md ni pyproject.toml. Analiza dinámicamente si la tarea es de formulación y diseño (responde directamente con finish) o si solicita explícitamente auditar código de este repositorio local.\n"
-                "3. PREGUNTAS Y VALORACIONES: Si te consultan tu opinión, calificación técnica o análisis conceptual sobre cualquier tema o proyecto, responde de forma crítica, sincera y fundamentada directamente con finish(summary=\"...\").\n"
-                "4. TAREAS DE CÓDIGO TÉCNICO SOBRE EL REPOSITORIO LOCAL: Solo si la tarea solicita implementar código, corregir un bug o ejecutar pruebas sobre archivos existentes de este entorno, utiliza read_file, edit_file o run_command.\n"
+                "1. COMPRENSIÓN DEL ÁMBITO DEL PROYECTO (ANTI-SESGO DETERMINISTA): Atiende estrictamente a lo que el usuario solicita. Si el usuario te pide un informe, especificación, arquitectura, estructura de carpetas, requisitos funcionales/no funcionales o user stories para OTRO proyecto externo, una nueva aplicación o una propuesta puramente conceptual, NO asumas que se refiere al proyecto local ni leas archivos locales innecesariamente. Elabora y entrega el diseño de dicho proyecto directamente mediante finish(summary=\"...\").\n"
+                "2. AUDITORÍA Y ANÁLISIS DE ESTE PROYECTO / REPOSITORIO LOCAL: Si el usuario te pide explícitamente analizar, inspeccionar, explicar o auditar archivos, módulos o flujos del proyecto local ('analiza los archivos', 'cómo funciona el workflow', 'inspecciona el código', 'explica la arquitectura', etc.), DEBES obligatoriamente usar 'read_file' o 'run_command' para examinar las evidencias reales. El supervisor cognitivo PRAXEON VETARÁ (con REPLAN por falta de evidencia empírica / LOW_GROUNDED_PROBABILITY) cualquier llamada prematura a 'finish' que no haya consultado previamente los archivos requeridos.\n"
+                "3. PREGUNTAS Y VALORACIONES CONCEPTUALES: Si te consultan tu opinión general, teoría o valoraciones abstractas sin referencia a archivos de este entorno, responde de forma crítica y fundamentada directamente con finish(summary=\"...\").\n"
+                "4. TAREAS DE CÓDIGO TÉCNICO SOBRE EL REPOSITORIO LOCAL: Si la tarea solicita implementar código, corregir un bug o ejecutar pruebas sobre archivos existentes de este entorno, utiliza read_file, edit_file o run_command antes de dar por resuelta la tarea.\n"
                 "5. COMPATIBILIDAD DE SO: En Windows, NO uses comandos Unix/Linux como 'ls', 'cat', 'grep'. Utiliza 'read_file(path)' o comandos de PowerShell en run_command.\n"
-                "6. RETROCESO: Si una acción falla o es vetada por el supervisor, reflexiona en 'Thought:' y propone una alternativa válida."
+                "6. RETROCESO Y VETOS DEL SUPERVISOR: Si una acción (incluido un intento de 'finish') es vetada por el supervisor o rechazada por falta de evidencia, reflexiona en 'Thought:' sobre la observación de veto recibida y ejecuta la herramienta de inspección correspondiente (ej. read_file) para fundamentar empíricamente tu razonamiento antes de intentar finalizar de nuevo."
             )
 
             step_records: List[Dict[str, Any]] = []
@@ -2344,8 +2344,15 @@ class RuntimeApplicationService:
                         args = {"summary": clean_ans.strip()}
                         thought = "Conclusión directa emitida por el agente."
                     else:
-                        is_technical_action = any(k in goal.lower() for k in ("test", "pytest", "bug", "error", "edit", "modific", "implement", "crea"))
-                        if not is_technical_action:
+                        is_technical_action = any(
+                            k in goal.lower()
+                            for k in (
+                                "test", "pytest", "bug", "error", "edit", "modific", "implement", "crea",
+                                "analiz", "archivo", "archivos", "codigo", "código", "como funciona",
+                                "cómo funciona", "audita", "inspeccion", "revisa"
+                            )
+                        )
+                        if not is_technical_action or step_idx > 1:
                             clean_ans = llm_output
                             if "thought:" in llm_output.lower():
                                 parts = re.split(r"(?i)thought\s*:", llm_output)
@@ -2354,9 +2361,10 @@ class RuntimeApplicationService:
                             args = {"summary": clean_ans.strip()}
                             thought = "Respuesta directa emitida por el agente."
                         else:
+                            # En el paso inicial de una tarea técnica o de análisis de código, forzar inspección empírica
                             tool = "run_command"
-                            args = {"command": "python -c \"print('Paso de inspección ejecutado')\""}
-                            thought = llm_output[:250].strip() or f"Paso {step_idx} propuesto para: '{goal}'."
+                            args = {"command": "python -c \"import os; print('Archivos del proyecto:', [f for f in os.listdir('.') if not f.startswith('.')][:12])\""}
+                            thought = llm_output[:250].strip() or f"Paso inicial de inspección de archivos requerido para fundamentar: '{goal}'."
 
                 # CIRCUITO DE FIJACIÓN SEMÁNTICA (SEMANTIC CIRCUIT BREAKER): Detección de bucles repetitivos de herramientas
                 action_sig = f"{tool}:{json.dumps(args, sort_keys=True)}"
@@ -2521,15 +2529,29 @@ class RuntimeApplicationService:
                 else:
                     consecutive_failures += 1
 
-                    # RETROCESO (BACKTRACK) Y BIFURCACIÓN:
+                    # RETROCESO (BACKTRACK) Y BIFURCACIÓN CONTEXTUAL:
+                    is_initial_step = active_parent_id.startswith("root_") or step_idx == 1
+                    if is_initial_step:
+                        interv_name = "INITIAL_HYPOTHESIS_VETOED"
+                        interv_msg = (
+                            f"Acción inicial '{action_node_id}' vetada por el supervisor ({step_reasons or 'falta de evidencias empíricas'}). "
+                            f"Se exige recopilar evidencias inspeccionando archivos antes de emitir conclusiones."
+                        )
+                    else:
+                        interv_name = "BACKTRACK_AND_BRANCH"
+                        interv_msg = (
+                            f"Fallo o veto en '{action_node_id}'. El supervisor realiza un retroceso a '{active_parent_id}' "
+                            f"para bifurcar una hipótesis alternativa."
+                        )
+
                     self.event_bus.emit(
                         session_id=sid,
                         event_type=EventType.INTERVENTION_APPLIED,
                         node_id=action_node_id,
                         parent_id=active_parent_id,
                         payload={
-                            "intervention": "BACKTRACK_AND_BRANCH",
-                            "message": f"Fallo o veto en '{action_node_id}'. El supervisor realiza un retroceso a '{active_parent_id}' para bifurcar una hipótesis alternativa.",
+                            "intervention": interv_name,
+                            "message": interv_msg,
                             "backtrack_to": active_parent_id,
                             "failed_node": action_node_id,
                         },
@@ -2632,7 +2654,29 @@ class RuntimeApplicationService:
                         with self._lock:
                             if sid in self._sessions_meta:
                                 self._sessions_meta[sid]["final_answer"] = final_ans
-                    break
+                        break
+                    else:
+                        # Veto del supervisor a la conclusión prematura: alimentar al LLM para corregir rumbo
+                        v_reason = step_reasons or "FALTA_DE_EVIDENCIAS_EMPÍRICAS"
+                        logger.warning(
+                            "Intento de finalización ('%s') vetado en paso %d (motivo: %s). Se retroalimenta al agente para continuar.",
+                            tool,
+                            step_idx,
+                            v_reason,
+                        )
+                        supervisor_feedback = (
+                            f"🚨 [VETO DEL SUPERVISOR PRAXEON - {v_reason}]:\n"
+                            f"Tu intento de concluir la misión mediante '{tool}' ha sido RECHAZADO por falta de evidencia empírica fundamentada.\n"
+                            "NO se permite emitir conclusiones sin antes haber inspeccionado los archivos reales del proyecto.\n"
+                            "EN EL SIGUIENTE TURNO DEBES ejecutar 'read_file(path)' o 'run_command' para examinar los archivos relevantes."
+                        )
+                        if step_records and step_records[-1]["step"] == step_idx:
+                            step_records[-1]["observation"] = supervisor_feedback
+                            step_records[-1]["verdict"] = "REPLAN"
+                            step_records[-1]["reason_code"] = v_reason
+
+                        time.sleep(delay_sec)
+                        continue
 
                 time.sleep(delay_sec)
 
@@ -2775,15 +2819,33 @@ class RuntimeApplicationService:
                     active_parent_id = target_parent
 
                 if step_data["tool"] == "finish":
-                    break
+                    if executed_successfully:
+                        break
+                    else:
+                        logger.warning("Paso finish en Modo B no tuvo éxito; la misión continúa.")
 
                 time.sleep(delay_sec)
 
+        has_any_success = any(r.get("success") for r in step_records) if 'step_records' in locals() else True
+        final_summary = None
         with self._lock:
             if sid in self._sessions_meta:
-                self._sessions_meta[sid]["status"] = "Completed"
+                final_summary = self._sessions_meta[sid].get("final_answer")
 
-        mission["status"] = "Completed"
+        if not final_summary and not has_any_success:
+            resolved_status = "Intervened"
+            resolved_summary = f"Misión '{goal}' intervenida por el supervisor PRAXEON tras vetos por falta de evidencia empírica."
+        else:
+            resolved_status = "Completed"
+            resolved_summary = final_summary or f"Misión '{goal}' finalizada exitosamente."
+
+        with self._lock:
+            if sid in self._sessions_meta:
+                self._sessions_meta[sid]["status"] = resolved_status
+                if final_summary:
+                    self._sessions_meta[sid]["final_answer"] = final_summary
+
+        mission["status"] = resolved_status
         mission["stopped"] = True
         if hasattr(self.state_store, "save_mission"):
             try:
@@ -2791,16 +2853,11 @@ class RuntimeApplicationService:
             except Exception:
                 pass
 
-        final_summary = None
-        with self._lock:
-            if sid in self._sessions_meta:
-                final_summary = self._sessions_meta[sid].get("final_answer")
-
         self.event_bus.emit(
             session_id=sid,
             event_type=EventType.SESSION_COMPLETED,
             node_id=f"root_{sid}",
-            payload={"status": "completed", "summary": final_summary or f"Misión '{goal}' finalizada exitosamente."},
+            payload={"status": resolved_status.lower(), "summary": resolved_summary},
         )
 
     def get_available_providers(self) -> Dict[str, Any]:
