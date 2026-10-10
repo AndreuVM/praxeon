@@ -278,7 +278,7 @@ class WorkflowEngine:
         if self.context.node_states[node_id] not in (NodeStatus.PENDING, NodeStatus.READY):
             return False
 
-        # Invariante INV-05: El nodo terminal END no se considera listo mientras existan ramas activas requeridas
+        # Invariante INV-05: El nodo terminal END no se considera listo mientras existan ramas activas requeridas o bucles en progreso
         if node.node_type == NodeType.END:
             active_nodes = [
                 nid for nid, st in self.context.node_states.items()
@@ -286,6 +286,22 @@ class WorkflowEngine:
             ]
             if active_nodes:
                 return False
+
+            # No permitir que END avance si algún bucle WHILE está reactivado en READY
+            has_ready_while = any(
+                n.node_type == NodeType.WHILE and self.context.node_states.get(nid) == NodeStatus.READY
+                for nid, n in self.workflow.nodes.items()
+            )
+            if has_ready_while:
+                return False
+
+            # No permitir que END avance si hay un bucle activo en iteración (status == 'looping')
+            for nid, n in self.workflow.nodes.items():
+                if n.node_type == NodeType.WHILE:
+                    out = self.context.node_outputs.get(nid, {})
+                    decision = out.get("decision") or out.get("action")
+                    if decision in ("CONTINUE", "repeat_body") and out.get("status") == "looping":
+                        return False
 
         incoming_edges = self.workflow.get_incoming_edges(node_id)
         if not incoming_edges:
@@ -339,6 +355,42 @@ class WorkflowEngine:
                             return True
                         # Si no coincide con la rama seleccionada pero tiene etiqueta explícita de rama, no satisface
                         if edge_label in ("true", "false", "yes", "no", "default", "else"):
+                            continue
+
+                # Si el predecesor fue un nodo de bucle estructurado WHILE
+                elif upstream_node.node_type == NodeType.WHILE:
+                    decision = str(upstream_output.get("decision") or upstream_output.get("action") or "").strip().lower()
+                    branch_taken = str(upstream_output.get("branch_taken") or "").strip().lower()
+                    ctrl = upstream_node.control_config or upstream_node.metadata.get("control_config", {})
+                    body_entry = ctrl.get("body_entry")
+                    exit_target = ctrl.get("exit_target")
+                    edge_label = (edge.label or "").strip().lower()
+
+                    is_body_edge = (
+                        (body_entry and edge.to_node == body_entry)
+                        or (body_entry and edge.edge_id == body_entry)
+                        or edge_label in ("body", "repeat_body", "true")
+                    )
+                    is_exit_edge = (
+                        (exit_target and edge.to_node == exit_target)
+                        or (exit_target and edge.edge_id == exit_target)
+                        or edge_label in ("exit", "exit_loop", "false")
+                    )
+
+                    # Si el bucle decidió repetir el cuerpo (CONTINUE / repeat_body)
+                    if decision in ("continue", "repeat_body") or branch_taken in ("repeat_body", "body", "continue") or (body_entry and branch_taken == str(body_entry).lower()):
+                        if is_body_edge:
+                            return True
+                        if is_exit_edge:
+                            continue  # Bloquear la rama de salida
+                    # Si el bucle decidió finalizar (EXIT / exit_loop)
+                    elif decision in ("exit", "exit_loop") or branch_taken in ("exit_loop", "exit") or (exit_target and branch_taken == str(exit_target).lower()):
+                        if is_exit_edge:
+                            return True
+                        if is_body_edge:
+                            continue  # Bloquear la rama del cuerpo
+                    else:
+                        if is_body_edge or is_exit_edge:
                             continue
 
                 if edge.condition is None:
@@ -401,11 +453,16 @@ class WorkflowEngine:
                 output = {"status": "finished", "timestamp": datetime.now(timezone.utc).isoformat()}
 
             elif node.node_type == NodeType.TASK:
-                handler_key = node.tool_name or node.name
-                if handler_key in self._handlers:
-                    output = self._handlers[handler_key](resolved_inputs)
-                elif node.node_id in self._handlers:
-                    output = self._handlers[node.node_id](resolved_inputs)
+                action_attr = getattr(node, "action", None)
+                handler = (
+                    (action_attr and self._handlers.get(action_attr))
+                    or (node.tool_name and self._handlers.get(node.tool_name))
+                    or self._handlers.get(node.name)
+                    or self._handlers.get(node.node_id)
+                )
+                handler_key = action_attr or node.tool_name or node.name or node.node_id
+                if handler:
+                    output = handler(resolved_inputs)
                 elif self.tool_registry and node.tool_name and hasattr(self.tool_registry, "has_tool") and self.tool_registry.has_tool(node.tool_name):
                     tool_spec = self.tool_registry.get_tool(node.tool_name)
                     if hasattr(tool_spec, "handler") and callable(tool_spec.handler):
@@ -536,6 +593,8 @@ class WorkflowEngine:
                     parsed_cond = parse_condition(condition_spec)
                     if parsed_cond:
                         loop_matched = parsed_cond.evaluate(eval_ctx)
+                    else:
+                        loop_matched = False
                 else:
                     loop_matched = current_iter < max_iter
 
@@ -569,16 +628,19 @@ class WorkflowEngine:
                         "condition_matched": True,
                         "branch_taken": branch_taken,
                         "action": "repeat_body",
+                        "decision": "CONTINUE",
                         "status": "looping",
                     }
                 else:
                     branch_taken = exit_target or "exit"
+                    self.context.variables.pop("_active_loop", None)
                     output = {
                         "iteration": current_iter,
                         "max_iterations": max_iter,
                         "condition_matched": False,
                         "branch_taken": branch_taken,
                         "action": "exit_loop",
+                        "decision": "EXIT",
                         "status": "completed",
                     }
 
@@ -683,19 +745,21 @@ class WorkflowEngine:
                 self.context.execution_history.append(node_id)
                 self.context.node_retry_after.pop(node_id, None)
 
-                # Si es END, verificar si el workflow concluyó
-                if node.node_type == NodeType.END:
-                    self.context.status = WorkflowStatus.COMPLETED
-                    self.context.finished_at = now
-
                 # Si una arista saliente apunta a un bucle WHILE, reactivar el nodo WHILE para la siguiente iteración
                 for out_edge in self.workflow.get_outgoing_edges(node_id):
                     target_node = self.workflow.nodes[out_edge.to_node]
-                    if target_node.node_type == NodeType.WHILE:
-                        self.context.node_states[out_edge.to_node] = NodeStatus.READY
+                    if target_node.node_type == NodeType.WHILE and out_edge.to_node != node_id:
+                        if node.node_type != NodeType.WHILE:
+                            self.context.node_states[out_edge.to_node] = NodeStatus.READY
 
                 # Evaluar propagación y marcar ramas excluidas como SKIPPED
                 self._propagate_skips(node_id)
+
+                # Si es END o se cumplen condiciones de conclusión, finalizar estado terminal
+                if node.node_type == NodeType.END:
+                    if self._should_complete_workflow():
+                        self._finalize_terminal_state()
+
                 return True
             else:
                 # Manejo de política de reintentos
@@ -726,9 +790,15 @@ class WorkflowEngine:
             curr = queue.popleft()
             for edge in self.workflow.get_outgoing_edges(curr):
                 nxt = edge.to_node
-                if nxt == exit_target:
-                    continue
                 if nxt == while_node_id:
+                    continue
+                edge_label = (edge.label or "").strip().lower()
+                if curr == while_node_id:
+                    if exit_target and (nxt == exit_target or edge.edge_id == exit_target):
+                        continue
+                    if edge_label in ("exit", "exit_loop", "false"):
+                        continue
+                if exit_target and nxt == exit_target:
                     continue
                 if nxt not in visited:
                     visited.add(nxt)
@@ -813,16 +883,44 @@ class WorkflowEngine:
                     elif edge_label in ("true", "false", "yes", "no", "default", "else"):
                         is_taken = False
                 elif node.node_type == NodeType.WHILE:
-                    if b_str in ("repeat_body", "body") and edge_label in ("exit", "false"):
-                        is_taken = False
-                    elif b_str in ("exit_loop", "exit") and edge_label in ("body", "true"):
-                        is_taken = False
+                    decision = str(node_output.get("decision") or node_output.get("action") or "").strip().lower()
+                    ctrl = node.control_config or node.metadata.get("control_config", {})
+                    body_entry = str(ctrl.get("body_entry") or "").strip().lower()
+                    exit_target = str(ctrl.get("exit_target") or "").strip().lower()
+
+                    is_body_edge = (
+                        (body_entry and edge.to_node.lower() == body_entry)
+                        or (body_entry and edge.edge_id.lower() == body_entry)
+                        or edge_label in ("body", "repeat_body", "true")
+                    )
+                    is_exit_edge = (
+                        (exit_target and edge.to_node.lower() == exit_target)
+                        or (exit_target and edge.edge_id.lower() == exit_target)
+                        or edge_label in ("exit", "exit_loop", "false")
+                    )
+
+                    if decision in ("continue", "repeat_body") or b_str in ("repeat_body", "body", "continue") or (body_entry and b_str == body_entry):
+                        if is_exit_edge:
+                            is_taken = False
+                        elif is_body_edge:
+                            is_taken = True
+                    elif decision in ("exit", "exit_loop") or b_str in ("exit_loop", "exit") or (exit_target and b_str == exit_target):
+                        if is_body_edge:
+                            is_taken = False
+                        elif is_exit_edge:
+                            is_taken = True
 
             if is_taken and edge.condition:
                 legacy_ctx = {"output": node_output, **self.context.variables, **node_output}
                 is_taken = edge.condition.evaluate(eval_ctx) or edge.condition.evaluate(legacy_ctx)
 
             if not is_taken:
+                # Si el nodo es WHILE y está continuando en el cuerpo, NO saltar la salida
+                if node.node_type == NodeType.WHILE:
+                    decision = str(node_output.get("decision") or node_output.get("action") or "").strip().lower()
+                    if decision in ("continue", "repeat_body"):
+                        continue
+
                 target_id = edge.to_node
                 if not self.is_node_ready(target_id) and self.context.node_states[target_id] in (NodeStatus.PENDING, NodeStatus.READY):
                     other_satisfied = any(
@@ -833,6 +931,52 @@ class WorkflowEngine:
                     if not other_satisfied:
                         self.context.node_states[target_id] = NodeStatus.SKIPPED
                         self._propagate_skips(target_id)
+
+    def _should_complete_workflow(self) -> bool:
+        """Determina si el workflow ha completado todos sus nodos terminales sin bucles ni tareas pendientes."""
+        end_nodes = self.workflow.get_end_nodes()
+        if not any(self.context.node_states.get(e.node_id) == NodeStatus.COMPLETED for e in end_nodes):
+            return False
+
+        # Si aún hay algún nodo en ejecución o espera asíncrona
+        active = any(
+            st in (NodeStatus.RUNNING, NodeStatus.WAITING_RESULT, NodeStatus.WAITING_APPROVAL, NodeStatus.RETRYING)
+            for st in self.context.node_states.values()
+        )
+        if active:
+            return False
+
+        # Si algún bucle WHILE está en READY o activo en repetición
+        has_active_while = any(
+            n.node_type == NodeType.WHILE and (
+                self.context.node_states.get(nid) == NodeStatus.READY
+                or str(self.context.node_outputs.get(nid, {}).get("decision") or self.context.node_outputs.get(nid, {}).get("action")).strip().lower() in ("continue", "repeat_body")
+            )
+            for nid, n in self.workflow.nodes.items()
+        )
+        if has_active_while:
+            return False
+
+        return True
+
+    def _finalize_terminal_state(self, status: WorkflowStatus = WorkflowStatus.COMPLETED) -> None:
+        """Limpia y garantiza consistencia terminal del workflow.
+
+        Transiciona nodos residuales en PENDING/READY a SKIPPED y asegura que el timestamp
+        finished_at y el status final queden establecidos deterministamente.
+        """
+        with self._lock:
+            now = datetime.now(timezone.utc)
+            self.context.status = status
+            if not self.context.finished_at:
+                self.context.finished_at = now
+
+            for nid, st in list(self.context.node_states.items()):
+                if st in (NodeStatus.PENDING, NodeStatus.READY):
+                    self.context.node_states[nid] = NodeStatus.SKIPPED
+                elif st == NodeStatus.RUNNING:
+                    if status != WorkflowStatus.COMPLETED:
+                        self.context.node_states[nid] = NodeStatus.CANCELLED
 
     def _check_agent_responses(self) -> List[str]:
         """Revisa si hay mensajes de respuesta en el AgentMessageBus para nodos en estado WAITING_RESULT."""
@@ -946,10 +1090,8 @@ class WorkflowEngine:
         # 1. Comprobar si hay respuestas de agentes que resuelvan nodos en WAITING_RESULT
         resolved_from_bus = self._check_agent_responses()
         if resolved_from_bus:
-            end_nodes = self.workflow.get_end_nodes()
-            if any(self.context.node_states.get(e.node_id) == NodeStatus.COMPLETED for e in end_nodes):
-                self.context.status = WorkflowStatus.COMPLETED
-                self.context.finished_at = datetime.now(timezone.utc)
+            if self._should_complete_workflow():
+                self._finalize_terminal_state()
             return resolved_from_bus[0]
 
         # 2. Localizar siguiente nodo listo para ejecutarse
@@ -964,10 +1106,8 @@ class WorkflowEngine:
                 return None
 
             # Si no hay nodos listos ni esperando, verificar si concluyó
-            end_nodes = self.workflow.get_end_nodes()
-            if any(self.context.node_states.get(e.node_id) == NodeStatus.COMPLETED for e in end_nodes):
-                self.context.status = WorkflowStatus.COMPLETED
-                self.context.finished_at = datetime.now(timezone.utc)
+            if self._should_complete_workflow():
+                self._finalize_terminal_state()
             return None
 
         self.execute_node(next_nid, current_time=current_time)
@@ -998,10 +1138,8 @@ class WorkflowEngine:
             # 1. Comprobar si hay respuestas de agentes que resuelvan nodos en WAITING_RESULT
             resolved_from_bus = self._check_agent_responses()
             if resolved_from_bus:
-                end_nodes = self.workflow.get_end_nodes()
-                if any(self.context.node_states.get(e.node_id) == NodeStatus.COMPLETED for e in end_nodes):
-                    self.context.status = WorkflowStatus.COMPLETED
-                    self.context.finished_at = datetime.now(timezone.utc)
+                if self._should_complete_workflow():
+                    self._finalize_terminal_state()
                 return resolved_from_bus
 
             # 2. Localizar todos los nodos listos
@@ -1014,10 +1152,8 @@ class WorkflowEngine:
                 if waiting_nodes:
                     return []
 
-                end_nodes = self.workflow.get_end_nodes()
-                if any(self.context.node_states.get(e.node_id) == NodeStatus.COMPLETED for e in end_nodes):
-                    self.context.status = WorkflowStatus.COMPLETED
-                    self.context.finished_at = datetime.now(timezone.utc)
+                if self._should_complete_workflow():
+                    self._finalize_terminal_state()
                 return []
 
         # Si solo hay 1 nodo listo, ejecución directa
@@ -1046,11 +1182,8 @@ class WorkflowEngine:
                     executed_nodes.append(nid)
 
         with self._lock:
-            end_nodes = self.workflow.get_end_nodes()
-            if any(self.context.node_states.get(e.node_id) == NodeStatus.COMPLETED for e in end_nodes):
-                self.context.status = WorkflowStatus.COMPLETED
-                if not self.context.finished_at:
-                    self.context.finished_at = datetime.now(timezone.utc)
+            if self._should_complete_workflow():
+                self._finalize_terminal_state()
 
         return executed_nodes
 
@@ -1075,6 +1208,9 @@ class WorkflowEngine:
             steps += 1
             if not executed:
                 break
+
+        if self.context.status == WorkflowStatus.RUNNING and self._should_complete_workflow():
+            self._finalize_terminal_state()
 
         return self.context
 

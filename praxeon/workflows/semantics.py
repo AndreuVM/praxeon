@@ -150,6 +150,11 @@ class AtomicCondition(BaseModel):
 
     def evaluate(self, context: Union[EvaluationContext, Dict[str, Any]]) -> bool:
         """Evalúa deterministamente la condición sin eval() arbitrario."""
+        if self.field in ("_const_true", "true", "True"):
+            return True
+        if self.field in ("_const_false", "false", "False"):
+            return False
+
         if isinstance(context, EvaluationContext):
             val = context.resolve_field(self.field)
         elif isinstance(context, dict):
@@ -261,6 +266,31 @@ def parse_condition(data: Any) -> Optional[Union[CompoundCondition, AtomicCondit
                 operator=data.get("operator", data.get("op", "==")),
                 expected_value=data.get("expected_value", data.get("value", None)),
             )
+
+    if isinstance(data, str):
+        data_s = data.strip()
+        if data_s.lower() in ("true", "always_true", "1"):
+            return AtomicCondition(field="_const_true", operator="==")
+        if data_s.lower() in ("false", "always_false", "0"):
+            return AtomicCondition(field="_const_false", operator="==")
+        import re
+        m = re.match(r"^([\w\.]+)\s*(==|!=|>=|<=|>|<)\s*(.+)$", data_s)
+        if m:
+            field_name, op, val_str = m.groups()
+            val_str = val_str.strip().strip("'\"")
+            if val_str.lower() == "true":
+                val: Any = True
+            elif val_str.lower() == "false":
+                val = False
+            elif val_str.isdigit():
+                val = int(val_str)
+            else:
+                try:
+                    val = float(val_str)
+                except ValueError:
+                    val = val_str
+            return AtomicCondition(field=field_name, operator=op, expected_value=val)
+        return AtomicCondition(field=data_s, operator="is_true")
 
     return None
 
