@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import time
 import uuid
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple
 from pydantic import BaseModel, ConfigDict, Field
 
 from praxeon.domain.action import ActionCandidate, ToolCall
@@ -24,12 +24,11 @@ from praxeon.domain.branch import BranchPath, BranchScore, BranchStatus, BranchS
 from praxeon.domain.decision import DecisionStatus, PolicyDecision
 from praxeon.domain.interfaces import ReasoningProvider
 from praxeon.domain.models import ProviderAssessment
-from praxeon.policy.engine import PolicyEngine
-from praxeon.policy.risk import ToolRegistry
-from praxeon.providers.laya import LayaProvider
-from praxeon.providers.replay import ReplayProvider
 from praxeon.reasoning.pruner import BranchPruner, PruningCategory, PruningDecision
-from praxeon.runtime.state import SessionState
+
+if TYPE_CHECKING:
+    from praxeon.policy.engine import PolicyEngine
+    from praxeon.runtime.state import SessionState
 
 
 class ThoughtNode(BaseModel):
@@ -94,12 +93,22 @@ class TreeOfThoughtsEngine:
     def __init__(
         self,
         provider: Optional[ReasoningProvider] = None,
-        policy_engine: Optional[PolicyEngine] = None,
+        policy_engine: Optional[Any] = None,
         pruner: Optional[BranchPruner] = None,
         config: Optional[TreeOfThoughtsConfig] = None,
     ):
-        self.provider = provider or LayaProvider(backend="simulated")
-        self.policy_engine = policy_engine or PolicyEngine()
+        if provider is None:
+            from praxeon.providers.laya import LayaProvider
+            self.provider = LayaProvider(backend="simulated")
+        else:
+            self.provider = provider
+
+        if policy_engine is None:
+            from praxeon.policy.engine import PolicyEngine
+            self.policy_engine = PolicyEngine()
+        else:
+            self.policy_engine = policy_engine
+
         self.pruner = pruner or BranchPruner(policy_engine=self.policy_engine)
         self.config = config or TreeOfThoughtsConfig()
 

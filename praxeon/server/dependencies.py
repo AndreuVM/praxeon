@@ -3047,20 +3047,109 @@ def is_auth_required(profile: Optional[str] = None, client_host: Optional[str] =
 
 
 import secrets
-from fastapi import Header, HTTPException, Request, status
+from fastapi import Cookie, Depends, Header, HTTPException, Request, status
+from praxeon.server.services.auth_service import (
+    AuthService,
+    Permission,
+    Role,
+    ROLE_PERMISSIONS,
+    TenantContext,
+)
+
+
+def get_auth_service(runtime: RuntimeApplicationService = Depends(get_runtime_service)) -> AuthService:
+    """Dependency para inyectar la instancia de AuthService del runtime."""
+    return runtime.get_auth_service()
+
+
+def get_current_tenant(
+    request: Request = None,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+    authorization: Optional[str] = Header(None, alias="Authorization"),
+    praxeon_access_token: Optional[str] = Cookie(None, alias=AuthService.COOKIE_ACCESS_NAME),
+    auth_service: AuthService = Depends(get_auth_service),
+) -> TenantContext:
+    """Dependency que autentica e inyecta el TenantContext con RBAC desde JWT, Cookie o API Key."""
+    app_profile = getattr(request.app.state, "security_profile", None) if (request and hasattr(request, "app") and hasattr(request.app, "state")) else None
+    client_host = request.client.host if (request and request.client) else None
+    required = is_auth_required(profile=app_profile, client_host=client_host)
+
+    # 1. Intentar token desde cookie HttpOnly
+    token = praxeon_access_token
+
+    # 2. Intentar token desde cabeceras
+    if not token and x_api_key:
+        token = x_api_key.strip()
+    if not token and authorization:
+        if authorization.startswith("Bearer "):
+            token = authorization[7:].strip()
+        else:
+            token = authorization.strip()
+
+    if not required and not token:
+        # Modo dev sin autenticación obligatoria
+        return TenantContext(
+            tenant_id="dev_tenant",
+            user_id="dev_user",
+            role=Role.ADMIN,
+            permissions=ROLE_PERMISSIONS[Role.ADMIN],
+        )
+
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Autenticación requerida: proporcione cookie 'praxeon_access_token', 'Authorization: Bearer <token>' o 'X-API-Key'.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    # Si parece un JWT (3 segmentos)
+    if token.count(".") == 2:
+        try:
+            return auth_service.authenticate_jwt(token)
+        except ValueError as e:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=f"Token JWT inválido o expirado: {str(e)}",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+    # Si es una API Key estática
+    expected_key = os.environ.get("PRAXEON_API_KEY") or os.environ.get("PRAXEON_SECRET_KEY")
+    if expected_key and secrets.compare_digest(token, expected_key):
+        return TenantContext(
+            tenant_id="default_tenant",
+            user_id="admin_apikey",
+            role=Role.ADMIN,
+            permissions=ROLE_PERMISSIONS[Role.ADMIN],
+        )
+
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Credenciales inválidas: token o API key no reconocidos.",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
+def require_permission(permission: Permission):
+    """Dependency factory para enforcing declarativo de permisos RBAC en rutas FastAPI."""
+    def _perm_checker(tenant: TenantContext = Depends(get_current_tenant)) -> TenantContext:
+        if not tenant.has_permission(permission):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Permiso insuficiente: se requiere '{permission.value}'.",
+            )
+        return tenant
+    return _perm_checker
 
 
 def verify_api_key(
     request: Request = None,
     x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
     authorization: Optional[str] = Header(None, alias="Authorization"),
+    praxeon_access_token: Optional[str] = Cookie(None, alias=AuthService.COOKIE_ACCESS_NAME),
+    auth_service: AuthService = Depends(get_auth_service),
 ) -> Optional[str]:
-    """Dependency de FastAPI para validar la presencia y autenticidad del API Key.
-    
-    Acepta 'X-API-Key' o 'Authorization: Bearer <key>'.
-    En modo desarrollo sin claves configuradas emite advertencia de seguridad y permite el paso.
-    En perfil de producción o con auth activa, deniega con HTTP 401 Unauthorized o 500 si falta configuración.
-    """
+    """Dependency de FastAPI para validar la presencia y autenticidad de API Key o JWT (compatibilidad retroactiva)."""
     global _warned_dev_auth
 
     app_profile = getattr(request.app.state, "security_profile", None) if (request and hasattr(request, "app") and hasattr(request.app, "state")) else None
@@ -3068,40 +3157,56 @@ def verify_api_key(
     required = is_auth_required(profile=app_profile, client_host=client_host)
     expected_key = os.environ.get("PRAXEON_API_KEY") or os.environ.get("PRAXEON_SECRET_KEY")
 
-    if not required:
-        if not _warned_dev_auth:
-            logger.warning("WARNING: PRAXEON running without API key authentication. Do not use in production.")
-            _warned_dev_auth = True
-        return None
-
-    if not expected_key:
-        logger.error("Fallo de seguridad evitado: Autenticación requerida pero no hay PRAXEON_API_KEY configurada.")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error de configuración del servidor: Autenticación requerida pero no se ha establecido PRAXEON_API_KEY.",
-        )
-
-    # Extraer token de cabeceras
-    token = x_api_key
+    # Extraer token de cookie o cabeceras
+    token = praxeon_access_token or x_api_key
     if not token and authorization:
         if authorization.startswith("Bearer "):
             token = authorization[7:].strip()
         else:
             token = authorization.strip()
 
+    if not required and not token:
+        if not _warned_dev_auth:
+            logger.warning("WARNING: PRAXEON running without API key authentication. Do not use in production.")
+            _warned_dev_auth = True
+        return None
+
     if not token:
+        if not expected_key:
+            logger.error("Fallo de seguridad evitado: Autenticación requerida pero no hay PRAXEON_API_KEY configurada.")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Error de configuración del servidor: Autenticación requerida pero no se ha establecido PRAXEON_API_KEY.",
+            )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Autenticación requerida: proporcione 'X-API-Key' o 'Authorization: Bearer <token>'.",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    if not secrets.compare_digest(token, expected_key):
+    # 1. Si es un JWT válido
+    if token.count(".") == 2:
+        try:
+            auth_service.authenticate_jwt(token)
+            return token
+        except ValueError:
+            pass
+
+    # 2. Si es una API Key estática
+    if expected_key and secrets.compare_digest(token, expected_key):
+        return token
+
+    # Si no había expected_key pero tampoco es JWT válido
+    if not expected_key:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Credenciales inválidas: API key no coincide con la configurada en el servidor.",
-            headers={"WWW-Authenticate": "Bearer"},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error de configuración del servidor: Autenticación requerida pero no se ha establecido PRAXEON_API_KEY.",
         )
 
-    return token
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Credenciales inválidas: API key o token no coincide con el servidor.",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
 
