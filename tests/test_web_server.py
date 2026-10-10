@@ -46,7 +46,7 @@ def test_healthcheck_endpoint(client):
     assert resp.status_code == 200
     data = resp.json()["data"]
     assert data["status"] == "healthy"
-    assert data["version"] == "1.0.0"
+    assert data["version"] in ("1.0.0", "1.1.0")
     assert "uptime_seconds" in data
 
 

@@ -1,0 +1,38 @@
+{
+  "name": "@praxeon/sdk",
+  "version": "1.1.0",
+  "description": "Cliente TypeScript y SDK oficial para PRAXEON Runtime Supervision for Autonomous AI Agents",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "openapi.json",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "lint": "oxlint src/"
+  },
+  "keywords": [
+    "praxeon",
+    "ai-agents",
+    "runtime-supervision",
+    "safety",
+    "guardrails",
+    "autonomous-agents",
+    "typesafe",
+    "llm-monitoring"
+  ],
+  "author": "AndreuVM",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AndreuVM/praxeon.git",
+    "directory": "packages/sdk"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0"
+  }
+}

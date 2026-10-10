@@ -72,7 +72,7 @@ def create_app(
 
     app = FastAPI(
         title="PRAXEON Web Server",
-        version="1.0.0",
+        version="1.1.0",
         description="Runtime supervision for autonomous AI agents — REST API & WebSocket Streaming",
         docs_url="/docs",
         redoc_url="/redoc",
@@ -108,6 +108,12 @@ def create_app(
             content=exporter.generate_metrics(service_instance),
             media_type="text/plain; version=0.0.4; charset=utf-8",
         )
+
+    # Endpoint raíz /health para balanceadores de carga y sondas Kubernetes
+    @app.get("/health", include_in_schema=True)
+    def health_root():
+        """Healthcheck raíz para balanceadores de carga y sondas Kubernetes."""
+        return {"status": "healthy", "version": "1.1.0"}
 
     # Servir interfaz web de supervisión si está construida o empaquetada
     static_packaged = os.path.abspath(os.path.join(os.path.dirname(__file__), "static"))

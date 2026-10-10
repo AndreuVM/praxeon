@@ -29,7 +29,7 @@ def healthcheck(
     uptime = time.time() - _START_TIME
     data = {
         "status": "healthy",
-        "version": "1.0.0",
+        "version": "1.1.0",
         "runtime": "PRAXEON Autonomous Supervision Runtime",
         "uptime_seconds": round(uptime, 2),
         "database": "SQLite (WAL)",
