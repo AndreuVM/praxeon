@@ -22,6 +22,8 @@ from praxeon.runtime.sandbox import (
     SandboxExecutionResult,
     SandboxTier,
     SandboxViolation,
+    WasmSandbox,
+    WasmSandboxConfig,
 )
 from praxeon.runtime.decision_runtime import DecisionRuntime
 from praxeon.runtime.session_runtime import SessionRuntime
@@ -59,6 +61,8 @@ __all__ = [
     "ContainerSandboxAdapter",
     "ContainerSandboxConfig",
     "DryRunSandbox",
+    "WasmSandbox",
+    "WasmSandboxConfig",
     "SandboxExecutionResult",
     "SandboxViolation",
     "EventStore",
