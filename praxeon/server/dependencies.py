@@ -3074,17 +3074,20 @@ def get_current_tenant(
     client_host = request.client.host if (request and request.client) else None
     required = is_auth_required(profile=app_profile, client_host=client_host)
 
-    # 1. Intentar token desde cookie HttpOnly
-    token = praxeon_access_token
+    cookie_val = praxeon_access_token if isinstance(praxeon_access_token, str) else None
+    api_key_val = x_api_key if isinstance(x_api_key, str) else None
+    auth_val = authorization if isinstance(authorization, str) else None
+    service = auth_service if isinstance(auth_service, AuthService) else get_runtime_service().get_auth_service()
+
+    # 1. Intentar token desde cookie HttpOnly o API Key
+    token = cookie_val or api_key_val
 
     # 2. Intentar token desde cabeceras
-    if not token and x_api_key:
-        token = x_api_key.strip()
-    if not token and authorization:
-        if authorization.startswith("Bearer "):
-            token = authorization[7:].strip()
+    if not token and auth_val:
+        if auth_val.startswith("Bearer "):
+            token = auth_val[7:].strip()
         else:
-            token = authorization.strip()
+            token = auth_val.strip()
 
     if not required and not token:
         # Modo dev sin autenticación obligatoria
@@ -3105,7 +3108,7 @@ def get_current_tenant(
     # Si parece un JWT (3 segmentos)
     if token.count(".") == 2:
         try:
-            return auth_service.authenticate_jwt(token)
+            return service.authenticate_jwt(token)
         except ValueError as e:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -3157,13 +3160,18 @@ def verify_api_key(
     required = is_auth_required(profile=app_profile, client_host=client_host)
     expected_key = os.environ.get("PRAXEON_API_KEY") or os.environ.get("PRAXEON_SECRET_KEY")
 
+    cookie_val = praxeon_access_token if isinstance(praxeon_access_token, str) else None
+    api_key_val = x_api_key if isinstance(x_api_key, str) else None
+    auth_val = authorization if isinstance(authorization, str) else None
+    service = auth_service if isinstance(auth_service, AuthService) else get_runtime_service().get_auth_service()
+
     # Extraer token de cookie o cabeceras
-    token = praxeon_access_token or x_api_key
-    if not token and authorization:
-        if authorization.startswith("Bearer "):
-            token = authorization[7:].strip()
+    token = cookie_val or api_key_val
+    if not token and auth_val:
+        if auth_val.startswith("Bearer "):
+            token = auth_val[7:].strip()
         else:
-            token = authorization.strip()
+            token = auth_val.strip()
 
     if not required and not token:
         if not _warned_dev_auth:
@@ -3187,7 +3195,7 @@ def verify_api_key(
     # 1. Si es un JWT válido
     if token.count(".") == 2:
         try:
-            auth_service.authenticate_jwt(token)
+            service.authenticate_jwt(token)
             return token
         except ValueError:
             pass
@@ -3208,5 +3216,6 @@ def verify_api_key(
         detail="Credenciales inválidas: API key o token no coincide con el servidor.",
         headers={"WWW-Authenticate": "Bearer"},
     )
+
 
 

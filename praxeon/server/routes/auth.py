@@ -103,7 +103,8 @@ def refresh_token(
     auth_service: AuthService = Depends(get_auth_service),
 ) -> Dict[str, Any]:
     """Rota el refresh token y emite un nuevo par de tokens."""
-    token = (req.refresh_token if req and req.refresh_token else None) or praxeon_refresh_token
+    cookie_token = praxeon_refresh_token if isinstance(praxeon_refresh_token, str) else None
+    token = (req.refresh_token if req and req.refresh_token else None) or cookie_token
     if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -140,8 +141,8 @@ def logout(
     auth_service: AuthService = Depends(get_auth_service),
 ) -> Dict[str, Any]:
     """Revoca el token actual y limpia las cookies HttpOnly."""
-    token = praxeon_access_token
-    if not token and authorization and authorization.startswith("Bearer "):
+    token = praxeon_access_token if isinstance(praxeon_access_token, str) else None
+    if not token and isinstance(authorization, str) and authorization.startswith("Bearer "):
         token = authorization[7:].strip()
 
     if token:
