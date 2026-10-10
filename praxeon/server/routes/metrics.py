@@ -1,20 +1,35 @@
 """Ruta de telemetría agregada y métricas operacionales (praxeon/server/routes/metrics.py)."""
 
 import json
-from typing import Any, Dict, List
-from fastapi import APIRouter, Depends
+from typing import Any, Dict, List, Optional
+from fastapi import APIRouter, Depends, Header, Query, Response
 
 from praxeon.server.dependencies import RuntimeApplicationService, get_runtime_service
 from praxeon.server.schemas.common import APIResponse
+from praxeon.telemetry.prometheus import get_prometheus_exporter
 
-router = APIRouter(prefix="/v1", tags=["Metrics"])
+PROMETHEUS_MEDIA_TYPE = "text/plain; version=0.0.4; charset=utf-8"
+
+router = APIRouter(tags=["Metrics"])
 
 
-@router.get("/metrics", response_model=APIResponse[Dict[str, Any]])
+@router.get("/v1/metrics", response_model=None)
 def get_metrics(
     service: RuntimeApplicationService = Depends(get_runtime_service),
-):
-    """Telemetría agregada del servidor: contadores de decisión, latencias reales y actividad."""
+    format: Optional[str] = Query(None, description="Formato opcional ('prometheus' o 'json')"),
+    accept: Optional[str] = Header(None),
+) -> Any:
+    """Telemetría del servidor en formato JSON o Prometheus según Content-Negotiation."""
+    wants_prometheus = (
+        format == "prometheus"
+        or (accept and ("text/plain" in accept or "application/openmetrics-text" in accept))
+    )
+
+    if wants_prometheus:
+        exporter = get_prometheus_exporter()
+        metrics_text = exporter.generate_metrics(service)
+        return Response(content=metrics_text, media_type=PROMETHEUS_MEDIA_TYPE)
+
     sessions = service.list_sessions()
     total_decisions = sum(s.get("total_decisions", 0) for s in sessions)
     allowed = sum(s.get("allowed_count", 0) for s in sessions)
@@ -104,3 +119,14 @@ def get_metrics(
         "context_cache": service.context_manager.get_metrics(),
     }
     return APIResponse(data=metrics_data)
+
+
+@router.get("/metrics/prometheus", response_class=Response)
+@router.get("/v1/metrics/prometheus", response_class=Response)
+def get_prometheus_metrics(
+    service: RuntimeApplicationService = Depends(get_runtime_service),
+) -> Response:
+    """Exportador nativo de métricas compatible con Prometheus y OpenTelemetry Collector."""
+    exporter = get_prometheus_exporter()
+    metrics_text = exporter.generate_metrics(service)
+    return Response(content=metrics_text, media_type=PROMETHEUS_MEDIA_TYPE)

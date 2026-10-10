@@ -4,7 +4,7 @@ import argparse
 import os
 from typing import Any, List, Optional
 import uvicorn
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from praxeon.server.routes import api_router
@@ -95,6 +95,19 @@ def create_app(
     # Registrar routers REST y WebSocket
     app.include_router(api_router)
     app.include_router(ws_router)
+
+    # Endpoint canónico raíz /metrics compatible con Prometheus y OpenTelemetry Collector
+    @app.get("/metrics", response_class=Response, include_in_schema=True)
+    def prometheus_metrics_root(
+        service_instance: Any = Depends(get_runtime_service),
+    ) -> Response:
+        """Endpoint canónico de métricas en formato texto plano Prometheus (0.0.4)."""
+        from praxeon.telemetry.prometheus import get_prometheus_exporter
+        exporter = get_prometheus_exporter()
+        return Response(
+            content=exporter.generate_metrics(service_instance),
+            media_type="text/plain; version=0.0.4; charset=utf-8",
+        )
 
     # Servir interfaz web de supervisión si está construida o empaquetada
     static_packaged = os.path.abspath(os.path.join(os.path.dirname(__file__), "static"))
