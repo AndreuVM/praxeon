@@ -13,6 +13,12 @@ from praxeon.reasoning.search_engine import (
     SearchStrategy,
     TreeSearchEngine,
 )
+from praxeon.reasoning.tree_of_thoughts import (
+    ThoughtNode,
+    TreeOfThoughtsConfig,
+    TreeOfThoughtsEngine,
+    TreeOfThoughtsResult,
+)
 
 __all__ = [
     "CommandClassifier",
@@ -29,4 +35,9 @@ __all__ = [
     "SearchResult",
     "SearchStrategy",
     "TreeSearchEngine",
+    "ThoughtNode",
+    "TreeOfThoughtsConfig",
+    "TreeOfThoughtsEngine",
+    "TreeOfThoughtsResult",
 ]
+
