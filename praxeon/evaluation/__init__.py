@@ -38,6 +38,13 @@ from praxeon.evaluation.matrix import (
     collect_hardware_metadata,
     organize_historical_benchmarks,
 )
+from praxeon.evaluation.real_world_trajectories import (
+    RealWorldBenchmarkCatalog,
+    RealWorldDatasetType,
+    RealWorldTrajectoryReport,
+    RealWorldTrajectoryRunner,
+    RealWorldTrajectoryScenario,
+)
 
 __all__ = [
     "BenchmarkScenario",
@@ -69,5 +76,10 @@ __all__ = [
     "collect_benchmark_metadata",
     "collect_hardware_metadata",
     "organize_historical_benchmarks",
+    "RealWorldDatasetType",
+    "RealWorldTrajectoryScenario",
+    "RealWorldBenchmarkCatalog",
+    "RealWorldTrajectoryRunner",
+    "RealWorldTrajectoryReport",
 ]
 

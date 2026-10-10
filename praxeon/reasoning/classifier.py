@@ -33,6 +33,9 @@ class CommandClassifier:
         r"\b(curl|wget)\b.*(?:\/etc\/shadow|\/etc\/passwd|\.ssh\/id_)",
         r"(?:\/etc\/shadow|\/etc\/master\.passwd)",
         r"python\s+-c\s+['\"].*\\x[0-9a-fA-F]{2}",  # hex escaped execution
+        r"safety\s+guardrails\s+are\s+now\s+suspended",
+        r"system\s*override\s*:\s*approved",
+        r"execute\s+without\s+policy\s+checks",
     ]
 
     # 1. Reglas deterministas para PRIVILEGE (precedencia máxima)
@@ -91,12 +94,16 @@ class CommandClassifier:
         r"^\s*(sort-object|select-object|where-object|format-table|format-list|out-string|select-string|measure-object)(\s+.*)?$",
         r"^\s*read_file\b.*",
         r"^\s*view_file\b.*",
+        r"^\s*list_dir\b.*",
+        r"^\s*grep_search\b.*",
     ]
 
     # 5. Reglas deterministas para BUILD_TEST
     BUILD_TEST_PATTERNS = [
         r"\bpytest\b",
-        r"\bpython\s+-m\s+(unittest|pytest)\b",
+        r"\bpython3?\s+-m\s+(unittest|pytest|py_compile)\b",
+        r"\bpython3?\s+(-c\s+.*|[a-zA-Z0-9_\-\./\\]+\.py)(\s+.*)?$",
+        r"\b(flake8|ruff|mypy|black\s+--check)\b",
         r"\bnpm\s+test\b",
         r"\bnpx\s+vitest\b",
         r"\bnpx\s+jest\b",
@@ -367,8 +374,10 @@ class CommandClassifier:
         has_redirection = bool(re.search(r">\s*\S+", op_clean))
 
         # Regla 0: ADVERSARIAL_EVASION (Técnicas de evasión o ejecución encubierta)
+        thought_str = str((arguments or {}).get("thought") or (arguments or {}).get("rationale") or "").lower()
+        check_text = f"{op_lower} {thought_str}".strip()
         for pat in self.ADVERSARIAL_EVASION_PATTERNS:
-            if re.search(pat, op_lower):
+            if re.search(pat, check_text):
                 return CommandRiskAssessment(
                     operation=op_clean,
                     category=CommandCategory.DESTRUCTIVE,
