@@ -32,6 +32,17 @@ from praxeon.agents.templates import (
     create_security_auditor_template,
     create_writer_template,
 )
+from praxeon.agents.distributed import (
+    ClusterNodeInfo,
+    DistributedAgentMessageBus,
+    InMemoryStreamTransport,
+    MessageTransport,
+    PendingMessageRecord,
+    RabbitMQTransport,
+    RedisStreamsTransport,
+    StreamEntry,
+    TransportType,
+)
 
 __all__ = [
     "AgentContextPolicy",
@@ -58,4 +69,13 @@ __all__ = [
     "create_researcher_template",
     "create_writer_template",
     "create_data_analyst_template",
+    "TransportType",
+    "StreamEntry",
+    "PendingMessageRecord",
+    "MessageTransport",
+    "InMemoryStreamTransport",
+    "RedisStreamsTransport",
+    "RabbitMQTransport",
+    "ClusterNodeInfo",
+    "DistributedAgentMessageBus",
 ]
