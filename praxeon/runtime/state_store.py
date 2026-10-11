@@ -171,7 +171,7 @@ class InMemoryStateStore(StateStore, CheckpointStore):
             self._missions = {}
         interrupted = []
         rec_reason = reason or "Process restart / ungraceful shutdown"
-        for sid, m in self._missions.items():
+        for _sid, m in self._missions.items():
             st = (m.get("status") or "").lower()
             if st in ("running", "in_progress", "paused", "active"):
                 m["status"] = "Interrupted_Recovered"

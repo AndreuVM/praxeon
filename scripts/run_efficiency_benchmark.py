@@ -193,10 +193,10 @@ def main():
     parser.add_argument("--output", type=str, default="benchmark_results/efficiency_v1.json", help="Ruta del archivo de salida JSON")
     args = parser.parse_args()
 
-    print(f"===============================================================")
-    print(f"  PRAXEON EFFICIENCY BENCHMARK v1.0 — FASE 1")
+    print("===============================================================")
+    print("  PRAXEON EFFICIENCY BENCHMARK v1.0 — FASE 1")
     print(f"  Seed: {args.seed} | Output: {args.output}")
-    print(f"===============================================================\n")
+    print("===============================================================\n")
 
     suite = create_efficiency_benchmark_suite(seed=args.seed)
     print(f"[*] Batería cargada: {len(suite)} escenarios multiescala y heterogéneos.")

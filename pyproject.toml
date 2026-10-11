@@ -29,6 +29,8 @@ dev = [
     "pytest>=9.1.1",
     "pytest-asyncio>=0.25.0",
     "httpx>=0.27.0",
+    "pytest-cov>=5.0.0",
+    "ruff>=0.6.0",
     "typesafe-sdk>=0.7.0",
 ]
 server = [
@@ -83,3 +85,31 @@ markers = [
     "providers: Tests de proveedores de inferencia y evaluacion semantica",
     "benchmark: Tests de rendimiento, ablacion y benchmarking comparativo",
 ]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+extend-exclude = ["web", "dist", "videos", "scratch", ".venv"]
+
+[tool.ruff.lint]
+# Reglas bloqueantes en CI: errores reales (F), sintaxis (E9), causa en excepciones encadenadas (B904),
+# conjuntos duplicados (B033), variables de bucle sin usar (B007) y zip sin strict (B905).
+select = ["F", "E9", "B904", "B033", "B007", "B905"]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]
+"tests/*" = ["F401", "F841", "B007", "B904", "B905"]
+"scripts/*" = ["F401", "F841", "B007", "B904", "B905"]
+"examples/*" = ["F401", "F841", "B007", "B904", "B905"]
+"demo.py" = ["F401", "F841"]
+"generate_audit_pdf.py" = ["F401", "F841", "B007"]
+"run_praxeon.py" = ["F401", "F841"]
+
+[tool.coverage.run]
+source = ["praxeon"]
+branch = true
+omit = ["praxeon/server/static/*"]
+
+[tool.coverage.report]
+skip_covered = true
+exclude_lines = ["pragma: no cover", "if TYPE_CHECKING:", "raise NotImplementedError", "if __name__ == .__main__.:"]

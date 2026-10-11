@@ -137,7 +137,7 @@ def add_node(workflow_id: str, payload: AddNodeRequest):
         )
         return APIResponse(data=node.model_dump(mode="json"))
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
 @router.put("/{workflow_id}/nodes/{node_id}/position", response_model=APIResponse[Dict[str, Any]])
@@ -153,7 +153,7 @@ def update_node_position(workflow_id: str, node_id: str, payload: UpdateNodePosi
         )
         return APIResponse(data=updated.model_dump(mode="json"))
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
 @router.put("/{workflow_id}/nodes/{node_id}", response_model=APIResponse[Dict[str, Any]])
@@ -174,7 +174,7 @@ def update_node(workflow_id: str, node_id: str, payload: UpdateNodeRequest):
         )
         return APIResponse(data=updated.model_dump(mode="json"))
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
 
@@ -188,7 +188,7 @@ def delete_node(workflow_id: str, node_id: str):
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Nodo no encontrado.")
         return APIResponse(data={"deleted": True, "node_id": node_id})
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
 @router.post("/{workflow_id}/edges", response_model=APIResponse[Dict[str, Any]])
@@ -205,7 +205,7 @@ def connect_nodes(workflow_id: str, payload: ConnectNodesRequest):
         )
         return APIResponse(data=edge.model_dump(mode="json"))
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
 @router.put("/{workflow_id}/edges/{edge_id}", response_model=APIResponse[Dict[str, Any]])
@@ -221,7 +221,7 @@ def update_edge(workflow_id: str, edge_id: str, payload: UpdateEdgeRequest):
         )
         return APIResponse(data=edge.model_dump(mode="json"))
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
 @router.delete("/{workflow_id}/edges/{edge_id}", response_model=APIResponse[Dict[str, Any]])
@@ -254,7 +254,7 @@ def execute_workflow(workflow_id: str, max_steps: int = Query(100, ge=1, le=1000
         result = service.execute_workflow(workflow_id=workflow_id, max_steps=max_steps)
         return APIResponse(data=result)
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
 @router.post("/{workflow_id}/step", response_model=APIResponse[Dict[str, Any]])
@@ -265,7 +265,7 @@ def step_workflow(workflow_id: str):
         step_result = service.step_workflow(workflow_id)
         return APIResponse(data=step_result)
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
 @router.post("/{workflow_id}/backtrack", response_model=APIResponse[Dict[str, Any]])
@@ -276,7 +276,7 @@ def backtrack_workflow(workflow_id: str, payload: BacktrackRequest):
         res = service.backtrack_workflow(workflow_id, payload.target_node_id)
         return APIResponse(data=res)
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
 @router.post("/{workflow_id}/reset", response_model=APIResponse[Dict[str, Any]])
@@ -300,7 +300,7 @@ def approve_workflow_node(workflow_id: str, node_id: str, payload: ApproveNodeRe
         )
         return APIResponse(data=res)
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
 def _workflow_service():
@@ -363,7 +363,7 @@ def instantiate_canonical_template(template_key: str, name: Optional[str] = None
         wf = service.instantiate_template(template_key=template_key, name=name)
         return APIResponse(data=wf.to_dict())
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
 @router.get("/editor/ui", response_class=HTMLResponse)

@@ -128,7 +128,7 @@ def refresh_token(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=f"Fallo en la rotación de token: {str(e)}",
-        )
+        ) from e
 
     _set_auth_cookies(response, new_tokens)
 

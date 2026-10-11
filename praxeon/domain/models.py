@@ -21,7 +21,7 @@ from praxeon.domain.decision import (
     PolicyDecision,
     compute_receipt_signature,
     compute_state_hash,
-    sign_receipt,
+    sign_receipt,  # noqa: F401 (reexport)
     verify_capability_signature,
     verify_receipt_signature,
 )

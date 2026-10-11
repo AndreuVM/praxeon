@@ -96,7 +96,7 @@ class MockProvider(BaseReasoningProvider):
 
         if not self.is_available():
             reason = self._simulated_failure or "Provider unavailable"
-            for a in actions:
+            for _a in actions:
                 results.append(
                     ProviderAssessment(
                         provider=self.name,

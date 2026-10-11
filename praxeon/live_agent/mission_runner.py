@@ -130,7 +130,7 @@ def run_live_agent(
         llm_output = ""
 
         max_retries = 3
-        for attempt in range(max_retries):
+        for _attempt in range(max_retries):
             try:
                 if agent_llm.provider_name == "gemini":
                     elapsed = time.time() - last_llm_call_time
@@ -207,7 +207,7 @@ def run_live_agent(
                 f"[bold yellow]Paso bloqueado:[/] {flagged_step.get('tool_name')} {flagged_step.get('tool_args')}\n"
                 f"[bold white]Diagnóstico:[/] {chunk_result.explanation}\n\n"
                 f"{dir_inj or ''}",
-                title=f"🛑 [bold red]Supervisión JEV: Acción Prevenida (Ahorro de Llamada a Gemini)[/]",
+                title="🛑 [bold red]Supervisión JEV: Acción Prevenida (Ahorro de Llamada a Gemini)[/]",
                 border_style="red",
             ))
 
@@ -269,7 +269,7 @@ def run_live_agent(
         # 5. Si JEV aprueba el bloque: Ejecutar secuencialmente SIN volver a llamar a Gemini entre pasos
         console.print(f"[bold green]✓ JEV: Bloque de {len(proposed_steps)} paso(s) validado con éxito. Ejecutando de forma autónoma...[/]")
 
-        for step_idx, step_data in enumerate(proposed_steps):
+        for _step_idx, step_data in enumerate(proposed_steps):
             tool_name = step_data.get("tool_name") or "thought_reflection"
             tool_args = step_data.get("tool_args") or {}
             thought_text = step_data.get("thought_rationale") or ""

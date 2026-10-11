@@ -330,7 +330,7 @@ class DecisionEngine:
         ]
         cand_results = self.evaluate_candidate_chunk(candidates, batch_semantics=batch_semantics)
         step_results: List[Tuple[Step, DecisionScore, Optional[Dict[str, Any]]]] = []
-        for step, (_, sc, metadata) in zip(steps, cand_results):
+        for step, (_, sc, metadata) in zip(steps, cand_results, strict=False):
             step_results.append((step, sc, metadata))
         return step_results
 

@@ -70,12 +70,12 @@ class ReportGenerator:
             "",
             "| Dimensión Operacional | v0.1 (Middleware Heurístico) | v0.2 (Gobernanza Formal) | Impacto / Delta |",
             "| :--- | :--- | :--- | :--- |",
-            f"| **Fallback en Caída** | Fail-Open (`JEV = 0.5`) | Fail-Safe (`ABSTAIN/BLOCK`) | **Mitigación total de vulnerabilidad** |",
-            f"| **Tratamiento de `finish`** | Bump ciego (`JEV = 0.95`) | `CompletionVerifier` estricto | **Eliminación de cierres espurios** |",
-            f"| **Frontera de Ejecución** | Bypass (ejecución en cliente) | `SecureExecutor` obligatorio | **Perímetro de contención garantizado** |",
-            f"| **Semántica de Lotes** | Cascada espuria obligatoria | `BatchSemantics(independent)` | **Aislamiento de pasos independientes** |",
+            "| **Fallback en Caída** | Fail-Open (`JEV = 0.5`) | Fail-Safe (`ABSTAIN/BLOCK`) | **Mitigación total de vulnerabilidad** |",
+            "| **Tratamiento de `finish`** | Bump ciego (`JEV = 0.95`) | `CompletionVerifier` estricto | **Eliminación de cierres espurios** |",
+            "| **Frontera de Ejecución** | Bypass (ejecución en cliente) | `SecureExecutor` obligatorio | **Perímetro de contención garantizado** |",
+            "| **Semántica de Lotes** | Cascada espuria obligatoria | `BatchSemantics(independent)` | **Aislamiento de pasos independientes** |",
             f"| **Tasa de Permisión Falsa** | Insegura (~25-40%) | `{v2_metrics.false_allow_rate * 100:.1f}%` | **0% acciones destructivas no autorizadas** |",
-            f"| **Auditoría** | Ninguna (solo log textual) | `DecisionReceipt` inmutable | **Trazabilidad criptográfica total** |",
+            "| **Auditoría** | Ninguna (solo log textual) | `DecisionReceipt` inmutable | **Trazabilidad criptográfica total** |",
             "",
         ]
         return "\n".join(lines)

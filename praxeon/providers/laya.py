@@ -93,7 +93,7 @@ class LayaProvider(BaseReasoningProvider):
             return "simulated"
         if self.requested_backend == "local":
             try:
-                import laya  # type: ignore
+                import laya  # type: ignore  # noqa: F401 (comprobación de disponibilidad)
                 return "local"
             except ImportError:
                 logger.info(
@@ -107,7 +107,7 @@ class LayaProvider(BaseReasoningProvider):
         if self.endpoint_url:
             return "hosted"
         try:
-            import laya  # type: ignore
+            import laya  # type: ignore  # noqa: F401 (comprobación de disponibilidad)
             return "local"
         except ImportError:
             return "simulated"
@@ -176,7 +176,7 @@ class LayaProvider(BaseReasoningProvider):
     def _get_local_model(self):
         """Carga o reutiliza la instancia del modelo neuronal local LAYA."""
         if getattr(self, "_loaded_model", None) is None:
-            import laya  # type: ignore
+            import laya  # type: ignore  # noqa: F401 (comprobación de disponibilidad)
             model_target = self.model_name
             if model_target in ("laya-v1-calibrated", "default"):
                 model_target = os.getenv("LAYA_MODEL_PATH", "convaiinnovations/laya")

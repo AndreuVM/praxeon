@@ -216,7 +216,7 @@ class LocalProcessSandbox(SandboxAdapter):
                         raise SandboxViolation(
                             f"Evasión de ruta por enlace simbólico detectada: '{ancestor}' apunta a '{real_target}', "
                             f"fuera del workspace delimitado '{canon_workspace}'."
-                        )
+                        ) from None
                     if common_anc != canon_workspace:
                         raise SandboxViolation(
                             f"Evasión de ruta por enlace simbólico detectada: '{ancestor}' apunta a '{real_target}', "
@@ -232,7 +232,7 @@ class LocalProcessSandbox(SandboxAdapter):
                 raise SandboxViolation(
                     f"Evasión de ruta inter-volumen detectada: '{path}' resuelve en '{real_path}', "
                     f"fuera del workspace delimitado '{canon_workspace}'."
-                )
+                ) from None
             if common != canon_workspace:
                 raise SandboxViolation(
                     f"Evasión de ruta detectada (symlink/traversal): '{path}' resuelve en '{real_path}', "

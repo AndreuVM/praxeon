@@ -494,7 +494,6 @@ def test_finding_09_container_adapter_bound_to_session_workspace(tmp_path):
 def test_finding_18_completion_verifier_requires_active_test_execution(tmp_path):
     """F18: TESTS_PASS requiere ejecución activa de comandos (run_command) y no lectura pasiva de ficheros."""
     from praxeon.domain.models import (
-        ActionCandidate,
         CriterionType,
         Goal,
         PolicyDecision,

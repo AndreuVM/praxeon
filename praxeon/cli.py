@@ -101,7 +101,7 @@ def analyze_trace_file(file_path: str, config: Optional[PraxeonConfig] = None) -
     tree = Tree(f"🎯 [bold yellow]Meta:[/] {trajectory.goal[:80]}")
     cycle_nodes_set = set(loop_report.cycle_nodes)
 
-    for idx, (step, sc) in enumerate(zip(trajectory.steps, scores)):
+    for _idx, (step, sc) in enumerate(zip(trajectory.steps, scores, strict=False)):
         is_cycle = step.id in cycle_nodes_set
         score_val = sc.total_jev
 
@@ -119,7 +119,7 @@ def analyze_trace_file(file_path: str, config: Optional[PraxeonConfig] = None) -
         if len(preview) > 75:
             preview = preview[:75] + "..."
 
-        step_node = tree.add(
+        tree.add(
             f"[{color}][{step.id} ({step.step_type.value})] {preview}[/]  "
             f"[dim](JEV: {score_val:+.2f})[/] {badge}"
         )
@@ -141,7 +141,7 @@ def analyze_trace_file(file_path: str, config: Optional[PraxeonConfig] = None) -
     table.add_column("Diagnóstico Semántico", justify="left", width=24)
     table.add_column("Estado", justify="center", width=10)
 
-    for step, sc in zip(trajectory.steps, scores):
+    for step, sc in zip(trajectory.steps, scores, strict=False):
         is_cycle = step.id in cycle_nodes_set
         content_repr = step.tool_name if step.tool_name else step.content
         if len(content_repr) > 33:

@@ -439,7 +439,7 @@ def generate_goal_tailored_steps(goal: str, max_steps: int = 6) -> List[Dict[str
             "el", "la", "los", "las", "un", "una", "de", "del", "a", "en", "para", "por",
             "con", "sin", "sobre", "y", "o", "que", "es", "son", "al", "se", "su",
             "the", "of", "to", "in", "and", "for", "with", "on", "at", "by", "from",
-            "un", "an", "is", "are", "it", "this", "that"
+            "an", "is", "are", "it", "this", "that"
         }
         tokens = [w for w in re.findall(r'[a-zA-Z0-9_\-]{3,}', g_lower) if w not in stopwords]
         key_token = tokens[0] if tokens else "contexto"
@@ -486,7 +486,7 @@ def generate_goal_tailored_steps(goal: str, max_steps: int = 6) -> List[Dict[str
                 "tool": "finish",
                 "operation": "6. Concluir tarea",
                 "arguments": {"summary": f"Misión '{goal}' analizada, implementada y supervisada exitosamente."},
-                "thought": f"Todos los requerimientos de la tarea han sido cumplidos y validados por el supervisor.",
+                "thought": "Todos los requerimientos de la tarea han sido cumplidos y validados por el supervisor.",
                 "parent_id": "act_5",
             },
         ]

@@ -329,7 +329,7 @@ class JEVProxyMiddleware:
                 )
 
         if self.event_bus:
-            for step, sc in zip(candidate_steps, step_scores):
+            for step, sc in zip(candidate_steps, step_scores, strict=False):
                 self.event_bus.emit(
                     session_id=self.session_id,
                     event_type=EventType.PROVIDER_EVALUATED,

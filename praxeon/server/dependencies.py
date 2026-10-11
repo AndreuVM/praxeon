@@ -1478,7 +1478,6 @@ class RuntimeApplicationService:
         session_mode = record.get("execution_mode") or "local_restricted"
 
         if approved:
-            new_status = "ALLOW"
             expires_at = now + timedelta(minutes=5)
             receipt_updated = receipt.model_copy(
                 update={
@@ -2860,7 +2859,7 @@ class RuntimeApplicationService:
         # Calcular telemetría observada agregada por provider
         latency_stats: Dict[str, Dict[str, Any]] = {}
         with self._lock:
-            for sid, sess_rt in getattr(self, "_session_runtimes", {}).items():
+            for _sid, sess_rt in getattr(self, "_session_runtimes", {}).items():
                 if hasattr(sess_rt, "decision_runtime"):
                     tel = sess_rt.decision_runtime.get_telemetry()
                     pid = tel.get("provider_id")
@@ -3035,10 +3034,8 @@ def is_auth_required(profile: Optional[str] = None, client_host: Optional[str] =
     return False
 
 
-import secrets
 from fastapi import Cookie, Depends, Header, HTTPException, Request, status
 from praxeon.server.services.auth_service import (
-    AuthService,
     Permission,
     Role,
     ROLE_PERMISSIONS,
@@ -3108,7 +3105,7 @@ def get_current_tenant(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail=f"Token JWT inválido o expirado: {str(e)}",
                 headers={"WWW-Authenticate": "Bearer"},
-            )
+            ) from e
 
     # Si es una API Key estática
     expected_key = os.environ.get("PRAXEON_API_KEY") or os.environ.get("PRAXEON_SECRET_KEY")

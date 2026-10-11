@@ -85,7 +85,7 @@ def create_agent(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Definición de agente inválida: {str(exc)}",
-        )
+        ) from exc
 
 
 @router.get("/{agent_id}", response_model=APIResponse[Dict[str, Any]])
@@ -128,7 +128,7 @@ def update_agent(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Error al actualizar agente '{agent_id}': {str(exc)}",
-        )
+        ) from exc
 
 
 @router.delete("/{agent_id}", response_model=APIResponse[Dict[str, Any]])
@@ -184,7 +184,7 @@ def create_agent_version(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Error al versionar agente '{agent_id}': {str(exc)}",
-        )
+        ) from exc
 
 
 @router.get("/{agent_id}/versions", response_model=APIResponse[List[Dict[str, Any]]])

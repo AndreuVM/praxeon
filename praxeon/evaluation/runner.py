@@ -778,7 +778,7 @@ class BenchmarkRunner:
 
                 # Si es autorizada, ejecutar y añadir evidencia
                 if decision.status == DecisionStatus.ALLOW:
-                    obs = nav.executor.execute(action=action, state=state, receipt=receipt)
+                    nav.executor.execute(action=action, state=state, receipt=receipt)
                     if step_def.creates_evidence:
                         state.add_evidence(step_def.creates_evidence)
                         nav.evidence_engine._evidence_pool[step_def.creates_evidence.claim.lower().strip()] = step_def.creates_evidence

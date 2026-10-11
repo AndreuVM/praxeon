@@ -243,10 +243,6 @@ class PolicyEngine:
         # 6. Evaluación de riesgo operacional y semántica de operación
         action_hash = compute_action_hash(action)
         state_hash = compute_state_hash(state)
-        mode_str = str(
-            resolved_mode.value if hasattr(resolved_mode, "value") else resolved_mode or ""
-        ).lower()
-
         if status is None:
             if risk.level == RiskLevel.CRITICAL:
                 status = DecisionStatus.BLOCK

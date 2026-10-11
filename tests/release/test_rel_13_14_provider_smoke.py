@@ -687,7 +687,6 @@ def test_rel_14_simulated_agent_llm_step_generation():
 def test_bug_02_provider_unavailable_with_none_probability_does_not_crash(tmp_path, monkeypatch):
     """BUG-02: ProviderAssessment con available=False y progress_probability=None no debe romper la API con TypeError."""
     from praxeon.server.dependencies import RuntimeApplicationService
-    from praxeon.server.schemas.action import ProposeActionRequest
     from praxeon.providers.base import BaseReasoningProvider
 
     class UnavailableMockProvider(BaseReasoningProvider):

@@ -183,7 +183,7 @@ class TypeSafeAdapter(BaseReasoningProvider):
             is_flagged = bool(flagged_choice != "none" or raw_prob > 0.60)
 
             assessments: List[ProviderAssessment] = []
-            for idx, act in enumerate(actions):
+            for idx, _act in enumerate(actions):
                 is_this_step_flagged = (flagged_choice == f"step_{idx}") or (is_flagged and len(actions) == 1)
                 loop_p = raw_prob if is_this_step_flagged else min(raw_prob, 0.10)
                 grounded_p = 0.20 if is_this_step_flagged else max(0.10, 1.0 - raw_prob)

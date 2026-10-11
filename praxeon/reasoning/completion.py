@@ -77,7 +77,7 @@ class CompletionVerifier:
     def __init__(self, stop_words: Optional[Set[str]] = None, workspace_root: Optional[str] = None):
         self.stop_words = stop_words or {
             "el", "la", "los", "las", "un", "una", "de", "en", "para", "por", "con", "que", "y", "o", "a",
-            "the", "a", "an", "in", "on", "for", "with", "that", "and", "or", "to", "of", "is"
+            "the", "an", "in", "on", "for", "with", "that", "and", "or", "to", "of", "is"
         }
         self.workspace_root = os.path.realpath(workspace_root or os.getcwd())
 

@@ -7,6 +7,24 @@ on:
     branches: [ main ]
 
 jobs:
+  lint:
+    name: Lint (ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install ruff
+        run: python -m pip install "ruff>=0.6.0"
+
+      - name: Ruff (reglas bloqueantes definidas en pyproject.toml)
+        run: ruff check .
+
   test:
     name: Backend Test Suite (Python ${{ matrix.python-version }} on ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -31,8 +49,21 @@ jobs:
           pip install -e ".[dev,decision-typesafe]"
 
       - name: Run Test Suite with Pytest
+        if: matrix.os != 'ubuntu-latest' || matrix.python-version != '3.11'
         run: |
           pytest -v --durations=10
+
+      - name: Run Test Suite with Coverage (umbral minimo 70%)
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
+        run: |
+          pytest -v --durations=10 --cov=praxeon --cov-report=term --cov-report=xml --cov-fail-under=70
+
+      - name: Upload coverage report
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml
+          path: coverage.xml
 
       - name: Run Formal Verification Benchmark (10 scenarios)
         run: |

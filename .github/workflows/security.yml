@@ -28,9 +28,20 @@ jobs:
           pip install -e ".[dev]"
           pip install bandit
 
-      - name: Run Bandit (Security Linter)
+      - name: "Run Bandit (bloqueante, severidad media/alta)"
         run: |
           bandit -r praxeon/ -ll -ii --exclude praxeon/tests
+
+      - name: "Bandit informe completo (informativo, incluye severidad baja)"
+        continue-on-error: true
+        run: |
+          bandit -r praxeon/ --exclude praxeon/tests -f txt
+
+      - name: Auditoria de dependencias (pip-audit, informativo)
+        continue-on-error: true
+        run: |
+          pip install pip-audit
+          pip-audit --skip-editable
 
       - name: Verify Formal Invariants and Capability Verification Suite
         run: |

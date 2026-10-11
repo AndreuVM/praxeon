@@ -37,7 +37,7 @@ class ToolRegistry:
         "curl", "wget", "tar", "zip", "unzip", "make", "cmake",
         "dir", "ls", "cat", "type", "find", "grep", "findstr", "echo",
         "head", "tail", "wc", "sed", "awk", "ruff", "flake8", "black", "mypy",
-        "alembic", "poetry", "tox", "pipenv", "pytest",
+        "alembic", "poetry", "tox", "pipenv",
     }
 
     def __init__(self, register_defaults: bool = True):

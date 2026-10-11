@@ -110,11 +110,11 @@ class InMemoryContextCache(ContextCache):
             if len(self._store) >= self.max_entries:
                 oldest_key, _ = self._store.popitem(last=False)
                 # Limpiar del índice de sesión y nodo
-                for s_id, s_keys in self._session_index.items():
+                for _s_id, s_keys in self._session_index.items():
                     if oldest_key in s_keys:
                         s_keys.remove(oldest_key)
                         break
-                for n_id, n_keys in self._node_index.items():
+                for _n_id, n_keys in self._node_index.items():
                     if oldest_key in n_keys:
                         n_keys.remove(oldest_key)
                         break

@@ -353,7 +353,6 @@ class SimulatedAgentLLM(BaseAgentLLM):
 
     def generate(self, messages: List[Dict[str, str]], system_prompt: Optional[str] = None) -> str:
         self._step_counter += 1
-        last_msg = messages[-1]["content"] if messages else ""
 
         if self._step_counter == 1:
             return (

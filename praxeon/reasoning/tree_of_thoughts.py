@@ -159,7 +159,7 @@ class TreeOfThoughtsEngine:
         assessments = self.provider.evaluate(state, candidates)
         scored: List[Tuple[ActionCandidate, ProviderAssessment, float]] = []
 
-        for cand, assess in zip(candidates, assessments):
+        for cand, assess in zip(candidates, assessments, strict=False):
             h_score, _, _, _ = self.compute_heuristic_score(assess, cand)
             scored.append((cand, assess, h_score))
 

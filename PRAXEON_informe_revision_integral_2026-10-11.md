@@ -325,3 +325,14 @@ Tests: `tests/workflows/test_w07_unified_orchestration.py` (6). **Pendiente de w
 ### 10.5 Limpieza de código
 
 Eliminados 309 imports sin usar (F401) en 96 ficheros de `praxeon/` (excluidos los `__init__.py`, que son reexportaciones). Un verificador de imports (`from praxeon.X import Y` en `praxeon/`, `tests/`, `scripts/`, `examples/`) detectó que `domain/models.py` actúa como *hub* de reexportación (`sign_receipt`), por lo que se restauró. Suite: 916 pasados, 1 omitido; el *benchmark* de CLI funciona. **Pendiente de calidad:** dividir `server/dependencies.py` (3.200 líneas), añadir ruff/mypy y cobertura al CI.
+
+### 10.6 Lint y CI
+
+- **Lint:** configuración `ruff` en `pyproject.toml` con reglas bloqueantes `F, E9, B904, B033, B007, B905`. Corregidos 33 `raise` sin causa (`from exc`/`from None`), 8 `zip` sin `strict`, 10 variables de bucle sin usar, 39 variables sin usar, 10 f-strings sin marcadores, 3 conjuntos con duplicados y las redefiniciones de `dependencies.py`. `ruff check .` pasa limpio sobre todo el repositorio.
+- **Cobertura:** medida real **77 %** (19.742 sentencias, con ramas). Umbral en CI: **70 %** (margen para diferencias Linux/Windows). Módulos más flojos: `session_service` (21 %), `coordinators` (37 %), `dashboard` (41 %), `cli` (45 %), `live_agent/llm_adapter` (45 %).
+- **CI (`test.yml`):** nuevo job `lint`; la combinación Ubuntu/3.11 ejecuta pytest con cobertura y `--cov-fail-under=70` y sube `coverage.xml` como artefacto. (Corrección al apartado 6: el job de frontend con `oxlint` y `vite build` ya existía.)
+- **Seguridad (`security.yml`):** Bandit bloqueante en severidad media/alta; informe completo de Bandit y `pip-audit` como pasos informativos.
+- **Dependabot:** `pip`, `npm` (web) y `github-actions`.
+- `pytest-cov` y `ruff` añadidos al extra `dev`; `uv.lock` regenerado.
+
+**No incluido a propósito:** `mypy` (la base de código no está anotada de forma uniforme; activarlo ahora produciría cientos de errores sin valor) y las reglas `S110` (≈44 `try/except/pass`) y `B008` (falsos positivos de `Depends` en FastAPI). Candidatas a una segunda fase.

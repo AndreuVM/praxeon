@@ -73,22 +73,22 @@ def confirm_decision(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Decisión '{decision_id}' no encontrada.",
-        )
+        ) from None
     except PermissionError as pe:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=str(pe),
-        )
+        ) from pe
     except ValueError as ve:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(ve),
-        )
+        ) from ve
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Error procesando confirmación: {str(e)}",
-        )
+        ) from e
 
 
 @router.post("/{decision_id}/reject", response_model=APIResponse[ConfirmDecisionResponse])
@@ -119,22 +119,22 @@ def reject_decision(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Decisión '{decision_id}' no encontrada.",
-        )
+        ) from None
     except PermissionError as pe:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=str(pe),
-        )
+        ) from pe
     except ValueError as ve:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(ve),
-        )
+        ) from ve
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Error procesando rechazo: {str(e)}",
-        )
+        ) from e
 
 
 @router.post("/{decision_id}/execute", response_model=APIResponse[ExecuteDecisionResponse])
@@ -159,19 +159,19 @@ def execute_decision(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Decisión '{decision_id}' no encontrada.",
-        )
+        ) from None
     except PermissionError as pe:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=str(pe),
-        )
+        ) from pe
     except PolicyViolation as pv:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=f"Ejecución física denegada por política de runtime: {str(pv)}",
-        )
+        ) from pv
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Fallo durante la ejecución en sandbox: {str(e)}",
-        )
+        ) from e

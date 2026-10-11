@@ -107,9 +107,9 @@ def rollback_session(
         )
         return APIResponse(data=res)
     except KeyError as e:
-        raise HTTPException(status_code=404, detail=str(e).strip("'"))
+        raise HTTPException(status_code=404, detail=str(e).strip("'")) from e
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 
@@ -194,7 +194,7 @@ def propose_action(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Error en supervisión de la propuesta: {str(e)}",
-        )
+        ) from e
 
 
 @router.get("/{session_id}/decisions", response_model=APIResponse[List[Dict[str, Any]]])
