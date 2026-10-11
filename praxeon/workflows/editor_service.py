@@ -214,7 +214,17 @@ class WorkflowEditorService:
         if not wf:
             raise ValueError(f"Workflow '{workflow_id}' no encontrado.")
 
-        node_id = f"node_{node_type.value.lower()}_{uuid.uuid4().hex[:8]}"
+        node_id = f"node_{uuid.uuid4().hex[:8]}"
+
+        norm_ctrl = dict(control_config) if control_config else None
+        if norm_ctrl:
+            if "strategy" in norm_ctrl and "routing_mode" not in norm_ctrl:
+                norm_ctrl["routing_mode"] = str(norm_ctrl["strategy"]).upper()
+            elif "routing_mode" in norm_ctrl:
+                canonical = str(norm_ctrl["routing_mode"]).upper()
+                norm_ctrl["routing_mode"] = canonical
+                norm_ctrl["strategy"] = canonical
+
         node = WorkflowNode(
             node_id=node_id,
             name=name,
@@ -222,7 +232,7 @@ class WorkflowEditorService:
             agent_id=agent_id,
             tool_name=tool_name,
             inputs=inputs or {},
-            control_config=control_config,
+            control_config=norm_ctrl,
             position=position or UIPosition(x=300.0, y=250.0),
         )
 
@@ -305,7 +315,15 @@ class WorkflowEditorService:
         if inputs is not None:
             dump["inputs"] = inputs
         if control_config is not None:
-            dump["control_config"] = control_config
+            merged_ctrl = dict(old_node.control_config or {})
+            merged_ctrl.update(control_config)
+            if "strategy" in merged_ctrl and "routing_mode" not in merged_ctrl:
+                merged_ctrl["routing_mode"] = str(merged_ctrl["strategy"]).upper()
+            elif "routing_mode" in merged_ctrl:
+                canonical = str(merged_ctrl["routing_mode"]).upper()
+                merged_ctrl["routing_mode"] = canonical
+                merged_ctrl["strategy"] = canonical
+            dump["control_config"] = merged_ctrl
         if metadata is not None:
             dump["metadata"] = metadata
 

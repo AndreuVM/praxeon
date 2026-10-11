@@ -295,6 +295,19 @@ class WorkflowDefinition(BaseModel):
             outgoing = self.get_outgoing_edges(wn_id)
             if not exit_target and not outgoing:
                 errors.append(f"El nodo WHILE '{wn_id}' carece de ruta de salida ('exit_target' o aristas salientes).")
+            if exit_target and exit_target not in self.nodes:
+                errors.append(f"El nodo WHILE '{wn_id}' referencia un 'exit_target' inexistente: '{exit_target}'.")
+            body_entry = ctrl.get("body_entry") or wn.metadata.get("body_entry")
+            if body_entry and body_entry not in self.nodes:
+                errors.append(f"El nodo WHILE '{wn_id}' referencia un 'body_entry' inexistente: '{body_entry}'.")
+
+        # Validar configuración de nodos DELEGATE
+        delegate_nodes = {nid: n for nid, n in self.nodes.items() if n.node_type == NodeType.DELEGATE}
+        for dn_id, dn in delegate_nodes.items():
+            ctrl = dn.control_config or dn.metadata.get("control_config", {})
+            rm = ctrl.get("routing_mode") or ctrl.get("strategy")
+            if rm and str(rm).upper() not in ("MANUAL", "AUTOMATIC"):
+                errors.append(f"El nodo DELEGATE '{dn_id}' tiene un modo de enrutamiento inválido: '{rm}'. Debe ser MANUAL o AUTOMATIC.")
 
         # Separar candidatas a aristas de retorno estructuradas hacia nodos WHILE
         loop_back_edge_ids: Set[str] = {

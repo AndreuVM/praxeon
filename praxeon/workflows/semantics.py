@@ -194,9 +194,14 @@ class AtomicCondition(BaseModel):
                 return expected in val
             return False
         elif op in ("is_true", "true"):
-            return bool(val) is True
+            if val is None:
+                return False
+            return bool(val) is True or str(val).lower() in ("true", "1")
         elif op in ("is_false", "false"):
-            return bool(val) is False
+            if val is None:
+                # Contexto ausente/None nunca se confunde con falso explícito (fail-closed)
+                return False
+            return bool(val) is False or str(val).lower() in ("false", "0")
         elif op in ("is_null", "null"):
             return val is None
         elif op in ("not_null", "is_not_null"):
@@ -212,8 +217,10 @@ class CompoundCondition(BaseModel):
     conditions: List[Union["CompoundCondition", AtomicCondition]] = Field(default_factory=list)
 
     def evaluate(self, context: Union[EvaluationContext, Dict[str, Any]]) -> bool:
-        """Evalúa el árbol de condiciones con lógica booleana estricta (fail-closed ante listas vacías si NOT)."""
+        """Evalúa el árbol de condiciones con lógica booleana estricta (fail-closed ante listas vacías si NOT u OR)."""
         if not self.conditions:
+            if self.logical_op in (LogicalOperator.NOT, LogicalOperator.OR):
+                return False
             return True
 
         if self.logical_op == LogicalOperator.AND:
@@ -221,7 +228,7 @@ class CompoundCondition(BaseModel):
         elif self.logical_op == LogicalOperator.OR:
             return any(c.evaluate(context) for c in self.conditions)
         elif self.logical_op == LogicalOperator.NOT:
-            # NOT invierte el resultado del primer elemento (o de todos unidos por AND)
+            # NOT invierte el resultado (fail-closed si lista vacía ya controlado arriba)
             return not all(c.evaluate(context) for c in self.conditions)
         return False
 
@@ -248,15 +255,20 @@ def parse_condition(data: Any) -> Optional[Union[CompoundCondition, AtomicCondit
         if "not" in data:
             raw_not = data["not"]
             items = raw_not if isinstance(raw_not, list) else [raw_not]
-            sub = [parse_condition(c) for c in items if c is not None]
-            return CompoundCondition(logical_op=LogicalOperator.NOT, conditions=[c for c in sub if c is not None])
+            sub = [c for c in (parse_condition(item) for item in items) if c is not None]
+            if not sub:
+                return None
+            return CompoundCondition(logical_op=LogicalOperator.NOT, conditions=sub)
 
         # Formato explícito CompoundCondition
         if "logical_op" in data and "conditions" in data:
-            sub = [parse_condition(c) for c in data["conditions"] if c is not None]
+            op_enum = LogicalOperator(data["logical_op"].upper())
+            sub = [c for c in (parse_condition(item) for item in data["conditions"]) if c is not None]
+            if op_enum == LogicalOperator.NOT and not sub:
+                return None
             return CompoundCondition(
-                logical_op=LogicalOperator(data["logical_op"].upper()),
-                conditions=[c for c in sub if c is not None],
+                logical_op=op_enum,
+                conditions=sub,
             )
 
         # Formato atómico: {field: "...", operator: "...", expected_value: ...}

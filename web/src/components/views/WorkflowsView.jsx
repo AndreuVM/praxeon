@@ -256,7 +256,22 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
     const node = nodesArray.find((n) => (n.node_id || n.id) === selectedNodeId);
     if (node) {
       const cfg = node.control_config || {};
-      const cond = cfg.condition || {};
+      const cond = cfg.condition;
+      let condField = '';
+      let condOp = '==';
+      let condVal = '';
+
+      if (cond) {
+        if (typeof cond === 'string') {
+          condField = cond;
+        } else if (typeof cond === 'object') {
+          condField = cond.field || '';
+          condOp = cond.operator || cond.op || '==';
+          const rawVal = cond.expected_value !== undefined ? cond.expected_value : cond.value;
+          condVal = rawVal !== undefined ? (typeof rawVal === 'object' ? JSON.stringify(rawVal) : String(rawVal)) : '';
+        }
+      }
+
       setNodeEditForm({
         node_id: node.node_id || node.id,
         name: node.name || '',
@@ -266,18 +281,28 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
         inputs_json: JSON.stringify(node.inputs || {}, null, 2),
         status: node.status || 'PENDING',
         outputs_json: JSON.stringify(node.outputs || {}, null, 2),
+        // Preservar configuración cruda para no perder campos no editados
+        raw_control_config: cfg,
         // Campos de Semántica de Control
-        max_iterations: cfg.max_iterations ?? 3,
+        max_iterations: cfg.max_iterations ?? 10,
         on_limit: cfg.on_limit || 'ABORT',
+        body_entry: cfg.body_entry || '',
+        exit_target: cfg.exit_target || '',
         prompt: cfg.prompt || 'Se requiere aprobación de un supervisor humano.',
         timeout_seconds: cfg.timeout_seconds || 3600,
-        strategy: cfg.strategy || 'MANUAL',
+        approver_role: cfg.approver_role || 'supervisor',
+        reject_target: cfg.reject_target || '',
+        routing_mode: (cfg.routing_mode || cfg.strategy || 'MANUAL').toUpperCase(),
+        strategy: (cfg.strategy || cfg.routing_mode || 'MANUAL').toUpperCase(),
         candidate_agents: Array.isArray(cfg.candidate_agents) ? cfg.candidate_agents.join(', ') : '',
         join_policy: cfg.join_policy || 'all',
         merge_policy: cfg.merge_policy || 'namespace',
-        condition_field: cond.field || '',
-        condition_operator: cond.operator || '==',
-        condition_expected_value: cond.expected_value !== undefined ? (typeof cond.expected_value === 'object' ? JSON.stringify(cond.expected_value) : String(cond.expected_value)) : '',
+        true_edge: cfg.true_edge || '',
+        false_edge: cfg.false_edge || '',
+        default_edge: cfg.default_edge || '',
+        condition_field: condField,
+        condition_operator: condOp,
+        condition_expected_value: condVal,
       });
       setSelectedEdgeId(null);
     }
@@ -392,12 +417,13 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
         return;
       }
 
-      // Ensamblar control_config según el tipo de nodo
+      // Partir de la configuración previa para preservar campos no expuestos en este formulario
+      const baseConfig = { ...(nodeEditForm.raw_control_config || {}) };
       let controlConfig = null;
       const nt = nodeEditForm.node_type;
 
       if (nt === 'WHILE') {
-        let cond = null;
+        let cond = baseConfig.condition || null;
         if (nodeEditForm.condition_field?.trim()) {
           let expVal = nodeEditForm.condition_expected_value;
           if (expVal === 'true') expVal = true;
@@ -410,12 +436,15 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
           };
         }
         controlConfig = {
-          max_iterations: Number(nodeEditForm.max_iterations) || 3,
+          ...baseConfig,
+          max_iterations: Number(nodeEditForm.max_iterations) || 10,
           on_limit: nodeEditForm.on_limit || 'ABORT',
+          ...(nodeEditForm.body_entry?.trim() ? { body_entry: nodeEditForm.body_entry.trim() } : {}),
+          ...(nodeEditForm.exit_target?.trim() ? { exit_target: nodeEditForm.exit_target.trim() } : {}),
           ...(cond ? { condition: cond } : {}),
         };
       } else if (nt === 'IF' || nt === 'DECISION') {
-        let cond = null;
+        let cond = baseConfig.condition || null;
         if (nodeEditForm.condition_field?.trim()) {
           let expVal = nodeEditForm.condition_expected_value;
           if (expVal === 'true') expVal = true;
@@ -427,23 +456,36 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
             expected_value: expVal,
           };
         }
-        controlConfig = cond ? { condition: cond } : {};
+        controlConfig = {
+          ...baseConfig,
+          ...(nodeEditForm.true_edge?.trim() ? { true_edge: nodeEditForm.true_edge.trim() } : {}),
+          ...(nodeEditForm.false_edge?.trim() ? { false_edge: nodeEditForm.false_edge.trim() } : {}),
+          ...(nodeEditForm.default_edge?.trim() ? { default_edge: nodeEditForm.default_edge.trim() } : {}),
+          ...(cond ? { condition: cond } : {}),
+        };
       } else if (nt === 'HUMAN_APPROVAL') {
         controlConfig = {
+          ...baseConfig,
           prompt: nodeEditForm.prompt?.trim() || 'Aprobación requerida para continuar.',
           timeout_seconds: Number(nodeEditForm.timeout_seconds) || 3600,
+          approver_role: nodeEditForm.approver_role?.trim() || 'supervisor',
+          ...(nodeEditForm.reject_target?.trim() ? { reject_target: nodeEditForm.reject_target.trim() } : {}),
         };
       } else if (nt === 'DELEGATE') {
         const candidates = (nodeEditForm.candidate_agents || '')
           .split(',')
           .map((s) => s.trim())
           .filter(Boolean);
+        const rMode = (nodeEditForm.routing_mode || nodeEditForm.strategy || 'MANUAL').toUpperCase();
         controlConfig = {
-          strategy: nodeEditForm.strategy || 'MANUAL',
+          ...baseConfig,
+          routing_mode: rMode,
+          strategy: rMode,
           candidate_agents: candidates,
         };
       } else if (nt === 'PARALLEL_JOIN') {
         controlConfig = {
+          ...baseConfig,
           join_policy: nodeEditForm.join_policy || 'all',
           merge_policy: nodeEditForm.merge_policy || 'namespace',
         };
@@ -1910,7 +1952,7 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
                   {node.node_type === 'DELEGATE' && (
                     <div style={{ fontSize: '10px', color: '#a855f7', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '3px' }}>
                       <Bot size={11} />
-                      <span>Estrategia: {node.control_config?.strategy || 'MANUAL'}</span>
+                      <span>Modo: {node.control_config?.routing_mode || node.control_config?.strategy || 'MANUAL'}</span>
                     </div>
                   )}
 
@@ -2194,6 +2236,28 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
                           </select>
                         </div>
                       </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                        <div>
+                          <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Entrada Cuerpo (body_entry):</label>
+                          <input
+                            type="text"
+                            placeholder="node_body_id"
+                            value={nodeEditForm.body_entry || ''}
+                            onChange={(e) => setNodeEditForm({ ...nodeEditForm, body_entry: e.target.value })}
+                            style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#06b6d4', fontFamily: 'var(--font-mono)' }}
+                          />
+                        </div>
+                        <div>
+                          <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Salida Bucle (exit_target):</label>
+                          <input
+                            type="text"
+                            placeholder="node_exit_id"
+                            value={nodeEditForm.exit_target || ''}
+                            onChange={(e) => setNodeEditForm({ ...nodeEditForm, exit_target: e.target.value })}
+                            style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#06b6d4', fontFamily: 'var(--font-mono)' }}
+                          />
+                        </div>
+                      </div>
                       <div>
                         <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Campo condición retorno (opcional):</label>
                         <input
@@ -2203,6 +2267,34 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
                           onChange={(e) => setNodeEditForm({ ...nodeEditForm, condition_field: e.target.value })}
                           style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#f8fafc', fontFamily: 'var(--font-mono)' }}
                         />
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                        <div>
+                          <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Operador:</label>
+                          <select
+                            value={nodeEditForm.condition_operator || '=='}
+                            onChange={(e) => setNodeEditForm({ ...nodeEditForm, condition_operator: e.target.value })}
+                            style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#f8fafc' }}
+                          >
+                            <option value="==">==</option>
+                            <option value="!=">!=</option>
+                            <option value=">">&gt;</option>
+                            <option value="<">&lt;</option>
+                            <option value="contains">contains</option>
+                            <option value="is_true">is_true</option>
+                            <option value="is_false">is_false</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Valor esperado:</label>
+                          <input
+                            type="text"
+                            placeholder="true"
+                            value={nodeEditForm.condition_expected_value || ''}
+                            onChange={(e) => setNodeEditForm({ ...nodeEditForm, condition_expected_value: e.target.value })}
+                            style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#f8fafc' }}
+                          />
+                        </div>
                       </div>
                     </div>
                   )}
@@ -2228,7 +2320,7 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
                         <div>
                           <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Operador:</label>
                           <select
-                            value={nodeEditForm.condition_operator}
+                            value={nodeEditForm.condition_operator || '=='}
                             onChange={(e) => setNodeEditForm({ ...nodeEditForm, condition_operator: e.target.value })}
                             style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#f8fafc' }}
                           >
@@ -2246,9 +2338,31 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
                           <input
                             type="text"
                             placeholder="deep"
-                            value={nodeEditForm.condition_expected_value}
+                            value={nodeEditForm.condition_expected_value || ''}
                             onChange={(e) => setNodeEditForm({ ...nodeEditForm, condition_expected_value: e.target.value })}
                             style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#f8fafc' }}
+                          />
+                        </div>
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                        <div>
+                          <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Rama True (true_edge):</label>
+                          <input
+                            type="text"
+                            placeholder="id_arista_o_nodo"
+                            value={nodeEditForm.true_edge || ''}
+                            onChange={(e) => setNodeEditForm({ ...nodeEditForm, true_edge: e.target.value })}
+                            style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#10b981', fontFamily: 'var(--font-mono)' }}
+                          />
+                        </div>
+                        <div>
+                          <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Rama False (false_edge):</label>
+                          <input
+                            type="text"
+                            placeholder="id_arista_o_nodo"
+                            value={nodeEditForm.false_edge || ''}
+                            onChange={(e) => setNodeEditForm({ ...nodeEditForm, false_edge: e.target.value })}
+                            style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#ef4444', fontFamily: 'var(--font-mono)' }}
                           />
                         </div>
                       </div>
@@ -2292,14 +2406,14 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
                         <span>Router de Delegación</span>
                       </div>
                       <div>
-                        <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Estrategia:</label>
+                        <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Modo de Enrutamiento (routing_mode):</label>
                         <select
-                          value={nodeEditForm.strategy}
-                          onChange={(e) => setNodeEditForm({ ...nodeEditForm, strategy: e.target.value })}
+                          value={nodeEditForm.routing_mode || nodeEditForm.strategy || 'MANUAL'}
+                          onChange={(e) => setNodeEditForm({ ...nodeEditForm, routing_mode: e.target.value, strategy: e.target.value })}
                           style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#f8fafc' }}
                         >
-                          <option value="MANUAL">MANUAL</option>
-                          <option value="AUTOMATIC">AUTOMATIC</option>
+                          <option value="MANUAL">MANUAL (Supervisión humana / Lista fija)</option>
+                          <option value="AUTOMATIC">AUTOMATIC (Despacho dinámico a candidato)</option>
                         </select>
                       </div>
                       <div>
