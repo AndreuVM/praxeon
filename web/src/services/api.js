@@ -7,7 +7,23 @@
 const API_BASE = '/v1';
 const API_KEY_STORAGE_KEY = 'praxeon_api_key';
 
-let inMemoryApiKey = (typeof window !== 'undefined' && window.__PRAXEON_API_KEY__) || null;
+/**
+ * Consume el token de sesión entregado por la app de escritorio en el fragmento (#token=...).
+ * Se guarda solo en memoria y se borra de la URL (no se persiste en localStorage).
+ */
+function consumeTokenFromHash() {
+  if (typeof window === 'undefined' || !window.location) return null;
+  try {
+    const match = /[#&]token=([^&]+)/.exec(window.location.hash || '');
+    if (!match) return null;
+    window.history.replaceState(null, '', window.location.pathname + window.location.search);
+    return decodeURIComponent(match[1]);
+  } catch {
+    return null;
+  }
+}
+
+let inMemoryApiKey = (typeof window !== 'undefined' && window.__PRAXEON_API_KEY__) || consumeTokenFromHash() || null;
 
 /**
  * Obtiene la API Key activa del almacén local o en memoria.

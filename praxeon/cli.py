@@ -566,6 +566,11 @@ def main() -> None:
     live_parser.add_argument("--once", action="store_true", help="Ejecutar una única tarea y salir")
 
     # Subcomando benchmark
+    app_parser = subparsers.add_parser("app", help="Abre PRAXEON como aplicación de escritorio (servidor local + ventana nativa)")
+    app_parser.add_argument("--browser", action="store_true", help="Usar el navegador por defecto en lugar de la ventana nativa")
+    app_parser.add_argument("--port", type=int, default=None, help="Puerto local fijo (por defecto, uno libre)")
+    app_parser.add_argument("--debug", action="store_true", help="Habilitar herramientas de desarrollo de la ventana")
+
     bench_parser = subparsers.add_parser("benchmark", help="Ejecuta la suite formal de benchmarks y ablaciones")
     bench_parser.add_argument("--matrix", action="store_true", help="Ejecutar la matriz científica formal LLMs × Supervisores System-1")
     bench_parser.add_argument("--archive-historical", action="store_true", help="Archivar resultados previos en benchmark_results/historical")
@@ -592,6 +597,13 @@ def main() -> None:
     elif getattr(args, "typesafe", False):
         cfg.use_typesafe_api = True
 
+    if args.command == "app":
+        from praxeon.desktop.app import main as run_desktop_app
+
+        flags = (["--browser"] if args.browser else []) + (["--debug"] if args.debug else [])
+        if args.port:
+            flags += ["--port", str(args.port)]
+        raise SystemExit(run_desktop_app(flags))
     if args.command == "analyze":
         analyze_trace_file(args.trace_path, config=cfg)
     elif args.command == "simulate":

@@ -343,3 +343,14 @@ Eliminados 309 imports sin usar (F401) en 96 ficheros de `praxeon/` (excluidos l
 - **W-12:** las rutas de aprobación registran el usuario autenticado (`approved_by`) en lugar de un valor fijo.
 - **`server/dependencies.py`: 3.225 → 1.037 líneas.** `RuntimeApplicationService` se compone ahora de dos mixins en `praxeon/server/runtime_service/`: `DecisionPipelineMixin` (propuesta, inspección, confirmación y ejecución de decisiones) y `MissionRuntimeMixin` (misiones, checkpoints, rollback y worker). API pública y MRO sin cambios; los nombres de `dependencies` siguen importables (verificado con el comprobador de imports). Siguen en `dependencies.py` el constructor, las sesiones, los proveedores y las dependencias de autenticación.
 - Tests: `tests/workflows/test_w14_declared_features.py` (4). Suite: 920 pasados, 1 omitido.
+
+### 10.8 Aplicación de escritorio (`praxeon app`)
+
+Decisión de arquitectura: para uso personal y de un único usuario, PRAXEON pasa a ofrecerse **primero como aplicación de escritorio** y deja el servidor web como modo opcional de despliegue remoto. Primera versión con `pywebview` (migración posterior a Tauri/Electron para una versión de producción).
+
+- **`praxeon/desktop/app.py`:** arranca uvicorn en `127.0.0.1` con puerto libre, genera un **token aleatorio por ejecución** (`PRAXEON_API_KEY`) y un secreto JWT efímero, y abre la interfaz en una ventana nativa. El token viaja en el fragmento de la URL (`#token=…`), no llega al servidor ni a los logs; la interfaz lo guarda **solo en memoria** y lo borra de la URL (`web/src/services/api.js`). Ningún otro proceso o navegador puede usar la API aunque encuentre el puerto. Al cerrar, el servidor se detiene y se restauran las variables de entorno.
+- **Puntos de entrada:** `praxeon app` (subcomando), `praxeon-app` (script), `praxeon-app.bat`; `--browser` como alternativa sin pywebview, `--port`, `--debug`. Extra opcional `desktop` (`pywebview>=5.0`).
+- **Efecto sobre los hallazgos:** en este modo desaparecen, en la práctica, la API key en `localStorage`, las cookies/CSRF y los tickets del WebSocket (3.6/3.7) porque no hay login ni superficie de red. Siguen aplicando si se usa `praxeon-web` en remoto.
+- **Interfaz empaquetada:** `praxeon/server/static` se regeneró con la compilación actual de `web/`.
+- **Verificación:** 7 tests nuevos (`tests/test_desktop_app.py`: loopback, 401 sin token, 200 con token, token distinto por ejecución, token solo en fragmento, restauración del entorno); prueba manual: la ventana se abre (WebView2), `/` responde 200, `/v1/sessions` y `/metrics` 401 sin token, y el servidor se detiene al cerrar. Suite: 927 pasados, 1 omitido.
+- **Pendiente para la versión de producción (Tauri/Electron):** instalador firmado, icono y bandeja del sistema, notificaciones nativas ante aprobaciones pendientes (`WAITING_APPROVAL`), instancia única y arranque con el sistema.

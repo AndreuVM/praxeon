@@ -38,6 +38,9 @@ server = [
     "uvicorn>=0.30.0",
     "websockets>=12.0",
 ]
+desktop = [
+    "pywebview>=5.0",
+]
 decision-laya = [
     "laya>=0.3.0",
 ]
@@ -61,6 +64,7 @@ praxeon-live = "praxeon.live_agent:main"
 praxeon-dash = "praxeon.dashboard:main"
 praxeon-server = "praxeon.server.app:start"
 praxeon-web = "praxeon.server.app:launch_web"
+praxeon-app = "praxeon.desktop.app:main"
 praxeon-mcp = "praxeon.integrations.mcp.server:main"
 # Legacy aliases (deprecated, scheduled for removal in v2.0)
 jev-nav = "praxeon.legacy_cli:jev_nav_main"

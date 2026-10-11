@@ -36,6 +36,19 @@ python demo.py
 python scripts/run_benchmarks.py
 ```
 
+### 🖥️ Aplicación de escritorio
+
+```bash
+pip install -e ".[desktop]"     # añade pywebview (usa WebView2 en Windows)
+praxeon app                     # o doble clic en praxeon-app.bat
+```
+
+`praxeon app` arranca un servidor **solo en `127.0.0.1`** (puerto libre) protegido con un **token aleatorio por ejecución**
+que únicamente conoce la ventana, y abre la interfaz en una ventana nativa: sin login, sin puerto expuesto a la red y sin
+credenciales en el navegador. Si no tienes pywebview, `praxeon app --browser` abre el navegador por defecto con el mismo
+mecanismo. La interfaz compilada se genera con `cd web && npm ci && npm run build`. El modo servidor
+(`praxeon-web`) sigue disponible para despliegues remotos, con autenticación completa.
+
 ---
 
 ## 🤖 Agente Autónomo en Vivo: Modelos Locales y Nube (Multi-Provider)
