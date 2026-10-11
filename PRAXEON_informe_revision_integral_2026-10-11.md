@@ -310,3 +310,14 @@ Nuevo módulo `praxeon/workflows/supervised.py` (`SupervisedToolRunner`). Cada n
 - El modo simulación (`allow_simulation`) sigue siendo explícito y desactiva el runner.
 
 Tests: `test_task_runs_through_capability_chain`, `test_dangerous_command_is_blocked_by_policy`, `test_unknown_tool_needs_approval_and_still_fails_closed`.
+
+### 10.4 Robustez del motor y orquestación unificada (W-04, W-07, W-11, W-13)
+
+| ID | Estado | Cambio |
+| :--- | :---: | :--- |
+| W-04 | ✅ | `pause/resume/retry_node/backtrack_to_node/get_evaluation_context/check_scheduled_retries_and_timeouts` y toda la rama `WHILE` se ejecutan bajo el `RLock` del motor; un resultado que llega tras `cancel()` se descarta; el scheduler ya no toca el estado fuera del bloqueo |
+| W-07 | ✅ | `engine.tick()` (timeout global, reintentos, timeouts de nodo y respuestas de agentes) es común al scheduler y al puente interactivo. Nuevas rutas por ejecución, con un motor por ejecución y scheduler: `POST /v1/workflows/{id}/executions`, `GET /v1/workflows/executions/{eid}`, `POST …/cancel` y `POST …/nodes/{nid}/approve`. Usan la misma supervisión (`SupervisedToolRunner`) y la simulación solo si es explícita |
+| W-11 | ✅ | `WorkflowDefinition.lint_graph()` avisa de fan-in implícito OR sin `PARALLEL_JOIN`, `TASK` sin `tool_name` y `AGENT` sin `agent_id`; `POST /validate` devuelve `warnings` |
+| W-13 | ✅ | `backtrack_to_node` reinicia reintentos y temporizadores, poda los checkpoints posteriores y limpia `finished_at`; `retry_node` limpia `finished_at` |
+
+Tests: `tests/workflows/test_w07_unified_orchestration.py` (6). **Pendiente de workflows:** W-12 (verificar `approver_role`; hoy el RBAC de ruta exige `workflow:write`), W-14 (campos declarados sin implementar: `merge_policy="reduce"`, `default_edge`, `input_mapping/output_mapping`, rama `has_tool`).

@@ -73,14 +73,46 @@ class WorkflowService:
         wf = self.get_workflow(workflow_id)
         if not wf:
             return None
-        engine = WorkflowEngine(wf, agent_bus=self.agent_bus)
+        # Mismas garantías que la ruta interactiva: supervisión real y simulación solo si es explícita
+        simulate = self.editor_service.allow_simulation
+        engine = WorkflowEngine(
+            wf,
+            agent_bus=self.agent_bus,
+            allow_synthetic_fallback=simulate,
+            supervised_runner=None if simulate else self.editor_service.supervised_runner,
+        )
         engine.start(initial_variables=initial_variables)
         exec_snapshot = engine.get_execution()
         if self.persistence_store:
             self.persistence_store.save_workflow_execution(exec_snapshot)
         if register_in_scheduler:
             self.scheduler.register_engine(engine)
+            self.scheduler.start()  # idempotente: avanza, reintenta y aplica timeouts sin polling del cliente
         return exec_snapshot
+
+    def _active_engine(self, execution_id: str) -> Optional[WorkflowEngine]:
+        return self.scheduler.get_active_engines().get(execution_id)
+
+    def cancel_execution(self, execution_id: str, reason: str = "Cancelada por el operador") -> Optional[WorkflowExecution]:
+        """Cancela una ejecución activa (no altera una ya terminada)."""
+        engine = self._active_engine(execution_id)
+        if engine is None:
+            return self.get_execution(execution_id)
+        engine.cancel(reason)
+        snapshot = engine.get_execution()
+        self.save_execution(snapshot)
+        return snapshot
+
+    def approve_execution_node(
+        self, execution_id: str, node_id: str, approved: bool = True, comment: str = "", approver_id: str = "operator"
+    ) -> Optional[bool]:
+        """Aprueba o rechaza un nodo en espera de una ejecución activa. None si la ejecución no está activa."""
+        engine = self._active_engine(execution_id)
+        if engine is None:
+            return None
+        ok = engine.approve_node(node_id, approved=approved, comment=comment, approver_id=approver_id)
+        self.save_execution(engine.get_execution())
+        return ok
 
     def save_execution(self, execution: WorkflowExecution) -> None:
         if self.persistence_store:

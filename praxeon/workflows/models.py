@@ -360,6 +360,25 @@ class WorkflowDefinition(BaseModel):
 
         return errors
 
+    def lint_graph(self) -> List[str]:
+        """Avisos no bloqueantes sobre configuraciones probablemente erróneas (el grafo sigue siendo válido)."""
+        warnings: List[str] = []
+        for nid, node in self.nodes.items():
+            incoming = self.get_incoming_edges(nid)
+            if node.node_type == NodeType.TASK and not node.tool_name:
+                warnings.append(f"El nodo TASK '{nid}' no define 'tool_name'.")
+            if node.node_type == NodeType.AGENT and not node.agent_id:
+                warnings.append(f"El nodo AGENT '{nid}' no define 'agent_id'.")
+            if (
+                len(incoming) > 1
+                and node.node_type not in (NodeType.PARALLEL_JOIN, NodeType.WHILE, NodeType.END)
+            ):
+                warnings.append(
+                    f"El nodo '{nid}' tiene {len(incoming)} aristas entrantes sin PARALLEL_JOIN: se ejecutará "
+                    "cuando se cumpla CUALQUIERA de ellas (semántica OR), sin esperar a las demás."
+                )
+        return warnings
+
     def topological_sort(self) -> List[str]:
         """Calcula el orden topológico de ejecución respetando dependencias."""
         errors = self.validate_graph()

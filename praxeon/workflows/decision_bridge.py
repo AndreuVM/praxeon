@@ -194,6 +194,11 @@ class WorkflowDecisionBridge:
                 {"workflow_id": self.engine.workflow.workflow_id, "status": "started"},
             )
 
+        # Reintentos, timeouts y respuestas de agentes: mismo mantenimiento que el scheduler
+        self.engine.tick()
+        if self.engine.context.status in (WorkflowStatus.FAILED, WorkflowStatus.CANCELLED):
+            return None
+
         next_nid = self.engine.find_next_ready_node()
         if not next_nid:
             end_nodes = self.engine.workflow.get_end_nodes()

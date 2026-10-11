@@ -125,22 +125,13 @@ class WorkflowScheduler:
                     self._engines.pop(exec_id, None)
                 continue
 
-            # 2. Comprobar timeout global del workflow si está definido
-            timeout_sec = getattr(engine.workflow, "timeout_seconds", None)
-            if timeout_sec and ctx.started_at:
-                elapsed = (now - ctx.started_at).total_seconds()
-                if elapsed >= timeout_sec:
-                    ctx.status = WorkflowStatus.FAILED
-                    ctx.error_message = f"Timeout global de workflow ({timeout_sec}s) excedido."
-                    ctx.finished_at = now
-                    for nid, st in ctx.node_states.items():
-                        if st in (NodeStatus.RUNNING, NodeStatus.WAITING_RESULT, NodeStatus.READY, NodeStatus.PENDING):
-                            ctx.node_states[nid] = NodeStatus.TIMEOUT
-                    self._persist_execution_safe(engine)
-                    report["timed_out_workflows"].append(exec_id)
-                    with self._lock:
-                        self._engines.pop(exec_id, None)
-                    continue
+            # 2. Timeout global del workflow (lo aplica el propio motor, bajo su bloqueo)
+            if engine.check_global_timeout(current_time=now):
+                self._persist_execution_safe(engine)
+                report["timed_out_workflows"].append(exec_id)
+                with self._lock:
+                    self._engines.pop(exec_id, None)
+                continue
 
             # 3. Comprobar reintentos y timeouts a nivel de nodo
             eval_res = engine.check_scheduled_retries_and_timeouts(current_time=now)

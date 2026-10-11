@@ -16,6 +16,7 @@ from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone, timedelta
 from enum import Enum
+import functools
 import threading
 import time
 from typing import Any, Callable, Dict, List, Optional, Set
@@ -43,6 +44,15 @@ from praxeon.workflows.semantics import (
     parse_condition,
 )
 
+
+
+def _synchronized(method):
+    """Ejecuta el método bajo el RLock del motor (las mutaciones de estado nunca son concurrentes)."""
+    @functools.wraps(method)
+    def wrapper(self, *args, **kwargs):
+        with self._lock:
+            return method(self, *args, **kwargs)
+    return wrapper
 
 
 class ExecutionCheckpoint(BaseModel):
@@ -239,11 +249,13 @@ class WorkflowEngine:
         self.context.create_checkpoint(current_node_id=start_node.node_id)
         return self.context
 
+    @_synchronized
     def pause(self) -> None:
         """Pausa temporalmente el workflow."""
         if self.context.status == WorkflowStatus.RUNNING:
             self.context.status = WorkflowStatus.PAUSED
 
+    @_synchronized
     def resume(self) -> WorkflowExecutionContext:
         """Reanuda la ejecución de un workflow pausado."""
         if self.context.status == WorkflowStatus.PAUSED:
@@ -265,6 +277,7 @@ class WorkflowEngine:
             if st in (NodeStatus.PENDING, NodeStatus.READY, NodeStatus.RUNNING):
                 self.context.node_states[nid] = NodeStatus.CANCELLED
 
+    @_synchronized
     def get_evaluation_context(self, upstream_node_id: Optional[str] = None) -> EvaluationContext:
         """Construye un EvaluationContext formal y estructurado con namespaces aislados."""
         last_res = self.context.node_outputs.get(upstream_node_id) if upstream_node_id else None
@@ -603,83 +616,84 @@ class WorkflowEngine:
 
 
             elif node.node_type == NodeType.WHILE:
-                ctrl = node.control_config or node.metadata.get("control_config", {})
-                max_iter = ctrl.get("max_iterations") or node.metadata.get("max_iterations", 10)
-                on_limit = (ctrl.get("on_limit") or "ABORT").upper()
-                body_entry = ctrl.get("body_entry")
-                exit_target = ctrl.get("exit_target")
+                with self._lock:
+                    ctrl = node.control_config or node.metadata.get("control_config", {})
+                    max_iter = ctrl.get("max_iterations") or node.metadata.get("max_iterations", 10)
+                    on_limit = (ctrl.get("on_limit") or "ABORT").upper()
+                    body_entry = ctrl.get("body_entry")
+                    exit_target = ctrl.get("exit_target")
 
-                loops_state = self.context.variables.setdefault("_loops", {})
-                current_loop = loops_state.setdefault(node_id, {"iteration": 0, "started_at": now.isoformat()})
-                current_iter = current_loop["iteration"]
+                    loops_state = self.context.variables.setdefault("_loops", {})
+                    current_loop = loops_state.setdefault(node_id, {"iteration": 0, "started_at": now.isoformat()})
+                    current_iter = current_loop["iteration"]
 
-                self.context.variables["_active_loop"] = {
-                    "node_id": node_id,
-                    "iteration": current_iter,
-                    "max_iterations": max_iter,
-                }
-
-                eval_ctx = self.get_evaluation_context(upstream_node_id=node_id)
-                condition_spec = ctrl.get("condition")
-                loop_matched = True
-
-                if condition_spec is not None:
-                    parsed_cond = parse_condition(condition_spec)
-                    if parsed_cond:
-                        loop_matched = parsed_cond.evaluate(eval_ctx)
-                    else:
-                        loop_matched = False
-                else:
-                    # Sin condición, el bucle solo termina al agotar el límite (acción on_limit)
-                    loop_matched = True
-
-                # El límite solo actúa si la condición pide seguir iterando: un bucle cuya condición
-                # ya es falsa termina de forma natural aunque haya agotado sus iteraciones.
-                if current_iter >= max_iter and loop_matched:
-                    if on_limit == "ABORT":
-                        raise RuntimeError(f"Límite de iteraciones alcanzado en bucle WHILE '{node_id}' ({max_iter} iteraciones).")
-                    elif on_limit == "ESCALATE":
-                        with self._lock:
-                            self.context.node_states[node_id] = NodeStatus.WAITING_APPROVAL
-                            self.context.node_outputs[node_id] = {
-                                "status": "escalated_on_limit",
-                                "iteration": current_iter,
-                                "max_iterations": max_iter,
-                                "branch_taken": "escalate",
-                            }
-                        return True
-                    else:
-                        loop_matched = False
-
-                if loop_matched:
-                    current_loop["iteration"] = current_iter + 1
-                    self.context.variables["_active_loop"]["iteration"] = current_iter + 1
-                    branch_taken = body_entry or "body"
-
-                    # Resetear nodos del cuerpo del bucle para la nueva iteración
-                    self._reset_loop_body_nodes(node_id, exit_target=exit_target)
-
-                    output = {
-                        "iteration": current_iter + 1,
-                        "max_iterations": max_iter,
-                        "condition_matched": True,
-                        "branch_taken": branch_taken,
-                        "action": "repeat_body",
-                        "decision": "CONTINUE",
-                        "status": "looping",
-                    }
-                else:
-                    branch_taken = exit_target or "exit"
-                    self.context.variables.pop("_active_loop", None)
-                    output = {
+                    self.context.variables["_active_loop"] = {
+                        "node_id": node_id,
                         "iteration": current_iter,
                         "max_iterations": max_iter,
-                        "condition_matched": False,
-                        "branch_taken": branch_taken,
-                        "action": "exit_loop",
-                        "decision": "EXIT",
-                        "status": "completed",
                     }
+
+                    eval_ctx = self.get_evaluation_context(upstream_node_id=node_id)
+                    condition_spec = ctrl.get("condition")
+                    loop_matched = True
+
+                    if condition_spec is not None:
+                        parsed_cond = parse_condition(condition_spec)
+                        if parsed_cond:
+                            loop_matched = parsed_cond.evaluate(eval_ctx)
+                        else:
+                            loop_matched = False
+                    else:
+                        # Sin condición, el bucle solo termina al agotar el límite (acción on_limit)
+                        loop_matched = True
+
+                    # El límite solo actúa si la condición pide seguir iterando: un bucle cuya condición
+                    # ya es falsa termina de forma natural aunque haya agotado sus iteraciones.
+                    if current_iter >= max_iter and loop_matched:
+                        if on_limit == "ABORT":
+                            raise RuntimeError(f"Límite de iteraciones alcanzado en bucle WHILE '{node_id}' ({max_iter} iteraciones).")
+                        elif on_limit == "ESCALATE":
+                            with self._lock:
+                                self.context.node_states[node_id] = NodeStatus.WAITING_APPROVAL
+                                self.context.node_outputs[node_id] = {
+                                    "status": "escalated_on_limit",
+                                    "iteration": current_iter,
+                                    "max_iterations": max_iter,
+                                    "branch_taken": "escalate",
+                                }
+                            return True
+                        else:
+                            loop_matched = False
+
+                    if loop_matched:
+                        current_loop["iteration"] = current_iter + 1
+                        self.context.variables["_active_loop"]["iteration"] = current_iter + 1
+                        branch_taken = body_entry or "body"
+
+                        # Resetear nodos del cuerpo del bucle para la nueva iteración
+                        self._reset_loop_body_nodes(node_id, exit_target=exit_target)
+
+                        output = {
+                            "iteration": current_iter + 1,
+                            "max_iterations": max_iter,
+                            "condition_matched": True,
+                            "branch_taken": branch_taken,
+                            "action": "repeat_body",
+                            "decision": "CONTINUE",
+                            "status": "looping",
+                        }
+                    else:
+                        branch_taken = exit_target or "exit"
+                        self.context.variables.pop("_active_loop", None)
+                        output = {
+                            "iteration": current_iter,
+                            "max_iterations": max_iter,
+                            "condition_matched": False,
+                            "branch_taken": branch_taken,
+                            "action": "exit_loop",
+                            "decision": "EXIT",
+                            "status": "completed",
+                        }
 
             elif node.node_type == NodeType.DELEGATE:
                 ctrl = node.control_config or node.metadata.get("control_config", {})
@@ -790,6 +804,8 @@ class WorkflowEngine:
 
         # 3. Actualizar estado y salidas del nodo
         with self._lock:
+            if self.context.status == WorkflowStatus.CANCELLED:
+                return False  # cancelado mientras el nodo se ejecutaba: el resultado se descarta
             if success:
                 self.context.node_states[node_id] = NodeStatus.COMPLETED
                 self.context.node_outputs[node_id] = output
@@ -1107,6 +1123,35 @@ class WorkflowEngine:
         """Permite inyectar o procesar directamente la respuesta de un agente para un nodo en espera."""
         return self._apply_agent_response(msg)
 
+    @_synchronized
+    def check_global_timeout(self, current_time: Optional[datetime] = None) -> bool:
+        """Aplica el timeout global del workflow. Devuelve True si la ejecución expiró."""
+        timeout_sec = getattr(self.workflow, "timeout_seconds", None)
+        ctx = self.context
+        if not timeout_sec or not ctx.started_at or ctx.status not in (WorkflowStatus.RUNNING, WorkflowStatus.PAUSED):
+            return False
+        now = current_time or datetime.now(timezone.utc)
+        if now.tzinfo is None:
+            now = now.replace(tzinfo=timezone.utc)
+        if (now - ctx.started_at).total_seconds() < timeout_sec:
+            return False
+        ctx.status = WorkflowStatus.FAILED
+        ctx.error_message = f"Timeout global de workflow ({timeout_sec}s) excedido."
+        ctx.finished_at = now
+        for nid, st in ctx.node_states.items():
+            if st in (NodeStatus.RUNNING, NodeStatus.WAITING_RESULT, NodeStatus.READY, NodeStatus.PENDING):
+                ctx.node_states[nid] = NodeStatus.TIMEOUT
+        return True
+
+    def tick(self, current_time: Optional[datetime] = None) -> Dict[str, Any]:
+        """Mantenimiento común a todos los orquestadores: timeout global, reintentos, timeouts de nodo y respuestas de agentes."""
+        if self.check_global_timeout(current_time=current_time):
+            return {"timed_out_workflow": True, "ready_from_retry": [], "timed_out": [], "agent_resolved": []}
+        res = self.check_scheduled_retries_and_timeouts(current_time=current_time)
+        resolved = self._check_agent_responses() if self.context.status == WorkflowStatus.RUNNING else []
+        return {"timed_out_workflow": False, **res, "agent_resolved": resolved}
+
+    @_synchronized
     def check_scheduled_retries_and_timeouts(
         self,
         current_time: Optional[datetime] = None,
@@ -1306,6 +1351,7 @@ class WorkflowEngine:
 
         return self.context
 
+    @_synchronized
     def retry_node(self, node_id: str) -> bool:
         """Reinicia manualmente un nodo fallido, cancelado o en timeout para reintentar su ejecución."""
         if node_id not in self.workflow.nodes:
@@ -1318,9 +1364,11 @@ class WorkflowEngine:
             if self.context.status in (WorkflowStatus.FAILED, WorkflowStatus.CANCELLED):
                 self.context.status = WorkflowStatus.RUNNING
                 self.context.error_message = None
+                self.context.finished_at = None
             return True
         return False
 
+    @_synchronized
     def backtrack_to_node(self, target_node_id: str) -> bool:
         """Ejecuta un retroceso determinista (backtrack) al estado inmediatamente anterior al nodo especificado.
         
@@ -1342,10 +1390,18 @@ class WorkflowEngine:
                 return False
             target_ckpt = self.context.checkpoints[0]
 
-        # Restaurar estado
+        # Restaurar estado (el rollback es solo de estado: las acciones ya ejecutadas no se compensan)
         self.context.restore_checkpoint(target_ckpt)
         self.context.node_states[target_node_id] = NodeStatus.READY
         self.context.status = WorkflowStatus.RUNNING
+        self.context.finished_at = None
+        # Los checkpoints posteriores al punto de restauración dejan de ser válidos
+        idx = self.context.checkpoints.index(target_ckpt)
+        del self.context.checkpoints[idx + 1:]
+        # Contadores de reintento y temporizadores ligados al tramo descartado
+        self.context.node_retries = {nid: 0 for nid in self.workflow.nodes}
+        self.context.node_started_at.clear()
+        self.context.node_retry_after.clear()
 
         # Limpiar descendientes en el grafo
         visited: Set[str] = set()

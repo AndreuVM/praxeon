@@ -81,6 +81,10 @@ class UpdateEdgeRequest(BaseModel):
     condition: Optional[EdgeCondition] = None
 
 
+class StartExecutionRequest(BaseModel):
+    variables: Dict[str, Any] = Field(default_factory=dict)
+
+
 class BacktrackRequest(BaseModel):
     target_node_id: str
 
@@ -240,7 +244,7 @@ def validate_workflow(workflow_id: str):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workflow no encontrado.")
     errors = wf.validate_graph()
     order = wf.topological_sort() if not errors else []
-    return APIResponse(data={"is_valid": len(errors) == 0, "errors": errors, "topological_order": order})
+    return APIResponse(data={"is_valid": len(errors) == 0, "errors": errors, "warnings": wf.lint_graph(), "topological_order": order})
 
 
 @router.post("/{workflow_id}/execute", response_model=APIResponse[Dict[str, Any]])
@@ -298,6 +302,51 @@ def approve_workflow_node(workflow_id: str, node_id: str, payload: ApproveNodeRe
         return APIResponse(data=res)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+
+def _workflow_service():
+    from praxeon.server.dependencies import get_runtime_service
+    return get_runtime_service().get_workflow_service()
+
+
+@router.post("/{workflow_id}/executions", response_model=APIResponse[Dict[str, Any]])
+def start_execution(workflow_id: str, payload: Optional[StartExecutionRequest] = None):
+    """Inicia una ejecución independiente (un motor por ejecución) gestionada por el scheduler."""
+    execution = _workflow_service().run_workflow_execution(
+        workflow_id, initial_variables=(payload.variables if payload else None)
+    )
+    if execution is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Workflow '{workflow_id}' no encontrado.")
+    return APIResponse(data=execution.to_dict())
+
+
+@router.get("/executions/{execution_id}", response_model=APIResponse[Dict[str, Any]])
+def get_execution(execution_id: str):
+    """Estado actual (o final persistido) de una ejecución."""
+    svc = _workflow_service()
+    engine = svc.scheduler.get_active_engines().get(execution_id)
+    execution = engine.get_execution() if engine else svc.get_execution(execution_id)
+    if execution is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ejecución no encontrada.")
+    return APIResponse(data=execution.to_dict())
+
+
+@router.post("/executions/{execution_id}/cancel", response_model=APIResponse[Dict[str, Any]])
+def cancel_execution(execution_id: str):
+    """Cancela una ejecución activa."""
+    execution = _workflow_service().cancel_execution(execution_id)
+    if execution is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ejecución no encontrada.")
+    return APIResponse(data=execution.to_dict())
+
+
+@router.post("/executions/{execution_id}/nodes/{node_id}/approve", response_model=APIResponse[Dict[str, Any]])
+def approve_execution_node(execution_id: str, node_id: str, payload: ApproveNodeRequest):
+    """Aprueba o rechaza un nodo en espera de una ejecución activa."""
+    ok = _workflow_service().approve_execution_node(execution_id, node_id, payload.approved, payload.comment)
+    if ok is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ejecución no activa.")
+    return APIResponse(data={"success": ok, "execution_id": execution_id, "node_id": node_id})
 
 
 @router.get("/templates/canonical", response_model=APIResponse[List[Dict[str, Any]]])
