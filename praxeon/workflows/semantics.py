@@ -346,7 +346,7 @@ class ControlConfig(BaseModel):
     condition: Optional[Union[CompoundCondition, AtomicCondition, Dict[str, Any]]] = None
     true_edge: Optional[str] = Field(default=None, description="ID o destino de arista cuando condition == True")
     false_edge: Optional[str] = Field(default=None, description="ID o destino de arista cuando condition == False")
-    default_edge: Optional[str] = Field(default=None, description="ID o destino de arista por defecto si no coincide")
+    default_edge: Optional[str] = Field(default=None, description="Rama a tomar cuando la condición no se cumple y no hay false_edge")
     on_error: Optional[str] = Field(default=None, description="ID o destino de arista ante error o campo ausente")
 
     # 2. Configuración para WHILE / LOOP acotado
@@ -367,5 +367,5 @@ class ControlConfig(BaseModel):
 
     # 5. Configuración para HUMAN_APPROVAL
     prompt: Optional[str] = Field(default=None, description="Mensaje explicativo para el supervisor humano")
-    approver_role: Optional[str] = Field(default=None, description="Rol requerido para autorizar la continuación")
+    approver_role: Optional[str] = Field(default=None, description="Rol sugerido para autorizar (informativo: no se verifica; el aprobador queda registrado en la salida)")
     reject_target: Optional[str] = Field(default=None, description="Nodo de destino en caso de rechazo")

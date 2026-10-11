@@ -1,10 +1,11 @@
 """Rutas REST para el Editor Visual y Motor de Orquestación de Workflows (praxeon/server/routes/workflows.py) (F6-04)."""
 
 from typing import Any, Dict, List, Optional
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
+from praxeon.server.dependencies import get_current_tenant
 from praxeon.server.schemas.common import APIResponse
 from praxeon.workflows.editor_service import WorkflowEditorService
 from praxeon.workflows.models import (
@@ -288,7 +289,12 @@ def reset_workflow(workflow_id: str):
 
 
 @router.post("/{workflow_id}/nodes/{node_id}/approve", response_model=APIResponse[Dict[str, Any]])
-def approve_workflow_node(workflow_id: str, node_id: str, payload: ApproveNodeRequest):
+def approve_workflow_node(
+    workflow_id: str,
+    node_id: str,
+    payload: ApproveNodeRequest,
+    tenant=Depends(get_current_tenant),
+):
     """Aprueba o rechaza la ejecución de un nodo en estado WAITING_APPROVAL."""
     service = get_workflow_editor_service()
     try:
@@ -297,6 +303,7 @@ def approve_workflow_node(workflow_id: str, node_id: str, payload: ApproveNodeRe
             node_id=node_id,
             approved=payload.approved,
             comment=payload.comment,
+            approver_id=tenant.user_id,
         )
         return APIResponse(data=res)
     except ValueError as exc:
@@ -340,9 +347,16 @@ def cancel_execution(execution_id: str):
 
 
 @router.post("/executions/{execution_id}/nodes/{node_id}/approve", response_model=APIResponse[Dict[str, Any]])
-def approve_execution_node(execution_id: str, node_id: str, payload: ApproveNodeRequest):
+def approve_execution_node(
+    execution_id: str,
+    node_id: str,
+    payload: ApproveNodeRequest,
+    tenant=Depends(get_current_tenant),
+):
     """Aprueba o rechaza un nodo en espera de una ejecución activa."""
-    ok = _workflow_service().approve_execution_node(execution_id, node_id, payload.approved, payload.comment)
+    ok = _workflow_service().approve_execution_node(
+        execution_id, node_id, payload.approved, payload.comment, approver_id=tenant.user_id
+    )
     if ok is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ejecución no activa.")
     return APIResponse(data={"success": ok, "execution_id": execution_id, "node_id": node_id})

@@ -38,6 +38,20 @@ from praxeon.workflows.semantics import (
 
 
 
+def _deep_merge(base: Dict[str, Any], extra: Dict[str, Any]) -> Dict[str, Any]:
+    """Fusión profunda para merge_policy='reduce': dicts recursivos, listas concatenadas, escalares: gana el último."""
+    result = dict(base)
+    for key, value in extra.items():
+        current = result.get(key)
+        if isinstance(current, dict) and isinstance(value, dict):
+            result[key] = _deep_merge(current, value)
+        elif isinstance(current, list) and isinstance(value, list):
+            result[key] = current + value
+        else:
+            result[key] = value
+    return result
+
+
 def _synchronized(method):
     """Ejecuta el método bajo el RLock del motor (las mutaciones de estado nunca son concurrentes)."""
     @functools.wraps(method)
@@ -469,6 +483,10 @@ class WorkflowEngine:
                     resolved_inputs[f"upstream_{up_id}"] = self.context.node_outputs[up_id]
                     resolved_inputs.update(self.context.node_outputs[up_id])
             resolved_inputs.update(node.inputs)
+            if node.input_mapping:
+                eval_ctx = self.get_evaluation_context()
+                for local_name, source_path in node.input_mapping.items():
+                    resolved_inputs[local_name] = eval_ctx.resolve_field(source_path)
 
         output: Dict[str, Any] = {}
         success = True
@@ -500,12 +518,6 @@ class WorkflowEngine:
                         tool_name=node.tool_name,
                         arguments={**node.inputs, **{k: v for k, v in resolved_inputs.items() if k in ("command", "cmd", "path", "content")}},
                     )
-                elif self.tool_registry and node.tool_name and hasattr(self.tool_registry, "has_tool") and self.tool_registry.has_tool(node.tool_name):
-                    tool_spec = self.tool_registry.get_tool(node.tool_name)
-                    if hasattr(tool_spec, "handler") and callable(tool_spec.handler):
-                        output = tool_spec.handler(resolved_inputs)
-                    else:
-                        output = {"tool": node.tool_name, "executed": True, "inputs": resolved_inputs}
                 elif self.allow_synthetic_fallback:
                     output = {
                         "task_result": f"Executed {handler_key}",
@@ -582,7 +594,7 @@ class WorkflowEngine:
                         if matched:
                             branch_taken = ctrl.get("true_edge") or "true"
                         else:
-                            branch_taken = ctrl.get("false_edge") or "false"
+                            branch_taken = ctrl.get("false_edge") or ctrl.get("default_edge") or "false"
                 else:
                     # Si no hay condición explícita en control_config, evaluar aristas salientes
                     outgoing = self.workflow.get_outgoing_edges(node_id)
@@ -769,6 +781,9 @@ class WorkflowEngine:
                 if merge_policy == "namespace":
                     for edge in incoming_edges:
                         merged[edge.from_node] = self.context.node_outputs.get(edge.from_node, {})
+                elif merge_policy == "reduce":
+                    for edge in incoming_edges:
+                        merged = _deep_merge(merged, self.context.node_outputs.get(edge.from_node, {}))
                 else:
                     for edge in incoming_edges:
                         merged.update(self.context.node_outputs.get(edge.from_node, {}))
@@ -803,6 +818,9 @@ class WorkflowEngine:
                 self.context.node_outputs[node_id] = output
                 self.context.execution_history.append(node_id)
                 self.context.node_retry_after.pop(node_id, None)
+                if node.output_mapping:
+                    for var_name, out_path in node.output_mapping.items():
+                        self.context.variables[var_name] = EvaluationContext._navigate(output, out_path.split("."))
 
                 # Si una arista saliente apunta a un bucle WHILE, reactivar el nodo WHILE para la siguiente iteración
                 for out_edge in self.workflow.get_outgoing_edges(node_id):

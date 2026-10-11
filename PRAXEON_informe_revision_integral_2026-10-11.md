@@ -336,3 +336,10 @@ Eliminados 309 imports sin usar (F401) en 96 ficheros de `praxeon/` (excluidos l
 - `pytest-cov` y `ruff` añadidos al extra `dev`; `uv.lock` regenerado.
 
 **No incluido a propósito:** `mypy` (la base de código no está anotada de forma uniforme; activarlo ahora produciría cientos de errores sin valor) y las reglas `S110` (≈44 `try/except/pass`) y `B008` (falsos positivos de `Depends` en FastAPI). Candidatas a una segunda fase.
+
+### 10.7 W-14, aprobador y división de `dependencies.py`
+
+- **W-14 implementado/depurado:** `input_mapping` y `output_mapping` de los nodos funcionan (`variables.x`, `outputs.nodo.clave` → entrada local; clave con puntos de la salida → variable global); `merge_policy="reduce"` hace fusión profunda (dicts recursivos, listas concatenadas); `default_edge` se usa cuando la condición no se cumple y no hay `false_edge`. Se **eliminó** la rama muerta de `tool_registry.has_tool` que devolvía `{"executed": True}` sin ejecutar nada (éxito falso). `approver_role` queda documentado como informativo.
+- **W-12:** las rutas de aprobación registran el usuario autenticado (`approved_by`) en lugar de un valor fijo.
+- **`server/dependencies.py`: 3.225 → 1.037 líneas.** `RuntimeApplicationService` se compone ahora de dos mixins en `praxeon/server/runtime_service/`: `DecisionPipelineMixin` (propuesta, inspección, confirmación y ejecución de decisiones) y `MissionRuntimeMixin` (misiones, checkpoints, rollback y worker). API pública y MRO sin cambios; los nombres de `dependencies` siguen importables (verificado con el comprobador de imports). Siguen en `dependencies.py` el constructor, las sesiones, los proveedores y las dependencias de autenticación.
+- Tests: `tests/workflows/test_w14_declared_features.py` (4). Suite: 920 pasados, 1 omitido.
