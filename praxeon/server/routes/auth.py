@@ -14,7 +14,6 @@ from pydantic import BaseModel, Field
 from praxeon.server.dependencies import get_auth_service, get_current_tenant, is_auth_required
 from praxeon.server.services.auth_service import (
     AuthService,
-    Permission,
     Role,
     TenantContext,
     TokenPair,

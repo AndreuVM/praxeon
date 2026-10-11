@@ -17,16 +17,14 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 import uuid
 
 from praxeon.agents.bus import AgentMessageBus
-from praxeon.agents.definition import AgentDefinition, AgentStatus
 from praxeon.agents.registry import AgentRegistry
 from praxeon.agents.templates import AgentTemplateCatalog
 from praxeon.context.entities import ContextItem
 from praxeon.context.fragments import FragmentType
 from praxeon.context.manager import ContextManager
-from praxeon.domain.assessment import RiskLevel
 from praxeon.routing.classifier import TaskClassifier
 from praxeon.routing.escalation import DynamicEscalationEngine, EscalationContext, EscalationTriggerType
-from praxeon.routing.models import RoutingDecision, RoutingStrategyType, TaskRequirement
+from praxeon.routing.models import RoutingStrategyType
 from praxeon.routing.router import AgentRouter
 from praxeon.runtime.adaptive.models import (
     AdaptiveExecutionSummary,
@@ -38,7 +36,6 @@ from praxeon.runtime.adaptive.models import (
 from praxeon.runtime.adaptive.step_dispatcher import StepLevelAdaptiveDispatcher
 from praxeon.runtime.adaptive.trajectory_controller import TrajectoryController
 from praxeon.runtime.event_bus import EventStore
-from praxeon.workflows.models import WorkflowDefinition
 
 
 class AdaptiveAgentRuntime:

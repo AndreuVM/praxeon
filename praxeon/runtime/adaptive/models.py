@@ -11,7 +11,6 @@ Especifica las estructuras inmutables para el ciclo adaptativo de ejecución:
 from datetime import datetime, timezone
 from enum import Enum
 import hashlib
-import json
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, ConfigDict, Field
 

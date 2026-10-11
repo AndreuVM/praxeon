@@ -1,7 +1,7 @@
 """Esquemas base y respuestas comunes para la API REST de PRAXEON 1.0."""
 
 from datetime import datetime, timezone
-from typing import Any, Dict, Generic, List, Optional, TypeVar
+from typing import Any, Dict, Generic, Optional, TypeVar
 from pydantic import BaseModel, ConfigDict, Field
 
 T = TypeVar("T")

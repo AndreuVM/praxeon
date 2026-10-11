@@ -7,7 +7,7 @@ y la secuencia monótona por sesión para streaming y replay determinista.
 
 from datetime import date, datetime, timezone
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 import uuid
 from pydantic import BaseModel, ConfigDict, Field
 

@@ -10,7 +10,7 @@ Garantiza la prevención de:
 from enum import Enum
 import ipaddress
 import re
-from typing import List, Optional, Set, Tuple
+from typing import Optional, Set, Tuple
 from urllib.parse import urlparse
 from pydantic import BaseModel, ConfigDict, Field
 

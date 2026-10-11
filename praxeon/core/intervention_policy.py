@@ -5,7 +5,7 @@ Desacopla formalmente dos capas:
 2. InterventionPlanner: Formula las directivas discursivas, inyecciones de contexto XML y sugerencias de rescate.
 """
 
-from typing import List, Optional
+from typing import Optional
 from praxeon.config import PraxeonConfig, default_config
 from praxeon.core.state_graph import StateGraph
 from praxeon.domain.models import DecisionStatus, PolicyDecision

@@ -10,11 +10,11 @@ Implementa las defensas de seguridad y control de ejecución entre agentes:
 
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 from praxeon.agents.definition import AgentDefinition, AgentStatus
-from praxeon.agents.protocol import AgentMessage, MessagePriority, MessageType
+from praxeon.agents.protocol import AgentMessage, MessageType
 from praxeon.agents.registry import AgentRegistry
 from praxeon.domain.models import RiskLevel
 

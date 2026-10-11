@@ -8,9 +8,7 @@ Implementa la asignación determinista y semántica de tareas hacia agentes espe
     * Registro histórico auditable de decisiones de ruteo con scores de confianza.
 """
 
-from datetime import datetime, timezone
 import logging
-import time
 from typing import Any, Callable, Dict, List, Optional, Tuple
 import uuid
 
@@ -18,7 +16,7 @@ logger = logging.getLogger("praxeon.routing.router")
 
 from praxeon.agents.bus import AgentMessageBus
 from praxeon.agents.definition import AgentDefinition, AgentStatus
-from praxeon.agents.protocol import AgentMessage, MessagePriority, MessageType
+from praxeon.agents.protocol import AgentMessage, MessageType
 from praxeon.agents.registry import AgentRegistry
 from praxeon.config import PraxeonConfig
 from praxeon.domain.assessment import RiskLevel

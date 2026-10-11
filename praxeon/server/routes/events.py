@@ -1,7 +1,6 @@
 """Rutas REST para consulta paginada del stream de eventos (praxeon/server/routes/events.py)."""
 
-from typing import Any, Dict, List
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Query
 
 from praxeon.server.dependencies import RuntimeApplicationService, get_runtime_service
 from praxeon.server.schemas.common import APIResponse

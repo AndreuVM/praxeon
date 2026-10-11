@@ -5,9 +5,9 @@ sino analizando sus argumentos, rutas de destino y patrones de comandos.
 """
 
 import re
-from typing import Dict, List, Optional, Set
+from typing import Optional
 from praxeon.domain.models import ActionCandidate, RiskAssessment, RiskLevel
-from praxeon.policy.risk import ToolRegistry, ToolSpec
+from praxeon.policy.risk import ToolRegistry
 
 
 class RiskEngine:

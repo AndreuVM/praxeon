@@ -7,9 +7,9 @@ de responsabilidad única:
 3. MissionRunner: Orquestación del ciclo de vida de la sesión (pausa, reanudación, retardo y terminación).
 """
 
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Protocol, Tuple
+from typing import Any, Dict, List, Protocol
 
 
 @dataclass(frozen=True)

@@ -8,7 +8,7 @@ Resuelve los hallazgos críticos de la auditoría:
 """
 
 import json
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from praxeon.config import PraxeonConfig, default_config
 from praxeon.core.intervention_policy import InterventionPolicy
@@ -17,15 +17,12 @@ from praxeon.core.state_graph import StateGraph
 from praxeon.domain.events import EventType
 from praxeon.domain.models import (
     ActionCandidate as DomainAction,
-    DecisionReceipt,
     DecisionStatus,
     Goal,
     ToolCall,
-    compute_action_hash,
     sign_receipt,
 )
 from praxeon.models.schema import (
-    ActionCandidate,
     BatchSemantics,
     ChunkEvaluationResult,
     InterventionDirective,
@@ -39,7 +36,7 @@ from praxeon.models.schema import (
 from praxeon.policy.engine import PolicyEngine
 from praxeon.policy.registry import ToolRegistry
 from praxeon.reasoning.completion import CompletionVerifier
-from praxeon.runtime.executor import PolicyViolation, SecureExecutor, ToolObservation
+from praxeon.runtime.executor import SecureExecutor, ToolObservation
 from praxeon.runtime.state import SessionState
 
 

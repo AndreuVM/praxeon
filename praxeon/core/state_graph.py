@@ -1,10 +1,10 @@
 """Grafo dirigido de estados cognitivos (Trajectory DAG) implementado con NetworkX."""
 
-from typing import Any, Dict, List, Optional
+from typing import Any, List, Optional
 import networkx as nx
 
 from praxeon.config import PraxeonConfig, default_config
-from praxeon.models.schema import Step, StepType, Trajectory
+from praxeon.models.schema import Step, Trajectory
 
 
 class StateGraph:

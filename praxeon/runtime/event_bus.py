@@ -13,11 +13,9 @@ from datetime import datetime, timezone
 import json
 
 import os
-from pathlib import Path
 import sqlite3
 import threading
 from typing import Any, Callable, Dict, List, Optional, Set
-import uuid
 
 from praxeon.domain.events import EventType, RuntimeEvent, make_event
 

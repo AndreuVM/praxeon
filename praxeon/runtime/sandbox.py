@@ -20,8 +20,8 @@ import sys
 import threading
 import time
 from typing import Any, Dict, List, Optional, Set, Tuple
-from pydantic import BaseModel, ConfigDict, Field
-from praxeon.policy.egress import EgressMode, EgressPolicy, EgressViolation
+from pydantic import BaseModel, ConfigDict
+from praxeon.policy.egress import EgressMode, EgressPolicy
 
 
 class SandboxTier(str, Enum):

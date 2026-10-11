@@ -6,7 +6,7 @@ verifica la solidez fáctica e invalida evidencias obsoletas cuando ocurren muta
 
 import hashlib
 import time
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 import uuid
 
 from praxeon.domain.interfaces import EvidenceProvider

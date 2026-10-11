@@ -8,7 +8,7 @@ Implementa el principio 'Semántica != Autoridad':
 - Valida la conformidad de la acción física antes de permitir su ejecución por el runtime.
 """
 
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from praxeon.agents.definition import AgentDefinition
 from praxeon.context.fingerprint import ContextFingerprint

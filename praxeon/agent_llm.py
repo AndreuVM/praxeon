@@ -9,12 +9,11 @@ from abc import ABC, abstractmethod
 import json
 import os
 from pathlib import Path
-import re
 import shutil
 import subprocess
 import sys
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 import urllib.error
 import urllib.parse
 import urllib.request

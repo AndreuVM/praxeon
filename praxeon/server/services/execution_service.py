@@ -6,8 +6,7 @@ Centraliza:
 - Generación y verificación de diffs y parches unificados.
 """
 
-import os
-from typing import Any, Dict, Optional
+from typing import Optional
 
 from praxeon.domain.models import ActionCandidate
 from praxeon.runtime.sandbox import (

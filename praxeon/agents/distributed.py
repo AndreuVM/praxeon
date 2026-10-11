@@ -11,16 +11,13 @@ Implementa la Fase 7 del Roadmap de PRAXEON:
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
 from enum import Enum
-import json
 import time
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple
-import uuid
+from typing import Any, Dict, List, Optional, Tuple
 from pydantic import BaseModel, ConfigDict, Field
 
 from praxeon.agents.bus import AgentMessageBus, TopologyType
-from praxeon.agents.protocol import AgentMessage, MessagePriority, MessageType
+from praxeon.agents.protocol import AgentMessage
 
 
 class TransportType(str, Enum):

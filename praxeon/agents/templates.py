@@ -16,7 +16,6 @@ from typing import Any, Dict, List, Optional
 from praxeon.agents.definition import (
     AgentContextPolicy,
     AgentDefinition,
-    AgentStatus,
     ModelConfig,
     RiskProfile,
 )

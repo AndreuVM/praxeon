@@ -7,8 +7,7 @@ SHA-256(session_id + goal_hash + relevant_node_ids + relevant_fragment_hashes +
 """
 
 import hashlib
-import json
-from typing import Any, Dict, List, Optional
+from typing import Any, List, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 

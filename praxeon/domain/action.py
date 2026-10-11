@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 
-from praxeon.domain.governance import ActionProvenance, FallbackMode
+from praxeon.domain.governance import ActionProvenance
 
 
 class ToolCall(BaseModel):

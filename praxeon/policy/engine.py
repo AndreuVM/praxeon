@@ -18,7 +18,6 @@ from praxeon.domain.models import (
     DecisionReceipt,
     DecisionStatus,
     Evidence,
-    ExecutionMode,
     PolicyDecision,
     ProviderAssessment,
     RiskAssessment,

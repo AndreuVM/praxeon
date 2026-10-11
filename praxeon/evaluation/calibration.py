@@ -11,8 +11,7 @@ exigidas por la hoja de ruta técnica (Fase 3 / v0.4) y el paper:
 - Datos para Diagramas de Fiabilidad (Reliability Diagrams)
 """
 
-import math
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List
 
 from pydantic import BaseModel, ConfigDict, Field
 

@@ -17,7 +17,6 @@ from praxeon.domain.decision_provider import (
     DecisionModelConfig,
     DecisionProvider,
     DecisionProviderError,
-    DecisionProviderMetadata,
     DecisionProviderUnavailableError,
 )
 

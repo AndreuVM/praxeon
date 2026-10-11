@@ -11,7 +11,6 @@ from praxeon.workflows.models import (
     EdgeCondition,
     NodeType,
     UIPosition,
-    WorkflowDefinition,
 )
 
 router = APIRouter(prefix="/v1/workflows", tags=["Workflows"])

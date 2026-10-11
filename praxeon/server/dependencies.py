@@ -9,7 +9,6 @@ Proposal -> Evidence -> Risk -> Provider -> Policy -> Capability -> Execution
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-import hashlib
 
 
 import hmac
@@ -26,16 +25,11 @@ import uuid
 logger = logging.getLogger("praxeon.server.dependencies")
 
 from praxeon.config import PraxeonConfig, default_config, resolve_cache_dir
-from praxeon.core.state_graph import StateGraph
-from praxeon.domain.action import compute_action_hash
 from praxeon.domain.decision import (
-    CapabilityPayload,
     DecisionReceipt,
     DecisionStatus,
     ExecutionMode,
     PolicyDecision,
-    compute_receipt_signature,
-    compute_state_hash,
     sign_receipt,
     verify_capability_signature,
     verify_receipt_signature,
@@ -45,11 +39,9 @@ from praxeon.domain.models import (
     ActionCandidate,
     Goal,
     ProviderAssessment,
-    RiskAssessment,
     RiskLevel,
     ToolCall,
 )
-from praxeon.domain.tree import DecisionTree, NodeKind, NodeStatus, TreeNode
 from praxeon.policy.engine import PolicyEngine
 from praxeon.policy.registry import ToolRegistry
 from praxeon.providers.base import BaseReasoningProvider
@@ -62,7 +54,7 @@ from praxeon.reasoning.evidence import EvidenceEngine
 from praxeon.reasoning.risk import RiskEngine
 from praxeon.runtime.decision_store import SqliteDecisionRepository
 from praxeon.runtime.event_bus import EventBus, EventStore
-from praxeon.runtime.executor import PolicyViolation, SecureExecutor, ToolObservation
+from praxeon.runtime.executor import PolicyViolation, SecureExecutor
 from praxeon.runtime.nonce_store import NonceStore, SqliteNonceStore
 from praxeon.context.manager import ContextManager
 from praxeon.agents.bus import AgentMessageBus
@@ -72,18 +64,15 @@ from praxeon.routing.router import AgentRouter
 from praxeon.workflows.editor_service import WorkflowEditorService
 from praxeon.runtime.adaptive.runtime import AdaptiveAgentRuntime
 from praxeon.runtime.sandbox import (
-    LocalProcessSandbox,
-    SandboxExecutionResult,
-    SandboxTier,
     get_default_workspace_root,
 )
 from praxeon.domain.decision_provider import DecisionModelConfig
-from praxeon.providers.registry import DecisionProviderRegistry, default_registry
+from praxeon.providers.registry import default_registry
 from praxeon.runtime.decision_runtime import DecisionRuntime
 from praxeon.runtime.session_runtime import SessionRuntime
 from praxeon.runtime.state import SessionState, StepRecord
 from praxeon.runtime.state_store import SqliteStateStore
-from praxeon.runtime.tree_reducer import TreeReducer, reduce_events_to_tree
+from praxeon.runtime.tree_reducer import reduce_events_to_tree
 from praxeon.server.schemas.action import ProposeActionRequest
 from praxeon.server.schemas.decision import (
     ConfirmDecisionResponse,

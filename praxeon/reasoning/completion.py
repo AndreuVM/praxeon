@@ -8,13 +8,13 @@ evitando el antipatrón de finalización prematura sin pruebas estructuradas de 
 from enum import Enum
 import os
 import re
-from typing import Any, Dict, List, Optional, Set, TYPE_CHECKING
+from typing import Any, List, Optional, Set, TYPE_CHECKING
 from pydantic import BaseModel, ConfigDict, Field
 from praxeon.domain.goal import CriterionType, Goal, SuccessCriterion
 from praxeon.domain.models import ActionCandidate
 
 if TYPE_CHECKING:
-    from praxeon.runtime.state import SessionState
+    pass
 
 
 EXIT_CODE_ZERO_PATTERN = re.compile(

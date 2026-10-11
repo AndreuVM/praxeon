@@ -321,3 +321,7 @@ Tests: `test_task_runs_through_capability_chain`, `test_dangerous_command_is_blo
 | W-13 | ✅ | `backtrack_to_node` reinicia reintentos y temporizadores, poda los checkpoints posteriores y limpia `finished_at`; `retry_node` limpia `finished_at` |
 
 Tests: `tests/workflows/test_w07_unified_orchestration.py` (6). **Pendiente de workflows:** W-12 (verificar `approver_role`; hoy el RBAC de ruta exige `workflow:write`), W-14 (campos declarados sin implementar: `merge_policy="reduce"`, `default_edge`, `input_mapping/output_mapping`, rama `has_tool`).
+
+### 10.5 Limpieza de código
+
+Eliminados 309 imports sin usar (F401) en 96 ficheros de `praxeon/` (excluidos los `__init__.py`, que son reexportaciones). Un verificador de imports (`from praxeon.X import Y` en `praxeon/`, `tests/`, `scripts/`, `examples/`) detectó que `domain/models.py` actúa como *hub* de reexportación (`sign_receipt`), por lo que se restauró. Suite: 916 pasados, 1 omitido; el *benchmark* de CLI funciona. **Pendiente de calidad:** dividir `server/dependencies.py` (3.200 líneas), añadir ruff/mypy y cobertura al CI.

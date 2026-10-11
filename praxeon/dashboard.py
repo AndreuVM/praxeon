@@ -15,8 +15,7 @@ if sys.platform == "win32":
     if hasattr(sys.stderr, "buffer") and sys.stderr.encoding.lower() != "utf-8":
         sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 
-from rich.align import Align
-from rich.console import Console, Group
+from rich.console import Console
 from rich.layout import Layout
 from rich.live import Live
 from rich.panel import Panel

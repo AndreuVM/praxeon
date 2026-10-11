@@ -10,7 +10,7 @@ en operaciones de inspección o build/test, ni permita relajar barreras crítica
 """
 
 import re
-from typing import Any, Dict, List, Optional, Set
+from typing import List, Optional, Set
 
 from praxeon.domain.assessment import (
     CommandCategory,

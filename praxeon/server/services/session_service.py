@@ -7,7 +7,6 @@ Centraliza el ciclo de vida de sesiones:
 """
 
 from datetime import datetime, timezone
-import os
 import threading
 from typing import Any, Dict, List, Optional
 import uuid

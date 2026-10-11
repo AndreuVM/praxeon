@@ -21,7 +21,6 @@ import secrets
 from starlette.status import WS_1008_POLICY_VIOLATION
 from praxeon.domain.events import RuntimeEvent
 from praxeon.server.dependencies import (
-    RuntimeApplicationService,
     get_runtime_service,
     is_auth_required,
     verify_api_key,

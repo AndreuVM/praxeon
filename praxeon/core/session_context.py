@@ -1,15 +1,12 @@
 """Gestor de contexto y memoria episódica para tareas concatenadas en sesiones interactivas de JEV."""
 
 from dataclasses import dataclass, field
-import json
 import os
 from pathlib import Path
 import platform
-import re
 import sys
 from typing import Any, Dict, List, Optional, Set
 
-from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 

@@ -5,7 +5,7 @@ término de sesión o expiración por TTL.
 """
 
 import time
-from typing import Callable, List, Set
+from typing import Callable, Set
 from praxeon.context.cache import ContextSnapshot
 from praxeon.context.fragments import FragmentType
 

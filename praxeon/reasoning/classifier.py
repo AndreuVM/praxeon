@@ -11,7 +11,7 @@ debe poder llevar a REVIEW. Las barreras deterministas tienen precedencia."
 
 import hashlib
 import re
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 from praxeon.domain.assessment import (
     CommandCategory,

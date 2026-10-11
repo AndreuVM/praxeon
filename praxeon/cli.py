@@ -19,7 +19,6 @@ if sys.platform == "win32":
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
-from rich.text import Text
 from rich.tree import Tree
 
 from praxeon import __version__
@@ -28,15 +27,10 @@ from praxeon.core.intervention_policy import InterventionPolicy
 from praxeon.core.jev_engine import JEVEngine
 from praxeon.core.state_graph import StateGraph
 from praxeon.models.schema import (
-    ActionCandidate,
-    InterventionDirective,
     InterventionLevel,
     JEVScore,
     LoopReport,
     LoopType,
-    Step,
-    StepType,
-    Trajectory,
 )
 from praxeon.models.trace import TraceParser
 
@@ -271,7 +265,6 @@ def run_benchmark_cli(
     from praxeon.evaluation import BenchmarkRunner, ScenarioCatalog
     from praxeon.evaluation.metrics import compute_navigator_economic_value
     from praxeon.runtime import Navigator, SecureExecutor
-    from praxeon.providers.replay import ReplayProvider
     from praxeon.providers.laya import LayaProvider
     from praxeon.providers.typesafe import TypeSafeAdapter
 

@@ -8,10 +8,8 @@ Implementa los requisitos formales de la Fase 1 del Roadmap:
 - Medición de tokens input/output, latencia de inferencia y overhead del supervisor.
 """
 
-from datetime import datetime, timezone
-import math
 import time
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 

@@ -12,7 +12,7 @@ Define tareas para evaluar comparativamente:
 
 from enum import Enum
 import random
-from typing import Any, Dict, List, Optional
+from typing import List
 from pydantic import BaseModel, ConfigDict, Field
 
 from praxeon.domain.models import (

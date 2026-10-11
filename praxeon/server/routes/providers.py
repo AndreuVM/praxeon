@@ -1,6 +1,5 @@
 """Rutas REST para catálogo y telemetría de providers (praxeon/server/routes/providers.py)."""
 
-from typing import Any, Dict
 from fastapi import APIRouter, Depends
 
 from praxeon.server.dependencies import RuntimeApplicationService, get_runtime_service

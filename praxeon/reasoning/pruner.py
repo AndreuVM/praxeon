@@ -13,12 +13,12 @@ asegurando que el selector de contexto (Fase 2) las excluya de la memoria activa
 """
 
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 from praxeon.domain.action import ActionCandidate
-from praxeon.domain.branch import BranchPath, BranchStatus
-from praxeon.domain.decision import DecisionStatus, PolicyDecision
+from praxeon.domain.branch import BranchPath
+from praxeon.domain.decision import DecisionStatus
 from praxeon.domain.models import RiskLevel
 from praxeon.models.schema import ConvergenceAnomaly, Step, StepType
 from praxeon.reasoning.loop_detector import LoopDetector

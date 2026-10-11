@@ -23,7 +23,7 @@ from praxeon.context.entities import (
     ContextReference,
 )
 from praxeon.context.fingerprint import ContextFingerprint
-from praxeon.context.fragments import ContextFragment, compute_content_hash
+from praxeon.context.fragments import compute_content_hash
 from praxeon.context.policies import (
     invalidate_by_dependency,
     invalidate_by_evidence_id,

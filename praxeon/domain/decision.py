@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional, Union
 import uuid
 from pydantic import BaseModel, ConfigDict, Field
 
-from praxeon.domain.assessment import CommandCategory, CommandRiskAssessment, ProviderAssessment, RiskAssessment
+from praxeon.domain.assessment import CommandRiskAssessment, ProviderAssessment, RiskAssessment
 
 
 def utc_now() -> datetime:

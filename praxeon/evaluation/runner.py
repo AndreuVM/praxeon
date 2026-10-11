@@ -20,16 +20,11 @@ from praxeon.evaluation.scenarios import (
     BenchmarkScenario,
     ScenarioCatalog,
     TrajectoryScenario,
-    TrajectoryStepDefinition,
 )
 from praxeon.policy.engine import PolicyEngine
 from praxeon.policy.failsafe import FailSafePolicy
 from praxeon.policy.risk import ToolRegistry
 from praxeon.providers.replay import ReplayProvider
-from praxeon.reasoning.completion import CompletionVerifier
-from praxeon.reasoning.evidence import EvidenceEngine
-from praxeon.reasoning.risk import RiskEngine
-from praxeon.runtime.checkpoints import CheckpointManager
 from praxeon.runtime.executor import SecureExecutor
 from praxeon.runtime.navigator import Navigator
 from praxeon.runtime.state import SessionState
@@ -529,7 +524,6 @@ class BenchmarkRunner:
         from praxeon.domain.decision import (
             DecisionReceipt,
             DecisionStatus,
-            compute_receipt_signature,
             compute_state_hash,
             sign_receipt,
         )

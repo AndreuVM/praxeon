@@ -9,9 +9,9 @@ Supervisa en tiempo real la ejecución de trayectorias y emite directivas adapta
 - TERMINATE: Meta de la tarea completamente satisfecha y verificada.
 """
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
-from praxeon.routing.escalation import DynamicEscalationEngine, EscalationTriggerType
+from praxeon.routing.escalation import DynamicEscalationEngine
 from praxeon.routing.models import TaskRequirement
 from praxeon.runtime.adaptive.models import TrajectoryDirective, TrajectoryStepRecord
 

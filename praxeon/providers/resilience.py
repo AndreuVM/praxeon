@@ -13,7 +13,7 @@ import random
 import re
 import threading
 import time
-from typing import Any, Callable, Dict, Optional, Tuple
+from typing import Optional
 
 logger = logging.getLogger("praxeon.providers.resilience")
 

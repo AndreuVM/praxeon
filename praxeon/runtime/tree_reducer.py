@@ -7,16 +7,13 @@ Soporta tanto actualización continua en tiempo real (Live) como reproducción
 histórica exacta (Replay).
 """
 
-from datetime import datetime
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Iterable, Optional
 
 from praxeon.domain.events import EventType, RuntimeEvent
 from praxeon.domain.tree import (
     DecisionTree,
-    NodeActor,
     NodeKind,
     NodeStatus,
-    TreeEdge,
     TreeNode,
 )
 

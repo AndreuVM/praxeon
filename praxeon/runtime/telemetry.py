@@ -8,7 +8,6 @@ Implementa los requisitos de las Secciones 21 y 30 de la Auditoría Técnica:
 """
 
 from datetime import datetime, timezone
-import json
 import logging
 import os
 import time

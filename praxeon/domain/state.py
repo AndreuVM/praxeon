@@ -1,11 +1,11 @@
 """Entidades inmutables de estado de trayectoria e instantáneas de supervisión."""
 
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Set
+from typing import List, Optional, Set
 from pydantic import BaseModel, ConfigDict, Field
 
 from praxeon.domain.action import ActionCandidate
-from praxeon.domain.decision import DecisionStatus, PolicyDecision
+from praxeon.domain.decision import PolicyDecision
 from praxeon.domain.evidence import Evidence
 from praxeon.domain.goal import Goal
 

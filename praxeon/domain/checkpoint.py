@@ -1,7 +1,7 @@
 """Entidades inmutables de Checkpoint atómico y entorno de ejecución recuperable."""
 
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 

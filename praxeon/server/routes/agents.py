@@ -7,7 +7,6 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from praxeon.agents.definition import AgentDefinition, AgentStatus
 from praxeon.server.dependencies import get_agent_service
 from praxeon.server.schemas.agent import (
-    AgentDTO,
     CreateAgentRequest,
     CreateAgentVersionRequest,
     UpdateAgentRequest,

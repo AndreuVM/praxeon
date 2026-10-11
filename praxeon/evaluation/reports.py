@@ -1,6 +1,6 @@
 """Generador de informes técnicos y comparativas empíricas de benchmarks (evaluation/reports.py)."""
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 from praxeon.evaluation.metrics import EvaluationMetrics
 
 

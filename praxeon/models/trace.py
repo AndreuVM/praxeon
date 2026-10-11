@@ -3,7 +3,7 @@
 import json
 import re
 import uuid
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional
 from .schema import Step, StepType, Trajectory
 
 

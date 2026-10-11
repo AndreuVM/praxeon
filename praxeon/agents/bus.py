@@ -8,10 +8,8 @@ Implementa los canales y patrones de comunicación para sistemas multiagente:
 """
 
 from collections import defaultdict
-from datetime import datetime, timezone
 from enum import Enum
 import heapq
-import queue
 import time
 from typing import Any, Callable, Dict, List, Optional, Set
 import uuid

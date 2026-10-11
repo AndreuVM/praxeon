@@ -9,7 +9,6 @@ Implementa las operaciones completas del ciclo de vida de agentes en PRAXEON:
 
 from datetime import datetime, timezone
 import json
-import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 import uuid

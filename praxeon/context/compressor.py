@@ -5,13 +5,10 @@ en fragmentos de resumen estructurados (SummaryFragment) cuando el volumen de to
 supera el presupuesto disponible, preservando la continuidad cognitiva del agente.
 """
 
-import re
-from typing import Any, Dict, List, Optional
+from typing import List, Optional
 from praxeon.context.fragments import (
     ContextFragment,
-    FragmentType,
     SummaryFragment,
-    estimate_tokens,
 )
 
 

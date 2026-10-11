@@ -10,8 +10,6 @@ from datetime import datetime, timezone
 import threading
 from typing import Any, Dict, List, Optional
 
-from praxeon.domain.models import ActionCandidate
-from praxeon.domain.decision import DecisionStatus, PolicyDecision
 from praxeon.domain.events import EventType
 from praxeon.policy.engine import PolicyEngine
 from praxeon.reasoning.classifier import CommandClassifier
@@ -19,13 +17,6 @@ from praxeon.reasoning.evidence import EvidenceEngine
 from praxeon.reasoning.risk import RiskEngine
 from praxeon.runtime.decision_store import SqliteDecisionRepository
 from praxeon.runtime.event_bus import EventBus
-from praxeon.server.schemas.decision import (
-    DecisionDetailResponse,
-    DecisionResponse,
-    PolicyDTO,
-    ProviderEvaluationDTO,
-    RiskDTO,
-)
 
 
 class DecisionService:

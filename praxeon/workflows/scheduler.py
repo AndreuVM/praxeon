@@ -10,11 +10,10 @@ Proporciona supervisión continua e independiente del ciclo de vida de ejecucion
 from datetime import datetime, timezone
 import logging
 import threading
-import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from praxeon.workflows.engine import WorkflowEngine
-from praxeon.workflows.models import NodeStatus, WorkflowExecution, WorkflowStatus
+from praxeon.workflows.models import WorkflowStatus
 
 logger = logging.getLogger("praxeon.workflows.scheduler")
 

@@ -3,8 +3,8 @@
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Set
 from pydantic import BaseModel, ConfigDict, Field
-from praxeon.domain.models import ActionCandidate, DecisionStatus, PolicyDecision, RiskAssessment, RiskLevel
-from praxeon.policy.registry import ToolRegistry, ToolSpec
+from praxeon.domain.models import ActionCandidate, DecisionStatus, PolicyDecision, RiskAssessment
+from praxeon.policy.registry import ToolRegistry
 
 
 class HumanApprovalTicket(BaseModel):

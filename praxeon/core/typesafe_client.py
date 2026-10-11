@@ -6,7 +6,7 @@ import time
 from typing import Any, Dict, List, Optional
 
 from praxeon.config import PraxeonConfig, default_config
-from praxeon.models.schema import ActionCandidate, LoopType, Step, StepType
+from praxeon.models.schema import ActionCandidate, LoopType, Step
 
 logger = logging.getLogger("praxeon.typesafe")
 
@@ -107,7 +107,6 @@ class TypeSafeJEVClient:
             return None
 
         if not self.is_available():
-            import json
             flagged_idx = None
             for i in range(1, len(candidates)):
                 c_prev = candidates[i - 1]

@@ -4,9 +4,8 @@ Evita el colapso de dimensiones ortogonales en un único escalar decisorio.
 JEV se calcula como una señal analítica estructurada dentro de ProviderAssessment.
 """
 
-from typing import Any, Dict, List, Optional
-from praxeon.domain.models import ActionCandidate, Goal, ProviderAssessment
-from praxeon.models.schema import Step
+from typing import List, Optional
+from praxeon.domain.models import ProviderAssessment
 
 
 class CognitiveEvaluator:

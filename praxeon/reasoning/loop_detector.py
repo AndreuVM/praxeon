@@ -7,7 +7,7 @@ Segrega las anomalías en tres dimensiones ortogonales:
 """
 
 import json
-from typing import Any, Dict, List, Optional, Set
+from typing import List, Optional, Set
 from praxeon.domain.models import ActionCandidate
 from praxeon.models.schema import (
     ConvergenceAnomaly,

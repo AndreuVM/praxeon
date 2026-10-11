@@ -8,7 +8,7 @@ con soporte de checkpoints automáticos, chunking tipado y rollback determinista
 from datetime import datetime, timezone
 import hashlib
 import time
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from praxeon.domain.interfaces import ReasoningProvider
 from praxeon.domain.models import (
@@ -22,8 +22,6 @@ from praxeon.domain.models import (
 )
 from praxeon.runtime.efficiency import (
     EfficiencyCalculator,
-    ModelPricing,
-    MODEL_PRICING_CATALOG,
     SessionEfficiencySummary,
     StepEfficiencyRecord,
 )
@@ -32,7 +30,7 @@ from praxeon.policy.engine import PolicyEngine
 from praxeon.reasoning.completion import CompletionAssessment, CompletionVerifier
 from praxeon.reasoning.evidence import EvidenceEngine
 from praxeon.reasoning.risk import RiskEngine
-from praxeon.runtime.checkpoints import Checkpoint, CheckpointManager
+from praxeon.runtime.checkpoints import CheckpointManager
 from praxeon.runtime.executor import SecureExecutor, ToolObservation
 from praxeon.runtime.state import SessionState
 from praxeon.runtime.telemetry import (

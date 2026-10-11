@@ -19,15 +19,14 @@ import uuid
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple
 from pydantic import BaseModel, ConfigDict, Field
 
-from praxeon.domain.action import ActionCandidate, ToolCall
-from praxeon.domain.branch import BranchPath, BranchScore, BranchStatus, BranchStep
-from praxeon.domain.decision import DecisionStatus, PolicyDecision
+from praxeon.domain.action import ActionCandidate
+from praxeon.domain.branch import BranchStatus
+from praxeon.domain.decision import DecisionStatus
 from praxeon.domain.interfaces import ReasoningProvider
 from praxeon.domain.models import ProviderAssessment
-from praxeon.reasoning.pruner import BranchPruner, PruningCategory, PruningDecision
+from praxeon.reasoning.pruner import BranchPruner, PruningCategory
 
 if TYPE_CHECKING:
-    from praxeon.policy.engine import PolicyEngine
     from praxeon.runtime.state import SessionState
 
 

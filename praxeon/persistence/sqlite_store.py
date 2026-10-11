@@ -10,7 +10,6 @@ Proporciona persistencia durable, ACID y versionada para:
 from datetime import datetime, timezone
 import json
 import os
-from pathlib import Path
 import sqlite3
 import threading
 from typing import Any, Dict, List, Optional

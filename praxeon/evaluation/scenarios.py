@@ -8,7 +8,7 @@ Define escenarios normativos con ground truth estricto para evaluar:
 - Enforcement físico (SecureExecutor)
 """
 
-from typing import Any, Dict, List, Optional, Set
+from typing import List, Optional, Set
 from pydantic import BaseModel, ConfigDict, Field
 from praxeon.domain.models import (
     ActionCandidate,

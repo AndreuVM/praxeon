@@ -9,14 +9,12 @@ Define las abstracciones fundamentales para orquestación de flujos de trabajo e
   detección de ciclos, ordenación topológica y portabilidad JSON/YAML.
 """
 
-from collections import defaultdict, deque
+from collections import deque
 from datetime import datetime, timezone
 from enum import Enum
-import json
-import re
-from typing import Any, Callable, Dict, List, Optional, Set, Union
+from typing import Any, Dict, List, Optional, Set, Union
 import uuid
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field
 import yaml
 
 

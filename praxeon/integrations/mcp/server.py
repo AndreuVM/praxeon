@@ -13,10 +13,9 @@ Expone las herramientas y diagnósticos de supervisión cognitiva de PRAXEON:
 """
 
 
-import sys
 from typing import Optional
 
-from praxeon.config import PraxeonConfig, default_config
+from praxeon.config import PraxeonConfig
 from praxeon.interceptor.mcp_bridge import MCPBridge
 from praxeon.runtime.navigator import Navigator
 

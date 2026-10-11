@@ -8,7 +8,7 @@ Implementa los requisitos de las Secciones 12 y 22 de la Auditoría Técnica:
 """
 
 import re
-from typing import Any, Dict, List, Union
+from typing import Any, Dict
 
 # Patrones regex de secretos comunes
 SECRET_PATTERNS = [

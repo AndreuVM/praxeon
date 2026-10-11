@@ -8,8 +8,8 @@ Sustituye heurísticas hardcodeadas de strings por inspección de descriptores:
 - Permisos de lectura exclusiva (read_only)
 """
 
-from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, Field
+from typing import Any, Dict, Optional
+from pydantic import BaseModel
 from praxeon.domain.models import RiskAssessment, RiskLevel
 
 

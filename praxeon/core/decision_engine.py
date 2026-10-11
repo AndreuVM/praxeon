@@ -9,7 +9,6 @@ Sustituye sistemáticamente al antiguo JEVEngine manteniendo retrocompatibilidad
 
 from __future__ import annotations
 
-import warnings
 from typing import Any, Dict, List, Optional, Tuple
 
 from praxeon.config import PraxeonConfig, default_config
@@ -20,11 +19,8 @@ from praxeon.models.schema import (
     ActionCandidate,
     BatchSemantics,
     DecisionScore,
-    JEVScore,
     LoopReport,
-    LoopType,
     Step,
-    StepType,
     Trajectory,
 )
 

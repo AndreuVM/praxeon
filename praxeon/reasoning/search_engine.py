@@ -8,24 +8,22 @@ Implementa la búsqueda de trayectorias multirruta para PRAXEON:
 - Sincronización con ContextManager y state.metadata["pruned_branches"] (Fase 2).
 """
 
-from datetime import datetime, timezone
 from enum import Enum
 import time
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
 import uuid
 from pydantic import BaseModel, ConfigDict, Field
 
-from praxeon.domain.action import ActionCandidate, ToolCall
+from praxeon.domain.action import ActionCandidate
 from praxeon.domain.branch import (
     BranchPath,
     BranchScore,
     BranchStatus,
     BranchStep,
-    RollbackCheckpoint,
 )
 from praxeon.domain.decision import DecisionStatus, PolicyDecision
 from praxeon.policy.risk import ToolRegistry
-from praxeon.reasoning.pruner import BranchPruner, PruningDecision
+from praxeon.reasoning.pruner import BranchPruner
 
 if TYPE_CHECKING:
     from praxeon.runtime.state import SessionState

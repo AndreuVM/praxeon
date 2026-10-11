@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional
-from praxeon.domain.decision_provider import DecisionModelConfig, DecisionProviderMetadata
+from typing import Any, List, Optional
+from praxeon.domain.decision_provider import DecisionProviderMetadata
 from praxeon.domain.models import ActionCandidate, ProviderAssessment
 
 

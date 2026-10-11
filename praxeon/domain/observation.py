@@ -1,7 +1,6 @@
 """Entidades inmutables de observación y resultados empíricos del entorno."""
 
 import hashlib
-import json
 from typing import Any, Dict, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
