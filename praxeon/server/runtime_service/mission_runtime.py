@@ -37,6 +37,26 @@ class MissionRuntimeMixin:
     # EJECUCIÓN INTERACTIVA EN TIEMPO REAL (Live Mission Runner)
     # =========================================================================
 
+    def _await_human_decision(self, decision_id: str, mission: Dict[str, Any]) -> Optional[str]:
+        """Espera la resolución humana de una decisión en REVIEW (hasta `approval_timeout_seconds`, 10 min por defecto).
+
+        Devuelve "ALLOW", "BLOCKED" o None si sigue pendiente (tiempo agotado o misión detenida).
+        """
+        timeout = float(mission.get("approval_timeout_seconds") or 600.0)
+        deadline = time.time() + timeout
+        status: Optional[str] = None
+        while time.time() < deadline and not mission.get("stopped"):
+            with self._lock:
+                record = self._decisions.get(decision_id)
+                status = record.get("status") if record else None
+            if status in ("ALLOW", "BLOCKED"):
+                return status
+            time.sleep(0.25)
+        with self._lock:
+            record = self._decisions.get(decision_id)
+            status = record.get("status") if record else None
+        return status if status in ("ALLOW", "BLOCKED") else None
+
     def start_mission(
         self,
         goal: str,
@@ -156,6 +176,8 @@ class MissionRuntimeMixin:
             "full_access_authorized_by_operator": full_access_auth,
             "llm_failure_policy": llm_failure_policy,
             "chat_history": chat_history,
+            # Tiempo máximo (s) que la misión espera una aprobación humana antes de seguir sin vetar la acción
+            "approval_timeout_seconds": (metadata or {}).get("approval_timeout_seconds"),
         }
 
         with self._lock:
@@ -646,6 +668,7 @@ class MissionRuntimeMixin:
 
                 obs_output = ""
                 executed_successfully = False
+                pending_approval = False
                 try:
                     resp = self.propose_action(session_id=sid, proposal=req)
 
@@ -688,17 +711,7 @@ class MissionRuntimeMixin:
                                 obs_output = f"Error en ejecución Full Access: {ex}"
                                 executed_successfully = False
                         else:
-                            wait_count = 0
-                            while wait_count < 120 and not mission.get("stopped"):
-                                time.sleep(0.5)
-                                wait_count += 1
-                                with self._lock:
-                                    dec = self._decisions.get(resp.decision_id)
-                                    if dec and dec.get("status") in ("ALLOW", "BLOCKED"):
-                                        break
-                            with self._lock:
-                                dec = self._decisions.get(resp.decision_id)
-                                dec_status = dec.get("status") if dec else None
+                            dec_status = self._await_human_decision(resp.decision_id, mission)
                             if dec_status == "ALLOW":
                                 try:
                                     exec_res = self.execute_decision(decision_id=resp.decision_id)
@@ -707,6 +720,13 @@ class MissionRuntimeMixin:
                                 except Exception as ex:
                                     logger.debug("Execution note: %s", ex)
                                     obs_output = str(ex)
+                            elif dec_status != "BLOCKED" and not mission.get("stopped"):
+                                # Sigue esperando al operador: no ha sido rechazada ni ejecutada (no es un veto)
+                                pending_approval = True
+                                obs_output = (
+                                    "⏳ Acción pendiente de aprobación humana: NO ha sido rechazada ni ejecutada. "
+                                    "No la repitas; continúa con otra acción de lectura o espera la decisión del operador."
+                                )
                     elif resp.status == "ALLOW":
                         try:
                             exec_res = self.execute_decision(decision_id=resp.decision_id)
@@ -722,6 +742,22 @@ class MissionRuntimeMixin:
 
                 step_verdict = getattr(resp, "status", "ERROR") if 'resp' in locals() and resp else "ERROR"
                 step_reasons = ", ".join(getattr(getattr(resp, "policy", None), "reason_codes", []) or []) if 'resp' in locals() and resp else ""
+
+                if pending_approval:
+                    # Aprobación humana en curso: sin poda, sin retroceso y sin contar como fallo consecutivo
+                    step_records.append({
+                        "step": step_idx,
+                        "thought": thought,
+                        "tool": tool,
+                        "arguments": args,
+                        "verdict": "REVIEW",
+                        "reason_code": step_reasons or "APPROVAL_PENDING",
+                        "observation": obs_output,
+                        "success": False,
+                        "pending_approval": True,
+                    })
+                    time.sleep(delay_sec)
+                    continue
 
                 if executed_successfully:
                     # Acción exitosa: el cursor activo del árbol avanza
@@ -982,17 +1018,7 @@ class MissionRuntimeMixin:
                             except Exception as ex:
                                 logger.warning("Error auto-confirmando en Full Access: %s", ex)
                         else:
-                            wait_count = 0
-                            while wait_count < 120 and not mission.get("stopped"):
-                                time.sleep(0.5)
-                                wait_count += 1
-                                with self._lock:
-                                    dec = self._decisions.get(resp.decision_id)
-                                    if dec and dec.get("status") in ("ALLOW", "BLOCKED"):
-                                        break
-                            with self._lock:
-                                dec = self._decisions.get(resp.decision_id)
-                                dec_status = dec.get("status") if dec else None
+                            dec_status = self._await_human_decision(resp.decision_id, mission)
                             if dec_status == "ALLOW":
                                 try:
                                     exec_res = self.execute_decision(decision_id=resp.decision_id)

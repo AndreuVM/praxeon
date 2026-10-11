@@ -85,6 +85,14 @@ class CommandClassifier:
 
     # 4. Reglas deterministas para INSPECTION (de sólo lectura)
     INSPECTION_PATTERNS = [
+        # Lectura por rangos con sed: solo `sed -n '<rango>p' fichero` (sin -i ni comandos de escritura/ejecución)
+        r"^\s*sed\s+-n\s+(['\"]?)[\d,$]+p\1(\s+[^\s;&|<>]+)+\s*$",
+        # Utilidades de solo lectura habituales en Unix y en Windows
+        r"^\s*(tree|stat|file|du|df|realpath|readlink|basename|dirname|diff|cmp|fc|comp|md5sum|sha1sum|sha256sum)(\s+[^;&|<>]*)?$",
+        # PowerShell: consultas de estado/ruta sin efectos
+        r"^\s*(test-path|resolve-path|get-location|get-filehash|get-date|get-itemproperty|split-path|join-path|get-help|get-service|get-host)(\s+.*)?$",
+        # .NET: lectura de ficheros y directorios
+        r"^\s*\[system\.io\.(file|directory|path)\]::(readalltext|readalllines|readlines|readallbytes|exists|getfiles|getdirectories|enumeratefiles|enumeratedirectories|getfullpath)\(",
         r"^\s*(git\s+(status|diff|log|show|branch|tag|remote|rev-parse))(\s+.*)?$",
         r"^\s*(ls|dir|pwd|where|which|findstr|echo|whoami|uname|id|hostname|date)(\s+.*)?$",
         r"^\s*(cat|head|tail|wc|type|more|less)(\s+.*)?$",

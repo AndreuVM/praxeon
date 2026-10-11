@@ -388,3 +388,20 @@ Se eliminó el "Lienzo Standalone" (página HTML independiente cargada en un `if
 Tests: `tests/security/test_final_security_hardening.py` (19). Suite: **954 pasados, 1 omitido**; `ruff` limpio; Bandit sin hallazgos de severidad media/alta; `vite build` y `oxlint` sin errores.
 
 **Estado final de seguridad:** no quedan hallazgos críticos, altos ni medios abiertos del informe, salvo la limitación documentada de `LOCAL_RESTRICTED`/WASM. Deuda residual de bajo riesgo: ~44 `try/except/pass` (regla `S110`), `mypy` y la cobertura de tests de los módulos más flojos.
+
+### 10.12 Full Access: lecturas descartadas por aprobación pendiente (incidencia reportada en pruebas)
+
+**Síntoma:** en una tarea en modo Full Access, algunos comandos de lectura de ficheros se descartaban "porque pedían aprobación humana" y la rama se podaba.
+
+**Causas reproducidas (dos, encadenadas):**
+1. **Falsos "desconocidos".** Lecturas puras legítimas —`sed -n 1,40p f`, `Test-Path`, `Resolve-Path`, `tree /f`, `[System.IO.File]::ReadAllText(...)`, `diff`, `stat`, `file`— no coincidían con ninguna regla de inspección, se clasificaban `UNKNOWN` y la política respondía `ABSTAIN → REVIEW` (`UNKNOWN_OPERATION_REVIEW`).
+2. **Esperar una aprobación se trataba como un veto.** En el bucle de la misión, una decisión en `REVIEW` sin auto-aprobación esperaba 60 s; si el operador no respondía a tiempo, el paso se contabilizaba como fallo: `INTERVENTION_APPLIED` (`INITIAL_HYPOTHESIS_VETOED`/`BACKTRACK_AND_BRANCH`), observación "Acción no autorizada o fallida" para el LLM y avance del contador de fallos consecutivos (a los 2 inyecta el *circuit breaker* y a los 4 **termina la misión**).
+
+**Corrección:**
+- `CommandClassifier`: nuevas reglas deterministas de solo lectura, deliberadamente estrechas (`sed -n '<rango>p' fichero` sin `-i`/`w`/`;`, utilidades de consulta, cmdlets de estado de PowerShell, lecturas de `System.IO`). Se verificó que variantes con redirección, tuberías a `sh`/`iex`, `;`/`&&`, `sed -i`, `sed -n 'w …'` o escritura `.NET` siguen sin clasificarse como inspección.
+- `_await_human_decision`: espera configurable (`approval_timeout_seconds`, 10 min por defecto) y, si sigue pendiente, la acción se marca **`APPROVAL_PENDING`**: no se poda, no hay retroceso, no suma fallos y el LLM recibe "pendiente de aprobación, NO rechazada ni ejecutada". Solo un rechazo explícito del operador (`BLOCKED`) sigue siendo un veto.
+- Sin cambios en las invariantes: `BLOCK`/`REPLAN` siguen siendo innegociables en Full Access y las lecturas fuera del workspace (`read_file C:/Windows/win.ini`) siguen pidiendo confirmación.
+
+**Verificación:** 24 tests nuevos (`tests/test_full_access_read_approvals.py`), incluido uno de misión completa con LLM guionizado que **falla con el código anterior** (la misión quedaba bloqueada 60 s y se vetaba) y pasa ahora. Suite: 978 pasados, 1 omitido.
+
+**No confirmado:** la parte del síntoma "la poda ocurre *antes* de informar de la solicitud". En los eventos, `approval.requested` se publica antes de cualquier intervención; la poda llegaba al expirar la espera. Si tras esta corrección sigues viendo el orden inverso en la interfaz, habría que revisar cómo la UI pinta ambos eventos.
