@@ -4,7 +4,6 @@ Valida:
 - WorkflowEditorService: CRUD, drag & drop de coordenadas, cableado de aristas.
 - Simulación interactiva paso a paso, ejecución completa y backtrack determinista desde el editor.
 - Endpoints REST de FastAPI para workflows (/v1/workflows).
-- Servido de la interfaz visual web interactiva (/v1/workflows/editor/ui).
 """
 
 import pytest
@@ -178,14 +177,7 @@ def test_fastapi_workflow_endpoints(api_client):
     assert up_edge_data["condition"]["operator"] == "=="
     assert up_edge_data["condition"]["expected_value"] == "SUCCESS"
 
-    # 7. Servir la interfaz web interactiva drag & drop
-    res_ui = api_client.get("/v1/workflows/editor/ui")
-    assert res_ui.status_code == 200
-    assert "PRAXEON - Visual Workflow Orchestrator" in res_ui.text
-    assert "id=\"canvas\"" in res_ui.text
-    assert "id=\"btn-run\"" in res_ui.text
-
-    # 8. Listar e instanciar plantillas canónicas
+    # 7. Listar e instanciar plantillas canónicas
     res_tpls = api_client.get("/v1/workflows/templates/canonical")
     assert res_tpls.status_code == 200
     tpl_list = res_tpls.json()["data"]

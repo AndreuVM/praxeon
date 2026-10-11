@@ -354,3 +354,12 @@ Decisión de arquitectura: para uso personal y de un único usuario, PRAXEON pas
 - **Interfaz empaquetada:** `praxeon/server/static` se regeneró con la compilación actual de `web/`.
 - **Verificación:** 7 tests nuevos (`tests/test_desktop_app.py`: loopback, 401 sin token, 200 con token, token distinto por ejecución, token solo en fragmento, restauración del entorno); prueba manual: la ventana se abre (WebView2), `/` responde 200, `/v1/sessions` y `/metrics` 401 sin token, y el servidor se detiene al cerrar. Suite: 927 pasados, 1 omitido.
 - **Pendiente para la versión de producción (Tauri/Electron):** instalador firmado, icono y bandeja del sistema, notificaciones nativas ante aprobaciones pendientes (`WAITING_APPROVAL`), instancia única y arranque con el sistema.
+
+### 10.9 Eliminación del lienzo standalone de workflows
+
+Se eliminó el "Lienzo Standalone" (página HTML independiente cargada en un `iframe`), que duplicaba el editor visual de React y no tenía función propia:
+
+- **Backend:** ruta `GET /v1/workflows/editor/ui` y fichero `praxeon/server/static/workflow_editor.html` (976 líneas). Desaparece también el paso de la clave por query-string (`?token=`) que usaba esa página (3.6).
+- **Frontend (`WorkflowsView.jsx`):** selector "Editor Visual React / Lienzo Standalone", botón "abrir en pestaña", estado `viewMode`, rama `iframe` y las importaciones `ExternalLink`/`getApiKey`. El editor React queda como único modo (≈85 líneas menos de lógica; el resto del diff es reindentación).
+- **Contrato:** `openapi.json` y `packages/sdk/openapi.json` regenerados (además de quitar la ruta, incorporan los endpoints de ejecuciones añadidos antes); interfaz empaquetada en `praxeon/server/static` regenerada; test del editor actualizado.
+- Verificación: `vite build` y `oxlint` sin errores, `ruff` limpio, suite 927 pasados / 1 omitido.

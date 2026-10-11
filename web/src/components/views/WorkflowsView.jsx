@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Workflow,
-  ExternalLink,
   ShieldCheck,
   CheckCircle2,
   AlertTriangle,
@@ -45,7 +44,6 @@ import {
   approveWorkflowNode,
   fetchCanonicalTemplates,
   instantiateCanonicalTemplate,
-  getApiKey,
   fetchAgents,
 } from '../../services/api';
 
@@ -57,7 +55,6 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
   const [connectionError, setConnectionError] = useState(null);
   const [executing, setExecuting] = useState(false);
   const [validationResult, setValidationResult] = useState(null);
-  const [viewMode, setViewMode] = useState('native'); // 'native' | 'iframe'
   const [logs, setLogs] = useState([
     { time: new Date().toTimeString().split(' ')[0], tag: 'INIT', msg: 'Editor visual de workflows inicializado.' },
   ]);
@@ -942,10 +939,6 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
   };
 
 
-  const apiKey = getApiKey();
-  const iframeUrl = apiKey
-    ? `/v1/workflows/editor/ui?workflow_id=${encodeURIComponent(activeWorkflowId || '')}&token=${encodeURIComponent(apiKey)}`
-    : `/v1/workflows/editor/ui?workflow_id=${encodeURIComponent(activeWorkflowId || '')}`;
 
   return (
     <div
@@ -1082,163 +1075,77 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
         </div>
 
         {/* Centro: Controles de Ejecución */}
-        {viewMode === 'native' && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <button
-              onClick={handleValidate}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px',
-                padding: '4px 9px',
-                borderRadius: '5px',
-                backgroundColor: '#161c28',
-                border: '1px solid #243044',
-                color: '#cbd5e1',
-                fontSize: '11px',
-                cursor: 'pointer',
-              }}
-              title="Validar causalidad y ausencia de ciclos"
-            >
-              <ShieldCheck size={12} />
-              <span>Validar DAG</span>
-            </button>
-
-            <button
-              onClick={handleStep}
-              disabled={executing}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px',
-                padding: '4px 9px',
-                borderRadius: '5px',
-                backgroundColor: '#162234',
-                border: '1px solid #2a3c5a',
-                color: '#38bdf8',
-                fontSize: '11px',
-                cursor: 'pointer',
-              }}
-              title="Avanzar un nodo paso a paso"
-            >
-              <SkipForward size={12} />
-              <span>Step</span>
-            </button>
-
-            <button
-              onClick={handleExecute}
-              disabled={executing}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px',
-                padding: '4px 11px',
-                borderRadius: '5px',
-                backgroundColor: '#238636',
-                border: 'none',
-                color: '#ffffff',
-                fontSize: '11px',
-                fontWeight: '600',
-                cursor: 'pointer',
-              }}
-              title="Ejecutar flujo completo supervisado"
-            >
-              <Play size={12} className={executing ? 'animate-pulse' : ''} />
-              <span>{executing ? 'Ejecutando...' : 'Run Flow'}</span>
-            </button>
-
-            <button
-              onClick={handleReset}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px',
-                padding: '4px 9px',
-                borderRadius: '5px',
-                backgroundColor: '#161c28',
-                border: '1px solid #243044',
-                color: '#94a3b8',
-                fontSize: '11px',
-                cursor: 'pointer',
-              }}
-              title="Reiniciar ejecución del flujo"
-            >
-              <RotateCcw size={12} />
-              <span>Reset</span>
-            </button>
-
-            <button
-              onClick={handleCenterView}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px',
-                padding: '4px 9px',
-                borderRadius: '5px',
-                backgroundColor: '#161c28',
-                border: '1px solid #243044',
-                color: '#94a3b8',
-                fontSize: '11px',
-                cursor: 'pointer',
-              }}
-              title="Centrar vista sobre los nodos del workflow"
-            >
-              <Focus size={12} />
-              <span>Centrar</span>
-            </button>
-          </div>
-        )}
-
-        {/* Derecha: Selector de Modo (Nativo vs Standalone HTML) */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <div
-            style={{
-              display: 'flex',
-              backgroundColor: '#121824',
-              borderRadius: '5px',
-              border: '1px solid #243044',
-              padding: '2px',
-            }}
-          >
-            <button
-              onClick={() => setViewMode('native')}
-              style={{
-                padding: '3px 8px',
-                borderRadius: '4px',
-                fontSize: '10.5px',
-                fontWeight: viewMode === 'native' ? '700' : '500',
-                backgroundColor: viewMode === 'native' ? '#1e293b' : 'transparent',
-                color: viewMode === 'native' ? '#38bdf8' : '#73849c',
-                border: 'none',
-                cursor: 'pointer',
-              }}
-            >
-              Editor Visual React
-            </button>
-            <button
-              onClick={() => setViewMode('iframe')}
-              style={{
-                padding: '3px 8px',
-                borderRadius: '4px',
-                fontSize: '10.5px',
-                fontWeight: viewMode === 'iframe' ? '700' : '500',
-                backgroundColor: viewMode === 'iframe' ? '#1e293b' : 'transparent',
-                color: viewMode === 'iframe' ? '#38bdf8' : '#73849c',
-                border: 'none',
-                cursor: 'pointer',
-              }}
-            >
-              Lienzo Standalone
-            </button>
-          </div>
-
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           <button
-            onClick={() => window.open(iframeUrl, '_blank', 'noopener,noreferrer')}
+            onClick={handleValidate}
             style={{
               display: 'flex',
               alignItems: 'center',
               gap: '4px',
-              padding: '4px 8px',
+              padding: '4px 9px',
+              borderRadius: '5px',
+              backgroundColor: '#161c28',
+              border: '1px solid #243044',
+              color: '#cbd5e1',
+              fontSize: '11px',
+              cursor: 'pointer',
+            }}
+            title="Validar causalidad y ausencia de ciclos"
+          >
+            <ShieldCheck size={12} />
+            <span>Validar DAG</span>
+          </button>
+
+          <button
+            onClick={handleStep}
+            disabled={executing}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              padding: '4px 9px',
+              borderRadius: '5px',
+              backgroundColor: '#162234',
+              border: '1px solid #2a3c5a',
+              color: '#38bdf8',
+              fontSize: '11px',
+              cursor: 'pointer',
+            }}
+            title="Avanzar un nodo paso a paso"
+          >
+            <SkipForward size={12} />
+            <span>Step</span>
+          </button>
+
+          <button
+            onClick={handleExecute}
+            disabled={executing}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              padding: '4px 11px',
+              borderRadius: '5px',
+              backgroundColor: '#238636',
+              border: 'none',
+              color: '#ffffff',
+              fontSize: '11px',
+              fontWeight: '600',
+              cursor: 'pointer',
+            }}
+            title="Ejecutar flujo completo supervisado"
+          >
+            <Play size={12} className={executing ? 'animate-pulse' : ''} />
+            <span>{executing ? 'Ejecutando...' : 'Run Flow'}</span>
+          </button>
+
+          <button
+            onClick={handleReset}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              padding: '4px 9px',
               borderRadius: '5px',
               backgroundColor: '#161c28',
               border: '1px solid #243044',
@@ -1246,11 +1153,33 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
               fontSize: '11px',
               cursor: 'pointer',
             }}
-            title="Abrir editor standalone en pestaña completa"
+            title="Reiniciar ejecución del flujo"
           >
-            <ExternalLink size={12} />
+            <RotateCcw size={12} />
+            <span>Reset</span>
+          </button>
+
+          <button
+            onClick={handleCenterView}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              padding: '4px 9px',
+              borderRadius: '5px',
+              backgroundColor: '#161c28',
+              border: '1px solid #243044',
+              color: '#94a3b8',
+              fontSize: '11px',
+              cursor: 'pointer',
+            }}
+            title="Centrar vista sobre los nodos del workflow"
+          >
+            <Focus size={12} />
+            <span>Centrar</span>
           </button>
         </div>
+
       </div>
 
       {/* Banner de Desconexión de Backend */}
@@ -1364,1359 +1293,1343 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
       )}
 
       {/* Contenedor Principal */}
-      {viewMode === 'iframe' ? (
-        <div style={{ flex: 1, width: '100%', height: '100%', position: 'relative' }}>
-          <iframe
-            src={iframeUrl}
-            title="PRAXEON Visual Workflow Orchestrator"
-            style={{
-              width: '100%',
-              height: '100%',
-              border: 'none',
-              display: 'block',
-              backgroundColor: '#080c14',
-            }}
-          />
-        </div>
-      ) : (
-        <div style={{ display: 'flex', flex: 1, overflow: 'hidden', position: 'relative' }}>
-          {/* Paleta Lateral Izquierda de Nodos */}
-          <div
-            style={{
-              width: '175px',
-              backgroundColor: '#0c1017',
-              borderRight: '1px solid #1e293b',
-              display: 'flex',
-              flexDirection: 'column',
-              padding: '12px 10px',
-              gap: '8px',
-              flexShrink: 0,
-              zIndex: 10,
-              overflowY: 'auto',
-            }}
-          >
-            <div style={{ fontSize: '10px', fontWeight: '700', textTransform: 'uppercase', color: '#64748b', letterSpacing: '0.05em' }}>
-              Paleta de Nodos
-            </div>
-
-            <button
-              onClick={() => handleQuickAddNode('AGENT', 'Agent Worker')}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                padding: '7px 8px',
-                backgroundColor: '#121824',
-                border: '1px solid #233147',
-                borderRadius: '6px',
-                color: '#f8fafc',
-                fontSize: '11px',
-                cursor: 'pointer',
-                textAlign: 'left',
-              }}
-              title="Añadir nodo de agente autónomo"
-            >
-              <div style={{ width: '20px', height: '20px', borderRadius: '4px', backgroundColor: 'rgba(16, 185, 129, 0.2)', color: '#10b981', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <Bot size={12} />
-              </div>
-              <div>
-                <div style={{ fontWeight: '600' }}>Agente</div>
-                <div style={{ fontSize: '9px', color: '#64748b' }}>IA delegada</div>
-              </div>
-            </button>
-
-            <button
-              onClick={() => handleQuickAddNode('TASK', 'Task Worker')}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                padding: '7px 8px',
-                backgroundColor: '#121824',
-                border: '1px solid #233147',
-                borderRadius: '6px',
-                color: '#f8fafc',
-                fontSize: '11px',
-                cursor: 'pointer',
-                textAlign: 'left',
-              }}
-              title="Añadir tarea o herramienta de ejecución"
-            >
-              <div style={{ width: '20px', height: '20px', borderRadius: '4px', backgroundColor: 'rgba(56, 189, 248, 0.2)', color: '#38bdf8', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <Terminal size={12} />
-              </div>
-              <div>
-                <div style={{ fontWeight: '600' }}>Tarea</div>
-                <div style={{ fontSize: '9px', color: '#64748b' }}>Tool / Comando</div>
-              </div>
-            </button>
-
-            <button
-              onClick={() => handleQuickAddNode('DECISION', 'Decision Gate')}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                padding: '7px 8px',
-                backgroundColor: '#121824',
-                border: '1px solid #233147',
-                borderRadius: '6px',
-                color: '#f8fafc',
-                fontSize: '11px',
-                cursor: 'pointer',
-                textAlign: 'left',
-              }}
-              title="Añadir compuerta de decisión condicional"
-            >
-              <div style={{ width: '20px', height: '20px', borderRadius: '4px', backgroundColor: 'rgba(245, 158, 11, 0.2)', color: '#f59e0b', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <GitBranch size={12} />
-              </div>
-              <div>
-                <div style={{ fontWeight: '600' }}>Decisión / IF</div>
-                <div style={{ fontSize: '9px', color: '#64748b' }}>Bifurcación</div>
-              </div>
-            </button>
-
-            <button
-              onClick={() => handleQuickAddNode('WHILE', 'Control Bucle')}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                padding: '7px 8px',
-                backgroundColor: '#121824',
-                border: '1px solid #233147',
-                borderRadius: '6px',
-                color: '#f8fafc',
-                fontSize: '11px',
-                cursor: 'pointer',
-                textAlign: 'left',
-              }}
-              title="Añadir bucle WHILE estructurado con límite de iteraciones"
-            >
-              <div style={{ width: '20px', height: '20px', borderRadius: '4px', backgroundColor: 'rgba(6, 182, 212, 0.2)', color: '#06b6d4', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <RotateCcw size={12} />
-              </div>
-              <div>
-                <div style={{ fontWeight: '600' }}>Bucle WHILE</div>
-                <div style={{ fontSize: '9px', color: '#64748b' }}>Iteración acotada</div>
-              </div>
-            </button>
-
-            <button
-              onClick={() => handleQuickAddNode('DELEGATE', 'Router de Agentes')}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                padding: '7px 8px',
-                backgroundColor: '#121824',
-                border: '1px solid #233147',
-                borderRadius: '6px',
-                color: '#f8fafc',
-                fontSize: '11px',
-                cursor: 'pointer',
-                textAlign: 'left',
-              }}
-              title="Añadir router de delegación dinámica a agentes"
-            >
-              <div style={{ width: '20px', height: '20px', borderRadius: '4px', backgroundColor: 'rgba(168, 85, 247, 0.2)', color: '#a855f7', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <Bot size={12} />
-              </div>
-              <div>
-                <div style={{ fontWeight: '600' }}>Router</div>
-                <div style={{ fontSize: '9px', color: '#64748b' }}>Delegación</div>
-              </div>
-            </button>
-
-            <button
-              onClick={() => handleQuickAddNode('HUMAN_APPROVAL', 'Aprobación Humana')}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                padding: '7px 8px',
-                backgroundColor: '#121824',
-                border: '1px solid #233147',
-                borderRadius: '6px',
-                color: '#f8fafc',
-                fontSize: '11px',
-                cursor: 'pointer',
-                textAlign: 'left',
-              }}
-              title="Añadir pausa supervisada esperando autorización humana"
-            >
-              <div style={{ width: '20px', height: '20px', borderRadius: '4px', backgroundColor: 'rgba(236, 72, 153, 0.2)', color: '#ec4899', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <ShieldCheck size={12} />
-              </div>
-              <div>
-                <div style={{ fontWeight: '600' }}>Aprobación</div>
-                <div style={{ fontSize: '9px', color: '#64748b' }}>Supervisión</div>
-              </div>
-            </button>
-
-
-            <button
-              onClick={() => handleQuickAddNode('PARALLEL_FORK', 'Parallel Fork')}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                padding: '7px 8px',
-                backgroundColor: '#121824',
-                border: '1px solid #233147',
-                borderRadius: '6px',
-                color: '#f8fafc',
-                fontSize: '11px',
-                cursor: 'pointer',
-                textAlign: 'left',
-              }}
-              title="Añadir bifurcación concurrente en paralelo"
-            >
-              <div style={{ width: '20px', height: '20px', borderRadius: '4px', backgroundColor: 'rgba(192, 132, 252, 0.2)', color: '#c084fc', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <GitFork size={12} />
-              </div>
-              <div>
-                <div style={{ fontWeight: '600' }}>Fork</div>
-                <div style={{ fontSize: '9px', color: '#64748b' }}>Paralelo</div>
-              </div>
-            </button>
-
-            <button
-              onClick={() => handleQuickAddNode('PARALLEL_JOIN', 'Parallel Join')}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                padding: '7px 8px',
-                backgroundColor: '#121824',
-                border: '1px solid #233147',
-                borderRadius: '6px',
-                color: '#f8fafc',
-                fontSize: '11px',
-                cursor: 'pointer',
-                textAlign: 'left',
-              }}
-              title="Añadir sincronización y unión de ramas"
-            >
-              <div style={{ width: '20px', height: '20px', borderRadius: '4px', backgroundColor: 'rgba(129, 140, 248, 0.2)', color: '#818cf8', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <GitMerge size={12} />
-              </div>
-              <div>
-                <div style={{ fontWeight: '600' }}>Join</div>
-                <div style={{ fontSize: '9px', color: '#64748b' }}>Sincronización</div>
-              </div>
-            </button>
-
-            <button
-              onClick={() => handleQuickAddNode('END', 'End State')}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                padding: '7px 8px',
-                backgroundColor: '#121824',
-                border: '1px solid #233147',
-                borderRadius: '6px',
-                color: '#f8fafc',
-                fontSize: '11px',
-                cursor: 'pointer',
-                textAlign: 'left',
-              }}
-              title="Añadir nodo terminal de finalización"
-            >
-              <div style={{ width: '20px', height: '20px', borderRadius: '4px', backgroundColor: 'rgba(244, 63, 94, 0.2)', color: '#f43f5e', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <Flag size={12} />
-              </div>
-              <div>
-                <div style={{ fontWeight: '600' }}>Fin</div>
-                <div style={{ fontSize: '9px', color: '#64748b' }}>Terminal</div>
-              </div>
-            </button>
-
-            <div style={{ marginTop: 'auto', borderTop: '1px solid #1e293b', paddingTop: '10px' }}>
-              <button
-                onClick={() => setShowConnectModal(true)}
-                style={{
-                  width: '100%',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '6px',
-                  padding: '6px',
-                  backgroundColor: '#162234',
-                  border: '1px solid #2a3c5a',
-                  borderRadius: '5px',
-                  color: '#38bdf8',
-                  fontSize: '10.5px',
-                  fontWeight: '600',
-                  cursor: 'pointer',
-                }}
-              >
-                <ArrowRight size={12} />
-                <span>Unir Nodos</span>
-              </button>
-            </div>
+      <div style={{ display: 'flex', flex: 1, overflow: 'hidden', position: 'relative' }}>
+        {/* Paleta Lateral Izquierda de Nodos */}
+        <div
+          style={{
+            width: '175px',
+            backgroundColor: '#0c1017',
+            borderRight: '1px solid #1e293b',
+            display: 'flex',
+            flexDirection: 'column',
+            padding: '12px 10px',
+            gap: '8px',
+            flexShrink: 0,
+            zIndex: 10,
+            overflowY: 'auto',
+          }}
+        >
+          <div style={{ fontSize: '10px', fontWeight: '700', textTransform: 'uppercase', color: '#64748b', letterSpacing: '0.05em' }}>
+            Paleta de Nodos
           </div>
 
-          {/* Lienzo Canvas React con SVG y Nodos Arrastrables */}
-          <div
-            ref={canvasRef}
-            onMouseMove={handleMouseMoveCanvas}
-            onMouseUp={handleMouseUpCanvas}
-            onClick={() => {
-              setSelectedNodeId(null);
-              setSelectedEdgeId(null);
-            }}
+          <button
+            onClick={() => handleQuickAddNode('AGENT', 'Agent Worker')}
             style={{
-              flex: 1,
-              position: 'relative',
-              backgroundColor: '#080c14',
-              overflow: 'auto',
-              userSelect: draggingNodeId ? 'none' : 'auto',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '7px 8px',
+              backgroundColor: '#121824',
+              border: '1px solid #233147',
+              borderRadius: '6px',
+              color: '#f8fafc',
+              fontSize: '11px',
+              cursor: 'pointer',
+              textAlign: 'left',
             }}
+            title="Añadir nodo de agente autónomo"
           >
-            {/* Espacio Amplio de Trabajo Multidimensional */}
-            <div
+            <div style={{ width: '20px', height: '20px', borderRadius: '4px', backgroundColor: 'rgba(16, 185, 129, 0.2)', color: '#10b981', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Bot size={12} />
+            </div>
+            <div>
+              <div style={{ fontWeight: '600' }}>Agente</div>
+              <div style={{ fontSize: '9px', color: '#64748b' }}>IA delegada</div>
+            </div>
+          </button>
+
+          <button
+            onClick={() => handleQuickAddNode('TASK', 'Task Worker')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '7px 8px',
+              backgroundColor: '#121824',
+              border: '1px solid #233147',
+              borderRadius: '6px',
+              color: '#f8fafc',
+              fontSize: '11px',
+              cursor: 'pointer',
+              textAlign: 'left',
+            }}
+            title="Añadir tarea o herramienta de ejecución"
+          >
+            <div style={{ width: '20px', height: '20px', borderRadius: '4px', backgroundColor: 'rgba(56, 189, 248, 0.2)', color: '#38bdf8', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Terminal size={12} />
+            </div>
+            <div>
+              <div style={{ fontWeight: '600' }}>Tarea</div>
+              <div style={{ fontSize: '9px', color: '#64748b' }}>Tool / Comando</div>
+            </div>
+          </button>
+
+          <button
+            onClick={() => handleQuickAddNode('DECISION', 'Decision Gate')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '7px 8px',
+              backgroundColor: '#121824',
+              border: '1px solid #233147',
+              borderRadius: '6px',
+              color: '#f8fafc',
+              fontSize: '11px',
+              cursor: 'pointer',
+              textAlign: 'left',
+            }}
+            title="Añadir compuerta de decisión condicional"
+          >
+            <div style={{ width: '20px', height: '20px', borderRadius: '4px', backgroundColor: 'rgba(245, 158, 11, 0.2)', color: '#f59e0b', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <GitBranch size={12} />
+            </div>
+            <div>
+              <div style={{ fontWeight: '600' }}>Decisión / IF</div>
+              <div style={{ fontSize: '9px', color: '#64748b' }}>Bifurcación</div>
+            </div>
+          </button>
+
+          <button
+            onClick={() => handleQuickAddNode('WHILE', 'Control Bucle')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '7px 8px',
+              backgroundColor: '#121824',
+              border: '1px solid #233147',
+              borderRadius: '6px',
+              color: '#f8fafc',
+              fontSize: '11px',
+              cursor: 'pointer',
+              textAlign: 'left',
+            }}
+            title="Añadir bucle WHILE estructurado con límite de iteraciones"
+          >
+            <div style={{ width: '20px', height: '20px', borderRadius: '4px', backgroundColor: 'rgba(6, 182, 212, 0.2)', color: '#06b6d4', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <RotateCcw size={12} />
+            </div>
+            <div>
+              <div style={{ fontWeight: '600' }}>Bucle WHILE</div>
+              <div style={{ fontSize: '9px', color: '#64748b' }}>Iteración acotada</div>
+            </div>
+          </button>
+
+          <button
+            onClick={() => handleQuickAddNode('DELEGATE', 'Router de Agentes')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '7px 8px',
+              backgroundColor: '#121824',
+              border: '1px solid #233147',
+              borderRadius: '6px',
+              color: '#f8fafc',
+              fontSize: '11px',
+              cursor: 'pointer',
+              textAlign: 'left',
+            }}
+            title="Añadir router de delegación dinámica a agentes"
+          >
+            <div style={{ width: '20px', height: '20px', borderRadius: '4px', backgroundColor: 'rgba(168, 85, 247, 0.2)', color: '#a855f7', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Bot size={12} />
+            </div>
+            <div>
+              <div style={{ fontWeight: '600' }}>Router</div>
+              <div style={{ fontSize: '9px', color: '#64748b' }}>Delegación</div>
+            </div>
+          </button>
+
+          <button
+            onClick={() => handleQuickAddNode('HUMAN_APPROVAL', 'Aprobación Humana')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '7px 8px',
+              backgroundColor: '#121824',
+              border: '1px solid #233147',
+              borderRadius: '6px',
+              color: '#f8fafc',
+              fontSize: '11px',
+              cursor: 'pointer',
+              textAlign: 'left',
+            }}
+            title="Añadir pausa supervisada esperando autorización humana"
+          >
+            <div style={{ width: '20px', height: '20px', borderRadius: '4px', backgroundColor: 'rgba(236, 72, 153, 0.2)', color: '#ec4899', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <ShieldCheck size={12} />
+            </div>
+            <div>
+              <div style={{ fontWeight: '600' }}>Aprobación</div>
+              <div style={{ fontSize: '9px', color: '#64748b' }}>Supervisión</div>
+            </div>
+          </button>
+
+
+          <button
+            onClick={() => handleQuickAddNode('PARALLEL_FORK', 'Parallel Fork')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '7px 8px',
+              backgroundColor: '#121824',
+              border: '1px solid #233147',
+              borderRadius: '6px',
+              color: '#f8fafc',
+              fontSize: '11px',
+              cursor: 'pointer',
+              textAlign: 'left',
+            }}
+            title="Añadir bifurcación concurrente en paralelo"
+          >
+            <div style={{ width: '20px', height: '20px', borderRadius: '4px', backgroundColor: 'rgba(192, 132, 252, 0.2)', color: '#c084fc', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <GitFork size={12} />
+            </div>
+            <div>
+              <div style={{ fontWeight: '600' }}>Fork</div>
+              <div style={{ fontSize: '9px', color: '#64748b' }}>Paralelo</div>
+            </div>
+          </button>
+
+          <button
+            onClick={() => handleQuickAddNode('PARALLEL_JOIN', 'Parallel Join')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '7px 8px',
+              backgroundColor: '#121824',
+              border: '1px solid #233147',
+              borderRadius: '6px',
+              color: '#f8fafc',
+              fontSize: '11px',
+              cursor: 'pointer',
+              textAlign: 'left',
+            }}
+            title="Añadir sincronización y unión de ramas"
+          >
+            <div style={{ width: '20px', height: '20px', borderRadius: '4px', backgroundColor: 'rgba(129, 140, 248, 0.2)', color: '#818cf8', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <GitMerge size={12} />
+            </div>
+            <div>
+              <div style={{ fontWeight: '600' }}>Join</div>
+              <div style={{ fontSize: '9px', color: '#64748b' }}>Sincronización</div>
+            </div>
+          </button>
+
+          <button
+            onClick={() => handleQuickAddNode('END', 'End State')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '7px 8px',
+              backgroundColor: '#121824',
+              border: '1px solid #233147',
+              borderRadius: '6px',
+              color: '#f8fafc',
+              fontSize: '11px',
+              cursor: 'pointer',
+              textAlign: 'left',
+            }}
+            title="Añadir nodo terminal de finalización"
+          >
+            <div style={{ width: '20px', height: '20px', borderRadius: '4px', backgroundColor: 'rgba(244, 63, 94, 0.2)', color: '#f43f5e', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Flag size={12} />
+            </div>
+            <div>
+              <div style={{ fontWeight: '600' }}>Fin</div>
+              <div style={{ fontSize: '9px', color: '#64748b' }}>Terminal</div>
+            </div>
+          </button>
+
+          <div style={{ marginTop: 'auto', borderTop: '1px solid #1e293b', paddingTop: '10px' }}>
+            <button
+              onClick={() => setShowConnectModal(true)}
               style={{
-                position: 'relative',
-                minWidth: `${canvasDimensions.width}px`,
-                minHeight: `${canvasDimensions.height}px`,
-                width: `${canvasDimensions.width}px`,
-                height: `${canvasDimensions.height}px`,
-                backgroundImage: 'radial-gradient(circle, rgba(255, 255, 255, 0.04) 1px, transparent 1px)',
-                backgroundSize: '24px 24px',
+                width: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '6px',
+                padding: '6px',
+                backgroundColor: '#162234',
+                border: '1px solid #2a3c5a',
+                borderRadius: '5px',
+                color: '#38bdf8',
+                fontSize: '10.5px',
+                fontWeight: '600',
+                cursor: 'pointer',
               }}
             >
-              {/* Capa SVG para Aristas y Conexiones */}
-              <svg
-                style={{
-                  position: 'absolute',
-                  inset: 0,
-                  width: '100%',
-                  height: '100%',
-                  pointerEvents: 'none',
-                }}
+              <ArrowRight size={12} />
+              <span>Unir Nodos</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Lienzo Canvas React con SVG y Nodos Arrastrables */}
+        <div
+          ref={canvasRef}
+          onMouseMove={handleMouseMoveCanvas}
+          onMouseUp={handleMouseUpCanvas}
+          onClick={() => {
+            setSelectedNodeId(null);
+            setSelectedEdgeId(null);
+          }}
+          style={{
+            flex: 1,
+            position: 'relative',
+            backgroundColor: '#080c14',
+            overflow: 'auto',
+            userSelect: draggingNodeId ? 'none' : 'auto',
+          }}
+        >
+          {/* Espacio Amplio de Trabajo Multidimensional */}
+          <div
+            style={{
+              position: 'relative',
+              minWidth: `${canvasDimensions.width}px`,
+              minHeight: `${canvasDimensions.height}px`,
+              width: `${canvasDimensions.width}px`,
+              height: `${canvasDimensions.height}px`,
+              backgroundImage: 'radial-gradient(circle, rgba(255, 255, 255, 0.04) 1px, transparent 1px)',
+              backgroundSize: '24px 24px',
+            }}
+          >
+            {/* Capa SVG para Aristas y Conexiones */}
+            <svg
+              style={{
+                position: 'absolute',
+                inset: 0,
+                width: '100%',
+                height: '100%',
+                pointerEvents: 'none',
+              }}
+            >
+            <defs>
+              <marker
+                id="wf-arrow"
+                viewBox="0 0 10 10"
+                refX="6"
+                refY="5"
+                markerWidth="6"
+                markerHeight="6"
+                orient="auto-start-reverse"
               >
-              <defs>
-                <marker
-                  id="wf-arrow"
-                  viewBox="0 0 10 10"
-                  refX="6"
-                  refY="5"
-                  markerWidth="6"
-                  markerHeight="6"
-                  orient="auto-start-reverse"
-                >
-                  <path d="M 0 1 L 8 5 L 0 9 z" fill="#38bdf8" />
-                </marker>
-                <marker
-                  id="wf-arrow-selected"
-                  viewBox="0 0 10 10"
-                  refX="6"
-                  refY="5"
-                  markerWidth="6"
-                  markerHeight="6"
-                  orient="auto-start-reverse"
-                >
-                  <path d="M 0 1 L 8 5 L 0 9 z" fill="#f59e0b" />
-                </marker>
-              </defs>
+                <path d="M 0 1 L 8 5 L 0 9 z" fill="#38bdf8" />
+              </marker>
+              <marker
+                id="wf-arrow-selected"
+                viewBox="0 0 10 10"
+                refX="6"
+                refY="5"
+                markerWidth="6"
+                markerHeight="6"
+                orient="auto-start-reverse"
+              >
+                <path d="M 0 1 L 8 5 L 0 9 z" fill="#f59e0b" />
+              </marker>
+            </defs>
 
-              {edgesArray.map((edge) => {
-                const fromNode = nodesArray.find((n) => (n.node_id || n.id) === edge.from_node);
-                const toNode = nodesArray.find((n) => (n.node_id || n.id) === edge.to_node);
-                if (!fromNode || !toNode) return null;
+            {edgesArray.map((edge) => {
+              const fromNode = nodesArray.find((n) => (n.node_id || n.id) === edge.from_node);
+              const toNode = nodesArray.find((n) => (n.node_id || n.id) === edge.to_node);
+              if (!fromNode || !toNode) return null;
 
-                const x1 = (fromNode.position?.x ?? 100) + 210;
-                const y1 = (fromNode.position?.y ?? 100) + 40;
-                const x2 = toNode.position?.x ?? 300;
-                const y2 = (toNode.position?.y ?? 100) + 40;
-                const dx = Math.abs(x2 - x1) * 0.5;
+              const x1 = (fromNode.position?.x ?? 100) + 210;
+              const y1 = (fromNode.position?.y ?? 100) + 40;
+              const x2 = toNode.position?.x ?? 300;
+              const y2 = (toNode.position?.y ?? 100) + 40;
+              const dx = Math.abs(x2 - x1) * 0.5;
 
-                const isSelected = selectedEdgeId === edge.edge_id;
-                const strokeColor = isSelected ? '#f59e0b' : (edge.condition ? '#a855f7' : '#38bdf8');
-
-                return (
-                  <g
-                    key={edge.edge_id || `${edge.from_node}-${edge.to_node}`}
-                    style={{ pointerEvents: 'auto', cursor: 'pointer' }}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setSelectedEdgeId(edge.edge_id);
-                    }}
-                  >
-                    {/* Path invisible ancho para facilitar clic */}
-                    <path
-                      d={`M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`}
-                      fill="none"
-                      stroke="transparent"
-                      strokeWidth="14"
-                    />
-                    {/* Path visible */}
-                    <path
-                      d={`M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`}
-                      fill="none"
-                      stroke={strokeColor}
-                      strokeWidth={isSelected ? 3 : 2}
-                      strokeDasharray={edge.condition ? '5 3' : 'none'}
-                      markerEnd={isSelected ? 'url(#wf-arrow-selected)' : 'url(#wf-arrow)'}
-                      opacity={isSelected ? 1 : 0.85}
-                    />
-
-                    {/* Badge con Condición o Etiqueta en el punto medio */}
-                    <g transform={`translate(${(x1 + x2) / 2}, ${(y1 + y2) / 2})`}>
-                      <rect
-                        x="-45"
-                        y="-12"
-                        width="90"
-                        height="20"
-                        rx="4"
-                        fill={isSelected ? '#1f2937' : '#0f172a'}
-                        stroke={strokeColor}
-                        strokeWidth="1"
-                        opacity="0.9"
-                      />
-                      <text
-                        x="0"
-                        y="2"
-                        fill={isSelected ? '#f59e0b' : '#cbd5e1'}
-                        fontSize="9.5"
-                        fontWeight="600"
-                        textAnchor="middle"
-                        fontFamily="var(--font-mono)"
-                      >
-                        {edge.condition
-                          ? `${edge.condition.field?.split('.').pop() || 'cond'} ${edge.condition.operator} ${edge.condition.expected_value ?? ''}`
-                          : (edge.label || 'unión')}
-                      </text>
-                    </g>
-                  </g>
-                );
-              })}
-            </svg>
-
-            {/* Capa de Nodos Nativos */}
-            {nodesArray.map((node) => {
-              const nid = node.node_id || node.id;
-              const posX = node.position?.x ?? 100;
-              const posY = node.position?.y ?? 100;
-              const meta = getNodeTypeMeta(node.node_type);
-              const statusBadge = getNodeStatusBadge(node.status);
-              const isSelected = selectedNodeId === nid;
-              const isWiringSource = wiringSourceId === nid;
-              const isDragging = draggingNodeId === nid;
+              const isSelected = selectedEdgeId === edge.edge_id;
+              const strokeColor = isSelected ? '#f59e0b' : (edge.condition ? '#a855f7' : '#38bdf8');
 
               return (
-                <div
-                  key={nid}
+                <g
+                  key={edge.edge_id || `${edge.from_node}-${edge.to_node}`}
+                  style={{ pointerEvents: 'auto', cursor: 'pointer' }}
                   onClick={(e) => {
                     e.stopPropagation();
-                    if (wiringSourceId && wiringSourceId !== nid) {
-                      completeConnection(wiringSourceId, nid);
-                    } else {
-                      setSelectedNodeId(nid);
-                    }
-                  }}
-                  onMouseDown={(e) => handleMouseDownNode(e, nid, posX, posY)}
-                  style={{
-                    position: 'absolute',
-                    left: `${posX}px`,
-                    top: `${posY}px`,
-                    width: '210px',
-                    backgroundColor: '#111827',
-                    border: isWiringSource
-                      ? '2px solid #38bdf8'
-                      : (isSelected ? '2px solid #f59e0b' : `1.5px solid ${meta.border}`),
-                    borderRadius: '10px',
-                    padding: '10px 12px',
-                    cursor: isDragging ? 'grabbing' : 'grab',
-                    boxShadow: isSelected
-                      ? '0 0 16px rgba(245, 158, 11, 0.4)'
-                      : (isWiringSource ? '0 0 16px rgba(56, 189, 248, 0.4)' : '0 4px 12px rgba(0, 0, 0, 0.5)'),
-                    zIndex: isDragging ? 30 : (isSelected ? 20 : 5),
-                    transition: isDragging ? 'none' : 'border-color 0.15s ease, box-shadow 0.15s ease',
+                    setSelectedEdgeId(edge.edge_id);
                   }}
                 >
-                  {/* Puerto de Entrada (Izquierda) */}
-                  <div
-                    className="port-circle"
-                    onClick={(e) => handlePortClick(e, nid, false)}
-                    title={wiringSourceId ? `Hacer clic para conectar a este nodo` : `Puerto de entrada de dependencias`}
-                    style={{
-                      position: 'absolute',
-                      left: '-8px',
-                      top: '50%',
-                      transform: 'translateY(-50%)',
-                      width: '14px',
-                      height: '14px',
-                      borderRadius: '50%',
-                      backgroundColor: wiringSourceId ? '#38bdf8' : '#1e293b',
-                      border: '2px solid #080c14',
-                      cursor: 'pointer',
-                      zIndex: 35,
-                      boxShadow: wiringSourceId ? '0 0 8px #38bdf8' : 'none',
-                    }}
+                  {/* Path invisible ancho para facilitar clic */}
+                  <path
+                    d={`M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`}
+                    fill="none"
+                    stroke="transparent"
+                    strokeWidth="14"
+                  />
+                  {/* Path visible */}
+                  <path
+                    d={`M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`}
+                    fill="none"
+                    stroke={strokeColor}
+                    strokeWidth={isSelected ? 3 : 2}
+                    strokeDasharray={edge.condition ? '5 3' : 'none'}
+                    markerEnd={isSelected ? 'url(#wf-arrow-selected)' : 'url(#wf-arrow)'}
+                    opacity={isSelected ? 1 : 0.85}
                   />
 
-                  {/* Puerto de Salida (Derecha) */}
-                  <div
-                    className="port-circle"
-                    onClick={(e) => handlePortClick(e, nid, true)}
-                    title="Arrastrar o hacer clic para crear unión hacia otro nodo"
-                    style={{
-                      position: 'absolute',
-                      right: '-8px',
-                      top: '50%',
-                      transform: 'translateY(-50%)',
-                      width: '14px',
-                      height: '14px',
-                      borderRadius: '50%',
-                      backgroundColor: isWiringSource ? '#f59e0b' : '#38bdf8',
-                      border: '2px solid #080c14',
-                      cursor: 'pointer',
-                      zIndex: 35,
-                      boxShadow: '0 0 8px rgba(56, 189, 248, 0.5)',
-                    }}
-                  />
-
-                  {/* Encabezado del Nodo */}
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
-                    <div
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '4px',
-                        fontSize: '9.5px',
-                        fontWeight: '700',
-                        padding: '2px 6px',
-                        borderRadius: '4px',
-                        backgroundColor: meta.bg,
-                        color: meta.color,
-                        border: `1px solid ${meta.border}40`,
-                      }}
+                  {/* Badge con Condición o Etiqueta en el punto medio */}
+                  <g transform={`translate(${(x1 + x2) / 2}, ${(y1 + y2) / 2})`}>
+                    <rect
+                      x="-45"
+                      y="-12"
+                      width="90"
+                      height="20"
+                      rx="4"
+                      fill={isSelected ? '#1f2937' : '#0f172a'}
+                      stroke={strokeColor}
+                      strokeWidth="1"
+                      opacity="0.9"
+                    />
+                    <text
+                      x="0"
+                      y="2"
+                      fill={isSelected ? '#f59e0b' : '#cbd5e1'}
+                      fontSize="9.5"
+                      fontWeight="600"
+                      textAnchor="middle"
+                      fontFamily="var(--font-mono)"
                     >
-                      {meta.icon}
-                      <span>{meta.label}</span>
-                    </div>
+                      {edge.condition
+                        ? `${edge.condition.field?.split('.').pop() || 'cond'} ${edge.condition.operator} ${edge.condition.expected_value ?? ''}`
+                        : (edge.label || 'unión')}
+                    </text>
+                  </g>
+                </g>
+              );
+            })}
+          </svg>
 
-                    <span
-                      style={{
-                        fontSize: '9px',
-                        fontWeight: '700',
-                        padding: '1px 5px',
-                        borderRadius: '4px',
-                        backgroundColor: statusBadge.bg,
-                        color: statusBadge.color,
-                      }}
-                    >
-                      {node.status || 'PENDING'}
-                    </span>
-                  </div>
+          {/* Capa de Nodos Nativos */}
+          {nodesArray.map((node) => {
+            const nid = node.node_id || node.id;
+            const posX = node.position?.x ?? 100;
+            const posY = node.position?.y ?? 100;
+            const meta = getNodeTypeMeta(node.node_type);
+            const statusBadge = getNodeStatusBadge(node.status);
+            const isSelected = selectedNodeId === nid;
+            const isWiringSource = wiringSourceId === nid;
+            const isDragging = draggingNodeId === nid;
 
-                  {/* Título del Nodo */}
-                  <div style={{ fontSize: '12.5px', fontWeight: '700', color: '#f8fafc', marginBottom: '4px', wordBreak: 'break-word' }}>
-                    {node.name}
-                  </div>
+            return (
+              <div
+                key={nid}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (wiringSourceId && wiringSourceId !== nid) {
+                    completeConnection(wiringSourceId, nid);
+                  } else {
+                    setSelectedNodeId(nid);
+                  }
+                }}
+                onMouseDown={(e) => handleMouseDownNode(e, nid, posX, posY)}
+                style={{
+                  position: 'absolute',
+                  left: `${posX}px`,
+                  top: `${posY}px`,
+                  width: '210px',
+                  backgroundColor: '#111827',
+                  border: isWiringSource
+                    ? '2px solid #38bdf8'
+                    : (isSelected ? '2px solid #f59e0b' : `1.5px solid ${meta.border}`),
+                  borderRadius: '10px',
+                  padding: '10px 12px',
+                  cursor: isDragging ? 'grabbing' : 'grab',
+                  boxShadow: isSelected
+                    ? '0 0 16px rgba(245, 158, 11, 0.4)'
+                    : (isWiringSource ? '0 0 16px rgba(56, 189, 248, 0.4)' : '0 4px 12px rgba(0, 0, 0, 0.5)'),
+                  zIndex: isDragging ? 30 : (isSelected ? 20 : 5),
+                  transition: isDragging ? 'none' : 'border-color 0.15s ease, box-shadow 0.15s ease',
+                }}
+              >
+                {/* Puerto de Entrada (Izquierda) */}
+                <div
+                  className="port-circle"
+                  onClick={(e) => handlePortClick(e, nid, false)}
+                  title={wiringSourceId ? `Hacer clic para conectar a este nodo` : `Puerto de entrada de dependencias`}
+                  style={{
+                    position: 'absolute',
+                    left: '-8px',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    width: '14px',
+                    height: '14px',
+                    borderRadius: '50%',
+                    backgroundColor: wiringSourceId ? '#38bdf8' : '#1e293b',
+                    border: '2px solid #080c14',
+                    cursor: 'pointer',
+                    zIndex: 35,
+                    boxShadow: wiringSourceId ? '0 0 8px #38bdf8' : 'none',
+                  }}
+                />
 
-                  {/* Metadatos (Agente asignado o Herramienta) */}
-                  {node.node_type === 'AGENT' && (
-                    <div style={{ fontSize: '10.5px', color: '#10b981', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
-                      <Bot size={11} />
-                      <span style={{ fontFamily: 'var(--font-mono)' }}>{node.agent_id || 'Sin asignar'}</span>
-                    </div>
-                  )}
+                {/* Puerto de Salida (Derecha) */}
+                <div
+                  className="port-circle"
+                  onClick={(e) => handlePortClick(e, nid, true)}
+                  title="Arrastrar o hacer clic para crear unión hacia otro nodo"
+                  style={{
+                    position: 'absolute',
+                    right: '-8px',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    width: '14px',
+                    height: '14px',
+                    borderRadius: '50%',
+                    backgroundColor: isWiringSource ? '#f59e0b' : '#38bdf8',
+                    border: '2px solid #080c14',
+                    cursor: 'pointer',
+                    zIndex: 35,
+                    boxShadow: '0 0 8px rgba(56, 189, 248, 0.5)',
+                  }}
+                />
 
-                  {node.node_type === 'TASK' && (
-                    <div style={{ fontSize: '10.5px', color: '#38bdf8', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
-                      <Terminal size={11} />
-                      <span style={{ fontFamily: 'var(--font-mono)' }}>{node.tool_name || 'task'}</span>
-                    </div>
-                  )}
-
-                  {node.node_type === 'WHILE' && (
-                    <div style={{ fontSize: '10px', color: '#06b6d4', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '3px' }}>
-                      <RotateCcw size={11} />
-                      <span>Iteración máx: {node.control_config?.max_iterations ?? 3} ({node.control_config?.on_limit || 'ABORT'})</span>
-                    </div>
-                  )}
-
-                  {(node.node_type === 'IF' || node.node_type === 'DECISION') && node.control_config?.condition && (
-                    <div style={{ fontSize: '9.5px', color: '#f59e0b', fontFamily: 'var(--font-mono)', marginTop: '3px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {typeof node.control_config.condition === 'string'
-                        ? node.control_config.condition
-                        : `${node.control_config.condition.field || ''} ${node.control_config.condition.operator || '=='} ${node.control_config.condition.expected_value ?? ''}`}
-                    </div>
-                  )}
-
-                  {node.node_type === 'DELEGATE' && (
-                    <div style={{ fontSize: '10px', color: '#a855f7', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '3px' }}>
-                      <Bot size={11} />
-                      <span>Modo: {node.control_config?.routing_mode || node.control_config?.strategy || 'MANUAL'}</span>
-                    </div>
-                  )}
-
-                  {node.node_type === 'HUMAN_APPROVAL' && node.status !== 'WAITING_APPROVAL' && (
-                    <div style={{ fontSize: '9.5px', color: '#ec4899', marginTop: '3px', fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {node.control_config?.prompt || 'Pausa supervisada'}
-                    </div>
-                  )}
-
-                  {/* Banner Interactivo si está en Espera de Aprobación */}
-                  {node.status === 'WAITING_APPROVAL' && (
-                    <div
-                      style={{
-                        marginTop: '6px',
-                        marginBottom: '6px',
-                        padding: '6px',
-                        backgroundColor: 'rgba(236, 72, 153, 0.15)',
-                        border: '1px solid rgba(236, 72, 153, 0.4)',
-                        borderRadius: '6px',
-                      }}
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <div style={{ fontSize: '9.5px', color: '#f472b6', fontWeight: '600', marginBottom: '4px' }}>
-                        {node.control_config?.prompt || 'Requiere Aprobación'}
-                      </div>
-                      <div style={{ display: 'flex', gap: '4px' }}>
-                        <button
-                          onClick={() => handleApproveNode(nid, true)}
-                          style={{
-                            flex: 1,
-                            padding: '3px 4px',
-                            fontSize: '9.5px',
-                            fontWeight: '700',
-                            backgroundColor: '#10b981',
-                            color: '#ffffff',
-                            border: 'none',
-                            borderRadius: '4px',
-                            cursor: 'pointer',
-                          }}
-                        >
-                          Aprobar
-                        </button>
-                        <button
-                          onClick={() => handleApproveNode(nid, false)}
-                          style={{
-                            flex: 1,
-                            padding: '3px 4px',
-                            fontSize: '9.5px',
-                            fontWeight: '700',
-                            backgroundColor: '#ef4444',
-                            color: '#ffffff',
-                            border: 'none',
-                            borderRadius: '4px',
-                            cursor: 'pointer',
-                          }}
-                        >
-                          Rechazar
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Acciones al pie del nodo */}
+                {/* Encabezado del Nodo */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
                   <div
                     style={{
                       display: 'flex',
                       alignItems: 'center',
-                      justifyContent: 'space-between',
-                      marginTop: '8px',
-                      paddingTop: '6px',
-                      borderTop: '1px solid rgba(255, 255, 255, 0.07)',
+                      gap: '4px',
+                      fontSize: '9.5px',
+                      fontWeight: '700',
+                      padding: '2px 6px',
+                      borderRadius: '4px',
+                      backgroundColor: meta.bg,
+                      color: meta.color,
+                      border: `1px solid ${meta.border}40`,
                     }}
                   >
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleBacktrack(nid);
-                      }}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '3px',
-                        background: 'none',
-                        border: 'none',
-                        color: '#d29922',
-                        fontSize: '10px',
-                        fontWeight: '600',
-                        cursor: 'pointer',
-                        padding: '1px 3px',
-                      }}
-                      title="Rebobinar estado a este punto de restauración"
-                    >
-                      <RotateCcw size={10} />
-                      <span>Backtrack</span>
-                    </button>
-
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDeleteNode(nid);
-                      }}
-                      style={{
-                        background: 'none',
-                        border: 'none',
-                        color: '#f85149',
-                        cursor: 'pointer',
-                        padding: '1px 3px',
-                      }}
-                      title="Eliminar nodo"
-                    >
-                      <Trash2 size={11} />
-                    </button>
+                    {meta.icon}
+                    <span>{meta.label}</span>
                   </div>
-                </div>
-              );
-            })}
 
-            {nodesArray.length === 0 && (
-              <div
-                style={{
-                  position: 'absolute',
-                  top: '50%',
-                  left: '50%',
-                  transform: 'translate(-50%, -50%)',
-                  textAlign: 'center',
-                  color: '#73849c',
-                }}
-              >
-                <Workflow size={36} style={{ margin: '0 auto 10px', opacity: 0.4 }} />
-                <div style={{ fontSize: '14px', fontWeight: '600', color: '#94a3b8' }}>
-                  Lienzo de Workflow Vacío
-                </div>
-                <p style={{ fontSize: '12px', marginTop: '4px' }}>
-                  Selecciona un nodo de la paleta izquierda para comenzar a componer el flujo de agentes.
-                </p>
-              </div>
-            )}
-            </div>
-          </div>
-
-          {/* Inspector Lateral Derecho (Propiedades de Nodo o Arista) */}
-          <div
-            style={{
-              width: '310px',
-              backgroundColor: '#0c1017',
-              borderLeft: '1px solid #1e293b',
-              display: 'flex',
-              flexDirection: 'column',
-              flexShrink: 0,
-              zIndex: 10,
-              overflowY: 'auto',
-            }}
-          >
-            {nodeEditForm ? (
-              /* Inspector de Nodo */
-              <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #1e293b', paddingBottom: '8px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <Settings2 size={15} style={{ color: '#38bdf8' }} />
-                    <h3 style={{ fontSize: '13px', fontWeight: '700', color: '#f8fafc', margin: 0 }}>
-                      Propiedades del Nodo
-                    </h3>
-                  </div>
-                  <button
-                    onClick={() => setSelectedNodeId(null)}
-                    style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer' }}
+                  <span
+                    style={{
+                      fontSize: '9px',
+                      fontWeight: '700',
+                      padding: '1px 5px',
+                      borderRadius: '4px',
+                      backgroundColor: statusBadge.bg,
+                      color: statusBadge.color,
+                    }}
                   >
-                    <X size={14} />
+                    {node.status || 'PENDING'}
+                  </span>
+                </div>
+
+                {/* Título del Nodo */}
+                <div style={{ fontSize: '12.5px', fontWeight: '700', color: '#f8fafc', marginBottom: '4px', wordBreak: 'break-word' }}>
+                  {node.name}
+                </div>
+
+                {/* Metadatos (Agente asignado o Herramienta) */}
+                {node.node_type === 'AGENT' && (
+                  <div style={{ fontSize: '10.5px', color: '#10b981', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
+                    <Bot size={11} />
+                    <span style={{ fontFamily: 'var(--font-mono)' }}>{node.agent_id || 'Sin asignar'}</span>
+                  </div>
+                )}
+
+                {node.node_type === 'TASK' && (
+                  <div style={{ fontSize: '10.5px', color: '#38bdf8', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
+                    <Terminal size={11} />
+                    <span style={{ fontFamily: 'var(--font-mono)' }}>{node.tool_name || 'task'}</span>
+                  </div>
+                )}
+
+                {node.node_type === 'WHILE' && (
+                  <div style={{ fontSize: '10px', color: '#06b6d4', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '3px' }}>
+                    <RotateCcw size={11} />
+                    <span>Iteración máx: {node.control_config?.max_iterations ?? 3} ({node.control_config?.on_limit || 'ABORT'})</span>
+                  </div>
+                )}
+
+                {(node.node_type === 'IF' || node.node_type === 'DECISION') && node.control_config?.condition && (
+                  <div style={{ fontSize: '9.5px', color: '#f59e0b', fontFamily: 'var(--font-mono)', marginTop: '3px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {typeof node.control_config.condition === 'string'
+                      ? node.control_config.condition
+                      : `${node.control_config.condition.field || ''} ${node.control_config.condition.operator || '=='} ${node.control_config.condition.expected_value ?? ''}`}
+                  </div>
+                )}
+
+                {node.node_type === 'DELEGATE' && (
+                  <div style={{ fontSize: '10px', color: '#a855f7', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '3px' }}>
+                    <Bot size={11} />
+                    <span>Modo: {node.control_config?.routing_mode || node.control_config?.strategy || 'MANUAL'}</span>
+                  </div>
+                )}
+
+                {node.node_type === 'HUMAN_APPROVAL' && node.status !== 'WAITING_APPROVAL' && (
+                  <div style={{ fontSize: '9.5px', color: '#ec4899', marginTop: '3px', fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {node.control_config?.prompt || 'Pausa supervisada'}
+                  </div>
+                )}
+
+                {/* Banner Interactivo si está en Espera de Aprobación */}
+                {node.status === 'WAITING_APPROVAL' && (
+                  <div
+                    style={{
+                      marginTop: '6px',
+                      marginBottom: '6px',
+                      padding: '6px',
+                      backgroundColor: 'rgba(236, 72, 153, 0.15)',
+                      border: '1px solid rgba(236, 72, 153, 0.4)',
+                      borderRadius: '6px',
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <div style={{ fontSize: '9.5px', color: '#f472b6', fontWeight: '600', marginBottom: '4px' }}>
+                      {node.control_config?.prompt || 'Requiere Aprobación'}
+                    </div>
+                    <div style={{ display: 'flex', gap: '4px' }}>
+                      <button
+                        onClick={() => handleApproveNode(nid, true)}
+                        style={{
+                          flex: 1,
+                          padding: '3px 4px',
+                          fontSize: '9.5px',
+                          fontWeight: '700',
+                          backgroundColor: '#10b981',
+                          color: '#ffffff',
+                          border: 'none',
+                          borderRadius: '4px',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Aprobar
+                      </button>
+                      <button
+                        onClick={() => handleApproveNode(nid, false)}
+                        style={{
+                          flex: 1,
+                          padding: '3px 4px',
+                          fontSize: '9.5px',
+                          fontWeight: '700',
+                          backgroundColor: '#ef4444',
+                          color: '#ffffff',
+                          border: 'none',
+                          borderRadius: '4px',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Rechazar
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Acciones al pie del nodo */}
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    marginTop: '8px',
+                    paddingTop: '6px',
+                    borderTop: '1px solid rgba(255, 255, 255, 0.07)',
+                  }}
+                >
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleBacktrack(nid);
+                    }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '3px',
+                      background: 'none',
+                      border: 'none',
+                      color: '#d29922',
+                      fontSize: '10px',
+                      fontWeight: '600',
+                      cursor: 'pointer',
+                      padding: '1px 3px',
+                    }}
+                    title="Rebobinar estado a este punto de restauración"
+                  >
+                    <RotateCcw size={10} />
+                    <span>Backtrack</span>
+                  </button>
+
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDeleteNode(nid);
+                    }}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: '#f85149',
+                      cursor: 'pointer',
+                      padding: '1px 3px',
+                    }}
+                    title="Eliminar nodo"
+                  >
+                    <Trash2 size={11} />
                   </button>
                 </div>
+              </div>
+            );
+          })}
 
-                <form onSubmit={handleSaveNodeProperties} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                  <div>
-                    <label style={{ fontSize: '10.5px', color: '#94a3b8', display: 'block', marginBottom: '3px' }}>ID del Nodo</label>
-                    <input
-                      type="text"
-                      readOnly
-                      value={nodeEditForm.node_id}
-                      style={{ width: '100%', backgroundColor: '#111827', border: '1px solid #1e293b', borderRadius: '5px', padding: '5px 8px', fontSize: '11px', color: '#94a3b8', fontFamily: 'var(--font-mono)' }}
-                    />
-                  </div>
+          {nodesArray.length === 0 && (
+            <div
+              style={{
+                position: 'absolute',
+                top: '50%',
+                left: '50%',
+                transform: 'translate(-50%, -50%)',
+                textAlign: 'center',
+                color: '#73849c',
+              }}
+            >
+              <Workflow size={36} style={{ margin: '0 auto 10px', opacity: 0.4 }} />
+              <div style={{ fontSize: '14px', fontWeight: '600', color: '#94a3b8' }}>
+                Lienzo de Workflow Vacío
+              </div>
+              <p style={{ fontSize: '12px', marginTop: '4px' }}>
+                Selecciona un nodo de la paleta izquierda para comenzar a componer el flujo de agentes.
+              </p>
+            </div>
+          )}
+          </div>
+        </div>
 
-                  <div>
-                    <label style={{ fontSize: '10.5px', color: '#94a3b8', display: 'block', marginBottom: '3px' }}>Nombre</label>
-                    <input
-                      type="text"
-                      required
-                      value={nodeEditForm.name}
-                      onChange={(e) => setNodeEditForm({ ...nodeEditForm, name: e.target.value })}
-                      style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '5px', padding: '5px 8px', fontSize: '11.5px', color: '#f8fafc' }}
-                    />
-                  </div>
+        {/* Inspector Lateral Derecho (Propiedades de Nodo o Arista) */}
+        <div
+          style={{
+            width: '310px',
+            backgroundColor: '#0c1017',
+            borderLeft: '1px solid #1e293b',
+            display: 'flex',
+            flexDirection: 'column',
+            flexShrink: 0,
+            zIndex: 10,
+            overflowY: 'auto',
+          }}
+        >
+          {nodeEditForm ? (
+            /* Inspector de Nodo */
+            <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #1e293b', paddingBottom: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Settings2 size={15} style={{ color: '#38bdf8' }} />
+                  <h3 style={{ fontSize: '13px', fontWeight: '700', color: '#f8fafc', margin: 0 }}>
+                    Propiedades del Nodo
+                  </h3>
+                </div>
+                <button
+                  onClick={() => setSelectedNodeId(null)}
+                  style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer' }}
+                >
+                  <X size={14} />
+                </button>
+              </div>
 
+              <form onSubmit={handleSaveNodeProperties} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <div>
+                  <label style={{ fontSize: '10.5px', color: '#94a3b8', display: 'block', marginBottom: '3px' }}>ID del Nodo</label>
+                  <input
+                    type="text"
+                    readOnly
+                    value={nodeEditForm.node_id}
+                    style={{ width: '100%', backgroundColor: '#111827', border: '1px solid #1e293b', borderRadius: '5px', padding: '5px 8px', fontSize: '11px', color: '#94a3b8', fontFamily: 'var(--font-mono)' }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ fontSize: '10.5px', color: '#94a3b8', display: 'block', marginBottom: '3px' }}>Nombre</label>
+                  <input
+                    type="text"
+                    required
+                    value={nodeEditForm.name}
+                    onChange={(e) => setNodeEditForm({ ...nodeEditForm, name: e.target.value })}
+                    style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '5px', padding: '5px 8px', fontSize: '11.5px', color: '#f8fafc' }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ fontSize: '10.5px', color: '#94a3b8', display: 'block', marginBottom: '3px' }}>Tipo de Nodo</label>
+                  <select
+                    value={nodeEditForm.node_type}
+                    onChange={(e) => setNodeEditForm({ ...nodeEditForm, node_type: e.target.value })}
+                    style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '5px', padding: '5px 8px', fontSize: '11.5px', color: '#f8fafc' }}
+                  >
+                    <option value="AGENT">AGENT (Agente Autónomo)</option>
+                    <option value="TASK">TASK (Tarea / Herramienta)</option>
+                    <option value="IF">IF (Bifurcación Condicional)</option>
+                    <option value="DECISION">DECISION (Compuerta Condicional)</option>
+                    <option value="WHILE">WHILE (Bucle Acotado)</option>
+                    <option value="DELEGATE">DELEGATE (Router / Delegación)</option>
+                    <option value="HUMAN_APPROVAL">HUMAN_APPROVAL (Aprobación Humana)</option>
+                    <option value="PARALLEL_FORK">PARALLEL_FORK (Bifurcación Concurrente)</option>
+                    <option value="PARALLEL_JOIN">PARALLEL_JOIN (Sincronización / Join)</option>
+                    <option value="START">START (Inicio)</option>
+                    <option value="END">END (Fin)</option>
+                  </select>
+                </div>
+
+                {nodeEditForm.node_type === 'AGENT' && (
                   <div>
-                    <label style={{ fontSize: '10.5px', color: '#94a3b8', display: 'block', marginBottom: '3px' }}>Tipo de Nodo</label>
+                    <label style={{ fontSize: '10.5px', color: '#94a3b8', display: 'block', marginBottom: '3px' }}>Agente Asignado</label>
                     <select
-                      value={nodeEditForm.node_type}
-                      onChange={(e) => setNodeEditForm({ ...nodeEditForm, node_type: e.target.value })}
-                      style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '5px', padding: '5px 8px', fontSize: '11.5px', color: '#f8fafc' }}
+                      value={nodeEditForm.agent_id}
+                      onChange={(e) => setNodeEditForm({ ...nodeEditForm, agent_id: e.target.value })}
+                      style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '5px', padding: '5px 8px', fontSize: '11.5px', color: '#10b981', marginBottom: '4px' }}
                     >
-                      <option value="AGENT">AGENT (Agente Autónomo)</option>
-                      <option value="TASK">TASK (Tarea / Herramienta)</option>
-                      <option value="IF">IF (Bifurcación Condicional)</option>
-                      <option value="DECISION">DECISION (Compuerta Condicional)</option>
-                      <option value="WHILE">WHILE (Bucle Acotado)</option>
-                      <option value="DELEGATE">DELEGATE (Router / Delegación)</option>
-                      <option value="HUMAN_APPROVAL">HUMAN_APPROVAL (Aprobación Humana)</option>
-                      <option value="PARALLEL_FORK">PARALLEL_FORK (Bifurcación Concurrente)</option>
-                      <option value="PARALLEL_JOIN">PARALLEL_JOIN (Sincronización / Join)</option>
-                      <option value="START">START (Inicio)</option>
-                      <option value="END">END (Fin)</option>
+                      <option value="">-- Personalizado / Escribir ID --</option>
+                      {registeredAgents.map((ag) => (
+                        <option key={ag.id} value={ag.id}>
+                          {ag.name || ag.id} ({ag.role || 'agent'})
+                        </option>
+                      ))}
                     </select>
+                    <input
+                      type="text"
+                      placeholder="O escribe agent_id personalizado..."
+                      value={nodeEditForm.agent_id}
+                      onChange={(e) => setNodeEditForm({ ...nodeEditForm, agent_id: e.target.value })}
+                      style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '5px', padding: '5px 8px', fontSize: '11px', color: '#f8fafc', fontFamily: 'var(--font-mono)' }}
+                    />
                   </div>
+                )}
 
-                  {nodeEditForm.node_type === 'AGENT' && (
-                    <div>
-                      <label style={{ fontSize: '10.5px', color: '#94a3b8', display: 'block', marginBottom: '3px' }}>Agente Asignado</label>
-                      <select
-                        value={nodeEditForm.agent_id}
-                        onChange={(e) => setNodeEditForm({ ...nodeEditForm, agent_id: e.target.value })}
-                        style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '5px', padding: '5px 8px', fontSize: '11.5px', color: '#10b981', marginBottom: '4px' }}
-                      >
-                        <option value="">-- Personalizado / Escribir ID --</option>
-                        {registeredAgents.map((ag) => (
-                          <option key={ag.id} value={ag.id}>
-                            {ag.name || ag.id} ({ag.role || 'agent'})
-                          </option>
-                        ))}
-                      </select>
-                      <input
-                        type="text"
-                        placeholder="O escribe agent_id personalizado..."
-                        value={nodeEditForm.agent_id}
-                        onChange={(e) => setNodeEditForm({ ...nodeEditForm, agent_id: e.target.value })}
-                        style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '5px', padding: '5px 8px', fontSize: '11px', color: '#f8fafc', fontFamily: 'var(--font-mono)' }}
-                      />
+                {nodeEditForm.node_type === 'TASK' && (
+                  <div>
+                    <label style={{ fontSize: '10.5px', color: '#94a3b8', display: 'block', marginBottom: '3px' }}>Herramienta / Tool Name</label>
+                    <input
+                      type="text"
+                      placeholder="ej. deploy_service, run_audit"
+                      value={nodeEditForm.tool_name}
+                      onChange={(e) => setNodeEditForm({ ...nodeEditForm, tool_name: e.target.value })}
+                      style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '5px', padding: '5px 8px', fontSize: '11.5px', color: '#38bdf8' }}
+                    />
+                  </div>
+                )}
+
+                {/* Panel Especial: Bucle WHILE */}
+                {nodeEditForm.node_type === 'WHILE' && (
+                  <div style={{ backgroundColor: '#0d1926', border: '1px solid rgba(6, 182, 212, 0.3)', borderRadius: '6px', padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <div style={{ fontSize: '11px', fontWeight: '700', color: '#06b6d4', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                      <RotateCcw size={12} />
+                      <span>Configuración de Bucle (WHILE)</span>
                     </div>
-                  )}
-
-                  {nodeEditForm.node_type === 'TASK' && (
-                    <div>
-                      <label style={{ fontSize: '10.5px', color: '#94a3b8', display: 'block', marginBottom: '3px' }}>Herramienta / Tool Name</label>
-                      <input
-                        type="text"
-                        placeholder="ej. deploy_service, run_audit"
-                        value={nodeEditForm.tool_name}
-                        onChange={(e) => setNodeEditForm({ ...nodeEditForm, tool_name: e.target.value })}
-                        style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '5px', padding: '5px 8px', fontSize: '11.5px', color: '#38bdf8' }}
-                      />
-                    </div>
-                  )}
-
-                  {/* Panel Especial: Bucle WHILE */}
-                  {nodeEditForm.node_type === 'WHILE' && (
-                    <div style={{ backgroundColor: '#0d1926', border: '1px solid rgba(6, 182, 212, 0.3)', borderRadius: '6px', padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      <div style={{ fontSize: '11px', fontWeight: '700', color: '#06b6d4', display: 'flex', alignItems: 'center', gap: '5px' }}>
-                        <RotateCcw size={12} />
-                        <span>Configuración de Bucle (WHILE)</span>
-                      </div>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
-                        <div>
-                          <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Máx. Iteraciones:</label>
-                          <input
-                            type="number"
-                            min="1"
-                            max="100"
-                            value={nodeEditForm.max_iterations}
-                            onChange={(e) => setNodeEditForm({ ...nodeEditForm, max_iterations: e.target.value })}
-                            style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#06b6d4' }}
-                          />
-                        </div>
-                        <div>
-                          <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Al superar límite:</label>
-                          <select
-                            value={nodeEditForm.on_limit}
-                            onChange={(e) => setNodeEditForm({ ...nodeEditForm, on_limit: e.target.value })}
-                            style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#f8fafc' }}
-                          >
-                            <option value="ABORT">ABORT (Detener)</option>
-                            <option value="ESCALATE">ESCALATE (Escalar)</option>
-                          </select>
-                        </div>
-                      </div>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
-                        <div>
-                          <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Entrada Cuerpo (body_entry):</label>
-                          <input
-                            type="text"
-                            placeholder="node_body_id"
-                            value={nodeEditForm.body_entry || ''}
-                            onChange={(e) => setNodeEditForm({ ...nodeEditForm, body_entry: e.target.value })}
-                            style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#06b6d4', fontFamily: 'var(--font-mono)' }}
-                          />
-                        </div>
-                        <div>
-                          <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Salida Bucle (exit_target):</label>
-                          <input
-                            type="text"
-                            placeholder="node_exit_id"
-                            value={nodeEditForm.exit_target || ''}
-                            onChange={(e) => setNodeEditForm({ ...nodeEditForm, exit_target: e.target.value })}
-                            style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#06b6d4', fontFamily: 'var(--font-mono)' }}
-                          />
-                        </div>
-                      </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
                       <div>
-                        <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Campo condición retorno (opcional):</label>
-                        <input
-                          type="text"
-                          placeholder="ej. outputs.reviewer.needs_revision"
-                          value={nodeEditForm.condition_field}
-                          onChange={(e) => setNodeEditForm({ ...nodeEditForm, condition_field: e.target.value })}
-                          style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#f8fafc', fontFamily: 'var(--font-mono)' }}
-                        />
-                      </div>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
-                        <div>
-                          <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Operador:</label>
-                          <select
-                            value={nodeEditForm.condition_operator || '=='}
-                            onChange={(e) => setNodeEditForm({ ...nodeEditForm, condition_operator: e.target.value })}
-                            style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#f8fafc' }}
-                          >
-                            <option value="==">==</option>
-                            <option value="!=">!=</option>
-                            <option value=">">&gt;</option>
-                            <option value="<">&lt;</option>
-                            <option value="contains">contains</option>
-                            <option value="is_true">is_true</option>
-                            <option value="is_false">is_false</option>
-                          </select>
-                        </div>
-                        <div>
-                          <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Valor esperado:</label>
-                          <input
-                            type="text"
-                            placeholder="true"
-                            value={nodeEditForm.condition_expected_value || ''}
-                            onChange={(e) => setNodeEditForm({ ...nodeEditForm, condition_expected_value: e.target.value })}
-                            style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#f8fafc' }}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Panel Especial: Bifurcación Condicional IF / DECISION */}
-                  {(nodeEditForm.node_type === 'IF' || nodeEditForm.node_type === 'DECISION') && (
-                    <div style={{ backgroundColor: '#1c1917', border: '1px solid rgba(245, 158, 11, 0.3)', borderRadius: '6px', padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      <div style={{ fontSize: '11px', fontWeight: '700', color: '#f59e0b', display: 'flex', alignItems: 'center', gap: '5px' }}>
-                        <GitBranch size={12} />
-                        <span>Condición de Decisión (IF)</span>
-                      </div>
-                      <div>
-                        <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Campo a evaluar:</label>
-                        <input
-                          type="text"
-                          placeholder="ej. outputs.triage.category"
-                          value={nodeEditForm.condition_field}
-                          onChange={(e) => setNodeEditForm({ ...nodeEditForm, condition_field: e.target.value })}
-                          style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#f8fafc', fontFamily: 'var(--font-mono)' }}
-                        />
-                      </div>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
-                        <div>
-                          <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Operador:</label>
-                          <select
-                            value={nodeEditForm.condition_operator || '=='}
-                            onChange={(e) => setNodeEditForm({ ...nodeEditForm, condition_operator: e.target.value })}
-                            style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#f8fafc' }}
-                          >
-                            <option value="==">==</option>
-                            <option value="!=">!=</option>
-                            <option value=">">&gt;</option>
-                            <option value="<">&lt;</option>
-                            <option value="contains">contains</option>
-                            <option value="is_true">is_true</option>
-                            <option value="is_false">is_false</option>
-                          </select>
-                        </div>
-                        <div>
-                          <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Valor esperado:</label>
-                          <input
-                            type="text"
-                            placeholder="deep"
-                            value={nodeEditForm.condition_expected_value || ''}
-                            onChange={(e) => setNodeEditForm({ ...nodeEditForm, condition_expected_value: e.target.value })}
-                            style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#f8fafc' }}
-                          />
-                        </div>
-                      </div>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
-                        <div>
-                          <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Rama True (true_edge):</label>
-                          <input
-                            type="text"
-                            placeholder="id_arista_o_nodo"
-                            value={nodeEditForm.true_edge || ''}
-                            onChange={(e) => setNodeEditForm({ ...nodeEditForm, true_edge: e.target.value })}
-                            style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#10b981', fontFamily: 'var(--font-mono)' }}
-                          />
-                        </div>
-                        <div>
-                          <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Rama False (false_edge):</label>
-                          <input
-                            type="text"
-                            placeholder="id_arista_o_nodo"
-                            value={nodeEditForm.false_edge || ''}
-                            onChange={(e) => setNodeEditForm({ ...nodeEditForm, false_edge: e.target.value })}
-                            style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#ef4444', fontFamily: 'var(--font-mono)' }}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Panel Especial: Aprobación Humana */}
-                  {nodeEditForm.node_type === 'HUMAN_APPROVAL' && (
-                    <div style={{ backgroundColor: '#21101d', border: '1px solid rgba(236, 72, 153, 0.3)', borderRadius: '6px', padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      <div style={{ fontSize: '11px', fontWeight: '700', color: '#ec4899', display: 'flex', alignItems: 'center', gap: '5px' }}>
-                        <ShieldCheck size={12} />
-                        <span>Compuerta de Aprobación Humana</span>
-                      </div>
-                      <div>
-                        <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Prompt / Pregunta de Aprobación:</label>
-                        <textarea
-                          rows={2}
-                          value={nodeEditForm.prompt}
-                          onChange={(e) => setNodeEditForm({ ...nodeEditForm, prompt: e.target.value })}
-                          placeholder="¿Autorizar la publicación del informe?"
-                          style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#f8fafc', resize: 'vertical' }}
-                        />
-                      </div>
-                      <div>
-                        <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Timeout (segundos):</label>
+                        <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Máx. Iteraciones:</label>
                         <input
                           type="number"
-                          value={nodeEditForm.timeout_seconds}
-                          onChange={(e) => setNodeEditForm({ ...nodeEditForm, timeout_seconds: e.target.value })}
-                          style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#ec4899' }}
+                          min="1"
+                          max="100"
+                          value={nodeEditForm.max_iterations}
+                          onChange={(e) => setNodeEditForm({ ...nodeEditForm, max_iterations: e.target.value })}
+                          style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#06b6d4' }}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Al superar límite:</label>
+                        <select
+                          value={nodeEditForm.on_limit}
+                          onChange={(e) => setNodeEditForm({ ...nodeEditForm, on_limit: e.target.value })}
+                          style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#f8fafc' }}
+                        >
+                          <option value="ABORT">ABORT (Detener)</option>
+                          <option value="ESCALATE">ESCALATE (Escalar)</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                      <div>
+                        <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Entrada Cuerpo (body_entry):</label>
+                        <input
+                          type="text"
+                          placeholder="node_body_id"
+                          value={nodeEditForm.body_entry || ''}
+                          onChange={(e) => setNodeEditForm({ ...nodeEditForm, body_entry: e.target.value })}
+                          style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#06b6d4', fontFamily: 'var(--font-mono)' }}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Salida Bucle (exit_target):</label>
+                        <input
+                          type="text"
+                          placeholder="node_exit_id"
+                          value={nodeEditForm.exit_target || ''}
+                          onChange={(e) => setNodeEditForm({ ...nodeEditForm, exit_target: e.target.value })}
+                          style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#06b6d4', fontFamily: 'var(--font-mono)' }}
                         />
                       </div>
                     </div>
-                  )}
-
-                  {/* Panel Especial: DELEGATE / Router */}
-                  {nodeEditForm.node_type === 'DELEGATE' && (
-                    <div style={{ backgroundColor: '#1a102b', border: '1px solid rgba(168, 85, 247, 0.3)', borderRadius: '6px', padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      <div style={{ fontSize: '11px', fontWeight: '700', color: '#a855f7', display: 'flex', alignItems: 'center', gap: '5px' }}>
-                        <Bot size={12} />
-                        <span>Router de Delegación</span>
-                      </div>
+                    <div>
+                      <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Campo condición retorno (opcional):</label>
+                      <input
+                        type="text"
+                        placeholder="ej. outputs.reviewer.needs_revision"
+                        value={nodeEditForm.condition_field}
+                        onChange={(e) => setNodeEditForm({ ...nodeEditForm, condition_field: e.target.value })}
+                        style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#f8fafc', fontFamily: 'var(--font-mono)' }}
+                      />
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
                       <div>
-                        <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Modo de Enrutamiento (routing_mode):</label>
+                        <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Operador:</label>
                         <select
-                          value={nodeEditForm.routing_mode || nodeEditForm.strategy || 'MANUAL'}
-                          onChange={(e) => setNodeEditForm({ ...nodeEditForm, routing_mode: e.target.value, strategy: e.target.value })}
+                          value={nodeEditForm.condition_operator || '=='}
+                          onChange={(e) => setNodeEditForm({ ...nodeEditForm, condition_operator: e.target.value })}
                           style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#f8fafc' }}
                         >
-                          <option value="MANUAL">MANUAL (Supervisión humana / Lista fija)</option>
-                          <option value="AUTOMATIC">AUTOMATIC (Despacho dinámico a candidato)</option>
+                          <option value="==">==</option>
+                          <option value="!=">!=</option>
+                          <option value=">">&gt;</option>
+                          <option value="<">&lt;</option>
+                          <option value="contains">contains</option>
+                          <option value="is_true">is_true</option>
+                          <option value="is_false">is_false</option>
                         </select>
                       </div>
                       <div>
-                        <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Agentes Candidatos (separados por coma):</label>
+                        <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Valor esperado:</label>
                         <input
                           type="text"
-                          placeholder="agent_alpha, agent_beta"
-                          value={nodeEditForm.candidate_agents}
-                          onChange={(e) => setNodeEditForm({ ...nodeEditForm, candidate_agents: e.target.value })}
+                          placeholder="true"
+                          value={nodeEditForm.condition_expected_value || ''}
+                          onChange={(e) => setNodeEditForm({ ...nodeEditForm, condition_expected_value: e.target.value })}
                           style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#f8fafc' }}
                         />
                       </div>
                     </div>
-                  )}
+                  </div>
+                )}
 
-                  {/* Panel Especial: PARALLEL_JOIN */}
-                  {nodeEditForm.node_type === 'PARALLEL_JOIN' && (
-                    <div style={{ backgroundColor: '#13182e', border: '1px solid rgba(129, 140, 248, 0.3)', borderRadius: '6px', padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      <div style={{ fontSize: '11px', fontWeight: '700', color: '#818cf8', display: 'flex', alignItems: 'center', gap: '5px' }}>
-                        <GitMerge size={12} />
-                        <span>Sincronización Parallel Join</span>
+                {/* Panel Especial: Bifurcación Condicional IF / DECISION */}
+                {(nodeEditForm.node_type === 'IF' || nodeEditForm.node_type === 'DECISION') && (
+                  <div style={{ backgroundColor: '#1c1917', border: '1px solid rgba(245, 158, 11, 0.3)', borderRadius: '6px', padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <div style={{ fontSize: '11px', fontWeight: '700', color: '#f59e0b', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                      <GitBranch size={12} />
+                      <span>Condición de Decisión (IF)</span>
+                    </div>
+                    <div>
+                      <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Campo a evaluar:</label>
+                      <input
+                        type="text"
+                        placeholder="ej. outputs.triage.category"
+                        value={nodeEditForm.condition_field}
+                        onChange={(e) => setNodeEditForm({ ...nodeEditForm, condition_field: e.target.value })}
+                        style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#f8fafc', fontFamily: 'var(--font-mono)' }}
+                      />
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                      <div>
+                        <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Operador:</label>
+                        <select
+                          value={nodeEditForm.condition_operator || '=='}
+                          onChange={(e) => setNodeEditForm({ ...nodeEditForm, condition_operator: e.target.value })}
+                          style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#f8fafc' }}
+                        >
+                          <option value="==">==</option>
+                          <option value="!=">!=</option>
+                          <option value=">">&gt;</option>
+                          <option value="<">&lt;</option>
+                          <option value="contains">contains</option>
+                          <option value="is_true">is_true</option>
+                          <option value="is_false">is_false</option>
+                        </select>
                       </div>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
-                        <div>
-                          <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Política de Espera:</label>
-                          <select
-                            value={nodeEditForm.join_policy}
-                            onChange={(e) => setNodeEditForm({ ...nodeEditForm, join_policy: e.target.value })}
-                            style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#f8fafc' }}
-                          >
-                            <option value="all">all (Espera todas)</option>
-                            <option value="any">any (Primera en llegar)</option>
-                            <option value="quorum">quorum (Mayoría)</option>
-                          </select>
-                        </div>
-                        <div>
-                          <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Mezcla de Salidas:</label>
-                          <select
-                            value={nodeEditForm.merge_policy}
-                            onChange={(e) => setNodeEditForm({ ...nodeEditForm, merge_policy: e.target.value })}
-                            style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#f8fafc' }}
-                          >
-                            <option value="namespace">namespace (Aislado)</option>
-                            <option value="shallow">shallow (Directo)</option>
-                          </select>
-                        </div>
+                      <div>
+                        <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Valor esperado:</label>
+                        <input
+                          type="text"
+                          placeholder="deep"
+                          value={nodeEditForm.condition_expected_value || ''}
+                          onChange={(e) => setNodeEditForm({ ...nodeEditForm, condition_expected_value: e.target.value })}
+                          style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#f8fafc' }}
+                        />
                       </div>
                     </div>
-                  )}
-
-                  <div>
-                    <label style={{ fontSize: '10.5px', color: '#94a3b8', display: 'block', marginBottom: '3px' }}>Inputs (Parámetros JSON)</label>
-                    <textarea
-                      rows={4}
-                      value={nodeEditForm.inputs_json}
-                      onChange={(e) => setNodeEditForm({ ...nodeEditForm, inputs_json: e.target.value })}
-                      style={{ width: '100%', backgroundColor: '#111827', border: '1px solid #243044', borderRadius: '5px', padding: '6px', fontSize: '10.5px', color: '#f8fafc', fontFamily: 'var(--font-mono)', resize: 'vertical' }}
-                    />
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                      <div>
+                        <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Rama True (true_edge):</label>
+                        <input
+                          type="text"
+                          placeholder="id_arista_o_nodo"
+                          value={nodeEditForm.true_edge || ''}
+                          onChange={(e) => setNodeEditForm({ ...nodeEditForm, true_edge: e.target.value })}
+                          style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#10b981', fontFamily: 'var(--font-mono)' }}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Rama False (false_edge):</label>
+                        <input
+                          type="text"
+                          placeholder="id_arista_o_nodo"
+                          value={nodeEditForm.false_edge || ''}
+                          onChange={(e) => setNodeEditForm({ ...nodeEditForm, false_edge: e.target.value })}
+                          style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#ef4444', fontFamily: 'var(--font-mono)' }}
+                        />
+                      </div>
+                    </div>
                   </div>
+                )}
 
-                  <div>
-                    <label style={{ fontSize: '10.5px', color: '#94a3b8', display: 'block', marginBottom: '3px' }}>Resultados (Outputs)</label>
-                    <textarea
-                      rows={3}
-                      readOnly
-                      value={nodeEditForm.outputs_json}
-                      style={{ width: '100%', backgroundColor: '#111827', border: '1px solid #1e293b', borderRadius: '5px', padding: '6px', fontSize: '10.5px', color: '#94a3b8', fontFamily: 'var(--font-mono)', resize: 'none' }}
-                    />
+                {/* Panel Especial: Aprobación Humana */}
+                {nodeEditForm.node_type === 'HUMAN_APPROVAL' && (
+                  <div style={{ backgroundColor: '#21101d', border: '1px solid rgba(236, 72, 153, 0.3)', borderRadius: '6px', padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <div style={{ fontSize: '11px', fontWeight: '700', color: '#ec4899', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                      <ShieldCheck size={12} />
+                      <span>Compuerta de Aprobación Humana</span>
+                    </div>
+                    <div>
+                      <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Prompt / Pregunta de Aprobación:</label>
+                      <textarea
+                        rows={2}
+                        value={nodeEditForm.prompt}
+                        onChange={(e) => setNodeEditForm({ ...nodeEditForm, prompt: e.target.value })}
+                        placeholder="¿Autorizar la publicación del informe?"
+                        style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#f8fafc', resize: 'vertical' }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Timeout (segundos):</label>
+                      <input
+                        type="number"
+                        value={nodeEditForm.timeout_seconds}
+                        onChange={(e) => setNodeEditForm({ ...nodeEditForm, timeout_seconds: e.target.value })}
+                        style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#ec4899' }}
+                      />
+                    </div>
                   </div>
+                )}
 
-                  <div style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
-                    <button
-                      type="submit"
-                      style={{
-                        flex: 1,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '5px',
-                        padding: '6px 10px',
-                        backgroundColor: '#238636',
-                        border: 'none',
-                        borderRadius: '5px',
-                        color: '#ffffff',
-                        fontSize: '11px',
-                        fontWeight: '600',
-                        cursor: 'pointer',
-                      }}
-                    >
-                      <Save size={12} />
-                      <span>Guardar</span>
-                    </button>
+                {/* Panel Especial: DELEGATE / Router */}
+                {nodeEditForm.node_type === 'DELEGATE' && (
+                  <div style={{ backgroundColor: '#1a102b', border: '1px solid rgba(168, 85, 247, 0.3)', borderRadius: '6px', padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <div style={{ fontSize: '11px', fontWeight: '700', color: '#a855f7', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                      <Bot size={12} />
+                      <span>Router de Delegación</span>
+                    </div>
+                    <div>
+                      <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Modo de Enrutamiento (routing_mode):</label>
+                      <select
+                        value={nodeEditForm.routing_mode || nodeEditForm.strategy || 'MANUAL'}
+                        onChange={(e) => setNodeEditForm({ ...nodeEditForm, routing_mode: e.target.value, strategy: e.target.value })}
+                        style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#f8fafc' }}
+                      >
+                        <option value="MANUAL">MANUAL (Supervisión humana / Lista fija)</option>
+                        <option value="AUTOMATIC">AUTOMATIC (Despacho dinámico a candidato)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Agentes Candidatos (separados por coma):</label>
+                      <input
+                        type="text"
+                        placeholder="agent_alpha, agent_beta"
+                        value={nodeEditForm.candidate_agents}
+                        onChange={(e) => setNodeEditForm({ ...nodeEditForm, candidate_agents: e.target.value })}
+                        style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#f8fafc' }}
+                      />
+                    </div>
+                  </div>
+                )}
 
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteNode(nodeEditForm.node_id)}
-                      style={{
-                        padding: '6px 10px',
-                        backgroundColor: 'rgba(244, 63, 94, 0.15)',
-                        border: '1px solid rgba(244, 63, 94, 0.4)',
-                        borderRadius: '5px',
-                        color: '#f43f5e',
-                        fontSize: '11px',
-                        cursor: 'pointer',
-                      }}
-                      title="Eliminar nodo del grafo"
-                    >
-                      <Trash2 size={12} />
-                    </button>
+                {/* Panel Especial: PARALLEL_JOIN */}
+                {nodeEditForm.node_type === 'PARALLEL_JOIN' && (
+                  <div style={{ backgroundColor: '#13182e', border: '1px solid rgba(129, 140, 248, 0.3)', borderRadius: '6px', padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <div style={{ fontSize: '11px', fontWeight: '700', color: '#818cf8', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                      <GitMerge size={12} />
+                      <span>Sincronización Parallel Join</span>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                      <div>
+                        <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Política de Espera:</label>
+                        <select
+                          value={nodeEditForm.join_policy}
+                          onChange={(e) => setNodeEditForm({ ...nodeEditForm, join_policy: e.target.value })}
+                          style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#f8fafc' }}
+                        >
+                          <option value="all">all (Espera todas)</option>
+                          <option value="any">any (Primera en llegar)</option>
+                          <option value="quorum">quorum (Mayoría)</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Mezcla de Salidas:</label>
+                        <select
+                          value={nodeEditForm.merge_policy}
+                          onChange={(e) => setNodeEditForm({ ...nodeEditForm, merge_policy: e.target.value })}
+                          style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#f8fafc' }}
+                        >
+                          <option value="namespace">namespace (Aislado)</option>
+                          <option value="shallow">shallow (Directo)</option>
+                        </select>
+                      </div>
+                    </div>
                   </div>
-                </form>
-              </div>
-            ) : edgeEditForm ? (
-              /* Inspector de Arista / Función de Unión */
-              <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #1e293b', paddingBottom: '8px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <GitMerge size={15} style={{ color: '#c084fc' }} />
-                    <h3 style={{ fontSize: '13px', fontWeight: '700', color: '#f8fafc', margin: 0 }}>
-                      Función de Unión / Arista
-                    </h3>
-                  </div>
-                  <button
-                    onClick={() => setSelectedEdgeId(null)}
-                    style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer' }}
-                  >
-                    <X size={14} />
-                  </button>
+                )}
+
+                <div>
+                  <label style={{ fontSize: '10.5px', color: '#94a3b8', display: 'block', marginBottom: '3px' }}>Inputs (Parámetros JSON)</label>
+                  <textarea
+                    rows={4}
+                    value={nodeEditForm.inputs_json}
+                    onChange={(e) => setNodeEditForm({ ...nodeEditForm, inputs_json: e.target.value })}
+                    style={{ width: '100%', backgroundColor: '#111827', border: '1px solid #243044', borderRadius: '5px', padding: '6px', fontSize: '10.5px', color: '#f8fafc', fontFamily: 'var(--font-mono)', resize: 'vertical' }}
+                  />
                 </div>
 
-                <form onSubmit={handleSaveEdgeProperties} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                  <div>
-                    <label style={{ fontSize: '10.5px', color: '#94a3b8', display: 'block', marginBottom: '3px' }}>Conexión</label>
-                    <div style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: '#38bdf8', backgroundColor: '#111827', padding: '6px 8px', borderRadius: '5px' }}>
-                      {edgeEditForm.from_node} &rarr; {edgeEditForm.to_node}
-                    </div>
-                  </div>
+                <div>
+                  <label style={{ fontSize: '10.5px', color: '#94a3b8', display: 'block', marginBottom: '3px' }}>Resultados (Outputs)</label>
+                  <textarea
+                    rows={3}
+                    readOnly
+                    value={nodeEditForm.outputs_json}
+                    style={{ width: '100%', backgroundColor: '#111827', border: '1px solid #1e293b', borderRadius: '5px', padding: '6px', fontSize: '10.5px', color: '#94a3b8', fontFamily: 'var(--font-mono)', resize: 'none' }}
+                  />
+                </div>
 
-                  <div>
-                    <label style={{ fontSize: '10.5px', color: '#94a3b8', display: 'block', marginBottom: '3px' }}>Etiqueta Visual</label>
+                <div style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
+                  <button
+                    type="submit"
+                    style={{
+                      flex: 1,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '5px',
+                      padding: '6px 10px',
+                      backgroundColor: '#238636',
+                      border: 'none',
+                      borderRadius: '5px',
+                      color: '#ffffff',
+                      fontSize: '11px',
+                      fontWeight: '600',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <Save size={12} />
+                    <span>Guardar</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteNode(nodeEditForm.node_id)}
+                    style={{
+                      padding: '6px 10px',
+                      backgroundColor: 'rgba(244, 63, 94, 0.15)',
+                      border: '1px solid rgba(244, 63, 94, 0.4)',
+                      borderRadius: '5px',
+                      color: '#f43f5e',
+                      fontSize: '11px',
+                      cursor: 'pointer',
+                    }}
+                    title="Eliminar nodo del grafo"
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </div>
+              </form>
+            </div>
+          ) : edgeEditForm ? (
+            /* Inspector de Arista / Función de Unión */
+            <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #1e293b', paddingBottom: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <GitMerge size={15} style={{ color: '#c084fc' }} />
+                  <h3 style={{ fontSize: '13px', fontWeight: '700', color: '#f8fafc', margin: 0 }}>
+                    Función de Unión / Arista
+                  </h3>
+                </div>
+                <button
+                  onClick={() => setSelectedEdgeId(null)}
+                  style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer' }}
+                >
+                  <X size={14} />
+                </button>
+              </div>
+
+              <form onSubmit={handleSaveEdgeProperties} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <div>
+                  <label style={{ fontSize: '10.5px', color: '#94a3b8', display: 'block', marginBottom: '3px' }}>Conexión</label>
+                  <div style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: '#38bdf8', backgroundColor: '#111827', padding: '6px 8px', borderRadius: '5px' }}>
+                    {edgeEditForm.from_node} &rarr; {edgeEditForm.to_node}
+                  </div>
+                </div>
+
+                <div>
+                  <label style={{ fontSize: '10.5px', color: '#94a3b8', display: 'block', marginBottom: '3px' }}>Etiqueta Visual</label>
+                  <input
+                    type="text"
+                    placeholder="ej. Rama Éxito, Validación OK"
+                    value={edgeEditForm.label}
+                    onChange={(e) => setEdgeEditForm({ ...edgeEditForm, label: e.target.value })}
+                    style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '5px', padding: '5px 8px', fontSize: '11.5px', color: '#f8fafc' }}
+                  />
+                </div>
+
+                {/* Configuración de Condición Lógica */}
+                <div style={{ backgroundColor: '#111827', border: '1px solid #1e293b', borderRadius: '6px', padding: '10px' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: '600', color: '#c084fc', cursor: 'pointer', marginBottom: '8px' }}>
                     <input
-                      type="text"
-                      placeholder="ej. Rama Éxito, Validación OK"
-                      value={edgeEditForm.label}
-                      onChange={(e) => setEdgeEditForm({ ...edgeEditForm, label: e.target.value })}
-                      style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '5px', padding: '5px 8px', fontSize: '11.5px', color: '#f8fafc' }}
+                      type="checkbox"
+                      checked={edgeEditForm.has_condition}
+                      onChange={(e) => setEdgeEditForm({ ...edgeEditForm, has_condition: e.target.checked })}
                     />
-                  </div>
+                    <span>Habilitar Condición Lógica (EdgeCondition)</span>
+                  </label>
 
-                  {/* Configuración de Condición Lógica */}
-                  <div style={{ backgroundColor: '#111827', border: '1px solid #1e293b', borderRadius: '6px', padding: '10px' }}>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: '600', color: '#c084fc', cursor: 'pointer', marginBottom: '8px' }}>
-                      <input
-                        type="checkbox"
-                        checked={edgeEditForm.has_condition}
-                        onChange={(e) => setEdgeEditForm({ ...edgeEditForm, has_condition: e.target.checked })}
-                      />
-                      <span>Habilitar Condición Lógica (EdgeCondition)</span>
-                    </label>
+                  {edgeEditForm.has_condition && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <div>
+                        <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>
+                          Campo a evaluar (ej. output.status, score):
+                        </label>
+                        <input
+                          type="text"
+                          value={edgeEditForm.field}
+                          onChange={(e) => setEdgeEditForm({ ...edgeEditForm, field: e.target.value })}
+                          style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#f8fafc', fontFamily: 'var(--font-mono)' }}
+                        />
+                      </div>
 
-                    {edgeEditForm.has_condition && (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <div>
+                        <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>
+                          Operador:
+                        </label>
+                        <select
+                          value={edgeEditForm.operator}
+                          onChange={(e) => setEdgeEditForm({ ...edgeEditForm, operator: e.target.value })}
+                          style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#f8fafc' }}
+                        >
+                          <option value="==">== (Igual a)</option>
+                          <option value="!=">!= (Distinto de)</option>
+                          <option value=">">&gt; (Mayor que)</option>
+                          <option value=">=">&gt;= (Mayor o igual)</option>
+                          <option value="<">&lt; (Menor que)</option>
+                          <option value="<=">&lt;= (Menor o igual)</option>
+                          <option value="in">in (Contenido en lista)</option>
+                          <option value="contains">contains (Contiene substring/elemento)</option>
+                          <option value="is_true">is_true (Verdadero)</option>
+                          <option value="is_false">is_false (Falso)</option>
+                        </select>
+                      </div>
+
+                      {edgeEditForm.operator !== 'is_true' && edgeEditForm.operator !== 'is_false' && (
                         <div>
                           <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>
-                            Campo a evaluar (ej. output.status, score):
+                            Valor Esperado:
                           </label>
                           <input
                             type="text"
-                            value={edgeEditForm.field}
-                            onChange={(e) => setEdgeEditForm({ ...edgeEditForm, field: e.target.value })}
+                            value={edgeEditForm.expected_value}
+                            onChange={(e) => setEdgeEditForm({ ...edgeEditForm, expected_value: e.target.value })}
                             style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#f8fafc', fontFamily: 'var(--font-mono)' }}
                           />
                         </div>
+                      )}
 
-                        <div>
-                          <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>
-                            Operador:
-                          </label>
-                          <select
-                            value={edgeEditForm.operator}
-                            onChange={(e) => setEdgeEditForm({ ...edgeEditForm, operator: e.target.value })}
-                            style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#f8fafc' }}
-                          >
-                            <option value="==">== (Igual a)</option>
-                            <option value="!=">!= (Distinto de)</option>
-                            <option value=">">&gt; (Mayor que)</option>
-                            <option value=">=">&gt;= (Mayor o igual)</option>
-                            <option value="<">&lt; (Menor que)</option>
-                            <option value="<=">&lt;= (Menor o igual)</option>
-                            <option value="in">in (Contenido en lista)</option>
-                            <option value="contains">contains (Contiene substring/elemento)</option>
-                            <option value="is_true">is_true (Verdadero)</option>
-                            <option value="is_false">is_false (Falso)</option>
-                          </select>
-                        </div>
-
-                        {edgeEditForm.operator !== 'is_true' && edgeEditForm.operator !== 'is_false' && (
-                          <div>
-                            <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>
-                              Valor Esperado:
-                            </label>
-                            <input
-                              type="text"
-                              value={edgeEditForm.expected_value}
-                              onChange={(e) => setEdgeEditForm({ ...edgeEditForm, expected_value: e.target.value })}
-                              style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#f8fafc', fontFamily: 'var(--font-mono)' }}
-                            />
-                          </div>
-                        )}
-
-                        <div style={{ fontSize: '9.5px', color: '#64748b', fontStyle: 'italic', marginTop: '2px' }}>
-                          Se transitará a {edgeEditForm.to_node} solo si context.{edgeEditForm.field} {edgeEditForm.operator} {edgeEditForm.expected_value}.
-                        </div>
+                      <div style={{ fontSize: '9.5px', color: '#64748b', fontStyle: 'italic', marginTop: '2px' }}>
+                        Se transitará a {edgeEditForm.to_node} solo si context.{edgeEditForm.field} {edgeEditForm.operator} {edgeEditForm.expected_value}.
                       </div>
-                    )}
-                  </div>
+                    </div>
+                  )}
+                </div>
 
-                  <div style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
-                    <button
-                      type="submit"
-                      style={{
-                        flex: 1,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '5px',
-                        padding: '6px 10px',
-                        backgroundColor: '#238636',
-                        border: 'none',
-                        borderRadius: '5px',
-                        color: '#ffffff',
-                        fontSize: '11px',
-                        fontWeight: '600',
-                        cursor: 'pointer',
-                      }}
-                    >
-                      <Save size={12} />
-                      <span>Guardar Unión</span>
-                    </button>
+                <div style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
+                  <button
+                    type="submit"
+                    style={{
+                      flex: 1,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '5px',
+                      padding: '6px 10px',
+                      backgroundColor: '#238636',
+                      border: 'none',
+                      borderRadius: '5px',
+                      color: '#ffffff',
+                      fontSize: '11px',
+                      fontWeight: '600',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <Save size={12} />
+                    <span>Guardar Unión</span>
+                  </button>
 
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteEdge(edgeEditForm.edge_id)}
-                      style={{
-                        padding: '6px 10px',
-                        backgroundColor: 'rgba(244, 63, 94, 0.15)',
-                        border: '1px solid rgba(244, 63, 94, 0.4)',
-                        borderRadius: '5px',
-                        color: '#f43f5e',
-                        fontSize: '11px',
-                        cursor: 'pointer',
-                      }}
-                      title="Eliminar arista"
-                    >
-                      <Trash2 size={12} />
-                    </button>
-                  </div>
-                </form>
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteEdge(edgeEditForm.edge_id)}
+                    style={{
+                      padding: '6px 10px',
+                      backgroundColor: 'rgba(244, 63, 94, 0.15)',
+                      border: '1px solid rgba(244, 63, 94, 0.4)',
+                      borderRadius: '5px',
+                      color: '#f43f5e',
+                      fontSize: '11px',
+                      cursor: 'pointer',
+                    }}
+                    title="Eliminar arista"
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </div>
+              </form>
+            </div>
+          ) : (
+            /* Resumen de Información del Flujo */
+            <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div style={{ borderBottom: '1px solid #1e293b', paddingBottom: '8px' }}>
+                <div style={{ fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', color: '#64748b' }}>
+                  Flujo Activo
+                </div>
+                <h3 style={{ fontSize: '13.5px', fontWeight: '700', color: '#f8fafc', margin: '4px 0' }}>
+                  {workflow?.name || 'Selecciona un flujo'}
+                </h3>
+                <p style={{ fontSize: '11px', color: '#94a3b8', margin: 0 }}>
+                  {workflow?.description || 'Sin descripción'}
+                </p>
               </div>
-            ) : (
-              /* Resumen de Información del Flujo */
-              <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                <div style={{ borderBottom: '1px solid #1e293b', paddingBottom: '8px' }}>
-                  <div style={{ fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', color: '#64748b' }}>
-                    Flujo Activo
-                  </div>
-                  <h3 style={{ fontSize: '13.5px', fontWeight: '700', color: '#f8fafc', margin: '4px 0' }}>
-                    {workflow?.name || 'Selecciona un flujo'}
-                  </h3>
-                  <p style={{ fontSize: '11px', color: '#94a3b8', margin: 0 }}>
-                    {workflow?.description || 'Sin descripción'}
-                  </p>
-                </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                  <div style={{ backgroundColor: '#111827', padding: '8px', borderRadius: '5px', border: '1px solid #1e293b' }}>
-                    <div style={{ fontSize: '10px', color: '#64748b' }}>Nodos</div>
-                    <div style={{ fontSize: '14px', fontWeight: '700', color: '#38bdf8' }}>{nodesArray.length}</div>
-                  </div>
-                  <div style={{ backgroundColor: '#111827', padding: '8px', borderRadius: '5px', border: '1px solid #1e293b' }}>
-                    <div style={{ fontSize: '10px', color: '#64748b' }}>Conexiones</div>
-                    <div style={{ fontSize: '14px', fontWeight: '700', color: '#c084fc' }}>{edgesArray.length}</div>
-                  </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                <div style={{ backgroundColor: '#111827', padding: '8px', borderRadius: '5px', border: '1px solid #1e293b' }}>
+                  <div style={{ fontSize: '10px', color: '#64748b' }}>Nodos</div>
+                  <div style={{ fontSize: '14px', fontWeight: '700', color: '#38bdf8' }}>{nodesArray.length}</div>
                 </div>
-
-                <div style={{ backgroundColor: '#111827', padding: '10px', borderRadius: '6px', border: '1px solid #1e293b' }}>
-                  <div style={{ fontSize: '10.5px', fontWeight: '600', color: '#38bdf8', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    <Info size={12} />
-                    <span>Instrucciones Rápidas</span>
-                  </div>
-                  <ul style={{ fontSize: '10px', color: '#94a3b8', paddingLeft: '14px', margin: 0, display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    <li><strong>Crear nodo:</strong> Haz clic en cualquier botón de la paleta izquierda.</li>
-                    <li><strong>Editar propiedades:</strong> Haz clic sobre cualquier nodo para asignarle agente, inputs y rol.</li>
-                    <li><strong>Conectar nodos:</strong> Haz clic en el círculo derecho (salida) de un nodo y luego en el círculo izquierdo de otro.</li>
-                    <li><strong>Configurar uniones:</strong> Haz clic en cualquier cable/arista para editar su condición lógica (EdgeCondition).</li>
-                    <li><strong>Mover nodos:</strong> Arrastra y suelta libremente sobre el lienzo.</li>
-                  </ul>
+                <div style={{ backgroundColor: '#111827', padding: '8px', borderRadius: '5px', border: '1px solid #1e293b' }}>
+                  <div style={{ fontSize: '10px', color: '#64748b' }}>Conexiones</div>
+                  <div style={{ fontSize: '14px', fontWeight: '700', color: '#c084fc' }}>{edgesArray.length}</div>
                 </div>
               </div>
-            )}
-          </div>
+
+              <div style={{ backgroundColor: '#111827', padding: '10px', borderRadius: '6px', border: '1px solid #1e293b' }}>
+                <div style={{ fontSize: '10.5px', fontWeight: '600', color: '#38bdf8', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <Info size={12} />
+                  <span>Instrucciones Rápidas</span>
+                </div>
+                <ul style={{ fontSize: '10px', color: '#94a3b8', paddingLeft: '14px', margin: 0, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <li><strong>Crear nodo:</strong> Haz clic en cualquier botón de la paleta izquierda.</li>
+                  <li><strong>Editar propiedades:</strong> Haz clic sobre cualquier nodo para asignarle agente, inputs y rol.</li>
+                  <li><strong>Conectar nodos:</strong> Haz clic en el círculo derecho (salida) de un nodo y luego en el círculo izquierdo de otro.</li>
+                  <li><strong>Configurar uniones:</strong> Haz clic en cualquier cable/arista para editar su condición lógica (EdgeCondition).</li>
+                  <li><strong>Mover nodos:</strong> Arrastra y suelta libremente sobre el lienzo.</li>
+                </ul>
+              </div>
+            </div>
+          )}
         </div>
-      )}
+      </div>
 
       {/* Barra Inferior de Telemetría y Logs */}
       <div

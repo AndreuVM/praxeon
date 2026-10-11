@@ -2,7 +2,6 @@
 
 from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
 from praxeon.server.dependencies import get_current_tenant
@@ -378,16 +377,3 @@ def instantiate_canonical_template(template_key: str, name: Optional[str] = None
         return APIResponse(data=wf.to_dict())
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-
-
-@router.get("/editor/ui", response_class=HTMLResponse)
-
-def get_workflow_editor_ui():
-    """Sirve la interfaz web interactiva drag & drop del editor de workflows."""
-    import os
-    static_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "static")
-    html_path = os.path.join(static_dir, "workflow_editor.html")
-    if os.path.exists(html_path):
-        with open(html_path, "r", encoding="utf-8") as f:
-            return HTMLResponse(content=f.read())
-    return HTMLResponse(content="<h1>Editor no disponible</h1>", status_code=404)
