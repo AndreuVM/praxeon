@@ -73,3 +73,16 @@ def pytest_collection_modifyitems(config, items):
         elif not any(m.name in ("unit", "security", "e2e", "providers", "benchmark") for m in item.iter_markers()):
             # Fallback seguro para tests de servidor, CLI o auditoría
             item.add_marker(integration_marker)
+
+
+@pytest.fixture(autouse=True, scope="session")
+def cleanup_e2e_residual_dirs():
+    """Limpia preventivamente cualquier carpeta residual 'e2e_dir_*' en la raíz antes y después de la suite de pruebas."""
+    import shutil
+    for p in Path.cwd().glob("e2e_dir_*"):
+        if p.is_dir():
+            shutil.rmtree(p, ignore_errors=True)
+    yield
+    for p in Path.cwd().glob("e2e_dir_*"):
+        if p.is_dir():
+            shutil.rmtree(p, ignore_errors=True)
