@@ -14,7 +14,7 @@ import json
 import logging
 from typing import Any, Dict, Optional, Set, Tuple
 import uuid
-from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 
 import os
 import secrets
@@ -22,6 +22,7 @@ from starlette.status import WS_1008_POLICY_VIOLATION
 from praxeon.domain.events import RuntimeEvent
 from praxeon.server.dependencies import (
     get_runtime_service,
+    effective_client_host,
     is_auth_required,
     verify_api_key,
 )
@@ -161,6 +162,10 @@ async def consume_ws_ticket(ticket: str, session_id: str) -> bool:
         return now <= expires_at
 
 
+def is_remote_client(client_host: Optional[str]) -> bool:
+    return bool(client_host) and client_host.lower() not in ("127.0.0.1", "localhost", "::1", "testclient")
+
+
 @ws_router.post("/v1/sessions/{session_id}/ws-ticket")
 @ws_router.post("/v1/auth/ws-ticket")
 async def create_ws_ticket(
@@ -169,7 +174,9 @@ async def create_ws_ticket(
     api_key: Optional[str] = Depends(verify_api_key),
 ):
     """Genera un ticket efímero de un solo uso para conectarse al canal WebSocket de una sesión."""
-    target_session = session_id or (payload.get("session_id") if payload else None) or "default"
+    target_session = session_id or (payload.get("session_id") if payload else None)
+    if not target_session:
+        raise HTTPException(status_code=400, detail="Se requiere 'session_id' para emitir un ticket de streaming.")
     ticket = await issue_ws_ticket(target_session, ttl_seconds=60.0)
     return {
         "ticket": ticket,
@@ -199,7 +206,7 @@ async def websocket_session_stream(
 
     # 1. Verificación de autenticación de WebSocket
     app_profile = getattr(websocket.app.state, "security_profile", None) if (hasattr(websocket, "app") and hasattr(websocket.app, "state")) else None
-    client_host = websocket.client.host if websocket.client else None
+    client_host = effective_client_host(websocket)
     if is_auth_required(profile=app_profile, client_host=client_host):
         expected_key = os.environ.get("PRAXEON_API_KEY") or os.environ.get("PRAXEON_SECRET_KEY")
         if not expected_key:
@@ -216,7 +223,9 @@ async def websocket_session_stream(
 
         # B. Token clásico en query param o cabecera (Compatibilidad)
         if not is_authenticated:
-            auth_token = token or websocket.query_params.get("token")
+            # La clave maestra en la URL acaba en logs/historial: solo se admite desde un cliente local directo.
+            query_token = token or websocket.query_params.get("token")
+            auth_token = query_token if client_host != "proxied" and not is_remote_client(client_host) else None
             if not auth_token:
                 auth_hdr = websocket.headers.get("x-api-key") or websocket.headers.get("authorization")
                 if auth_hdr:

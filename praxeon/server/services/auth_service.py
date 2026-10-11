@@ -19,6 +19,7 @@ import hashlib
 import json
 import os
 import secrets
+import sqlite3
 import threading
 import time
 from typing import Any, Dict, Optional, Set
@@ -188,8 +189,11 @@ class AuthService:
         api_key: Optional[str] = None,
         secret_key: Optional[str] = None,
         ticket_ttl_seconds: int = 60,
+        revocation_db_path: Optional[str] = None,
     ):
         self._lock = threading.Lock()
+        self._revocation_db_path = revocation_db_path
+        self._revoked_exp: Dict[str, float] = {}
         self._tickets: Dict[str, Dict[str, Any]] = {}
         self._revoked_jtis: Set[str] = set()
         self.ticket_ttl_seconds = ticket_ttl_seconds
@@ -197,6 +201,52 @@ class AuthService:
         # Sin secreto configurado se genera uno aleatorio por proceso (nunca un valor público por defecto);
         # los tokens dejan de ser válidos al reiniciar, lo que es seguro en desarrollo.
         self._secret_key = secret_key or os.getenv("PRAXEON_SECRET_KEY") or secrets.token_urlsafe(48)
+        self._load_revocations()
+
+    # ------------------------------------------------------------------ revocaciones persistentes
+    def _revocation_conn(self) -> sqlite3.Connection:
+        conn = sqlite3.connect(self._revocation_db_path, timeout=5.0)
+        conn.execute("CREATE TABLE IF NOT EXISTS revoked_jtis (jti TEXT PRIMARY KEY, exp REAL NOT NULL)")
+        return conn
+
+    def _load_revocations(self) -> None:
+        """Carga las revocaciones vigentes desde disco y descarta las ya caducadas (el token habría expirado igualmente)."""
+        if not self._revocation_db_path:
+            return
+        now = time.time()
+        try:
+            conn = self._revocation_conn()
+            try:
+                with conn:
+                    conn.execute("DELETE FROM revoked_jtis WHERE exp < ?", (now,))
+                for jti, exp in conn.execute("SELECT jti, exp FROM revoked_jtis"):
+                    self._revoked_jtis.add(jti)
+                    self._revoked_exp[jti] = exp
+            finally:
+                conn.close()
+        except sqlite3.Error:
+            pass
+
+    def _remember_revocation(self, jti: str, exp: Optional[float]) -> None:
+        """Marca un jti como revocado (memoria + disco). Debe llamarse con el bloqueo tomado."""
+        expiry = float(exp) if exp else time.time() + 604800.0
+        self._revoked_jtis.add(jti)
+        self._revoked_exp[jti] = expiry
+        now = time.time()
+        for old_jti in [j for j, e in self._revoked_exp.items() if e < now]:
+            self._revoked_exp.pop(old_jti, None)
+            self._revoked_jtis.discard(old_jti)
+        if self._revocation_db_path:
+            try:
+                conn = self._revocation_conn()
+                try:
+                    with conn:
+                        conn.execute("INSERT OR REPLACE INTO revoked_jtis (jti, exp) VALUES (?, ?)", (jti, expiry))
+                        conn.execute("DELETE FROM revoked_jtis WHERE exp < ?", (now,))
+                finally:
+                    conn.close()
+            except sqlite3.Error:
+                pass
 
     def get_configured_api_key(self) -> Optional[str]:
         """Retorna la clave API configurada en entorno o instancia."""
@@ -272,9 +322,9 @@ class AuthService:
         with self._lock:
             if jti in self._revoked_jtis:
                 raise ValueError("Refresh token revocado o ya utilizado (intento de reutilización detectado).")
-            # Invalidar de inmediato para garantizar rotación estricta
+            # Invalidar de inmediato para garantizar rotación estricta (persistente)
             if jti:
-                self._revoked_jtis.add(jti)
+                self._remember_revocation(jti, payload.get("exp"))
 
         tenant_id = payload.get("tenant_id", "default_tenant")
         user_id = payload.get("sub", "system_user")
@@ -290,7 +340,7 @@ class AuthService:
             jti = payload.get("jti")
             if jti:
                 with self._lock:
-                    self._revoked_jtis.add(jti)
+                    self._remember_revocation(jti, payload.get("exp"))
                 return True
         except Exception:
             pass

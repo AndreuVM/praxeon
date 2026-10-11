@@ -393,7 +393,7 @@ export default function SettingsView({
               <ul style={{ fontSize: '11.5px', color: '#64748b', margin: 0, paddingLeft: '18px', lineHeight: '1.6' }}>
                 <li><strong>Inyección Automática:</strong> Las llamadas REST envían la clave en las cabeceras <code>X-API-Key</code> y <code>Authorization: Bearer</code>.</li>
                 <li><strong>Handshake Efímero en WebSocket:</strong> La SPA solicita tokens de streaming efímeros de un solo uso (<code>/v1/sessions/:id/ws-ticket</code>) con TTL de 60s, evitando la exposición de claves maestras en URLs de WebSockets y registros de proxies.</li>
-                <li><strong>Almacenamiento Local Seguro:</strong> La clave se almacena en el <code>localStorage</code> del navegador y en memoria protegida de la SPA.</li>
+                <li><strong>Almacenamiento Local Seguro:</strong> La clave se guarda solo en memoria y en <code>sessionStorage</code> (se borra al cerrar la ventana); no se escribe en disco ni en <code>localStorage</code>.</li>
               </ul>
             </div>
           </div>

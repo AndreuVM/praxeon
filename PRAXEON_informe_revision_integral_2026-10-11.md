@@ -371,3 +371,20 @@ Se eliminó el "Lienzo Standalone" (página HTML independiente cargada en un `if
 - **Ventana:** el título muestra `PRAXEON · N pendiente(s)`. `--no-notifications` (en `praxeon app`) las desactiva; funcionan también con `--browser`.
 - **Verificación:** 8 tests (`tests/test_desktop_notifications.py`), incluido uno de extremo a extremo (workflow con `HUMAN_APPROVAL` ejecutado por el scheduler → notificación → aprobación → contador a 0); el comando de *toast* de Windows se ejecutó con éxito (exit 0); la app arranca y se detiene limpiamente. Suite: 935 pasados, 1 omitido.
 - **Límites conocidos:** al hacer clic en el aviso no se enfoca la ventana (requiere un registro de aplicación propio; encaja en la versión Tauri/Electron); no se suprime el aviso cuando la ventana ya está en primer plano.
+
+### 10.11 Cierre de los puntos de seguridad pendientes
+
+| Hallazgo | Estado | Cambio |
+| :--- | :---: | :--- |
+| 3.6 Cliente local tras proxy inverso | ✅ | `effective_client_host`: con cabeceras `X-Forwarded-For`/`Forwarded`/`X-Real-IP` el cliente se trata como externo y se exige autenticación (antes, un nginx local hacía que todo pareciera loopback). Aplicado a HTTP y WebSocket |
+| 3.6 Clave maestra en la URL del WebSocket | ✅ | `?token=` solo se admite de un cliente local directo (no tras proxy ni remoto); el frontend ya no cae a `&token=` y usa solo tickets efímeros. Los tickets exigen `session_id` explícito (se eliminó el valor por defecto `"default"`). El WS también acepta JWT/cookie |
+| Cookies | ✅ | `SameSite=Strict`; `Secure` automático con HTTPS directo o `X-Forwarded-Proto: https` |
+| CSRF | ✅ | En métodos mutantes autenticados por cookie se rechaza un `Origin` de otro sitio (403); las peticiones con `X-API-Key`/`Authorization` no se ven afectadas |
+| Revocación de tokens | ✅ | Persistente en SQLite (`auth_revocations.db`): logout y rotación de refresh sobreviven a reinicios (detecta reutilización tras reinicio); se purgan al caducar el token |
+| 3.7 Clave en `localStorage` | ✅ | La clave pasa a memoria + `sessionStorage` (se borra al cerrar); se elimina cualquier copia heredada en `localStorage`; texto de Ajustes actualizado |
+| 3.5 `FULL_ACCESS` ejecutaba cualquier nombre de herramienta como shell | ✅ | `is_executable_tool_name`: solo identificadores simples de ejecutables conocidos o presentes en el PATH; se rechazan nombres con espacios, `;`, `&&`, rutas, etc. |
+| 3.5 `LOCAL_RESTRICTED`/WASM sin aislamiento real | ℹ️ Documentado | No es una barrera frente a un adversario determinado (ver `SECURITY.md`); para código no confiable, `CONTAINER`. Un aislamiento real exigiría contenedores/WASM nativo, fuera del alcance de este cambio |
+
+Tests: `tests/security/test_final_security_hardening.py` (19). Suite: **954 pasados, 1 omitido**; `ruff` limpio; Bandit sin hallazgos de severidad media/alta; `vite build` y `oxlint` sin errores.
+
+**Estado final de seguridad:** no quedan hallazgos críticos, altos ni medios abiertos del informe, salvo la limitación documentada de `LOCAL_RESTRICTED`/WASM. Deuda residual de bajo riesgo: ~44 `try/except/pass` (regla `S110`), `mypy` y la cobertura de tests de los módulos más flojos.

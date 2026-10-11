@@ -26,13 +26,36 @@ function consumeTokenFromHash() {
 let inMemoryApiKey = (typeof window !== 'undefined' && window.__PRAXEON_API_KEY__) || consumeTokenFromHash() || null;
 
 /**
- * Obtiene la API Key activa del almacén local o en memoria.
+ * Almacén de sesión: la clave vive solo mientras la ventana/pestaña esté abierta (nunca en localStorage,
+ * que persiste en disco y es legible por cualquier script inyectado).
+ */
+function sessionStore() {
+  try {
+    return typeof window !== 'undefined' ? window.sessionStorage : null;
+  } catch {
+    return null;
+  }
+}
+
+function purgeLegacyStoredKey() {
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      window.localStorage.removeItem(API_KEY_STORAGE_KEY);
+    }
+  } catch {
+    // Ignorar almacenamiento restringido
+  }
+}
+
+/**
+ * Obtiene la API Key activa (memoria o almacén de sesión).
  */
 export function getApiKey() {
   if (inMemoryApiKey) return inMemoryApiKey;
-  if (typeof window !== 'undefined' && window.localStorage) {
+  const store = sessionStore();
+  if (store) {
     try {
-      return window.localStorage.getItem(API_KEY_STORAGE_KEY) || null;
+      return store.getItem(API_KEY_STORAGE_KEY) || null;
     } catch {
       return null;
     }
@@ -41,19 +64,22 @@ export function getApiKey() {
 }
 
 /**
- * Establece la API Key activa tanto en memoria como en almacenamiento local.
+ * Establece la API Key activa en memoria y en el almacén de sesión; elimina cualquier copia heredada
+ * de versiones anteriores que la guardaban en localStorage.
  */
 export function setApiKey(key) {
   inMemoryApiKey = key ? key.trim() : null;
-  if (typeof window !== 'undefined' && window.localStorage) {
+  purgeLegacyStoredKey();
+  const store = sessionStore();
+  if (store) {
     try {
       if (inMemoryApiKey) {
-        window.localStorage.setItem(API_KEY_STORAGE_KEY, inMemoryApiKey);
+        store.setItem(API_KEY_STORAGE_KEY, inMemoryApiKey);
       } else {
-        window.localStorage.removeItem(API_KEY_STORAGE_KEY);
+        store.removeItem(API_KEY_STORAGE_KEY);
       }
     } catch {
-      // Ignorar fallos de cuota o cookies restringidas
+      // Ignorar fallos de cuota o almacenamiento restringido
     }
   }
 }
@@ -323,9 +349,6 @@ export function createWebSocketStream(sessionId, onMessage, onStatusChange, getL
         const ticketData = await fetchWebSocketTicket(sessionId);
         if (ticketData && ticketData.ticket) {
           wsUrl += `&ticket=${encodeURIComponent(ticketData.ticket)}`;
-        } else {
-          // Fallback de retrocompatibilidad si el endpoint de ticket no respondiera
-          wsUrl += `&token=${encodeURIComponent(key)}`;
         }
       }
 

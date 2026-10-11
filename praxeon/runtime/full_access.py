@@ -15,11 +15,30 @@ del CapabilityPayload con execution_mode='full_access'.
 
 from enum import Enum
 import os
+import re
+import shutil
 import subprocess
 import sys
 import time
 from typing import Any, Dict, Optional, Protocol
 from pydantic import BaseModel, ConfigDict
+
+
+_TOOL_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$")
+
+
+def is_executable_tool_name(tool_name: Optional[str]) -> bool:
+    """Un nombre de herramienta solo se ejecuta como comando si es un identificador simple de un
+    ejecutable realmente disponible (catálogo de CLI conocidos o presente en el PATH).
+
+    Evita que un nombre arbitrario (con espacios, `;`, `&&`, rutas, etc.) acabe en la shell del host.
+    """
+    if not tool_name or not _TOOL_NAME_RE.match(tool_name):
+        return False
+    from praxeon.policy.registry import ToolRegistry
+
+    clean = tool_name.lower()
+    return clean in ToolRegistry.CLI_EXECUTABLES or shutil.which(tool_name) is not None
 
 
 class ExecutionMode(str, Enum):
@@ -164,7 +183,7 @@ class FullAccessExecutor:
                 execution_time_ms=round(elapsed, 2),
             )
 
-        elif tool_name == "run_command" or (tool_name and not any(bad in tool_name.lower() for bad in ("unregistered", "unknown", "malicious"))):
+        elif tool_name == "run_command" or is_executable_tool_name(tool_name):
             cmd = str(arguments.get("command") or arguments.get("cmd") or arguments.get("raw") or "").strip()
             if tool_name != "run_command":
                 cmd = f"{tool_name} {cmd}".strip() if cmd else tool_name

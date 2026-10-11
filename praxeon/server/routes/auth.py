@@ -33,6 +33,12 @@ class RefreshRequest(BaseModel):
     refresh_token: Optional[str] = Field(default=None, description="Refresh token para rotación si no se usa cookie")
 
 
+def _is_secure_request(request: Request) -> bool:
+    """HTTPS directo o detrás de un proxy que lo indica: las cookies se marcan `Secure`."""
+    forwarded = (request.headers.get("x-forwarded-proto") or "").split(",")[0].strip().lower()
+    return request.url.scheme == "https" or forwarded == "https"
+
+
 def _set_auth_cookies(response: Response, tokens: TokenPair, secure: bool = False) -> None:
     """Configura las cookies seguras HttpOnly en la respuesta HTTP."""
     response.set_cookie(
@@ -40,7 +46,7 @@ def _set_auth_cookies(response: Response, tokens: TokenPair, secure: bool = Fals
         value=tokens.access_token,
         max_age=tokens.expires_in,
         httponly=True,
-        samesite="lax",
+        samesite="strict",
         secure=secure,
         path="/",
     )
@@ -49,7 +55,7 @@ def _set_auth_cookies(response: Response, tokens: TokenPair, secure: bool = Fals
         value=tokens.refresh_token,
         max_age=tokens.refresh_expires_in,
         httponly=True,
-        samesite="lax",
+        samesite="strict",
         secure=secure,
         path="/",
     )
@@ -92,7 +98,7 @@ def login(
         role=req.role,
     )
 
-    _set_auth_cookies(response, tokens)
+    _set_auth_cookies(response, tokens, secure=_is_secure_request(request))
 
     return {
         "status": "success",
@@ -107,6 +113,7 @@ def login(
 
 @auth_router.post("/refresh", response_model=Dict[str, Any])
 def refresh_token(
+    request: Request,
     response: Response,
     req: Optional[RefreshRequest] = None,
     praxeon_refresh_token: Optional[str] = Cookie(None, alias=AuthService.COOKIE_REFRESH_NAME),
@@ -130,7 +137,7 @@ def refresh_token(
             detail=f"Fallo en la rotación de token: {str(e)}",
         ) from e
 
-    _set_auth_cookies(response, new_tokens)
+    _set_auth_cookies(response, new_tokens, secure=_is_secure_request(request))
 
     return {
         "status": "success",

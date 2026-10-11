@@ -193,7 +193,7 @@ class RuntimeApplicationService(DecisionPipelineMixin, MissionRuntimeMixin):
         # ---------------------------------------------------------------------
         # SERVICIOS MODULARES ESPECIALIZADOS
         # ---------------------------------------------------------------------
-        self.auth_service = AuthService()
+        self.auth_service = AuthService(revocation_db_path=os.path.join(self.db_dir, "auth_revocations.db"))
         self.session_service = SessionService(event_bus=self.event_bus, state_store=self.state_store)
         self.agent_service = AgentService(registry=self.agent_registry, router=self.agent_router, bus=self.agent_bus)
         self.workflow_service = WorkflowService(
@@ -795,6 +795,37 @@ def get_active_security_profile() -> Optional[str]:
 _warned_dev_auth = False
 
 
+PROXY_HEADERS = ("x-forwarded-for", "forwarded", "x-real-ip")
+
+
+def effective_client_host(conn: Any) -> Optional[str]:
+    """Host del cliente para decidir si es local. Si la conexión llega con cabeceras de proxy inverso,
+    el peer TCP (casi siempre loopback) no es el cliente real: se trata como externo ("proxied")."""
+    headers = getattr(conn, "headers", None)
+    if headers is not None and any(headers.get(h) for h in PROXY_HEADERS):
+        return "proxied"
+    client = getattr(conn, "client", None)
+    return client.host if client else None
+
+
+def enforce_cookie_csrf(request: Any, token_from_cookie: bool) -> None:
+    """Defensa CSRF para autenticación por cookie: en métodos mutantes, un `Origin` de otro sitio se rechaza.
+
+    Las peticiones con cabecera explícita (Authorization / X-API-Key) no son vulnerables a CSRF.
+    """
+    if not token_from_cookie or request is None or request.method in ("GET", "HEAD", "OPTIONS"):
+        return
+    origin = request.headers.get("origin")
+    if origin:
+        from urllib.parse import urlparse
+
+        if urlparse(origin).netloc.lower() != (request.headers.get("host") or "").lower():
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Origen no permitido para una petición autenticada por cookie (protección CSRF).",
+            )
+
+
 def is_auth_required(profile: Optional[str] = None, client_host: Optional[str] = None) -> bool:
     """Determina si la autenticación por API key es obligatoria.
     
@@ -840,7 +871,7 @@ def get_current_tenant(
 ) -> TenantContext:
     """Dependency que autentica e inyecta el TenantContext con RBAC desde JWT, Cookie o API Key."""
     app_profile = getattr(request.app.state, "security_profile", None) if (request and hasattr(request, "app") and hasattr(request.app, "state")) else None
-    client_host = request.client.host if (request and request.client) else None
+    client_host = effective_client_host(request) if request else None
     required = is_auth_required(profile=app_profile, client_host=client_host)
 
     cookie_val = praxeon_access_token if isinstance(praxeon_access_token, str) else None
@@ -850,6 +881,7 @@ def get_current_tenant(
 
     # 1. Intentar token desde cookie HttpOnly o API Key
     token = cookie_val or api_key_val
+    enforce_cookie_csrf(request, bool(cookie_val) and not api_key_val)
 
     # 2. Intentar token desde cabeceras
     if not token and auth_val:
@@ -945,7 +977,7 @@ def verify_api_key(
     global _warned_dev_auth
 
     app_profile = getattr(request.app.state, "security_profile", None) if (request and hasattr(request, "app") and hasattr(request.app, "state")) else None
-    client_host = request.client.host if (request and request.client) else None
+    client_host = effective_client_host(request) if request else None
     required = is_auth_required(profile=app_profile, client_host=client_host)
     expected_key = os.environ.get("PRAXEON_API_KEY") or os.environ.get("PRAXEON_SECRET_KEY")
 
@@ -956,6 +988,7 @@ def verify_api_key(
 
     # Extraer token de cookie o cabeceras
     token = cookie_val or api_key_val
+    enforce_cookie_csrf(request, bool(cookie_val) and not api_key_val)
     if not token and auth_val:
         if auth_val.startswith("Bearer "):
             token = auth_val[7:].strip()
