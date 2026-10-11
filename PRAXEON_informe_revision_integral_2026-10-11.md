@@ -405,3 +405,19 @@ Tests: `tests/security/test_final_security_hardening.py` (19). Suite: **954 pasa
 **Verificación:** 24 tests nuevos (`tests/test_full_access_read_approvals.py`), incluido uno de misión completa con LLM guionizado que **falla con el código anterior** (la misión quedaba bloqueada 60 s y se vetaba) y pasa ahora. Suite: 978 pasados, 1 omitido.
 
 **No confirmado:** la parte del síntoma "la poda ocurre *antes* de informar de la solicitud". En los eventos, `approval.requested` se publica antes de cualquier intervención; la poda llegaba al expirar la espera. Si tras esta corrección sigues viendo el orden inverso en la interfaz, habría que revisar cómo la UI pinta ambos eventos.
+
+### 10.13 Full Access sin confirmación por paso (decisión de diseño del propietario)
+
+**Decisión:** Full Access no debe pedir confirmaciones; la protección es la doble confirmación al activarlo y el resto de fronteras (BLOCK/REPLAN/CRITICAL, capability HMAC, auditoría). Esto sustituye al criterio anterior de que las acciones de riesgo alto en Full Access retenían `REVIEW`.
+
+**Causa raíz hallada:** `POST /v1/sessions/run` fijaba siempre `full_access_authorized_by_operator: False`, y la política solo omitía la confirmación con `autonomous` **y** esa autorización **y** herramienta registrada. Resultado: ninguna misión lanzada desde la interfaz podía autorizarse jamás, ni siquiera en el modo "AUTONOMOUS", y el modo "MANUAL" pedía confirmación por paso por diseño.
+
+**Cambios:**
+- **Autorización:** nuevo campo `full_access_confirmed` (doble confirmación: seleccionar Full Access + aceptar el aviso). La ruta lo convierte en `full_access_authorized_by_operator` solo si el modo es `full_access`; la petición ya viene autenticada y con permiso de ejecución. El `operator_token` sigue siendo válido.
+- **Política (`decision_pipeline`):** en `full_access` autorizado, una acción que requería confirmación pasa a `ALLOW` con el motivo auditable `FULL_ACCESS_OPERATOR_PREAUTHORIZED` y aviso `[SECURITY AUDIT]`. Ya no se exige `autonomous` ni que la herramienta esté registrada (una no registrada igualmente la rechaza el executor). `BLOCK`, `REPLAN` y riesgo `CRITICAL` se resuelven antes y no cambian.
+- **Opt-in inverso:** `require_step_confirmation` (por defecto `false`) permite a un cliente de la API volver a exigir confirmación por paso.
+- **Interfaz:** una sola opción "Full Access (Host Direct)" (se elimina la variante MANUAL), aviso actualizado, y envía `full_access_confirmed`. La marca no tiene efecto fuera de `full_access`.
+- **Documentación:** `SECURITY.md` y `docs/FULL_ACCESS_POLICY.md` (§3.3) actualizados; `openapi.json` regenerado.
+- **Tests:** `tests/test_full_access_no_step_confirmation.py` (12): con autorización, lectura fuera del workspace, `git push` y operación desconocida pasan a `ALLOW`; sin autorización o fuera de Full Access siguen en `REVIEW`; `rm -rf /` sigue en `BLOCK`; la API solo autoriza con `full_access_confirmed`. Suite: 990 pasados, 1 omitido.
+
+**Riesgo asumido (explícito):** con esta decisión, una sesión Full Access autorizada ejecuta sin preguntar acciones de riesgo alto, incluida la lectura de rutas sensibles fuera del workspace (p. ej. `~/.ssh`) y mutaciones remotas (`git push`). Si más adelante se quiere un término medio, `require_step_confirmation` o una lista de rutas/operaciones que sigan pidiendo confirmación son el punto de extensión.

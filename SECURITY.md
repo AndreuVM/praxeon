@@ -83,7 +83,7 @@ $$\text{LLM Proposal} \to \text{Evidence Grounding} \to \text{Risk Assessment} \
    > - **No fallback implícito:** Si `CONTAINER` o `LOCAL_RESTRICTED` fallan, jamás se degrada automáticamente a `FULL_ACCESS`.
    > - **Firma criptográfica vinculante:** El `execution_mode` forma parte del material firmado por HMAC del `CapabilityPayload`. Cualquier intento de ejecutar un capability firmado para sandbox en host (o viceversa) es rechazado como violación de política.
    > - **Invarianza de BLOCK y REPLAN:** Un veredicto `BLOCK` o `REPLAN` emitido por política permanece absolutamente vinculante en `FULL_ACCESS`; jamás se transforma en `ALLOW`.
-   > - **Revisión humana obligatoria:** Toda acción con riesgo High o Critical en `FULL_ACCESS` retiene el requerimiento ineludible de aprobación humana (REVIEW).
+   > - **Sin confirmación por paso, con doble confirmación al activar:** una sesión `FULL_ACCESS` autorizada por el operador (selección del modo + aceptación del aviso) no solicita confirmación por acción; el riesgo `CRITICAL`, `BLOCK` y `REPLAN` siguen siendo vinculantes y cada autorización automática queda auditada (`FULL_ACCESS_OPERATOR_PREAUTHORIZED`). `require_step_confirmation` permite volver a exigirla (opt-in).
    > - **Advertencia operacional:** `FULL_ACCESS` opera directamente sobre el host sin aislamiento de sistema operativo. Debe ser explícitamente habilitado, auditado y registrado.
 
 9. **Precedencia de Seguridad Determinista y Detección de Evasión (Rule 0):**

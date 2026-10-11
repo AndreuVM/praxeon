@@ -178,6 +178,7 @@ class MissionRuntimeMixin:
             "chat_history": chat_history,
             # Tiempo máximo (s) que la misión espera una aprobación humana antes de seguir sin vetar la acción
             "approval_timeout_seconds": (metadata or {}).get("approval_timeout_seconds"),
+            "require_step_confirmation": bool((metadata or {}).get("require_step_confirmation", False)),
         }
 
         with self._lock:
@@ -689,7 +690,7 @@ class MissionRuntimeMixin:
                             mission.get("full_access_authorized_by_operator")
                             or mission.get("operator_authorized")
                         )
-                        if session_mode == "full_access" and allow_unattended and full_access_authorized:
+                        if session_mode == "full_access" and full_access_authorized and not mission.get("require_step_confirmation"):
                             # Auto-confirmación sólo si explícitamente se configuró allow_unattended_execution / autonomous
                             logger.warning(
                                 "[SECURITY AUDIT] Auto-confirmando decisión %s en modo FULL_ACCESS_AUTONOMOUS...",
@@ -999,7 +1000,7 @@ class MissionRuntimeMixin:
                             mission.get("full_access_authorized_by_operator")
                             or mission.get("operator_authorized")
                         )
-                        if session_mode == "full_access" and allow_unattended and full_access_authorized:
+                        if session_mode == "full_access" and full_access_authorized and not mission.get("require_step_confirmation"):
                             logger.warning(
                                 "[SECURITY AUDIT] Auto-confirmando decisión %s en modo FULL_ACCESS_AUTONOMOUS...",
                                 resp.decision_id,

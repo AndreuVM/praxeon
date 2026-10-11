@@ -7300,6 +7300,18 @@
             "description": "Exige confirmación explícita para activar full_access",
             "default": true
           },
+          "full_access_confirmed": {
+            "type": "boolean",
+            "title": "Full Access Confirmed",
+            "description": "El operador confirmó explícitamente (doble confirmación) la activación de Full Access",
+            "default": false
+          },
+          "require_step_confirmation": {
+            "type": "boolean",
+            "title": "Require Step Confirmation",
+            "description": "Opt-in: exigir confirmación humana por paso incluso en Full Access autorizado",
+            "default": false
+          },
           "allow_unattended_execution": {
             "anyOf": [
               {
@@ -8476,6 +8488,18 @@
             "title": "Step Delay Ms",
             "description": "Retardo en ms entre pasos para visualización en tiempo real",
             "default": 900
+          },
+          "full_access_confirmed": {
+            "type": "boolean",
+            "title": "Full Access Confirmed",
+            "description": "El operador confirmó explícitamente (doble confirmación) la activación de Full Access",
+            "default": false
+          },
+          "require_step_confirmation": {
+            "type": "boolean",
+            "title": "Require Step Confirmation",
+            "description": "Opt-in: exigir confirmación humana por paso incluso en Full Access autorizado",
+            "default": false
           },
           "allow_unattended_execution": {
             "anyOf": [

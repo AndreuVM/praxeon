@@ -36,13 +36,14 @@ Aun cuando una sesión se configure en `execution_mode="full_access"`, las front
 - Si el supervisor semántico (LAYA / TypeSafe) o el motor de evidencias detecta bucles, desvío de objetivo o contradicciones empíricas, la decisión se evalúa como `REPLAN` (o poda del árbol).
 - **Invariante:** `REPLAN` **NUNCA** se degrada silenciosamente a ejecución; el runtime fuerza el retroceso de trayectoria o la reformulación del plan sin tocar el sistema anfitrión.
 
-### 3.3. Contrato Estricto para Bypass de `REVIEW`
-- Por defecto, toda operación con efectos secundarios en host exige confirmación humana (`status="REVIEW"` / `requires_confirmation=True`).
-- Para que una acción en `REVIEW` se ejecute de forma desatendida en Full Access, deben cumplirse **simultáneamente** las tres condiciones del contrato:
-  1. Sesión explícitamente configurada en `execution_mode="full_access"`.
-  2. Bandera de autonomía activa (`autonomous=True` o `allow_unattended_execution=True`).
-  3. **Autorización explícita y verificada del operador** (`full_access_authorized_by_operator=True`), validada en el servidor mediante token o credencial de operador (`PRAXEON_OPERATOR_KEY` / `PRAXEON_SECRET_KEY`).
-- Cualquier cliente no autenticado o llamada sin verificación de operador que solicite Full Access autónomo queda retenida forzosamente en `REVIEW`.
+### 3.3. Contrato para omitir la confirmación por paso (`REVIEW`)
+- Full Access **no pide confirmación por paso**: la protección es la doble confirmación al activarlo (selección explícita del modo + aceptación del aviso de seguridad) y el resto de fronteras de este documento.
+- Una acción en `REVIEW` se autoriza automáticamente (con motivo auditado `FULL_ACCESS_OPERATOR_PREAUTHORIZED` y aviso `[SECURITY AUDIT]` en el log) cuando se cumplen **simultáneamente**:
+  1. Sesión en `execution_mode="full_access"`.
+  2. **Autorización del operador** (`full_access_authorized_by_operator=True`): la petición autenticada y con permiso de ejecución lleva `full_access_confirmed=true` (doble confirmación de la interfaz) o un `operator_token` válido.
+  3. El llamante no pidió confirmación por paso (`require_step_confirmation`, opt-in; por defecto `false`).
+- Sin esa autorización, o fuera de `full_access`, la acción queda retenida en `REVIEW`.
+- **No cambia:** `BLOCK`, `REPLAN` y el riesgo `CRITICAL` siguen siendo vinculantes y nunca se transforman en `ALLOW`.
 
 ---
 

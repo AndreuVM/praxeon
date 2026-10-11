@@ -1,7 +1,7 @@
 """Rutas REST para gestión de sesiones y propuestas de acción (praxeon/server/routes/sessions.py)."""
 
 import os
-import secrets
+from praxeon.server.services.auth_service import constant_time_equals
 from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 
@@ -19,12 +19,23 @@ from praxeon.server.schemas.session import (
 router = APIRouter(prefix="/v1/sessions", tags=["Sessions"])
 
 
+
+def is_full_access_authorized(execution_mode: Optional[str], full_access_confirmed: bool) -> bool:
+    """Full Access queda autorizado solo con la doble confirmación explícita del operador.
+
+    La petición ya llega autenticada y con permiso de ejecución (RBAC del router); la segunda confirmación
+    es la marca `full_access_confirmed` que la interfaz envía tras el aviso de seguridad.
+    """
+    return (execution_mode or "").lower() == "full_access" and bool(full_access_confirmed)
+
+
 @router.post("/run", response_model=APIResponse[SessionSummaryResponse], status_code=status.HTTP_201_CREATED)
 def run_mission(
     req: RunMissionRequest,
     service: RuntimeApplicationService = Depends(get_runtime_service),
 ):
     """Inicia una nueva misión interactiva con ejecución y supervisión en tiempo real."""
+    full_access_authorized = is_full_access_authorized(req.execution_mode, req.full_access_confirmed)
     meta = service.start_mission(
         goal=req.goal,
         session_id=req.session_id,
@@ -39,11 +50,15 @@ def run_mission(
         decision_model=req.decision_model,
         max_steps=req.max_steps or 25,
         step_delay_ms=req.step_delay_ms or 900,
-        autonomous=bool(req.autonomous or req.allow_unattended_execution),
-        allow_unattended_execution=bool(req.autonomous or req.allow_unattended_execution),
+        autonomous=bool(req.autonomous or req.allow_unattended_execution or full_access_authorized),
+        allow_unattended_execution=bool(req.autonomous or req.allow_unattended_execution or full_access_authorized),
         llm_failure_policy=req.llm_failure_policy or "synthetic_fallback",
         chat_history=req.chat_history,
-        metadata={"created_by": "api_client", "full_access_authorized_by_operator": False},
+        metadata={
+            "created_by": "api_client",
+            "full_access_authorized_by_operator": full_access_authorized,
+            "require_step_confirmation": bool(req.require_step_confirmation),
+        },
     )
     summary = service.get_session_summary(meta["session_id"])
     if not summary:
@@ -124,10 +139,13 @@ def create_session(
     # Un llamante HTTP untrusted no puede auto-aprobarse full_access autónomo sin verificar credencial de operador
     operator_token = metadata.get("operator_token") or metadata.get("operator_approval_token")
     expected_secret = os.environ.get("PRAXEON_SECRET_KEY") or os.environ.get("PRAXEON_API_KEY")
-    if operator_token and expected_secret and secrets.compare_digest(str(operator_token), str(expected_secret)):
-        metadata["full_access_authorized_by_operator"] = True
-    else:
-        metadata["full_access_authorized_by_operator"] = False
+    token_ok = bool(
+        operator_token and expected_secret and constant_time_equals(str(operator_token), str(expected_secret))
+    )
+    metadata["full_access_authorized_by_operator"] = bool(
+        token_ok or is_full_access_authorized(req.execution_mode, req.full_access_confirmed)
+    )
+    metadata["require_step_confirmation"] = bool(req.require_step_confirmation)
 
     if req.confirmation_required_for_full_access is not None:
         metadata["confirmation_required_for_full_access"] = req.confirmation_required_for_full_access

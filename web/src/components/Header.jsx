@@ -19,7 +19,7 @@ export default function Header({
   const getModeBadge = () => {
     const mode = (executionMode || '').toLowerCase();
     if (mode === 'full_access' || mode.startsWith('full_access')) {
-      const isAuto = isAutonomous || mode === 'full_access_autonomous';
+      const isAuto = isAutonomous || mode === 'full_access';
       return (
         <div style={{
           display: 'flex',

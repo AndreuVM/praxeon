@@ -124,8 +124,7 @@ export default function MissionLauncher({
     e?.preventDefault();
     if (!goal.trim()) return;
 
-    const isFullAccess = executionMode.startsWith('full_access');
-    const isAutonomous = executionMode === 'full_access_autonomous';
+    const isFullAccess = executionMode === 'full_access';
 
     if (isFullAccess && !fullAccessConfirmed) {
       alert('Debes confirmar que comprendes que el aislamiento de procesos del SO está deshabilitado para usar Full Access.');
@@ -135,10 +134,11 @@ export default function MissionLauncher({
     onStartMission?.({
       goal: goal.trim(),
       workspace_root: workspaceRoot.trim() || undefined,
-      execution_mode: isFullAccess ? 'full_access' : executionMode,
-      autonomous: isAutonomous,
-      allow_unattended_execution: isAutonomous,
-      confirmation_required_for_full_access: isFullAccess && !isAutonomous,
+      execution_mode: executionMode,
+      // Doble confirmación: seleccionar Full Access + aceptar el aviso de seguridad. Autoriza al agente sin confirmación por paso.
+      full_access_confirmed: isFullAccess && fullAccessConfirmed,
+      autonomous: isFullAccess,
+      allow_unattended_execution: isFullAccess,
       llm_provider: llmProvider,
       llm_model: customModel.trim() || llmModel || undefined,
       api_key: apiKey.trim() || undefined,
@@ -356,10 +356,8 @@ export default function MissionLauncher({
                 size={13}
                 style={{
                   color:
-                    executionMode === 'full_access_autonomous'
+                    executionMode === 'full_access'
                       ? '#f87171'
-                      : executionMode === 'full_access_manual'
-                      ? '#fbbf24'
                       : '#8b949e',
                 }}
               />
@@ -374,30 +372,25 @@ export default function MissionLauncher({
                 style={{
                   backgroundColor: '#0c0f14',
                   border: `1px solid ${
-                    executionMode === 'full_access_autonomous'
+                    executionMode === 'full_access'
                       ? 'rgba(239, 68, 68, 0.5)'
-                      : executionMode === 'full_access_manual'
-                      ? 'rgba(245, 158, 11, 0.5)'
                       : '#202737'
                   }`,
                   borderRadius: '6px',
                   padding: '5px 8px',
                   color:
-                    executionMode === 'full_access_autonomous'
+                    executionMode === 'full_access'
                       ? '#f87171'
-                      : executionMode === 'full_access_manual'
-                      ? '#fbbf24'
                       : '#f0f6fc',
                   fontSize: '11.5px',
                   cursor: 'pointer',
                   outline: 'none',
-                  fontWeight: executionMode.startsWith('full_access') ? '600' : 'normal',
+                  fontWeight: executionMode === 'full_access' ? '600' : 'normal',
                 }}
               >
                 <option value="local_restricted">Local Restricted Sandbox (Defecto)</option>
                 <option value="container">Container Sandbox (Docker)</option>
-                <option value="full_access_manual">Full Access (Host Direct - MANUAL) ⚠</option>
-                <option value="full_access_autonomous">Full Access (Host Direct - AUTONOMOUS) ⚡</option>
+                <option value="full_access">Full Access (Host Direct) ⚡</option>
               </select>
             </div>
 
@@ -453,17 +446,17 @@ export default function MissionLauncher({
               {!isRunning ? (
                 <button
                   type="submit"
-                  disabled={executionMode.startsWith('full_access') && !fullAccessConfirmed}
+                  disabled={executionMode === 'full_access' && !fullAccessConfirmed}
                   className="btn btn-primary"
                   style={{
                     padding: '6px 14px',
                     fontSize: '12px',
                     backgroundColor:
-                      executionMode.startsWith('full_access') && !fullAccessConfirmed ? '#3b1c1c' : '#202837',
+                      executionMode === 'full_access' && !fullAccessConfirmed ? '#3b1c1c' : '#202837',
                     borderColor:
-                      executionMode.startsWith('full_access') && !fullAccessConfirmed ? '#5c2222' : '#384558',
-                    cursor: executionMode.startsWith('full_access') && !fullAccessConfirmed ? 'not-allowed' : 'pointer',
-                    opacity: executionMode.startsWith('full_access') && !fullAccessConfirmed ? 0.6 : 1,
+                      executionMode === 'full_access' && !fullAccessConfirmed ? '#5c2222' : '#384558',
+                    cursor: executionMode === 'full_access' && !fullAccessConfirmed ? 'not-allowed' : 'pointer',
+                    opacity: executionMode === 'full_access' && !fullAccessConfirmed ? 0.6 : 1,
                   }}
                 >
                   <Play size={13} style={{ fill: '#f0f6fc' }} />
@@ -504,15 +497,15 @@ export default function MissionLauncher({
           </div>
 
           {/* Full Access Warning Banner & Confirmation */}
-          {executionMode.startsWith('full_access') && (
+          {executionMode === 'full_access' && (
             <div
               style={{
                 backgroundColor:
-                  executionMode === 'full_access_autonomous'
+                  executionMode === 'full_access'
                     ? 'rgba(239, 68, 68, 0.09)'
                     : 'rgba(245, 158, 11, 0.08)',
                 border: `1px solid ${
-                  executionMode === 'full_access_autonomous'
+                  executionMode === 'full_access'
                     ? 'rgba(239, 68, 68, 0.38)'
                     : 'rgba(245, 158, 11, 0.35)'
                 }`,
@@ -528,32 +521,20 @@ export default function MissionLauncher({
                   display: 'flex',
                   alignItems: 'center',
                   gap: '8px',
-                  color: executionMode === 'full_access_autonomous' ? '#f87171' : '#fbbf24',
+                  color: executionMode === 'full_access' ? '#f87171' : '#fbbf24',
                   fontSize: '12px',
                   fontWeight: '700',
                 }}
               >
                 <AlertTriangle size={15} />
                 <span>
-                  ADVERTENCIA DE SEGURIDAD:{' '}
-                  {executionMode === 'full_access_autonomous'
-                    ? 'Ejecución Host Direct Autónomo (Sin confirmación por paso)'
-                    : 'Ejecución Host Direct Manual (Confirmación obligatoria por paso)'}
+                  ADVERTENCIA DE SEGURIDAD: Ejecución Host Direct (sin confirmación por paso)
                 </span>
               </div>
               <p style={{ margin: 0, fontSize: '11px', color: '#cbd5e1', lineHeight: '1.45' }}>
-                En este modo el agente opera directamente sobre el sistema operativo anfitrión sin contenedor ni chroot.
-                {executionMode === 'full_access_autonomous' ? (
-                  <span>
-                    {' '}
-                    El modo <strong>AUTÓNOMO</strong> ejecutará acciones aprobadas por política sin solicitar confirmación humana interactiva.
-                  </span>
-                ) : (
-                  <span>
-                    {' '}
-                    El modo <strong>MANUAL</strong> detendrá toda acción en estado REVIEW para requerir la aprobación criptográfica de un operador.
-                  </span>
-                )}
+                En este modo el agente opera directamente sobre el sistema operativo anfitrión sin contenedor ni chroot.{' '}
+                Tu confirmación al activarlo sustituye a la confirmación por paso: las acciones se ejecutan sin preguntar, pero el
+                supervisor sigue <strong>bloqueando</strong> (BLOCK) y obligando a <strong>replanificar</strong> (REPLAN) lo peligroso.
               </p>
               <label
                 style={{
@@ -561,7 +542,7 @@ export default function MissionLauncher({
                   alignItems: 'center',
                   gap: '8px',
                   fontSize: '11.5px',
-                  color: executionMode === 'full_access_autonomous' ? '#fca5a5' : '#fde68a',
+                  color: executionMode === 'full_access' ? '#fca5a5' : '#fde68a',
                   cursor: 'pointer',
                   marginTop: '4px',
                 }}

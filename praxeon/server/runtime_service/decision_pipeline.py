@@ -377,14 +377,9 @@ class DecisionPipelineMixin:
         if not session_meta and state and state.metadata:
             session_meta = state.metadata
 
-        is_autonomous = bool(
-            session_meta.get("allow_unattended_execution")
-            or session_meta.get("autonomous")
-            or False
-        )
-
         # Mapear estado con precedencia determinista (BLOCK > REPLAN > REVIEW > ALLOW)
         requires_conf = decision.requires_confirmation
+        preauthorized_reason = None
         mode_val = str(session_mode.value if hasattr(session_mode, "value") else session_mode or "").lower()
         full_access_authorized = bool(
             session_meta.get("full_access_authorized_by_operator")
@@ -401,20 +396,23 @@ class DecisionPipelineMixin:
             policy_decision_str = "REPLAN"
             requires_conf = False
         elif requires_conf:
-            is_unregistered = bool(action.tool_call and not self.registry.is_known(action.tool_call.tool_name))
-            if mode_val == "full_access" and is_autonomous and full_access_authorized and not is_unregistered:
-                # FULL_ACCESS + AUTONOMOUS: Requiere flag explícito con advertencia auditada Y autorización previa verificada del operador
+            step_confirmation = bool(session_meta.get("require_step_confirmation"))
+            if mode_val == "full_access" and full_access_authorized and not step_confirmation:
+                # FULL_ACCESS autorizado por el operador (doble confirmación al activarlo): no se pide confirmación por
+                # paso. BLOCK, REPLAN y riesgo CRÍTICO se resolvieron antes y siguen siendo innegociables.
                 requires_conf = False
                 status_str = "ALLOW"
                 policy_decision_str = "ALLOW"
+                preauthorized_reason = "FULL_ACCESS_OPERATOR_PREAUTHORIZED"
                 logger.warning(
-                    "[SECURITY AUDIT] Sesión '%s' ejecutando en modo FULL_ACCESS_AUTONOMOUS: "
-                    "Confirmación humana omitida por autorización explícita previa y verificada del operador para acción '%s'.",
+                    "[SECURITY AUDIT] Sesión '%s' en FULL_ACCESS autorizado por el operador: confirmación por paso "
+                    "omitida para la acción '%s' (motivos de revisión: %s).",
                     session_id,
-                    action.tool_call.tool_name,
+                    action.tool_call.tool_name if action.tool_call else "cognitive",
+                    ", ".join(decision.reason_codes),
                 )
             else:
-                # FULL_ACCESS estándar u otros modos / autónomo no autorizado / herramienta no registrada: retiene obligatoriamente la confirmación interactiva
+                # Otros modos, Full Access sin autorización o con confirmación por paso solicitada: confirmación interactiva
                 status_str = "REVIEW"
                 policy_decision_str = "REQUIRE_HUMAN_CONFIRMATION"
 
@@ -424,7 +422,7 @@ class DecisionPipelineMixin:
 
         policy_dto = PolicyDTO(
             decision=policy_decision_str,
-            reason_codes=decision.reason_codes,
+            reason_codes=list(decision.reason_codes) + ([preauthorized_reason] if preauthorized_reason else []),
             requires_confirmation=requires_conf,
         )
 
