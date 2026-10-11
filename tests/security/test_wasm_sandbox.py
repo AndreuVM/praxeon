@@ -1,6 +1,7 @@
 """Tests de seguridad y funcionalidad para WasmSandbox (tests/security/test_wasm_sandbox.py)."""
 
 import os
+import sys
 from pathlib import Path
 import pytest
 
@@ -48,7 +49,9 @@ def test_wasm_sandbox_command_execution(tmp_path: Path):
     """Valida la ejecución de comandos asignando el tier WASM."""
     sandbox = WasmSandbox(workspace_root=str(tmp_path))
 
-    res = sandbox.execute_command("python -c \"print('WASI Confined Computation')\"")
+    py = sys.executable
+    cmd = f"& '{py}' -c \"print('WASI Confined Computation')\"" if os.name == "nt" else f"'{py}' -c \"print('WASI Confined Computation')\""
+    res = sandbox.execute_command(cmd)
     assert res.success is True
     assert res.tier == SandboxTier.WASM
     assert "WASI Confined Computation" in res.output

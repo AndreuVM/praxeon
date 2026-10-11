@@ -9,7 +9,11 @@ Provee la lógica de negocio y persistencia para el editor drag & drop de flujos
 """
 
 from datetime import datetime, timezone
+import functools
 import json
+import logging
+import os
+import threading
 import time
 from typing import Any, Dict, List, Optional
 import uuid
@@ -31,6 +35,17 @@ from praxeon.workflows.models import (
 from praxeon.workflows.templates import CANONICAL_TEMPLATES
 
 
+logger = logging.getLogger("praxeon.workflows.editor")
+
+
+def _locked(method):
+    """Serializa las operaciones de lectura-modificación-escritura del editor (evita pérdida de ediciones)."""
+    @functools.wraps(method)
+    def wrapper(self, *args, **kwargs):
+        with self._lock:
+            return method(self, *args, **kwargs)
+    return wrapper
+
 
 class WorkflowEditorService:
     """Servicio central para el editor visual e interactivo de workflows."""
@@ -40,10 +55,17 @@ class WorkflowEditorService:
         event_bus: Optional[EventBus] = None,
         agent_bus: Optional[AgentMessageBus] = None,
         persistence_store: Optional[Any] = None,
+        allow_simulation: Optional[bool] = None,
     ):
+        # La ejecución sintética (sin handlers reales) solo se habilita de forma explícita:
+        # parámetro `allow_simulation` o PRAXEON_WORKFLOW_SIMULATION=1. Por defecto es fail-closed.
+        if allow_simulation is None:
+            allow_simulation = os.environ.get("PRAXEON_WORKFLOW_SIMULATION", "").strip().lower() in ("1", "true", "yes")
+        self.allow_simulation = allow_simulation
         self.event_bus = event_bus or EventBus()
         self.agent_bus = agent_bus
         self.persistence_store = persistence_store
+        self._lock = threading.RLock()
         self._workflows: Dict[str, WorkflowDefinition] = {}
         self._active_engines: Dict[str, WorkflowEngine] = {}
         self._active_bridges: Dict[str, WorkflowDecisionBridge] = {}
@@ -128,6 +150,7 @@ class WorkflowEditorService:
         )
         self.register_workflow(demo_wf)
 
+    @_locked
     def register_workflow(self, workflow: WorkflowDefinition) -> None:
         """Registra o actualiza una definición de workflow en memoria y persistencia."""
         self._workflows[workflow.workflow_id] = workflow
@@ -135,8 +158,9 @@ class WorkflowEditorService:
             try:
                 self.persistence_store.save_workflow(workflow)
             except Exception:
-                pass
+                logger.warning("No se pudo persistir el workflow/ejecución", exc_info=True)
 
+    @_locked
     def delete_workflow(self, workflow_id: str) -> bool:
         """Elimina un workflow registrado de memoria y persistencia."""
         self._active_engines.pop(workflow_id, None)
@@ -146,7 +170,7 @@ class WorkflowEditorService:
             try:
                 self.persistence_store.delete_workflow(workflow_id)
             except Exception:
-                pass
+                logger.warning("No se pudo eliminar el workflow persistido", exc_info=True)
         return removed
 
     def get_workflow(self, workflow_id: str) -> Optional[WorkflowDefinition]:
@@ -198,6 +222,7 @@ class WorkflowEditorService:
         self.register_workflow(wf)
         return wf
 
+    @_locked
     def add_node(
         self,
         workflow_id: str,
@@ -239,19 +264,12 @@ class WorkflowEditorService:
         new_nodes = dict(wf.nodes)
         new_nodes[node_id] = node
 
-        updated_wf = WorkflowDefinition(
-            workflow_id=wf.workflow_id,
-            name=wf.name,
-            description=wf.description,
-            version=wf.version + 1,
-            nodes=new_nodes,
-            edges=list(wf.edges),
-            variables=dict(wf.variables),
-            updated_at=datetime.now(timezone.utc),
-        )
+        # model_copy conserva timeout_seconds, metadata y created_at del workflow
+        updated_wf = wf.model_copy(update={"version": wf.version + 1, "nodes": new_nodes, "updated_at": datetime.now(timezone.utc)})
         self.register_workflow(updated_wf)
         return node
 
+    @_locked
     def update_node_position(
         self,
         workflow_id: str,
@@ -272,19 +290,12 @@ class WorkflowEditorService:
         new_nodes = dict(wf.nodes)
         new_nodes[node_id] = updated_node
 
-        updated_wf = WorkflowDefinition(
-            workflow_id=wf.workflow_id,
-            name=wf.name,
-            description=wf.description,
-            version=wf.version,
-            nodes=new_nodes,
-            edges=list(wf.edges),
-            variables=dict(wf.variables),
-            updated_at=datetime.now(timezone.utc),
-        )
+        # model_copy conserva timeout_seconds, metadata y created_at del workflow
+        updated_wf = wf.model_copy(update={"nodes": new_nodes, "updated_at": datetime.now(timezone.utc)})
         self.register_workflow(updated_wf)
         return updated_node
 
+    @_locked
     def update_node(
         self,
         workflow_id: str,
@@ -331,19 +342,12 @@ class WorkflowEditorService:
         new_nodes = dict(wf.nodes)
         new_nodes[node_id] = updated_node
 
-        updated_wf = WorkflowDefinition(
-            workflow_id=wf.workflow_id,
-            name=wf.name,
-            description=wf.description,
-            version=wf.version + 1,
-            nodes=new_nodes,
-            edges=list(wf.edges),
-            variables=dict(wf.variables),
-            updated_at=datetime.now(timezone.utc),
-        )
+        # model_copy conserva timeout_seconds, metadata y created_at del workflow
+        updated_wf = wf.model_copy(update={"version": wf.version + 1, "nodes": new_nodes, "updated_at": datetime.now(timezone.utc)})
         self.register_workflow(updated_wf)
         return updated_node
 
+    @_locked
     def remove_node(self, workflow_id: str, node_id: str) -> bool:
         """Elimina un nodo y limpia todas las aristas conectadas."""
         wf = self.get_workflow(workflow_id)
@@ -364,19 +368,12 @@ class WorkflowEditorService:
         new_nodes = {k: v for k, v in wf.nodes.items() if k != node_id}
         new_edges = [e for e in wf.edges if e.from_node != node_id and e.to_node != node_id]
 
-        updated_wf = WorkflowDefinition(
-            workflow_id=wf.workflow_id,
-            name=wf.name,
-            description=wf.description,
-            version=wf.version + 1,
-            nodes=new_nodes,
-            edges=new_edges,
-            variables=dict(wf.variables),
-            updated_at=datetime.now(timezone.utc),
-        )
+        # model_copy conserva timeout_seconds, metadata y created_at del workflow
+        updated_wf = wf.model_copy(update={"version": wf.version + 1, "nodes": new_nodes, "edges": new_edges, "updated_at": datetime.now(timezone.utc)})
         self.register_workflow(updated_wf)
         return True
 
+    @_locked
     def connect_nodes(
         self,
         workflow_id: str,
@@ -404,19 +401,12 @@ class WorkflowEditorService:
         new_edges = list(wf.edges)
         new_edges.append(edge)
 
-        updated_wf = WorkflowDefinition(
-            workflow_id=wf.workflow_id,
-            name=wf.name,
-            description=wf.description,
-            version=wf.version + 1,
-            nodes=dict(wf.nodes),
-            edges=new_edges,
-            variables=dict(wf.variables),
-            updated_at=datetime.now(timezone.utc),
-        )
+        # model_copy conserva timeout_seconds, metadata y created_at del workflow
+        updated_wf = wf.model_copy(update={"version": wf.version + 1, "edges": new_edges, "updated_at": datetime.now(timezone.utc)})
         self.register_workflow(updated_wf)
         return edge
 
+    @_locked
     def disconnect_nodes(self, workflow_id: str, edge_id: str) -> bool:
         """Elimina una conexión existente."""
         wf = self.get_workflow(workflow_id)
@@ -427,19 +417,12 @@ class WorkflowEditorService:
         if len(new_edges) == len(wf.edges):
             return False
 
-        updated_wf = WorkflowDefinition(
-            workflow_id=wf.workflow_id,
-            name=wf.name,
-            description=wf.description,
-            version=wf.version + 1,
-            nodes=dict(wf.nodes),
-            edges=new_edges,
-            variables=dict(wf.variables),
-            updated_at=datetime.now(timezone.utc),
-        )
+        # model_copy conserva timeout_seconds, metadata y created_at del workflow
+        updated_wf = wf.model_copy(update={"version": wf.version + 1, "edges": new_edges, "updated_at": datetime.now(timezone.utc)})
         self.register_workflow(updated_wf)
         return True
 
+    @_locked
     def update_edge(
         self,
         workflow_id: str,
@@ -473,35 +456,36 @@ class WorkflowEditorService:
         new_edges = list(wf.edges)
         new_edges[edge_idx] = updated_edge
 
-        updated_wf = WorkflowDefinition(
-            workflow_id=wf.workflow_id,
-            name=wf.name,
-            description=wf.description,
-            version=wf.version + 1,
-            nodes=dict(wf.nodes),
-            edges=new_edges,
-            variables=dict(wf.variables),
-            updated_at=datetime.now(timezone.utc),
-        )
+        # model_copy conserva timeout_seconds, metadata y created_at del workflow
+        updated_wf = wf.model_copy(update={"version": wf.version + 1, "edges": new_edges, "updated_at": datetime.now(timezone.utc)})
         self.register_workflow(updated_wf)
         return updated_edge
 
+    @_locked
     def get_or_create_engine(self, workflow_id: str) -> WorkflowEngine:
         """Obtiene o crea un motor de ejecución para el workflow."""
+        current = self.get_workflow(workflow_id)
+        cached = self._active_engines.get(workflow_id)
+        if cached is not None and current is not None and cached.workflow.version != current.version:
+            # El motor cacheado usa una definición obsoleta: se descarta salvo que esté en ejecución activa
+            if cached.context.status not in (WorkflowStatus.RUNNING, WorkflowStatus.PAUSED):
+                self._active_engines.pop(workflow_id, None)
+                self._active_bridges.pop(workflow_id, None)
         if workflow_id not in self._active_engines:
-            wf = self.get_workflow(workflow_id)
+            wf = current
             if not wf:
                 raise ValueError(f"Workflow '{workflow_id}' no encontrado.")
             engine = WorkflowEngine(
                 workflow=wf,
                 agent_bus=self.agent_bus,
-                allow_synthetic_fallback=True,
+                allow_synthetic_fallback=self.allow_simulation,
             )
             self._active_engines[workflow_id] = engine
             bridge = WorkflowDecisionBridge(engine=engine, event_bus=self.event_bus)
             self._active_bridges[workflow_id] = bridge
         return self._active_engines[workflow_id]
 
+    @_locked
     def execute_workflow(self, workflow_id: str, max_steps: int = 100) -> Dict[str, Any]:
         """Ejecuta el flujo de trabajo supervisado por gobernanza."""
         engine = self.get_or_create_engine(workflow_id)
@@ -511,9 +495,10 @@ class WorkflowEditorService:
             try:
                 self.persistence_store.save_workflow_execution(engine.get_execution())
             except Exception:
-                pass
+                logger.warning("No se pudo persistir el workflow/ejecución", exc_info=True)
         return ctx.to_dict()
 
+    @_locked
     def step_workflow(self, workflow_id: str) -> Dict[str, Any]:
         """Avanza un paso individual en el workflow."""
         engine = self.get_or_create_engine(workflow_id)
@@ -523,13 +508,14 @@ class WorkflowEditorService:
             try:
                 self.persistence_store.save_workflow_execution(engine.get_execution())
             except Exception:
-                pass
+                logger.warning("No se pudo persistir el workflow/ejecución", exc_info=True)
         return {
             "executed_node_id": step_nid,
             "status": engine.context.status.value,
             "context": engine.context.to_dict(),
         }
 
+    @_locked
     def backtrack_workflow(self, workflow_id: str, target_node_id: str) -> Dict[str, Any]:
         """Aplica backtrack determinista hacia un nodo objetivo."""
         engine = self.get_or_create_engine(workflow_id)
@@ -538,7 +524,7 @@ class WorkflowEditorService:
             try:
                 self.persistence_store.save_workflow_execution(engine.get_execution())
             except Exception:
-                pass
+                logger.warning("No se pudo persistir el workflow/ejecución", exc_info=True)
         return {
             "success": success,
             "target_node_id": target_node_id,
@@ -551,6 +537,7 @@ class WorkflowEditorService:
         self._active_engines.pop(workflow_id, None)
         self._active_bridges.pop(workflow_id, None)
 
+    @_locked
     def approve_node(
         self,
         workflow_id: str,
@@ -565,7 +552,7 @@ class WorkflowEditorService:
             try:
                 self.persistence_store.save_workflow_execution(engine.get_execution())
             except Exception:
-                pass
+                logger.warning("No se pudo persistir el workflow/ejecución", exc_info=True)
         return {
             "success": success,
             "node_id": node_id,

@@ -10,6 +10,8 @@ Valida:
 
 import pytest
 
+from praxeon.policy.registry import ToolSpec
+
 from praxeon.domain.assessment import RiskAssessment, RiskLevel
 from praxeon.domain.branch import BranchStatus
 from praxeon.domain.decision import DecisionStatus, PolicyDecision
@@ -57,6 +59,7 @@ def test_bridge_publishes_lifecycle_events_and_branch_steps():
     engine.register_task_handler("compile_tool", lambda inp: {"binary": "a.out"})
 
     bridge = WorkflowDecisionBridge(engine=engine, event_bus=bus, session_id="sess_gov_01")
+    bridge.tool_registry.register_tool(ToolSpec(name="compile_tool", category="inspection", read_only=True))
     ctx = bridge.run_to_completion()
 
     assert ctx.status == WorkflowStatus.COMPLETED
@@ -164,6 +167,7 @@ def test_bridge_deterministic_replay_from_event_store():
 
     session_id = "sess_replay_test"
     bridge = WorkflowDecisionBridge(engine=engine, event_bus=bus, session_id=session_id)
+    bridge.tool_registry.register_tool(ToolSpec(name="compile_tool", category="inspection", read_only=True))
     orig_ctx = bridge.run_to_completion()
     assert orig_ctx.status == WorkflowStatus.COMPLETED
 

@@ -1,7 +1,7 @@
 """Rutas REST para el Editor Visual y Motor de Orquestación de Workflows (praxeon/server/routes/workflows.py) (F6-04)."""
 
 from typing import Any, Dict, List, Optional
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Query, status
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
@@ -244,7 +244,7 @@ def validate_workflow(workflow_id: str):
 
 
 @router.post("/{workflow_id}/execute", response_model=APIResponse[Dict[str, Any]])
-def execute_workflow(workflow_id: str, max_steps: int = 100):
+def execute_workflow(workflow_id: str, max_steps: int = Query(100, ge=1, le=1000)):
     """Ejecuta el flujo de trabajo supervisado por gobernanza física."""
     service = get_workflow_editor_service()
     try:

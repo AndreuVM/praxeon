@@ -170,6 +170,13 @@ class AtomicCondition(BaseModel):
         else:
             return False
 
+        try:
+            return self._compare(val)
+        except TypeError:
+            # Tipos incompatibles: la condición no se cumple (fail-closed), nunca rompe el motor
+            return False
+
+    def _compare(self, val: Any) -> bool:
         op = self.operator.strip().lower()
         expected = self.expected_value
 

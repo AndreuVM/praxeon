@@ -84,7 +84,11 @@ ROLE_PERMISSIONS: Dict[Role, Set[Permission]] = {
 
 
 class TenantContext(BaseModel):
-    """Contexto de seguridad multi-tenant asociado a la petición actual."""
+    """Contexto de seguridad (identidad y permisos RBAC) de la petición actual.
+
+    `tenant_id` es solo una etiqueta: PRAXEON está pensado para uso personal de un único
+    usuario y no aísla datos entre tenants.
+    """
     model_config = ConfigDict(frozen=True)
 
     tenant_id: str = "default_tenant"
@@ -110,6 +114,11 @@ class TokenPair(BaseModel):
     tenant_id: str
     user_id: str
     role: Role
+
+
+def constant_time_equals(a: str, b: str) -> bool:
+    """Compara dos cadenas en tiempo constante sin fallar con caracteres no ASCII."""
+    return hmac.compare_digest(str(a).encode("utf-8"), str(b).encode("utf-8"))
 
 
 def _b64url_encode(data: bytes) -> str:
@@ -158,10 +167,12 @@ def decode_jwt_hs256(token: str, secret_key: str) -> Dict[str, Any]:
 
     # Validar expiración
     exp = payload.get("exp")
-    if exp is not None:
-        now_epoch = time.time()
-        if now_epoch > exp:
-            raise ValueError("Token JWT caducado (expirado).")
+    if not isinstance(exp, (int, float)) or isinstance(exp, bool):
+        raise ValueError("Token JWT sin expiración válida ('exp' obligatorio).")
+    if time.time() > exp:
+        raise ValueError("Token JWT caducado (expirado).")
+    if payload.get("iss") != "praxeon-auth":
+        raise ValueError("Emisor (iss) del token JWT no reconocido.")
 
     return payload
 
@@ -183,7 +194,9 @@ class AuthService:
         self._revoked_jtis: Set[str] = set()
         self.ticket_ttl_seconds = ticket_ttl_seconds
         self._configured_api_key = api_key or os.getenv("PRAXEON_API_KEY") or os.getenv("JEV_API_KEY")
-        self._secret_key = secret_key or os.getenv("PRAXEON_SECRET_KEY") or self._configured_api_key or "praxeon_default_development_secret_key_32_chars!"
+        # Sin secreto configurado se genera uno aleatorio por proceso (nunca un valor público por defecto);
+        # los tokens dejan de ser válidos al reiniciar, lo que es seguro en desarrollo.
+        self._secret_key = secret_key or os.getenv("PRAXEON_SECRET_KEY") or secrets.token_urlsafe(48)
 
     def get_configured_api_key(self) -> Optional[str]:
         """Retorna la clave API configurada en entorno o instancia."""
@@ -196,7 +209,7 @@ class AuthService:
             return True
         if not provided_key:
             return False
-        return hmac.compare_digest(provided_key.strip(), configured.strip())
+        return constant_time_equals(provided_key.strip(), configured.strip())
 
     def issue_token_pair(
         self,
@@ -286,6 +299,8 @@ class AuthService:
     def authenticate_jwt(self, token: str) -> TenantContext:
         """Valida un access token JWT y construye su TenantContext tipado con permisos."""
         payload = decode_jwt_hs256(token, self._secret_key)
+        if payload.get("type") != "access":
+            raise ValueError("Token inválido: se requiere un token de tipo 'access'.")
         jti = payload.get("jti")
         with self._lock:
             if jti in self._revoked_jtis:

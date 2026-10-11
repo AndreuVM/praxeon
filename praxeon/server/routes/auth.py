@@ -1,4 +1,4 @@
-"""Rutas y Controladores de Autenticación SaaS, Tokens JWT y Cookies HttpOnly (Fase 8 - ROAD-04).
+"""Rutas y Controladores de Autenticación personal, Tokens JWT y Cookies HttpOnly (Fase 8 - ROAD-04).
 
 Expone:
 - POST /v1/auth/login: Autenticación por API Key o credenciales; emite access + refresh token (JSON + cookies HttpOnly).
@@ -11,7 +11,7 @@ from typing import Any, Dict, Optional
 from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
 
-from praxeon.server.dependencies import get_auth_service, get_current_tenant
+from praxeon.server.dependencies import get_auth_service, get_current_tenant, is_auth_required
 from praxeon.server.services.auth_service import (
     AuthService,
     Permission,
@@ -25,7 +25,7 @@ auth_router = APIRouter(prefix="/v1/auth", tags=["auth"])
 
 class LoginRequest(BaseModel):
     api_key: Optional[str] = Field(default=None, description="Clave API de acceso")
-    tenant_id: str = Field(default="default_tenant", description="Identificador del tenant SaaS")
+    tenant_id: str = Field(default="default_tenant", description="Etiqueta informativa (instalación de un único usuario; no aísla datos)")
     user_id: str = Field(default="admin", description="Identificador del usuario")
     role: Role = Field(default=Role.ADMIN, description="Rol solicitado")
 
@@ -65,15 +65,26 @@ def _clear_auth_cookies(response: Response) -> None:
 @auth_router.post("/login", response_model=Dict[str, Any])
 def login(
     req: LoginRequest,
+    request: Request,
     response: Response,
     auth_service: AuthService = Depends(get_auth_service),
 ) -> Dict[str, Any]:
     """Inicia sesión emitiendo un par de tokens JWT (HS256) y cookies HttpOnly."""
-    # Verificar API key proporcionada si hay una configurada
-    if req.api_key and not auth_service.verify_api_key(req.api_key):
+    # La credencial es obligatoria siempre que haya una clave configurada (nunca se omite la verificación).
+    if auth_service.get_configured_api_key():
+        if not req.api_key or not auth_service.verify_api_key(req.api_key):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Credenciales de acceso inválidas.",
+            )
+    elif is_auth_required(
+        profile=getattr(request.app.state, "security_profile", None),
+        client_host=request.client.host if request.client else None,
+    ):
+        # Autenticación exigida pero sin clave configurada: no se emiten tokens (fail-closed).
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Credenciales de acceso inválidas.",
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Servidor sin credencial configurada: no se pueden emitir tokens.",
         )
 
     tokens = auth_service.issue_token_pair(

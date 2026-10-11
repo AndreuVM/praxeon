@@ -30,6 +30,7 @@ class WorkflowScheduler:
         self.persistence_store = persistence_store
         self.interval_seconds = max(0.05, interval_seconds)
         self._engines: Dict[str, WorkflowEngine] = {}
+        self._persisted_signatures: Dict[str, tuple] = {}
         self._lock = threading.RLock()
         self._stop_event = threading.Event()
         self._thread: Optional[threading.Thread] = None
@@ -170,10 +171,23 @@ class WorkflowScheduler:
     def _persist_execution_safe(self, engine: WorkflowEngine) -> None:
         """Persiste de forma segura el estado de ejecución si hay almacén configurado."""
         if self.persistence_store and hasattr(self.persistence_store, "save_workflow_execution"):
+            ctx = engine.context
+            # Solo se persiste si el estado cambió desde el último guardado (evita reescribir cada ciclo)
+            signature = (
+                ctx.status,
+                tuple(sorted((k, v.value) for k, v in ctx.node_states.items())),
+                len(ctx.execution_history),
+                ctx.finished_at,
+            )
+            if self._persisted_signatures.get(ctx.execution_id) == signature:
+                return
             try:
                 self.persistence_store.save_workflow_execution(engine.get_execution())
+                self._persisted_signatures[ctx.execution_id] = signature
             except Exception as exc:
                 logger.warning(f"Error al persistir ejecución en scheduler: {exc}")
+            if ctx.status in (WorkflowStatus.COMPLETED, WorkflowStatus.FAILED, WorkflowStatus.CANCELLED):
+                self._persisted_signatures.pop(ctx.execution_id, None)
 
     def _run_loop(self) -> None:
         """Bucle continuo ejecutado en el hilo en segundo plano."""

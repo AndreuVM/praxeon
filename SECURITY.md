@@ -52,6 +52,7 @@ $$\text{LLM Proposal} \to \text{Evidence Grounding} \to \text{Risk Assessment} \
    - **Neutralización de Red y Proxies:** Si `allow_network=False` (por defecto), se bloquean comandos de egress (`curl`, `wget`, `nc`, `ssh`, etc.) y se redirigen las variables proxy (`HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`) a `http://127.0.0.1:0`.
    - **Contención de Directorio y Anti-Symlink (Jail Path):** Las rutas de archivos y comandos son forzadas a resolverse dentro del workspace delimitado utilizando `os.path.realpath` para desreferenciar symlinks físicos y prevenir fugas por enlaces simbólicos o traversals (`../`).
    - **Prevención de Inyección Shell:** Ejecución tokenizada sin `shell=True` arbitrario y con timeouts forzados.
+   - **Límites conocidos (`LOCAL_RESTRICTED`/`WASM` sin `wasmtime`):** la contención de rutas se aplica al `cwd` y a las operaciones de fichero, **no** al contenido del comando, y el bloqueo de red es por lista de utilidades y variables proxy; no es una barrera frente a un adversario determinado. Para código no confiable use `CONTAINER`.
 6. **Sanitización de Salidas (`DataSanitizer`):**
    Las observaciones retornadas por las herramientas son analizadas y enmascaradas (eliminando credenciales, tokens JWT y claves privadas) y envueltas en delimitadores de confianza antes de ser inyectadas en la memoria del agente.
 7. **Suite de Seguridad Dedicada (`tests/security/`):**

@@ -109,19 +109,52 @@ class ToolRegistry:
             return True
         return False
 
+    _SHELL_METACHARS = (";", "&", "|", ">", "<", "`", "$(", "\n", "\r")
+    _READ_ONLY_COMMANDS = {
+        "ls", "dir", "type", "cat", "head", "tail", "get-content", "pwd", "echo", "where", "which",
+        "findstr", "grep", "find",
+    }
+    _READ_ONLY_GIT = {"status", "log", "diff", "show", "branch", "tag"}
+    _DESTRUCTIVE_FLAGS = {
+        "-delete", "-exec", "-execdir", "-ok", "-fprint", "-fprintf", "-d", "-D", "-m", "-M", "-f",
+        "--delete", "--force", "--move", "--set-upstream", "--unset-upstream", "--edit-description",
+    }
+
+    def _is_read_only_command(self, cmd: str) -> bool:
+        """Clasifica un comando como de solo lectura con una lista blanca estricta (sin metacaracteres de shell)."""
+        if not cmd or any(m in cmd for m in self._SHELL_METACHARS):
+            return False
+        import shlex
+        try:
+            tokens = shlex.split(cmd, posix=True)
+        except ValueError:
+            return False
+        if not tokens:
+            return False
+        exe = tokens[0].lower()
+        args = tokens[1:]
+        if exe == "git":
+            if not args or args[0].lower() not in self._READ_ONLY_GIT:
+                return False
+            # `git branch/tag` con argumentos posicionales o flags de escritura crea/borra referencias
+            if args[0].lower() in ("branch", "tag") and any(
+                not a.startswith("-") or a in self._DESTRUCTIVE_FLAGS for a in args[1:]
+            ):
+                return False
+            return not any(a in self._DESTRUCTIVE_FLAGS for a in args[1:])
+        if exe in ("python", "python3") :
+            return args in (["--version"], ["-V"], ["-v"])
+        if exe not in self._READ_ONLY_COMMANDS:
+            return False
+        return not any(a in self._DESTRUCTIVE_FLAGS for a in args)
+
     def is_observational(self, name: str, tool_args: Optional[Dict[str, Any]] = None) -> bool:
         """Determina si la herramienta o comando es puramente observacional / de lectura."""
         if name in ("read_file", "view_file", "list_dir", "grep_search", "search_web"):
             return True
         if name == "run_command" and tool_args:
-            cmd = str(tool_args.get("command") or "").strip().lower()
-            read_only_prefixes = (
-                "ls", "dir", "type ", "cat ", "head ", "tail ", "get-content",
-                "git status", "git log", "git diff", "git show", "git branch", "git tag",
-                "find ", "findstr ", "grep ", "pwd", "echo ", "where ", "which ",
-                "python --version", "python -v"
-            )
-            if any(cmd == p.strip() or cmd.startswith(p) for p in read_only_prefixes):
+            cmd = str(tool_args.get("command") or "").strip()
+            if self._is_read_only_command(cmd):
                 return True
         spec = self._tools.get(name)
         if not spec:

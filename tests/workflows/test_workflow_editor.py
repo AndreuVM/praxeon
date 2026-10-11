@@ -21,7 +21,7 @@ from praxeon.workflows import (
 @pytest.fixture
 def editor_service():
     """Servicio de editor aislado para pruebas unitarias."""
-    return WorkflowEditorService()
+    return WorkflowEditorService(allow_simulation=True)
 
 
 @pytest.fixture

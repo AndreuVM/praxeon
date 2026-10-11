@@ -12,7 +12,7 @@ Garantiza la trazabilidad unificada y la gobernanza física paso a paso de los w
 from datetime import datetime, timezone
 import json
 import time
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Set
 import uuid
 
 from praxeon.domain.action import ActionCandidate, ToolCall
@@ -27,6 +27,7 @@ from praxeon.domain.branch import (
 from praxeon.domain.decision import DecisionStatus, PolicyDecision
 from praxeon.domain.events import EventType, RuntimeEvent, make_event
 from praxeon.domain.observation import Observation
+from praxeon.policy.registry import ToolRegistry
 from praxeon.runtime.event_bus import EventBus, EventStore
 from praxeon.workflows.engine import (
     WorkflowEngine,
@@ -55,6 +56,7 @@ class WorkflowDecisionBridge:
         self.event_bus = event_bus or EventBus()
         self.session_id = session_id or f"wf_sess_{engine.workflow.workflow_id}_{uuid.uuid4().hex[:8]}"
         self.policy_evaluator = policy_evaluator
+        self.tool_registry = ToolRegistry()
 
         # Árbol de razonamiento activo vinculado al workflow
         self.active_branch = BranchPath(
@@ -108,6 +110,7 @@ class WorkflowDecisionBridge:
 
         # 2. Si el nodo fue explícitamente aprobado por un humano, autorizarlo
         if node_id in self._approved_nodes:
+            self._approved_nodes.discard(node_id)  # la aprobación se consume: no vale para iteraciones futuras
             decision = PolicyDecision(
                 status=DecisionStatus.ALLOW,
                 reason_codes=["HUMAN_APPROVAL_GRANTED"],
@@ -130,6 +133,30 @@ class WorkflowDecisionBridge:
                     reason_codes=["WORKFLOW_NODE_FORBIDDEN_POLICY"],
                     risk=RiskAssessment(level=RiskLevel.CRITICAL),
                 )
+            elif node.node_type == NodeType.TASK and node.tool_name:
+                # Fail-closed: una herramienta no catalogada, de riesgo alto/crítico o destructiva
+                # exige confirmación humana; no se autoriza por omisión.
+                known = self.tool_registry.get_tool(node.tool_name) is not None
+                risk = self.tool_registry.assess_risk(node.tool_name)
+                if not known or risk.requires_confirmation:
+                    decision = PolicyDecision(
+                        status=DecisionStatus.BLOCK,
+                        requires_confirmation=True,
+                        reason_codes=["HUMAN_CONFIRMATION_REQUIRED", "TOOL_NOT_CATALOGED" if not known else "TOOL_HIGH_RISK"],
+                        risk=risk,
+                    )
+                elif not risk.executable:
+                    decision = PolicyDecision(
+                        status=DecisionStatus.BLOCK,
+                        reason_codes=["TOOL_NOT_EXECUTABLE"],
+                        risk=risk,
+                    )
+                else:
+                    decision = PolicyDecision(
+                        status=DecisionStatus.ALLOW,
+                        reason_codes=["POLICY_PASS_CATALOGED_TOOL"],
+                        risk=risk,
+                    )
             else:
                 decision = PolicyDecision(
                     status=DecisionStatus.ALLOW,

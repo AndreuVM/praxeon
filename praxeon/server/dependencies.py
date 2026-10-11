@@ -3054,6 +3054,7 @@ from praxeon.server.services.auth_service import (
     Role,
     ROLE_PERMISSIONS,
     TenantContext,
+    constant_time_equals,
 )
 
 
@@ -3091,6 +3092,10 @@ def get_current_tenant(
 
     if not required and not token:
         # Modo dev sin autenticación obligatoria
+        global _warned_dev_auth
+        if not _warned_dev_auth:
+            logger.warning("WARNING: PRAXEON running without API key authentication. Do not use in production.")
+            _warned_dev_auth = True
         return TenantContext(
             tenant_id="dev_tenant",
             user_id="dev_user",
@@ -3118,7 +3123,7 @@ def get_current_tenant(
 
     # Si es una API Key estática
     expected_key = os.environ.get("PRAXEON_API_KEY") or os.environ.get("PRAXEON_SECRET_KEY")
-    if expected_key and secrets.compare_digest(token, expected_key):
+    if expected_key and constant_time_equals(token, expected_key):
         return TenantContext(
             tenant_id="default_tenant",
             user_id="admin_apikey",
@@ -3143,6 +3148,22 @@ def require_permission(permission: Permission):
             )
         return tenant
     return _perm_checker
+
+
+def require_route_permission(read: Permission, write: Permission):
+    """Dependency para routers: exige `read` en GET/HEAD/OPTIONS y `write` en métodos mutantes."""
+    def _checker(
+        request: Request,
+        tenant: TenantContext = Depends(get_current_tenant),
+    ) -> TenantContext:
+        needed = read if request.method in ("GET", "HEAD", "OPTIONS") else write
+        if not tenant.has_permission(needed):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Permiso insuficiente: se requiere '{needed.value}'.",
+            )
+        return tenant
+    return _checker
 
 
 def verify_api_key(
@@ -3201,7 +3222,7 @@ def verify_api_key(
             pass
 
     # 2. Si es una API Key estática
-    if expected_key and secrets.compare_digest(token, expected_key):
+    if expected_key and constant_time_equals(token, expected_key):
         return token
 
     # Si no había expected_key pero tampoco es JWT válido

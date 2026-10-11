@@ -109,6 +109,10 @@ class LocalProcessSandbox(SandboxAdapter):
         "SECRET_KEY",
         "API_KEY",
         "PASSWORD",
+        "PASSWD",
+        "TOKEN",
+        "CREDENTIAL",
+        "PRIVATE_KEY",
         "SSH_AUTH_SOCK",
     }
 

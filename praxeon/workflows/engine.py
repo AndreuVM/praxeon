@@ -60,6 +60,8 @@ class ExecutionCheckpoint(BaseModel):
 class WorkflowExecutionContext:
     """Contexto y estado mutable de una ejecución activa de workflow."""
 
+    MAX_CHECKPOINTS = 200
+
     def __init__(self, workflow: WorkflowDefinition, execution_id: Optional[str] = None):
         self.execution_id = execution_id or f"exec_{uuid.uuid4().hex[:12]}"
         self.workflow_id = workflow.workflow_id
@@ -87,6 +89,9 @@ class WorkflowExecutionContext:
             execution_history=list(self.execution_history),
         )
         self.checkpoints.append(ckpt)
+        # Acota la memoria/persistencia: se conservan el checkpoint inicial y los más recientes
+        if len(self.checkpoints) > self.MAX_CHECKPOINTS:
+            del self.checkpoints[1:len(self.checkpoints) - self.MAX_CHECKPOINTS + 1]
         return ckpt
 
     def restore_checkpoint(self, checkpoint: ExecutionCheckpoint) -> None:
@@ -243,7 +248,13 @@ class WorkflowEngine:
         return self.context
 
     def cancel(self, reason: str = "User cancelled execution") -> None:
-        """Cancela la ejecución de todo el workflow."""
+        """Cancela la ejecución de todo el workflow (sin efecto si ya terminó)."""
+        with self._lock:
+            if self.context.status in (WorkflowStatus.COMPLETED, WorkflowStatus.FAILED, WorkflowStatus.CANCELLED):
+                return
+            self._cancel_locked(reason)
+
+    def _cancel_locked(self, reason: str) -> None:
         self.context.status = WorkflowStatus.CANCELLED
         self.context.error_message = reason
         self.context.finished_at = datetime.now(timezone.utc)
@@ -474,6 +485,7 @@ class WorkflowEngine:
                         "task_result": f"Executed {handler_key}",
                         "inputs_echo": resolved_inputs,
                         "status": "completed",
+                        "simulated": True,
                     }
                 else:
                     raise NotImplementedError(
@@ -512,6 +524,7 @@ class WorkflowEngine:
                         "agent_id": node.agent_id or "unassigned",
                         "response": f"Agent {node.agent_id} completed goal",
                         "status": "completed",
+                        "simulated": True,
                     }
                 else:
                     raise NotImplementedError(
@@ -596,9 +609,12 @@ class WorkflowEngine:
                     else:
                         loop_matched = False
                 else:
-                    loop_matched = current_iter < max_iter
+                    # Sin condición, el bucle solo termina al agotar el límite (acción on_limit)
+                    loop_matched = True
 
-                if current_iter >= max_iter:
+                # El límite solo actúa si la condición pide seguir iterando: un bucle cuya condición
+                # ya es falsa termina de forma natural aunque haya agotado sus iteraciones.
+                if current_iter >= max_iter and loop_matched:
                     if on_limit == "ABORT":
                         raise RuntimeError(f"Límite de iteraciones alcanzado en bucle WHILE '{node_id}' ({max_iter} iteraciones).")
                     elif on_limit == "ESCALATE":
@@ -687,6 +703,7 @@ class WorkflowEngine:
                         "routing_mode": routing_mode,
                         "status": "completed",
                         "response": f"Agent {target_agent} completed delegated task",
+                        "simulated": True,
                     }
                 else:
                     raise NotImplementedError(
@@ -966,6 +983,9 @@ class WorkflowEngine:
         finished_at y el status final queden establecidos deterministamente.
         """
         with self._lock:
+            # Un estado terminal ya establecido (p. ej. CANCELLED concurrente) no se sobrescribe
+            if self.context.status in (WorkflowStatus.FAILED, WorkflowStatus.CANCELLED):
+                return
             now = datetime.now(timezone.utc)
             self.context.status = status
             if not self.context.finished_at:
@@ -978,42 +998,64 @@ class WorkflowEngine:
                     if status != WorkflowStatus.COMPLETED:
                         self.context.node_states[nid] = NodeStatus.CANCELLED
 
-    def _check_agent_responses(self) -> List[str]:
-        """Revisa si hay mensajes de respuesta en el AgentMessageBus para nodos en estado WAITING_RESULT."""
-        if not self.agent_bus:
-            return []
+    def _expected_agent_for(self, node_id: str) -> Optional[str]:
+        """Agente legítimo cuya respuesta puede resolver el nodo (el despachado o el delegado)."""
+        out = self.context.node_outputs.get(node_id, {})
+        return out.get("delegated_to") or out.get("agent_id") or self.workflow.nodes[node_id].agent_id
 
-        completed_nodes = []
-        while True:
-            msg = self.agent_bus.receive("praxeon_supervisor")
-            if not msg:
-                break
-
-            task_node_id = msg.task_id or msg.correlation_id
-            if task_node_id and task_node_id in self.workflow.nodes:
-                st = self.context.node_states.get(task_node_id)
-                if st in (NodeStatus.WAITING_RESULT, NodeStatus.RUNNING):
-                    self.context.node_outputs[task_node_id] = msg.payload
-                    self.context.node_states[task_node_id] = NodeStatus.COMPLETED
-                    self.context.execution_history.append(task_node_id)
-                    self._propagate_skips(task_node_id)
-                    completed_nodes.append(task_node_id)
-        return completed_nodes
-
-    def handle_agent_response(self, msg: AgentMessage) -> bool:
-        """Permite inyectar o procesar directamente la respuesta de un agente para un nodo en espera."""
+    def _apply_agent_response(self, msg: AgentMessage) -> bool:
+        """Aplica la respuesta de un agente a su nodo en espera, validando ejecución, emisor y resultado."""
         task_node_id = msg.task_id or msg.correlation_id
         if not task_node_id or task_node_id not in self.workflow.nodes:
             return False
-
-        st = self.context.node_states.get(task_node_id)
-        if st in (NodeStatus.WAITING_RESULT, NodeStatus.RUNNING):
-            self.context.node_outputs[task_node_id] = msg.payload
+        if msg.session_id and msg.session_id != self.context.execution_id:
+            return False  # respuesta de otra ejecución
+        with self._lock:
+            st = self.context.node_states.get(task_node_id)
+            if st not in (NodeStatus.WAITING_RESULT, NodeStatus.RUNNING):
+                return False
+            expected = self._expected_agent_for(task_node_id)
+            if expected and msg.sender_id != expected:
+                return False  # emisor no autorizado para este nodo
+            dispatched_id = self.context.node_outputs.get(task_node_id, {}).get("message_id")
+            if dispatched_id and (msg.in_reply_to or msg.correlation_id) not in (None, dispatched_id)                     and (msg.in_reply_to or msg.correlation_id) != task_node_id:
+                return False  # respuesta tardía de un intento anterior
+            payload = msg.payload if isinstance(msg.payload, dict) else {"result": msg.payload}
+            if msg.message_type in (MessageType.AGENT_NACK, MessageType.ALERT) or payload.get("error"):
+                self.context.node_states[task_node_id] = NodeStatus.FAILED
+                self.context.node_outputs[task_node_id] = payload
+                self.context.status = WorkflowStatus.FAILED
+                self.context.error_message = f"Agente '{msg.sender_id}' reportó fallo en nodo '{task_node_id}': {payload.get('error') or msg.message_type.value}"
+                self.context.finished_at = datetime.now(timezone.utc)
+                return True
+            self.context.node_outputs[task_node_id] = payload
             self.context.node_states[task_node_id] = NodeStatus.COMPLETED
             self.context.execution_history.append(task_node_id)
             self._propagate_skips(task_node_id)
             return True
-        return False
+
+    def _check_agent_responses(self) -> List[str]:
+        """Consume del buzón solo las respuestas de esta ejecución para nodos en estado WAITING_RESULT."""
+        if not self.agent_bus:
+            return []
+
+        completed_nodes: List[str] = []
+        exec_id = self.context.execution_id
+
+        def mine(m: AgentMessage) -> bool:
+            return (not m.session_id or m.session_id == exec_id) and (m.task_id or m.correlation_id) in self.workflow.nodes
+
+        while True:
+            msg = self.agent_bus.receive_matching("praxeon_supervisor", mine)
+            if not msg:
+                break
+            if self._apply_agent_response(msg):
+                completed_nodes.append(msg.task_id or msg.correlation_id)
+        return completed_nodes
+
+    def handle_agent_response(self, msg: AgentMessage) -> bool:
+        """Permite inyectar o procesar directamente la respuesta de un agente para un nodo en espera."""
+        return self._apply_agent_response(msg)
 
     def check_scheduled_retries_and_timeouts(
         self,

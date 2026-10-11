@@ -26,6 +26,7 @@ from praxeon.server.dependencies import (
     is_auth_required,
     verify_api_key,
 )
+from praxeon.server.services.auth_service import AuthService, Permission, constant_time_equals
 
 logger = logging.getLogger("praxeon.server.websocket")
 ws_router = APIRouter()
@@ -224,8 +225,22 @@ async def websocket_session_stream(
                         auth_token = auth_hdr[7:].strip()
                     else:
                         auth_token = auth_hdr.strip()
-            if auth_token and secrets.compare_digest(auth_token, expected_key):
+            if auth_token and constant_time_equals(auth_token, expected_key):
                 is_authenticated = True
+            elif auth_token and auth_token.count(".") == 2:
+                try:
+                    tenant = get_runtime_service().get_auth_service().authenticate_jwt(auth_token)
+                    is_authenticated = tenant.has_permission(Permission.SESSION_READ)
+                except ValueError:
+                    is_authenticated = False
+        if not is_authenticated:
+            cookie_tok = websocket.cookies.get(AuthService.COOKIE_ACCESS_NAME)
+            if cookie_tok:
+                try:
+                    tenant = get_runtime_service().get_auth_service().authenticate_jwt(cookie_tok)
+                    is_authenticated = tenant.has_permission(Permission.SESSION_READ)
+                except ValueError:
+                    is_authenticated = False
 
         if not is_authenticated:
             await websocket.close(code=WS_1008_POLICY_VIOLATION, reason="Autenticacion requerida o token invalido.")

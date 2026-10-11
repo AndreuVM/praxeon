@@ -65,7 +65,8 @@ def create_app(
 ) -> FastAPI:
     """Crea y configura la aplicación FastAPI con rutas y middleware."""
     prof = (profile or os.environ.get("PRAXEON_PROFILE") or os.environ.get("PRAXEON_ENV") or "dev").lower().strip()
-    from praxeon.server.dependencies import set_active_security_profile, get_runtime_service
+    from praxeon.server.dependencies import set_active_security_profile, get_runtime_service, require_permission
+    from praxeon.server.services.auth_service import Permission
     set_active_security_profile(prof)
 
     origins = validate_security_profile(prof)
@@ -74,8 +75,9 @@ def create_app(
         title="PRAXEON Web Server",
         version="1.1.0",
         description="Runtime supervision for autonomous AI agents — REST API & WebSocket Streaming",
-        docs_url="/docs",
-        redoc_url="/redoc",
+        docs_url=None if prof == "production" else "/docs",
+        redoc_url=None if prof == "production" else "/redoc",
+        openapi_url=None if prof == "production" else "/openapi.json",
     )
     app.state.security_profile = prof
 
@@ -100,6 +102,7 @@ def create_app(
     @app.get("/metrics", response_class=Response, include_in_schema=True)
     def prometheus_metrics_root(
         service_instance: Any = Depends(get_runtime_service),
+        _tenant: Any = Depends(require_permission(Permission.METRICS_READ)),
     ) -> Response:
         """Endpoint canónico de métricas en formato texto plano Prometheus (0.0.4)."""
         from praxeon.telemetry.prometheus import get_prometheus_exporter

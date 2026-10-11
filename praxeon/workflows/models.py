@@ -102,6 +102,13 @@ class EdgeCondition(BaseModel):
         else:
             val = None
 
+        try:
+            return self._compare(val)
+        except TypeError:
+            # Tipos incompatibles (p. ej. str > int): la condición no se cumple, nunca rompe el motor
+            return False
+
+    def _compare(self, val: Any) -> bool:
         op = self.operator.strip().lower()
         expected = self.expected_value
 

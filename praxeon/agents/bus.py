@@ -304,6 +304,13 @@ class AgentMessageBus:
         self.send(res_msg)
         return res_msg
 
+    def receive_matching(self, agent_id: str, predicate) -> Optional[AgentMessage]:
+        """Extrae del buzón solo el primer mensaje que cumple el predicado, dejando intactos los demás."""
+        box = self._mailboxes.get(agent_id)
+        if not box:
+            return None
+        return box.pop_matching(predicate)
+
     def receive_reply_for(
         self,
         sender_id: str,
