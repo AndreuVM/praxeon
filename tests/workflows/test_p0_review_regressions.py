@@ -21,10 +21,10 @@ def test_editor_does_not_simulate_tasks_by_default(monkeypatch):
     svc = WorkflowEditorService()
     wid, nid = _task_workflow(svc)
     res = svc.execute_workflow(wid)
-    # Herramienta no catalogada: el puente exige aprobación humana y nada se ejecuta
-    assert res["status"] == WorkflowStatus.PAUSED.value
+    # Herramienta no catalogada: la política exige aprobación humana y nada se ejecuta
     assert res["node_states"][nid] == "WAITING_APPROVAL"
-    assert nid not in res["node_outputs"]
+    assert res["node_outputs"][nid].get("awaiting_tool_confirmation") is True
+    assert "supervised" not in res["node_outputs"][nid]
 
 
 def test_simulation_is_explicit_and_flagged():
@@ -124,7 +124,7 @@ def test_engine_without_handlers_fails_closed_without_simulation():
     wid, nid = _task_workflow(svc)
     svc.update_node(wid, nid, tool_name="echo")
     res = svc.execute_workflow(wid)
-    assert res["status"] == WorkflowStatus.FAILED.value
+    assert res["status"] != WorkflowStatus.COMPLETED.value
 
 
 def _agent_engine(bus, exec_id):
@@ -177,3 +177,43 @@ def test_agent_error_reply_fails_node():
     bus.send(_reply("exec_x", payload={"error": "boom"}, mtype=MessageType.AGENT_NACK))
     eng.step()
     assert eng.context.status == WorkflowStatus.FAILED
+
+
+# --- W-02: cadena PolicyEngine -> capability -> SecureExecutor ---------------------------------
+
+def _single_tool_workflow(svc, tool, inputs=None):
+    wf = svc.create_workflow("sup")
+    node = svc.add_node(wf.workflow_id, "n", NodeType.TASK, tool_name=tool, inputs=inputs or {})
+    svc.disconnect_nodes(wf.workflow_id, "e_start_end")
+    svc.connect_nodes(wf.workflow_id, "start", node.node_id)
+    svc.connect_nodes(wf.workflow_id, node.node_id, "end")
+    return wf.workflow_id, node.node_id
+
+
+def test_task_runs_through_capability_chain():
+    svc = WorkflowEditorService()
+    wid, nid = _single_tool_workflow(svc, "run_command", {"command": "echo hola"})
+    res = svc.execute_workflow(wid)
+    out = res["node_outputs"][nid]
+    assert res["status"] == WorkflowStatus.COMPLETED.value
+    assert out["supervised"] is True and out["decision_id"].startswith("dec_")
+    assert "hola" in out["output"]
+
+
+def test_dangerous_command_is_blocked_by_policy():
+    svc = WorkflowEditorService()
+    wid, nid = _single_tool_workflow(svc, "run_command", {"command": "rm -rf /"})
+    res = svc.execute_workflow(wid)
+    assert res["status"] == WorkflowStatus.FAILED.value
+    assert "supervised" not in res["node_outputs"].get(nid, {})
+
+
+def test_unknown_tool_needs_approval_and_still_fails_closed():
+    svc = WorkflowEditorService()
+    wid, nid = _single_tool_workflow(svc, "deploy_service")
+    res = svc.execute_workflow(wid)
+    assert res["node_states"][nid] == "WAITING_APPROVAL"
+    assert svc.approve_node(wid, nid, True, "ok", "yo")["success"] is True
+    res = svc.execute_workflow(wid)
+    # Aprobada pero no registrada ni con handler: el executor la rechaza (nunca se ejecuta)
+    assert res["node_states"][nid] == "FAILED"

@@ -32,6 +32,7 @@ from praxeon.workflows.models import (
     WorkflowEdge,
     WorkflowNode,
 )
+from praxeon.workflows.supervised import SupervisedToolRunner
 from praxeon.workflows.templates import CANONICAL_TEMPLATES
 
 
@@ -62,6 +63,8 @@ class WorkflowEditorService:
         if allow_simulation is None:
             allow_simulation = os.environ.get("PRAXEON_WORKFLOW_SIMULATION", "").strip().lower() in ("1", "true", "yes")
         self.allow_simulation = allow_simulation
+        # Un único runner (PolicyEngine + SecureExecutor) por servicio: los tickets de aprobación persisten
+        self.supervised_runner = SupervisedToolRunner()
         self.event_bus = event_bus or EventBus()
         self.agent_bus = agent_bus
         self.persistence_store = persistence_store
@@ -479,6 +482,7 @@ class WorkflowEditorService:
                 workflow=wf,
                 agent_bus=self.agent_bus,
                 allow_synthetic_fallback=self.allow_simulation,
+                supervised_runner=None if self.allow_simulation else self.supervised_runner,
             )
             self._active_engines[workflow_id] = engine
             bridge = WorkflowDecisionBridge(engine=engine, event_bus=self.event_bus)
@@ -544,10 +548,24 @@ class WorkflowEditorService:
         node_id: str,
         approved: bool = True,
         comment: str = "",
+        approver_id: str = "operator",
     ) -> Dict[str, Any]:
         """Autoriza o rechaza la ejecución de un nodo en estado WAITING_APPROVAL."""
         engine = self.get_or_create_engine(workflow_id)
-        success = engine.approve_node(node_id, approved=approved, comment=comment)
+        node = engine.workflow.nodes.get(node_id)
+        pending = engine.context.node_outputs.get(node_id, {})
+        gated_by_bridge = (
+            node is not None
+            and node.node_type != NodeType.HUMAN_APPROVAL
+            and not pending.get("awaiting_tool_confirmation")
+            and not pending.get("status") == "escalated_on_limit"
+        )
+        if approved and gated_by_bridge:
+            # Bloqueo del puente de gobernanza: se autoriza y el nodo se EJECUTA (no se da por completado)
+            bridge = self._active_bridges.get(workflow_id)
+            success = bridge.approve_node(node_id, approver_id=approver_id) if bridge else False
+        else:
+            success = engine.approve_node(node_id, approved=approved, comment=comment, approver_id=approver_id)
         if self.persistence_store and hasattr(self.persistence_store, "save_workflow_execution"):
             try:
                 self.persistence_store.save_workflow_execution(engine.get_execution())

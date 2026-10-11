@@ -33,6 +33,7 @@ from praxeon.workflows.models import (
     WorkflowNode,
     WorkflowStatus,
 )
+from praxeon.workflows.supervised import SupervisedToolRunner, WorkflowApprovalRequired
 from praxeon.workflows.semantics import (
     AtomicCondition,
     CompoundCondition,
@@ -167,6 +168,7 @@ class WorkflowEngine:
         task_handlers: Optional[Dict[str, Callable[[Dict[str, Any]], Dict[str, Any]]]] = None,
         tool_registry: Optional[Any] = None,
         allow_synthetic_fallback: bool = False,
+        supervised_runner: Optional[SupervisedToolRunner] = None,
         execution: Optional[WorkflowExecution] = None,
         execution_id: Optional[str] = None,
     ):
@@ -174,6 +176,7 @@ class WorkflowEngine:
         self.agent_bus = agent_bus
         self.tool_registry = tool_registry
         self.allow_synthetic_fallback = allow_synthetic_fallback
+        self.supervised_runner = supervised_runner
         self._handlers: Dict[str, Callable[[Dict[str, Any]], Dict[str, Any]]] = dict(task_handlers or {})
         self._lock = threading.RLock()
 
@@ -430,6 +433,15 @@ class WorkflowEngine:
             ready = self.find_all_ready_nodes()
             return ready[0] if ready else None
 
+    def get_resolved_inputs_for(self, node_id: str) -> Dict[str, Any]:
+        """Entradas del nodo resueltas desde variables, salidas previas y `inputs` propios."""
+        resolved = dict(self.context.variables)
+        for up_id in self.workflow.get_upstream_node_ids(node_id):
+            if up_id in self.context.node_outputs:
+                resolved.update(self.context.node_outputs[up_id])
+        resolved.update(self.workflow.nodes[node_id].inputs)
+        return resolved
+
     def execute_node(self, node_id: str, current_time: Optional[datetime] = None) -> bool:
         """Ejecuta un nodo individual, despacha tareas/agentes y propaga outputs."""
         node = self.workflow.nodes[node_id]
@@ -474,6 +486,15 @@ class WorkflowEngine:
                 handler_key = action_attr or node.tool_name or node.name or node.node_id
                 if handler:
                     output = handler(resolved_inputs)
+                elif self.supervised_runner and node.tool_name:
+                    # Cadena completa PolicyEngine -> capability HMAC -> SecureExecutor -> sandbox
+                    output = self.supervised_runner.run(
+                        execution_id=self.context.execution_id,
+                        workflow_id=self.workflow.workflow_id,
+                        node_id=node_id,
+                        tool_name=node.tool_name,
+                        arguments={**node.inputs, **{k: v for k, v in resolved_inputs.items() if k in ("command", "cmd", "path", "content")}},
+                    )
                 elif self.tool_registry and node.tool_name and hasattr(self.tool_registry, "has_tool") and self.tool_registry.has_tool(node.tool_name):
                     tool_spec = self.tool_registry.get_tool(node.tool_name)
                     if hasattr(tool_spec, "handler") and callable(tool_spec.handler):
@@ -750,6 +771,19 @@ class WorkflowEngine:
             elif node.node_type == NodeType.PARALLEL_FORK:
                 output = {"parallel_sync": True, "status": "completed"}
 
+        except WorkflowApprovalRequired as exc:
+            # La política exige confirmación humana: el nodo queda a la espera, sin ejecutarse
+            with self._lock:
+                self.context.node_states[node_id] = NodeStatus.WAITING_APPROVAL
+                self.context.node_outputs[node_id] = {
+                    "status": "waiting_approval",
+                    "awaiting_tool_confirmation": True,
+                    "action_id": exc.action_id,
+                    "tool": exc.tool_name,
+                    "reason_codes": exc.reason_codes,
+                    "requested_at": now.isoformat(),
+                }
+            return True
         except Exception as exc:
             success = False
             output = {"error": str(exc)}
@@ -792,6 +826,7 @@ class WorkflowEngine:
                     return False
                 else:
                     self.context.node_states[node_id] = NodeStatus.FAILED
+                    self.context.node_outputs[node_id] = output
                     self.context.status = WorkflowStatus.FAILED
                     self.context.error_message = f"Fallo en nodo '{node_id}': {output.get('error')}"
                     self.context.finished_at = now
@@ -827,7 +862,7 @@ class WorkflowEngine:
                 self.context.node_states[nid] = NodeStatus.PENDING
                 self.context.node_retries[nid] = 0
 
-    def approve_node(self, node_id: str, approved: bool = True, comment: str = "") -> bool:
+    def approve_node(self, node_id: str, approved: bool = True, comment: str = "", approver_id: str = "operator") -> bool:
         """Aprueba o rechaza un nodo en estado WAITING_APPROVAL."""
         with self._lock:
             st = self.context.node_states.get(node_id)
@@ -838,10 +873,25 @@ class WorkflowEngine:
             ctrl = node.control_config or node.metadata.get("control_config", {}) if node else {}
             now = datetime.now(timezone.utc)
 
+            pending = self.context.node_outputs.get(node_id, {})
+            if approved and pending.get("awaiting_tool_confirmation") and self.supervised_runner and node:
+                # Confirmación de herramienta: se emite un ticket auditable y el nodo se reejecuta (ya autorizado)
+                self.supervised_runner.confirm(
+                    execution_id=self.context.execution_id,
+                    node_id=node_id,
+                    tool_name=node.tool_name,
+                    arguments={**node.inputs, **{k: v for k, v in self.get_resolved_inputs_for(node_id).items() if k in ("command", "cmd", "path", "content")}},
+                    approver_id=approver_id,
+                    reason=comment or None,
+                )
+                self.context.node_states[node_id] = NodeStatus.READY
+                return True
+
             if approved:
                 self.context.node_states[node_id] = NodeStatus.COMPLETED
                 self.context.node_outputs[node_id] = {
                     "status": "approved",
+                    "approved_by": approver_id,
                     "approved": True,
                     "branch_taken": "approved",
                     "comment": comment,

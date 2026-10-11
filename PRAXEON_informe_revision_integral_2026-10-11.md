@@ -298,3 +298,15 @@ Tests de regresión añadidos: `tests/security/test_auth_p0_regressions.py` (6) 
 ### 10.2 Decisión de alcance: sin multi-tenant
 
 PRAXEON es de uso personal y de un único usuario, por lo que **el aislamiento multi-tenant (§3.3, segunda viñeta) queda descartado** y deja de ser un hallazgo pendiente. El campo `tenant_id` se mantiene solo como etiqueta informativa por compatibilidad con la API y los tests, y la documentación del código deja de describirlo como "multi-tenant SaaS". El RBAC se conserva como defensa en profundidad (por ejemplo, para dar un token de solo lectura a un panel o a una integración). Si algún día se ofreciera como servicio a terceros, habría que retomarlo desde el diseño de datos.
+
+### 10.3 W-02 resuelto: workflows bajo la cadena de supervisión
+
+Nuevo módulo `praxeon/workflows/supervised.py` (`SupervisedToolRunner`). Cada nodo `TASK` con herramienta recorre `ActionCandidate → PolicyEngine → DecisionReceipt (HMAC) → SecureExecutor → sandbox`, igual que el resto de PRAXEON:
+
+- **ALLOW** → se ejecuta; la salida lleva `decision_id` y `supervised: true`.
+- **ABSTAIN** (herramienta desconocida, riesgo que exige confirmación) → el nodo pasa a `WAITING_APPROVAL` sin ejecutarse. Al aprobar, se emite un ticket auditable (`approved_by`, hash de la acción) y el nodo se reejecuta ya autorizado. Una herramienta no registrada y sin handler sigue sin poder ejecutarse (fail-closed).
+- **BLOCK/REPLAN** (p. ej. `rm -rf /`) → el nodo falla y su salida de error queda registrada.
+- Aprobar un nodo bloqueado por el puente ya **ejecuta** la herramienta; antes el editor lo marcaba como completado sin ejecutarlo.
+- El modo simulación (`allow_simulation`) sigue siendo explícito y desactiva el runner.
+
+Tests: `test_task_runs_through_capability_chain`, `test_dangerous_command_is_blocked_by_policy`, `test_unknown_tool_needs_approval_and_still_fails_closed`.

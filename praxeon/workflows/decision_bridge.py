@@ -133,6 +133,13 @@ class WorkflowDecisionBridge:
                     reason_codes=["WORKFLOW_NODE_FORBIDDEN_POLICY"],
                     risk=RiskAssessment(level=RiskLevel.CRITICAL),
                 )
+            elif node.node_type == NodeType.TASK and node.tool_name and getattr(self.engine, "supervised_runner", None):
+                # El PolicyEngine del runner decide (con clasificación contextual del comando) al ejecutar el nodo
+                decision = PolicyDecision(
+                    status=DecisionStatus.ALLOW,
+                    reason_codes=["DEFERRED_TO_POLICY_ENGINE"],
+                    risk=RiskAssessment(level=RiskLevel.LOW),
+                )
             elif node.node_type == NodeType.TASK and node.tool_name:
                 # Fail-closed: una herramienta no catalogada, de riesgo alto/crítico o destructiva
                 # exige confirmación humana; no se autoriza por omisión.
@@ -278,10 +285,21 @@ class WorkflowDecisionBridge:
                 break
         return self.engine.context
 
-    def approve_node(self, node_id: str) -> bool:
+    def approve_node(self, node_id: str, approver_id: str = "operator") -> bool:
         """Aprueba un nodo que estaba en WAITING_APPROVAL para que prosiga su ejecución."""
         if self.engine.context.node_states.get(node_id) == NodeStatus.WAITING_APPROVAL:
             self._approved_nodes.add(node_id)
+            node = self.engine.workflow.nodes.get(node_id)
+            runner = getattr(self.engine, "supervised_runner", None)
+            if runner and node and node.tool_name:
+                # La aprobación del puente se traslada a la cadena de capability como ticket auditable
+                runner.confirm(
+                    execution_id=self.engine.context.execution_id,
+                    node_id=node_id,
+                    tool_name=node.tool_name,
+                    arguments={**node.inputs, **{k: v for k, v in self.engine.get_resolved_inputs_for(node_id).items() if k in ("command", "cmd", "path", "content")}},
+                    approver_id=approver_id,
+                )
             self.engine.context.node_states[node_id] = NodeStatus.READY
             self.engine.context.status = WorkflowStatus.RUNNING
             self._publish_event(
