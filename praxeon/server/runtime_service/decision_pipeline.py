@@ -173,10 +173,14 @@ class DecisionPipelineMixin:
         # 2. Evaluación de Evidencia Empírica y Existencia de Recursos en Disco
         is_missing_resource = False
         missing_resource_name = ""
+        with self._lock:
+            _meta = (self._sessions_meta.get(session_id) or {}).get("metadata") or {}
+        # Las rutas relativas se resuelven contra el workspace de la sesión, no contra el cwd del servidor
+        base_dir = _meta.get("workspace_root") or _meta.get("working_directory") or os.getcwd()
         target_path = str(proposal.arguments.get("path") or proposal.arguments.get("file") or "").strip()
         if proposal.tool in ("read_file", "view_file") and target_path:
             norm_target = os.path.expanduser(os.path.expandvars(target_path))
-            full_target = norm_target if os.path.isabs(norm_target) else os.path.join(os.getcwd(), norm_target)
+            full_target = norm_target if os.path.isabs(norm_target) else os.path.join(base_dir, norm_target)
             if not os.path.exists(full_target):
                 is_missing_resource = True
                 missing_resource_name = target_path
@@ -186,7 +190,7 @@ class DecisionPipelineMixin:
                 if cmd_raw.startswith(runner):
                     script_part = cmd_raw[len(runner):].strip().split()[0].strip('"\'')
                     if script_part.endswith((".py", ".js", ".sh", ".ts")):
-                        full_script = script_part if os.path.isabs(script_part) else os.path.join(os.getcwd(), script_part)
+                        full_script = script_part if os.path.isabs(script_part) else os.path.join(base_dir, script_part)
                         if not os.path.exists(full_script):
                             is_missing_resource = True
                             missing_resource_name = script_part

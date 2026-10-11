@@ -30,6 +30,39 @@ from praxeon.server.services import (
 )
 
 
+
+_MISSING_PREFIX = "UNGROUNDED_FILE_NOT_FOUND ("
+
+
+def _missing_path_from_reasons(reason_codes: Optional[List[str]]) -> Optional[str]:
+    for code in reason_codes or []:
+        if str(code).startswith(_MISSING_PREFIX) and str(code).endswith(")"):
+            return str(code)[len(_MISSING_PREFIX):-1]
+    return None
+
+
+def _missing_path_feedback(path: str, workspace_root: Optional[str]) -> str:
+    """Mensaje para el agente cuando referencia una ruta inexistente (evita que la reintente o la alucine)."""
+    base = workspace_root or os.getcwd()
+    candidate = path if os.path.isabs(path) else os.path.join(base, path)
+    anchor = os.path.dirname(candidate)
+    while anchor and not os.path.isdir(anchor) and os.path.dirname(anchor) != anchor:
+        anchor = os.path.dirname(anchor)
+    listing = ""
+    try:
+        entries = sorted(os.listdir(anchor))[:30]
+        shown = ", ".join(entries) if entries else "(vacío)"
+        listing = f"\nContenido real de '{anchor}': {shown}"
+    except OSError:
+        pass
+    return (
+        f"❌ La ruta '{path}' NO EXISTE en el sistema de archivos (workspace: {base}). "
+        "No ha sido leída ni modificada nada. No reintentes esta ruta ni inventes otras: "
+        "usa 'list_dir' o 'run_command' (p. ej. dir/ls) para descubrir los archivos reales y trabaja solo con los que existan."
+        + listing
+    )
+
+
 class MissionRuntimeMixin:
     """Ciclo de vida de misiones autónomas, checkpoints, rollback y worker de misión."""
 
@@ -678,7 +711,11 @@ class MissionRuntimeMixin:
                         obs_output = f"Acción clasificada como PELIGROSA o destructiva por seguridad: {', '.join(resp.policy.reason_codes or ['Veto operacional'])}"
                     elif resp.status == "REPLAN":
                         executed_successfully = False
-                        obs_output = f"Acción clasificada como INNECESARIA, desvío o bucle por el supervisor JEV-LAYA: {', '.join(resp.policy.reason_codes or ['Poda cognitiva'])}"
+                        missing = _missing_path_from_reasons(resp.policy.reason_codes)
+                        if missing:
+                            obs_output = _missing_path_feedback(missing, mission.get("workspace_root"))
+                        else:
+                            obs_output = f"Acción clasificada como INNECESARIA, desvío o bucle por el supervisor JEV-LAYA: {', '.join(resp.policy.reason_codes or ['Poda cognitiva'])}"
                     # Si requiere confirmación humana (ej. REVIEW por git push)
                     elif resp.status == "REVIEW" or resp.policy.requires_confirmation:
                         allow_unattended = bool(
