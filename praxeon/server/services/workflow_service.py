@@ -40,7 +40,7 @@ class WorkflowService:
             agent_bus=agent_bus,
             persistence_store=persistence_store,
         )
-        self.scheduler = WorkflowScheduler(persistence_store=self.persistence_store)
+        self.scheduler = WorkflowScheduler(persistence_store=self.persistence_store, event_bus=event_bus)
         if enable_scheduler:
             self.scheduler.start()
 

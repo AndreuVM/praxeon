@@ -12,8 +12,9 @@ import logging
 import threading
 from typing import Any, Dict, Optional
 
+from praxeon.domain.events import EventType
 from praxeon.workflows.engine import WorkflowEngine
-from praxeon.workflows.models import WorkflowStatus
+from praxeon.workflows.models import NodeStatus, WorkflowStatus
 
 logger = logging.getLogger("praxeon.workflows.scheduler")
 
@@ -25,8 +26,11 @@ class WorkflowScheduler:
         self,
         persistence_store: Optional[Any] = None,
         interval_seconds: float = 0.5,
+        event_bus: Optional[Any] = None,
     ):
         self.persistence_store = persistence_store
+        self.event_bus = event_bus
+        self._waiting_nodes: Dict[str, set] = {}
         self.interval_seconds = max(0.05, interval_seconds)
         self._engines: Dict[str, WorkflowEngine] = {}
         self._persisted_signatures: Dict[str, tuple] = {}
@@ -147,7 +151,8 @@ class WorkflowScheduler:
                 except Exception as exc:
                     logger.error(f"Error al avanzar nodos concurrentes en workflow {exec_id}: {exc}")
 
-            # 5. Persistir estado tras el ciclo
+            # 5. Avisar de aprobaciones nuevas/resueltas y persistir estado tras el ciclo
+            self._publish_approval_transitions(exec_id, engine)
             self._persist_execution_safe(engine)
 
             # Si concluyó tras el step, registrarlo
@@ -157,6 +162,48 @@ class WorkflowScheduler:
                     self._engines.pop(exec_id, None)
 
         return report
+
+    def _publish_approval_transitions(self, exec_id: str, engine: WorkflowEngine) -> None:
+        """Emite eventos cuando un nodo entra o sale de WAITING_APPROVAL (alimenta notificaciones y la UI)."""
+        if self.event_bus is None:
+            return
+        with engine._lock:
+            waiting = {
+                nid for nid, st in engine.context.node_states.items() if st == NodeStatus.WAITING_APPROVAL
+            }
+            outputs = {nid: dict(engine.context.node_outputs.get(nid, {})) for nid in waiting}
+        previous = self._waiting_nodes.get(exec_id, set())
+        try:
+            for nid in sorted(waiting - previous):
+                node = engine.workflow.nodes[nid]
+                out = outputs.get(nid, {})
+                self.event_bus.emit(
+                    session_id=exec_id,
+                    event_type=EventType.APPROVAL_REQUESTED,
+                    node_id=nid,
+                    payload={
+                        "source": "workflow",
+                        "workflow_id": engine.workflow.workflow_id,
+                        "execution_id": exec_id,
+                        "node_name": node.name,
+                        "tool": node.tool_name,
+                        "prompt": out.get("prompt"),
+                        "reason_codes": out.get("reason_codes"),
+                    },
+                )
+            for nid in sorted(previous - waiting):
+                self.event_bus.emit(
+                    session_id=exec_id,
+                    event_type=EventType.APPROVAL_COMPLETED,
+                    node_id=nid,
+                    payload={"source": "workflow", "execution_id": exec_id},
+                )
+        except Exception as exc:
+            logger.warning(f"Error publicando eventos de aprobación: {exc}")
+        if engine.context.status in (WorkflowStatus.COMPLETED, WorkflowStatus.FAILED, WorkflowStatus.CANCELLED):
+            self._waiting_nodes.pop(exec_id, None)
+        else:
+            self._waiting_nodes[exec_id] = waiting
 
     def _persist_execution_safe(self, engine: WorkflowEngine) -> None:
         """Persiste de forma segura el estado de ejecución si hay almacén configurado."""

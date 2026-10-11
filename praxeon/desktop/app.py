@@ -123,7 +123,28 @@ def frontend_available() -> bool:
     return any(p.is_file() for p in candidates)
 
 
-def run_window(local: LocalServer, debug: bool = False) -> None:
+def attach_notifications(window_getter=None, notifier=None):
+    """Conecta las notificaciones de aprobación al bus de eventos del runtime en ejecución.
+
+    Si se pasa `window_getter`, el título de la ventana muestra el nº de aprobaciones pendientes.
+    """
+    from praxeon.desktop.notifications import ApprovalNotifier, SystemNotifier
+    from praxeon.server.dependencies import get_runtime_service
+
+    def update_title(count: int) -> None:
+        window = window_getter() if window_getter else None
+        if window is not None:
+            try:
+                window.set_title(f"{APP_TITLE} · {count} pendiente(s)" if count else APP_TITLE)
+            except Exception:  # la ventana puede estar cerrándose
+                pass
+
+    approval_notifier = ApprovalNotifier(notifier or SystemNotifier(), on_pending_changed=update_title)
+    approval_notifier.attach(get_runtime_service().event_bus)
+    return approval_notifier
+
+
+def run_window(local: LocalServer, debug: bool = False, notifications: bool = True) -> None:
     """Muestra la interfaz en una ventana nativa. Bloquea hasta que se cierra."""
     try:
         import webview
@@ -133,7 +154,7 @@ def run_window(local: LocalServer, debug: bool = False) -> None:
             "(o usa  praxeon app --browser)."
         ) from exc
 
-    webview.create_window(
+    window = webview.create_window(
         APP_TITLE,
         local.window_url,
         width=1440,
@@ -141,13 +162,19 @@ def run_window(local: LocalServer, debug: bool = False) -> None:
         min_size=(1024, 680),
         text_select=True,
     )
-    webview.start(debug=debug)
+    approval_notifier = attach_notifications(lambda: window) if notifications else None
+    try:
+        webview.start(debug=debug)
+    finally:
+        if approval_notifier:
+            approval_notifier.detach()
 
 
-def run_browser(local: LocalServer) -> None:
+def run_browser(local: LocalServer, notifications: bool = True) -> None:
     """Alternativa sin pywebview: abre el navegador por defecto y espera a Ctrl+C."""
     import webbrowser
 
+    approval_notifier = attach_notifications() if notifications else None
     webbrowser.open(local.window_url)
     print(f"[PRAXEON] Interfaz en {local.base_url} (token válido solo en esta sesión). Ctrl+C para salir.")
     try:
@@ -155,6 +182,9 @@ def run_browser(local: LocalServer) -> None:
             time.sleep(0.5)
     except KeyboardInterrupt:
         pass
+    finally:
+        if approval_notifier:
+            approval_notifier.detach()
 
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -162,6 +192,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--browser", action="store_true", help="Usar el navegador por defecto en lugar de la ventana nativa")
     parser.add_argument("--port", type=int, default=None, help="Puerto local fijo (por defecto, uno libre)")
     parser.add_argument("--debug", action="store_true", help="Habilitar herramientas de desarrollo de la ventana")
+    parser.add_argument("--no-notifications", action="store_true", help="Desactivar las notificaciones de aprobaciones pendientes")
     args = parser.parse_args(argv)
 
     if not frontend_available():
@@ -174,9 +205,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     local = start_local_server(port=args.port)
     try:
         if args.browser:
-            run_browser(local)
+            run_browser(local, notifications=not args.no_notifications)
         else:
-            run_window(local, debug=args.debug)
+            run_window(local, debug=args.debug, notifications=not args.no_notifications)
     except RuntimeError as exc:
         print(f"[PRAXEON] {exc}", file=sys.stderr)
         return 1

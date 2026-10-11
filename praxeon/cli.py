@@ -570,6 +570,7 @@ def main() -> None:
     app_parser.add_argument("--browser", action="store_true", help="Usar el navegador por defecto en lugar de la ventana nativa")
     app_parser.add_argument("--port", type=int, default=None, help="Puerto local fijo (por defecto, uno libre)")
     app_parser.add_argument("--debug", action="store_true", help="Habilitar herramientas de desarrollo de la ventana")
+    app_parser.add_argument("--no-notifications", action="store_true", help="Desactivar las notificaciones de aprobaciones pendientes")
 
     bench_parser = subparsers.add_parser("benchmark", help="Ejecuta la suite formal de benchmarks y ablaciones")
     bench_parser.add_argument("--matrix", action="store_true", help="Ejecutar la matriz científica formal LLMs × Supervisores System-1")
@@ -601,6 +602,8 @@ def main() -> None:
         from praxeon.desktop.app import main as run_desktop_app
 
         flags = (["--browser"] if args.browser else []) + (["--debug"] if args.debug else [])
+        if args.no_notifications:
+            flags.append("--no-notifications")
         if args.port:
             flags += ["--port", str(args.port)]
         raise SystemExit(run_desktop_app(flags))
