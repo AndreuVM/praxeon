@@ -26,6 +26,7 @@ from praxeon.domain.models import ActionCandidate
 from praxeon.policy.risk import ToolRegistry
 from praxeon.policy.sanitizer import DataSanitizer
 from praxeon.runtime.full_access import FullAccessExecutor
+from praxeon.runtime.fs_tools import content_from_args, list_directory
 from praxeon.runtime.nonce_store import InMemoryNonceStore, NonceStore
 from praxeon.runtime.sandbox import (
     ContainerSandboxAdapter,
@@ -372,9 +373,14 @@ class SecureExecutor(Executor):
             res = target_sb.read_file(path)
             return res.output, res.success, res.is_error
 
-        elif tool_name == "edit_file":
+        elif tool_name == "list_dir":
+            return self._list_dir_in_workspace(target_sb, args)
+
+        elif tool_name in ("edit_file", "write_file"):
             path = str(args.get("path") or "").strip()
-            content = str(args.get("content") or "").strip()
+            content = content_from_args(args)
+            if not path or content is None:
+                return f"{tool_name} necesita path y content (el texto COMPLETO del archivo).", False, True
             res = target_sb.edit_file(path, content)
             return res.output, res.success, res.is_error
 
@@ -397,6 +403,18 @@ class SecureExecutor(Executor):
             return res.output, res.success, res.is_error
 
         return f"Herramienta '{tool_name}' sin controlador físico implementado en sandbox.", False, True
+
+    @staticmethod
+    def _list_dir_in_workspace(sandbox: Any, args: Dict[str, Any]) -> tuple[str, bool, bool]:
+        """list_dir confinado al workspace del sandbox (misma contención de rutas que read_file)."""
+        raw = str(args.get("path") or args.get("dir") or ".").strip() or "."
+        try:
+            validate = getattr(sandbox, "_validate_path_containment", None)
+            target = validate(raw) if validate else os.path.join(getattr(sandbox, "workspace_root", os.getcwd()), raw)
+        except Exception as exc:  # SandboxViolation u otra: la ruta sale del workspace
+            return f"Ruta fuera del workspace o no válida: {exc}", False, True
+        text, ok = list_directory(target, raw)
+        return text, ok, not ok
 
     def _get_effective_container_sandbox(self, state: Optional[SessionState] = None) -> ContainerSandboxAdapter:
         """Obtiene o instancia un ContainerSandboxAdapter vinculado estrictamente al workspace_root de la sesión (Finding 9)."""
@@ -430,9 +448,14 @@ class SecureExecutor(Executor):
             res = target_container.read_file(path)
             return res.output, res.success, res.is_error
 
-        elif tool_name == "edit_file":
+        elif tool_name == "list_dir":
+            return self._list_dir_in_workspace(target_container, args)
+
+        elif tool_name in ("edit_file", "write_file"):
             path = str(args.get("path") or "").strip()
-            content = str(args.get("content") or "").strip()
+            content = content_from_args(args)
+            if not path or content is None:
+                return f"{tool_name} necesita path y content (el texto COMPLETO del archivo).", False, True
             res = target_container.edit_file(path, content)
             return res.output, res.success, res.is_error
 

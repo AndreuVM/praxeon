@@ -309,31 +309,48 @@ class GeminiLLM(BaseAgentLLM):
         return self._model
 
     def generate(self, messages: List[Dict[str, str]], system_prompt: Optional[str] = None) -> str:
-        prompt_parts: List[str] = []
-        if system_prompt:
-            prompt_parts.append(f"[SYSTEM]: {system_prompt}")
-
-        for m in messages:
-            role = m.get("role", "user").upper()
-            prompt_parts.append(f"[{role}]: {m.get('content', '')}")
-        prompt_parts.append("[ASSISTANT]:\n")
-
-        full_prompt = "\n\n".join(prompt_parts)
+        from google.genai import types
 
         is_antigravity = "antigravity" in self._model.lower()
         if is_antigravity:
+            # La API de interacciones recibe texto plano
+            parts_txt: List[str] = []
+            if system_prompt:
+                parts_txt.append(f"[SYSTEM]: {system_prompt}")
+            for m in messages:
+                parts_txt.append(f"[{m.get('role', 'user').upper()}]: {m.get('content', '')}")
+            parts_txt.append("[ASSISTANT]:\n")
             res = self._client.interactions.create(
                 model="antigravity-preview-09-2026",
-                input=full_prompt,
+                input="\n\n".join(parts_txt),
             )
             return (res.output_text or "").strip()
-        else:
-            res = self._client.models.generate_content(
-                model=self._model,
-                contents=full_prompt,
-                config=self._config,
-            )
-            return (res.text or "").strip()
+
+        # Turnos con su rol real y el prompt de sistema como system_instruction: con una transcripción plana
+        # («[USER]: ... [ASSISTANT]:») el modelo tiende a continuarla e inventar los turnos siguientes.
+        contents: List[Any] = []
+        last_role = None
+        for m in messages:
+            text = str(m.get("content", ""))
+            if not text.strip():
+                continue
+            role = "model" if m.get("role") == "assistant" else "user"
+            if role == last_role:
+                contents[-1] = types.Content(role=role, parts=[types.Part(text=contents[-1].parts[0].text + "\n\n" + text)])
+            else:
+                contents.append(types.Content(role=role, parts=[types.Part(text=text)]))
+            last_role = role
+        if not contents or contents[0].role != "user":
+            contents.insert(0, types.Content(role="user", parts=[types.Part(text="Comienza.")]))
+
+        timeout_ms = int(float(os.getenv("PRAXEON_LLM_TIMEOUT", "180")) * 1000)
+        config = types.GenerateContentConfig(
+            system_instruction=system_prompt or None,
+            automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
+            http_options=types.HttpOptions(timeout=timeout_ms),
+        )
+        res = self._client.models.generate_content(model=self._model, contents=contents, config=config)
+        return (res.text or "").strip()
 
 
 class SimulatedAgentLLM(BaseAgentLLM):

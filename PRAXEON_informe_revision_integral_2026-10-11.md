@@ -458,3 +458,27 @@ Petición del propietario: programar cada nodo (tarea, objetivo, relaciones) deb
 - **Código:** `web/src/components/workflow/` (`formHelpers.js`, `ConditionBuilder.jsx`, `NodeFields.jsx`); la conversión formulario ↔ modelo está en funciones puras verificadas con ida y vuelta.
 
 **Límites:** no se ha comprobado visualmente; los caminos de un nodo `IF/DECISION` ya guardados no se pueden «vaciar» desde la UI (el backend fusiona la configuración); el tiempo límite y los reintentos por nodo siguen sin editor.
+
+### 10.17 Workspace del proyecto claro y editable
+
+Petición del propietario: poder definir el workspace de forma cómoda e intuitiva; hasta ahora no se sabía sobre qué ruta se trabajaba.
+
+- **Causa de la confusión:** el workspace por defecto era la raíz git del directorio desde el que se arrancaba el servidor (el propio repositorio de PRAXEON), y había cuatro campos de texto sueltos (lanzador, chat, sesiones, ajustes) que no mostraban la ruta efectiva cuando estaban vacíos. Además, tres copias de `get_default_workspace_root` con criterios distintos.
+- **Una sola fuente de verdad:** `praxeon/workspace_store.py`. Orden: carpeta elegida por el operador (se guarda en `<caché>/workspace.json`, sobrevive a reinicios) → `PRAXEON_DEFAULT_WORKSPACE_ROOT`/`PRAXEON_WORKSPACE_ROOT` → autodetección. Las tres funciones antiguas delegan en él. Si la carpeta elegida se borra, se vuelve a la autodetección.
+- **API:** `GET/PUT/DELETE /v1/workspace`, `POST /v1/workspace/forget`, `GET /v1/workspace/validate`, `GET /v1/workspace/browse` (lectura: `session:read`; cambios: `admin:settings`).
+- **Interfaz:** botón permanente en la cabecera con la carpeta en uso (tooltip con la ruta completa; aviso ámbar si la sesión activa trabaja en otra). Selector con ruta pegada y validación en vivo, recientes, explorador de carpetas y, en la app de escritorio, el selector de carpetas del sistema (`window.pywebview.api.pick_folder`). Los campos del lanzador, chat, sesiones y ajustes muestran siempre la ruta efectiva y permiten fijar otra solo para esa tarea.
+- **Código:** `web/src/components/workspace/` (`WorkspacePicker.jsx`, `WorkspaceField.jsx`, `useWorkspace.js`); tests en `tests/test_workspace_selection.py` (9).
+
+**Límites:** no se ha comprobado visualmente ni con el selector nativo de pywebview; el valor «workspace por defecto» que Ajustes guardaba antes en el navegador se ignora; cambiar el workspace no afecta a misiones ya en curso.
+
+### 10.18 Agentes de workflow que trabajan de verdad (herramientas, prompt de nodo, fallos)
+
+Observado en una ejecución real (sesión `s-47439c93`): el Developer solo listó el directorio y terminó con `finish("Ahora inspeccionaré…")`; el Reviewer pidió `list_dir` (rechazado) y acabó interrumpido por el supervisor, pero el nodo figuró como completado.
+
+- **Herramientas:** no existía forma de crear archivos ni de listar carpetas. `list_dir` y `write_file` (alias de `edit_file` con el contenido completo) funcionan ahora en Full Access, sandbox y contenedor (`praxeon/runtime/fs_tools.py`). `edit_file` aceptaba `content` pero el prompt decía `diff`: el modelo enviaba `diff` y se escribía un archivo vacío. Los nombres y argumentos habituales de los modelos (`list_directory`, `create_file`, `text`, `body`…) se normalizan antes de la política.
+- **Prompt de nodo:** los nodos usaban el prompt de «asistente de respuesta directa» (con reglas del tipo «no leas archivos, entrega con finish»). Ahora tienen uno propio (`node_prompt.py`): misión + briefing, herramientas reales, «implementa de verdad», «finish solo con el trabajo hecho». El briefing ya no se duplica en el mensaje de usuario.
+- **Salvaguardas:** una respuesta sin `Action` ya no se convierte en `finish`; un `finish` que solo anuncia intenciones se rechaza con explicación; un nodo interrumpido por el supervisor es un fallo (decisión del operador), no un éxito.
+- **Gemini:** turnos con su rol y `system_instruction` en lugar de una transcripción plana (que provocaba turnos inventados), con timeout explícito.
+- **Latencia:** cada llamada al modelo se mide (`llm_ms` en la acción propuesta y línea de log). Las esperas de 95–282 s de esa sesión ocurrieron dentro de la llamada al modelo; la causa concreta no está demostrada.
+
+**Límites:** el comportamiento con el modelo real no se ha comprobado; el listado de carpetas en contenedor depende de la contención de rutas del sandbox.

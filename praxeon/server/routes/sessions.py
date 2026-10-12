@@ -50,7 +50,7 @@ def run_mission(
             base_url=req.base_url,
             supervisor=req.supervisor or "laya",
             decision_model=req.decision_model,
-            max_steps=req.max_steps or 25,
+            max_steps=25 if req.max_steps is None else req.max_steps,
             step_delay_ms=req.step_delay_ms or 900,
             autonomous=bool(req.autonomous or req.allow_unattended_execution or full_access_authorized),
             allow_unattended_execution=bool(req.autonomous or req.allow_unattended_execution or full_access_authorized),

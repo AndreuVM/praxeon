@@ -21,6 +21,8 @@ import subprocess
 import sys
 import time
 from typing import Any, Dict, Optional, Protocol
+
+from praxeon.runtime.fs_tools import content_from_args, list_directory
 from pydantic import BaseModel, ConfigDict
 
 
@@ -144,12 +146,30 @@ class FullAccessExecutor:
                     execution_time_ms=round(elapsed, 2),
                 )
 
-        elif tool_name == "edit_file":
-            raw_path = str(arguments.get("path") or "").strip()
+        elif tool_name == "list_dir":
+            raw_path = str(arguments.get("path") or arguments.get("dir") or ".").strip() or "."
             path = os.path.expanduser(os.path.expandvars(raw_path))
-            content = str(arguments.get("content") or "").strip()
             if not os.path.isabs(path):
                 path = os.path.join(cwd, path)
+            text, ok = list_directory(path, raw_path)
+            elapsed = (time.perf_counter() - start_t) * 1000.0
+            return FullAccessResult(
+                output=f"[FULL_ACCESS] {text}", success=ok, is_error=not ok,
+                exit_code=0 if ok else 1, execution_time_ms=round(elapsed, 2),
+            )
+
+        elif tool_name in ("edit_file", "write_file"):
+            raw_path = str(arguments.get("path") or "").strip()
+            path = os.path.expanduser(os.path.expandvars(raw_path))
+            content = content_from_args(arguments)
+            if not os.path.isabs(path):
+                path = os.path.join(cwd, path)
+            if not raw_path or content is None:
+                elapsed = (time.perf_counter() - start_t) * 1000.0
+                return FullAccessResult(
+                    output=f"[FULL_ACCESS] {tool_name} necesita path y content (el texto COMPLETO del archivo).",
+                    success=False, is_error=True, exit_code=1, execution_time_ms=round(elapsed, 2),
+                )
             try:
                 os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
                 with open(path, "w", encoding="utf-8") as f:

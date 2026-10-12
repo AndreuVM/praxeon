@@ -41,6 +41,26 @@ def _missing_path_from_reasons(reason_codes: Optional[List[str]]) -> Optional[st
     return None
 
 
+from praxeon.server.runtime_service.node_prompt import (  # noqa: E402
+    NODE_FORMAT_FEEDBACK,
+    NODE_INTENTION_FEEDBACK,
+    build_node_system_prompt,
+    looks_like_intention,
+)
+
+def _targets_missing_path(tool: str, args: Dict[str, Any], workspace_root: Optional[str]) -> bool:
+    """True si la acción lee o lista una ruta que de verdad no existe en el workspace (comprobación directa)."""
+    if tool not in ("read_file", "view_file", "list_dir"):
+        return False
+    raw = str((args or {}).get("path") or (args or {}).get("file") or "").strip()
+    if not raw:
+        return False
+    path = os.path.expanduser(os.path.expandvars(raw))
+    if not os.path.isabs(path):
+        path = os.path.join(workspace_root or os.getcwd(), path)
+    return not os.path.exists(path)
+
+
 def _missing_path_feedback(path: str, workspace_root: Optional[str]) -> str:
     """Mensaje para el agente cuando referencia una ruta inexistente (evita que la reintente o la alucine)."""
     base = workspace_root or os.getcwd()
@@ -402,13 +422,19 @@ class MissionRuntimeMixin:
         owns_session: bool = True,
         role_preamble: str = "",
         tool_filter: Optional[Callable[[str], Optional[str]]] = None,
+        trace: Optional[Dict[str, Any]] = None,
+        start_parent_id: Optional[str] = None,
+        finish_check: Optional[Callable[[str], Optional[str]]] = None,
     ) -> Dict[str, Any]:
         """Bucle ReAct supervisado de un agente (Thought/Action -> política -> ejecución -> observación).
 
         Lo usa la misión completa (`owns_session=True`, comportamiento histórico) y cada nodo de un workflow
         (`owns_session=False`, con `id_prefix`/`root_id` propios para no colisionar en el árbol de decisiones).
         `role_preamble` antepone la identidad/misión del agente al prompt de sistema y `tool_filter(tool)` devuelve
-        un motivo de rechazo si el agente no tiene permitida esa herramienta.
+        un motivo de rechazo si el agente no tiene permitida esa herramienta. `trace` (nodo/agente del workflow)
+        viaja en cada acción para que el árbol muestre quién tiene el control, y `start_parent_id` engancha la
+        primera acción a la última del nodo anterior (traspaso entre agentes). `finish_check(summary)` devuelve el
+        motivo por el que un finish no se acepta (p. ej. falta el campo que el grafo necesita) o None si es válido.
         """
         from praxeon.live_agent import parse_llm_steps
 
@@ -432,7 +458,9 @@ class MissionRuntimeMixin:
                 "Action: <herramienta>(<argumentos_en_json_o_string>)\n\n"
                 "Herramientas disponibles:\n"
                 "- read_file(path: str) -> Lee el contenido de un archivo del espacio de trabajo local si la tarea requiere auditar código o configuración existente.\n"
-                "- edit_file(path: str, diff: str) -> Aplica modificaciones a un archivo en el espacio de trabajo local cuando la tarea pide editar código existente.\n"
+                "- list_dir(path: str) -> Lista una carpeta del espacio de trabajo (hasta 3 niveles)." + "\n"
+                "- write_file(path: str, content: str) -> Crea o reemplaza un archivo con su contenido COMPLETO (crea las carpetas necesarias)." + "\n"
+                "- edit_file(path: str, content: str) -> Igual que write_file: sustituye el contenido completo de un archivo." + "\n"
                 "- run_command(command: str) -> Ejecuta un comando en la consola del SO (PowerShell en Windows, bash en Unix).\n"
                 "- git(command: str) -> Ejecuta comandos git en el repositorio (status, diff, log, etc.).\n"
                 "- finish(summary: str) -> Concluye entregando la respuesta directa a la pregunta, especificación, diseño, informe o solución solicitada por el usuario.\n\n"
@@ -444,9 +472,13 @@ class MissionRuntimeMixin:
                 "5. COMPATIBILIDAD DE SO: En Windows, NO uses comandos Unix/Linux como 'ls', 'cat', 'grep'. Utiliza 'read_file(path)' o comandos de PowerShell en run_command.\n"
                 "6. RETROCESO Y VETOS DEL SUPERVISOR: Si una acción (incluido un intento de 'finish') es vetada por el supervisor o rechazada por falta de evidencia, reflexiona en 'Thought:' sobre la observación de veto recibida y ejecuta la herramienta de inspección correspondiente (ej. read_file) para fundamentar empíricamente tu razonamiento antes de intentar finalizar de nuevo."
             )
+            if trace is not None:
+                system_prompt = role_preamble + build_node_system_prompt(ws_root, env_info, goal)
 
         step_records: List[Dict[str, Any]] = []
-        active_parent_id = root_id
+        forced_termination = False
+        anchor_id = start_parent_id or root_id
+        active_parent_id = anchor_id
         consecutive_failures = 0
         final_answer: Optional[str] = None
         technical_failures = 0
@@ -455,7 +487,8 @@ class MissionRuntimeMixin:
         circuit_breaker_triggered = False
         llm_fail_policy = (mission.get("llm_failure_policy") or "synthetic_fallback").lower().strip()
 
-        while step_idx < max_steps:
+        # max_steps <= 0 significa sin límite: lo frenan el finish, los cortacircuitos del supervisor o el operador
+        while max_steps <= 0 or step_idx < max_steps:
             if mission.get("stopped"):
                 break
 
@@ -478,13 +511,23 @@ class MissionRuntimeMixin:
                 system_prompt=system_prompt,
                 steps_history=step_records,
                 environment_info=None,
-                chat_history=mission.get("chat_history"),
+                chat_history=None if trace is not None else mission.get("chat_history"),
+                node_mode=trace is not None,
             )
 
             # Invocar LLM real
             llm_output = ""
+            llm_ms = 0.0
             try:
+                t_llm = time.perf_counter()
                 llm_output = agent_llm.generate(conversation, system_prompt=system_prompt)
+                llm_ms = (time.perf_counter() - t_llm) * 1000.0
+                logger.info(
+                    "LLM %s/%s: %.1fs, prompt ~%d caracteres, respuesta %d caracteres (%s paso %d)",
+                    provider_name, getattr(agent_llm, "model_name", "?"), llm_ms / 1000.0,
+                    len(system_prompt or "") + sum(len(m.get("content", "")) for m in conversation),
+                    len(llm_output), (trace or {}).get("node_id", "misión"), step_idx,
+                )
                 technical_failures = 0  # Éxito técnico: resetear contador técnico
             except Exception as gen_err:
                 technical_failures += 1
@@ -528,7 +571,7 @@ class MissionRuntimeMixin:
                         "planner": "synthetic",
                     },
                 )
-                steps_backup = generate_goal_tailored_steps(goal=goal, max_steps=max_steps)
+                steps_backup = generate_goal_tailored_steps(goal=goal, max_steps=max_steps if max_steps > 0 else max(step_idx, 12))
                 backup_idx = min(step_idx - 1, len(steps_backup) - 1)
                 b_step = steps_backup[backup_idx] if (steps_backup and backup_idx >= 0) else {
                     "tool_name": "run_command",
@@ -539,6 +582,23 @@ class MissionRuntimeMixin:
 
             # Parsear Thought + Action
             parsed_steps = parse_llm_steps(llm_output)
+            if trace is not None and (
+                not parsed_steps
+                or str(parsed_steps[0].get("tool_name") or "").strip().lower() in ("action", "undefined", "none", "null", "step", "")
+            ):
+                consecutive_failures += 1
+                step_records.append({
+                    "step": step_idx,
+                    "thought": (llm_output or "")[:300],
+                    "tool": "(sin acción válida)",
+                    "arguments": {},
+                    "verdict": "REPLAN",
+                    "reason_code": "INVALID_ACTION_FORMAT",
+                    "observation": NODE_FORMAT_FEEDBACK,
+                    "success": False,
+                })
+                time.sleep(delay_sec)
+                continue
             if parsed_steps:
                 st = parsed_steps[0]
                 raw_tool = (st.get("tool_name") or "").strip().lower()
@@ -641,6 +701,40 @@ class MissionRuntimeMixin:
                 time.sleep(delay_sec)
                 continue
 
+            if (
+                trace is not None
+                and tool in ("finish", "complete_task", "done", "complete", "task_completed")
+                and looks_like_intention(str(args.get("summary") or args.get("final_answer") or ""))
+            ):
+                step_records.append({
+                    "step": step_idx,
+                    "thought": thought,
+                    "tool": tool,
+                    "arguments": args,
+                    "verdict": "REPLAN",
+                    "reason_code": "PREMATURE_NODE_FINISH",
+                    "observation": NODE_INTENTION_FEEDBACK,
+                    "success": False,
+                })
+                time.sleep(delay_sec)
+                continue
+
+            if finish_check is not None and tool in ("finish", "complete_task", "done", "complete", "task_completed"):
+                rejection = finish_check(str(args.get("summary") or args.get("final_answer") or ""))
+                if rejection:
+                    step_records.append({
+                        "step": step_idx,
+                        "thought": thought,
+                        "tool": tool,
+                        "arguments": args,
+                        "verdict": "REPLAN",
+                        "reason_code": "FINISH_MISSING_REQUIRED_FIELDS",
+                        "observation": rejection,
+                        "success": False,
+                    })
+                    time.sleep(delay_sec)
+                    continue
+
             if tool_filter is not None and tool not in ("finish", "complete_task", "done", "complete", "task_completed"):
                 denied = tool_filter(tool)
                 if denied:
@@ -671,6 +765,8 @@ class MissionRuntimeMixin:
                 provenance={
                     "source": f"LLM ({agent_llm.provider_name.upper()} - {agent_llm.model_name})",
                     "step": step_idx,
+                    "llm_ms": round(llm_ms),
+                    **({"workflow": trace} if trace else {}),
                 },
                 context={"goal": goal},
             )
@@ -799,12 +895,16 @@ class MissionRuntimeMixin:
                 consecutive_failures += 1
 
                 # RETROCESO (BACKTRACK) Y BIFURCACIÓN CONTEXTUAL:
-                is_initial_step = active_parent_id == root_id or step_idx == 1
+                is_initial_step = active_parent_id == anchor_id or step_idx == 1
                 if is_initial_step:
                     interv_name = "INITIAL_HYPOTHESIS_VETOED"
                     interv_msg = (
                         f"Acción inicial '{action_node_id}' vetada por el supervisor ({step_reasons or 'falta de evidencias empíricas'}). "
-                        f"Se exige recopilar evidencias inspeccionando archivos antes de emitir conclusiones."
+                        + (
+                            "El agente debe corregir la acción y volver a intentarlo."
+                            if mission.get("workflow_id")
+                            else "Se exige recopilar evidencias inspeccionando archivos antes de emitir conclusiones."
+                        )
                     )
                 else:
                     interv_name = "BACKTRACK_AND_BRANCH"
@@ -831,13 +931,31 @@ class MissionRuntimeMixin:
                 # CIRCUITO DE BLOQUEO Y DETECCIÓN DE BUCLE PERSISTENTE (JEV CIRCUIT BREAKER)
                 if consecutive_failures >= 2 and not circuit_breaker_triggered:
                     circuit_breaker_triggered = True
-                    cwd = os.getcwd()
+                    # El motivo real de los fallos: solo si son rutas inexistentes se habla de archivos inexistentes
+                    missing_paths = (
+                        "UNGROUNDED_FILE_NOT_FOUND" in (step_reasons or "")
+                        or "no existe" in obs_fail.lower()
+                        or _targets_missing_path(tool, args, mission.get("workspace_root"))
+                    )
                     real_files = []
-                    try:
-                        real_files = [f for f in os.listdir(cwd) if not f.startswith(".")][:12]
-                    except Exception:
-                        real_files = ["praxeon", "web", "tests"]
-                    real_files_str = ", ".join(real_files)
+                    if missing_paths:
+                        ws_dir = mission.get("workspace_root") or get_default_workspace_root()
+                        try:
+                            real_files = [f for f in sorted(os.listdir(ws_dir)) if not f.startswith(".")][:12]
+                        except Exception:
+                            real_files = []
+                    real_files_str = ", ".join(real_files) if real_files else "(carpeta vacía)"
+                    cause = (step_reasons or "").split(",")[0].strip() or "acción fallida o vetada"
+                    if missing_paths:
+                        cb_message = (
+                            f"⚡ JEV CIRCUIT BREAKER: {consecutive_failures} fallos consecutivos intentando acceder a archivos o rutas "
+                            "que no existen. El supervisor poda la rama, retrocede e inyecta la estructura real del workspace."
+                        )
+                    else:
+                        cb_message = (
+                            f"⚡ JEV CIRCUIT BREAKER: {consecutive_failures} fallos consecutivos (último motivo: {cause}). "
+                            "El supervisor poda la rama y pide cambiar de enfoque."
+                        )
 
                     self.event_bus.emit(
                         session_id=sid,
@@ -846,13 +964,16 @@ class MissionRuntimeMixin:
                         parent_id=root_id,
                         payload={
                             "intervention": "CIRCUIT_BREAKER_GROUNDING_INJECTION",
-                            "message": f"⚡ JEV CIRCUIT BREAKER: Bucle de alucinación/fallos consecutivos ({consecutive_failures}) intentando acceder a archivos/scripts inexistentes. El supervisor poda la rama, fuerza retroceso a la raíz e inyecta la estructura real del proyecto.",
+                            "message": cb_message,
                             "real_files": real_files,
                             "backtrack_to": root_id,
                         },
                     )
 
-                    obs_fail += f"\n🚨 [CIRCUIT BREAKER GROUNDING]: Archivos reales: [{real_files_str}]. Trabaja exclusivamente sobre rutas reales o usa 'finish'."
+                    if missing_paths:
+                        obs_fail += f"\n🚨 [CIRCUIT BREAKER GROUNDING]: Archivos reales del workspace: [{real_files_str}]. Trabaja exclusivamente sobre rutas reales o usa 'finish'."
+                    else:
+                        obs_fail += f"\n🚨 [CIRCUIT BREAKER]: {consecutive_failures} fallos seguidos (motivo: {cause}). Lee el motivo, cambia de enfoque y no repitas la misma acción."
                     step_records.append({
                         "step": step_idx,
                         "thought": thought,
@@ -863,13 +984,23 @@ class MissionRuntimeMixin:
                         "observation": obs_fail,
                         "success": False,
                     })
-                    active_parent_id = root_id
+                    active_parent_id = anchor_id
                     time.sleep(delay_sec)
                     continue
 
                 elif consecutive_failures >= 4:
                     logger.warning("Terminación preventiva por supervisor JEV en sesión %s tras 4 fallos continuos.", sid)
-                    summary_final = f"Misión concluida preventivamente por el supervisor JEV para detener bucle de alucinación tras {step_idx} turnos. El agente insistió repetidamente en recursos no fundamentados."
+                    stop_missing = (
+                        "UNGROUNDED_FILE_NOT_FOUND" in (step_reasons or "")
+                        or "no existe" in (obs_output or "").lower()
+                        or _targets_missing_path(tool, args, mission.get("workspace_root"))
+                    )
+                    stop_cause = (step_reasons or "").split(",")[0].strip() or "acciones fallidas o vetadas"
+                    summary_final = (
+                        f"Misión concluida preventivamente por el supervisor JEV tras {step_idx} turnos: el agente insistió en rutas o archivos que no existen."
+                        if stop_missing
+                        else f"Misión concluida preventivamente por el supervisor JEV tras {step_idx} turnos: {consecutive_failures} fallos consecutivos sin avance (último motivo: {stop_cause})."
+                    )
                     self.event_bus.emit(
                         session_id=sid,
                         event_type=EventType.INTERVENTION_APPLIED,
@@ -877,10 +1008,11 @@ class MissionRuntimeMixin:
                         parent_id=root_id,
                         payload={
                             "intervention": "SUPERVISOR_FORCED_TERMINATION",
-                            "message": "Supervisión JEV: Se cortó la ejecución para evitar un bucle de alucinación infinito. Misión concluida de forma segura.",
+                            "message": "Supervisión JEV: se cortó la ejecución para evitar un bucle de fallos sin avance. " + summary_final,
                         },
                     )
                     final_answer = summary_final
+                    forced_termination = True
                     if owns_session:
                         self.event_bus.emit(
                             session_id=sid,
@@ -937,12 +1069,21 @@ class MissionRuntimeMixin:
                         step_idx,
                         v_reason,
                     )
-                    supervisor_feedback = (
-                        f"🚨 [VETO DEL SUPERVISOR PRAXEON - {v_reason}]:\n"
-                        f"Tu intento de concluir la misión mediante '{tool}' ha sido RECHAZADO por falta de evidencia empírica fundamentada.\n"
-                        "NO se permite emitir conclusiones sin antes haber inspeccionado los archivos reales del proyecto.\n"
-                        "EN EL SIGUIENTE TURNO DEBES ejecutar 'read_file(path)' o 'run_command' para examinar los archivos relevantes."
-                    )
+                    if mission.get("workflow_id"):
+                        # En un nodo de workflow, finish entrega el resultado del NODO: no se exige leer el proyecto.
+                        supervisor_feedback = (
+                            f"🚨 [SUPERVISOR PRAXEON - {v_reason}]: tu finish no se ha podido aceptar.\n"
+                            "Si el motivo es de formato, repítelo con finish(summary=<texto>) o con un objeto JSON válido. "
+                            "Si tu misión necesita datos del proyecto, usa read_file o run_command; si no los necesita, "
+                            "entrega directamente el resultado de tu misión."
+                        )
+                    else:
+                        supervisor_feedback = (
+                            f"🚨 [VETO DEL SUPERVISOR PRAXEON - {v_reason}]:\n"
+                            f"Tu intento de concluir la misión mediante '{tool}' ha sido RECHAZADO por falta de evidencia empírica fundamentada.\n"
+                            "NO se permite emitir conclusiones sin antes haber inspeccionado los archivos reales del proyecto.\n"
+                            "EN EL SIGUIENTE TURNO DEBES ejecutar 'read_file(path)' o 'run_command' para examinar los archivos relevantes."
+                        )
                     if step_records and step_records[-1]["step"] == step_idx:
                         step_records[-1]["observation"] = supervisor_feedback
                         step_records[-1]["verdict"] = "REPLAN"
@@ -953,7 +1094,13 @@ class MissionRuntimeMixin:
 
             time.sleep(delay_sec)
 
-        return {"step_records": step_records, "final_answer": final_answer, "steps_used": step_idx}
+        return {
+            "step_records": step_records,
+            "final_answer": final_answer,
+            "steps_used": step_idx,
+            "last_action_id": active_parent_id if active_parent_id != anchor_id else None,
+            "forced_termination": forced_termination,
+        }
 
     def _run_workflow_mission(self, mission: Dict[str, Any], base_llm: Any, session_mode: str) -> bool:
         """Ejecuta la tarea siguiendo el workflow: el grafo manda y cada agente trabaja dentro de su nodo."""
@@ -997,6 +1144,18 @@ class MissionRuntimeMixin:
             run_agent_loop=self._run_llm_loop,
             llm_for_agent=llm_for_agent,
             supervised_runner=self.workflow_editor_service.supervised_runner,
+            on_node_started=lambda node_id, payload: self.event_bus.emit(
+                session_id=sid,
+                event_type=EventType.WORKFLOW_NODE_STARTED,
+                node_id=node_id,
+                payload=payload,
+            ),
+            on_node_completed=lambda node_id, payload: self.event_bus.emit(
+                session_id=sid,
+                event_type=EventType.WORKFLOW_NODE_COMPLETED,
+                node_id=node_id,
+                payload=payload,
+            ),
         )
         ok = False
         try:
@@ -1127,7 +1286,7 @@ class MissionRuntimeMixin:
         # MODO B: PLANIFICADOR CONTEXTUAL DINÁMICO (Simulator o Fallback de Provider)
         # =========================================================================
         else:
-            steps_to_run = generate_goal_tailored_steps(goal=goal, max_steps=max_steps)
+            steps_to_run = generate_goal_tailored_steps(goal=goal, max_steps=max_steps if max_steps > 0 else 25)
             active_parent_id = f"root_{sid}"
 
             while step_idx < len(steps_to_run):

@@ -6,6 +6,7 @@ compactación de memoria histórica y extracción estructurada de pasos (Thought
 
 from __future__ import annotations
 
+import ast
 import io
 import json
 import re
@@ -105,9 +106,126 @@ def build_optimized_prompt(conversation_history: List[Dict[str, str]], max_recen
     return "\n\n".join(f"[{m['role'].upper()}]: {m['content']}" for m in compacted) + "\n\n[ASSISTANT]:\n"
 
 
+_STEP_MARKER = re.compile(r"^\s*(thought\s*:|action\s*:|step\s+\d+\s*:|paso\s+\d+\s*:)", re.IGNORECASE)
+
+
+_ROLE_LEAK = re.compile(r"(?m)^[ \t]*\[(?:USER|ASSISTANT|SYSTEM|OBSERVATION)[^\]\n]*\][ \t]*:")
+
+
+def _strip_role_leak(text: str) -> str:
+    """Corta lo que el modelo escribe de más al continuar la transcripción («[USER]: Observación…»)."""
+    m = _ROLE_LEAK.search(text)
+    return text[: m.start()] if m else text
+
+
+def _call_is_complete(text: str) -> bool:
+    """True si la acción está cerrada: ninguna cadena (simple o triple) ni paréntesis/llave sin cerrar."""
+    depth = 0
+    i, n = 0, len(text)
+    while i < n:
+        ch = text[i]
+        if text.startswith('"""', i) or text.startswith("'''", i):
+            end = text.find(text[i : i + 3], i + 3)
+            if end == -1:
+                return False
+            i = end + 3
+            continue
+        if ch in "\"'":
+            j = i + 1
+            while j < n and text[j] != ch and text[j] != "\n":
+                j += 2 if text[j] == "\\" else 1
+            if j >= n or text[j] != ch:
+                # comilla sin cerrar en la misma línea: se trata como texto normal (apóstrofes, etc.)
+                i += 1
+                continue
+            i = j + 1
+            continue
+        if ch in "([{":
+            depth += 1
+        elif ch in ")]}":
+            depth -= 1
+        i += 1
+    return depth <= 0
+
+
+def _merge_multiline_actions(lines: List[str]) -> List[str]:
+    """Une en una sola entrada la línea `Action:` y sus continuaciones mientras la llamada siga abierta.
+
+    Un finish(summary=<comillas triples>...) con el texto en varias líneas llega partido; sin unirlo,
+    la herramienta se leería como el nombre `finish(summary=` seguido de basura. Una llamada ya cerrada no
+    absorbe las líneas siguientes (así no se cuela texto inventado tras ella).
+    """
+    merged: List[str] = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if line.strip().lower().startswith("action:"):
+            block = [line]
+            i += 1
+            while i < len(lines) and not _call_is_complete("\n".join(block)[len("action:") :]):
+                block.append(lines[i])
+                i += 1
+            merged.append("\n".join(block))
+            continue
+        merged.append(line)
+        i += 1
+    return merged
+
+
+def _parse_python_call_args(raw_arg: str) -> Optional[Dict[str, Any]]:
+    """Argumentos estilo Python `clave="valor"` (comillas simples, dobles o triples, con escapes)."""
+    try:
+        call = ast.parse(f"_f({raw_arg})", mode="eval").body
+        if not isinstance(call, ast.Call) or not call.keywords:
+            return None
+        return {kw.arg: ast.literal_eval(kw.value) for kw in call.keywords if kw.arg}
+    except (SyntaxError, ValueError):
+        return None
+
+
+_FINISH_LOOSE = re.compile(r"""^\s*(?:(?:summary|final_answer)\s*=\s*)?("{3}|'{3}|"|')(?P<body>.*)\1\s*$""", re.DOTALL)
+
+
+def _parse_finish_loose(raw_arg: str) -> Optional[Dict[str, Any]]:
+    """finish con un texto que contiene sus propias comillas (p. ej. código con docstrings): se toma todo el
+    texto entre la primera comilla de apertura y la última de cierre en lugar de descartar el resultado."""
+    m = _FINISH_LOOSE.match(raw_arg)
+    if not m:
+        return None
+    body = m.group("body").strip()
+    return {"summary": body} if body else None
+
+
+def normalize_tool_call(tool: str, args: Dict[str, Any]) -> tuple[str, Dict[str, Any]]:
+    """Unifica los nombres y argumentos con que los modelos piden listar o escribir archivos.
+
+    list_directory/ls/dir -> list_dir(path); write_file/create_file/write_to_file -> edit_file(path, content),
+    aceptando text/body/code/diff como contenido. Así la política, el recibo y el ejecutor ven siempre lo mismo.
+    """
+    from praxeon.runtime.fs_tools import LIST_ALIASES, WRITE_ALIASES, content_from_args
+
+    name = (tool or "").strip().lower()
+    args = dict(args or {})
+    if name in LIST_ALIASES:
+        path = args.get("path") or args.get("dir") or args.get("directory") or args.get("raw") or args.get("command") or "."
+        path = str(path).strip()
+        if not path or path.startswith("-"):  # «ls -la»: las opciones no son una ruta
+            path = "."
+        return "list_dir", {"path": path}
+    if name in WRITE_ALIASES:
+        path = args.get("path") or args.get("file_path") or args.get("filename") or args.get("file") or ""
+        out: Dict[str, Any] = {"path": str(path).strip()}
+        content = content_from_args(args)
+        if content is not None:
+            out["content"] = content
+        return "edit_file", out
+    return tool, args
+
+
 def parse_llm_steps(llm_output: str) -> List[Dict[str, Any]]:
     """Extrae uno o múltiples pasos (Thought + Action) de la salida del LLM."""
     steps: List[Dict[str, Any]] = []
+    llm_output = _strip_role_leak(llm_output)
 
     # 1. Normalizar etiquetas markdown (**Thought:**, **Action:**, etc.)
     text = re.sub(r"[\*_]{1,2}(Step\s+\d+|Paso\s+\d+|Thought|Action)[\*_]{0,2}\s*:", r"\1:", llm_output, flags=re.IGNORECASE)
@@ -121,7 +239,7 @@ def parse_llm_steps(llm_output: str) -> List[Dict[str, Any]]:
     current_tool = None
     current_args: Dict[str, Any] = {}
 
-    lines = text.strip().splitlines()
+    lines = _merge_multiline_actions(text.strip().splitlines())
     for line in lines:
         stripped = line.strip()
         if not stripped:
@@ -163,9 +281,14 @@ def parse_llm_steps(llm_output: str) -> List[Dict[str, Any]]:
                     else:
                         current_args = {"raw": str(parsed)}
                 except Exception:
-                    # Detectar si viene con sintaxis Python kwargs: tool(param1="val1", param2="val2")
-                    kw_pairs = re.findall(r'([a-zA-Z0-9_]+)\s*=\s*(?:"([^"]*)"|\'([^\']*)\'|([^\s,)]+))', raw_arg)
-                    if kw_pairs:
+                    # Sintaxis Python kwargs: tool(param1="val1", param2="""val2""")
+                    py_args = _parse_python_call_args(raw_arg)
+                    if py_args is None and current_tool == "finish":
+                        py_args = _parse_finish_loose(raw_arg)
+                    kw_pairs = [] if py_args else re.findall(r"""([a-zA-Z0-9_]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s,)]+))""", raw_arg)
+                    if py_args:
+                        current_args = py_args
+                    elif kw_pairs:
                         current_args = {}
                         for k, v1, v2, v3 in kw_pairs:
                             current_args[k] = v1 or v2 or v3
@@ -254,4 +377,6 @@ def parse_llm_steps(llm_output: str) -> List[Dict[str, Any]]:
                 "tool_args": {"summary": llm_output.strip()},
             })
 
+    for st in steps:
+        st["tool_name"], st["tool_args"] = normalize_tool_call(st["tool_name"], st["tool_args"])
     return steps

@@ -139,6 +139,7 @@ class DecisionPipelineMixin:
                 "arguments": proposal.arguments,
                 "source": prov_dict.get("source", "ExternalAgent"),
                 "step": prov_dict.get("step", 1),
+                "workflow_node": prov_dict.get("workflow"),
                 "thought_rationale": proposal.thought_rationale,
                 "synthetic_fallback": is_synth,
                 "model_source": m_source,
@@ -1196,16 +1197,21 @@ class DecisionPipelineMixin:
                     or observation.output.replace("Tarea concluida: ", "")
                     or "Misión finalizada exitosamente."
                 )
-                self.event_bus.emit(
-                    session_id=session_id,
-                    event_type=EventType.SESSION_COMPLETED,
-                    node_id=f"root_{session_id}",
-                    payload={"status": "completed", "summary": summary},
-                )
                 with self._lock:
-                    if session_id in self._sessions_meta:
-                        self._sessions_meta[session_id]["status"] = "Completed"
-                        self._sessions_meta[session_id]["final_answer"] = summary
+                    in_workflow = bool(((self._sessions_meta.get(session_id) or {}).get("metadata") or {}).get("workflow_id"))
+                # En una misión con workflow, el finish de un agente solo cierra SU nodo (hito); la misión
+                # termina cuando el grafo llega al final (lo emite el runtime de la misión).
+                if not in_workflow:
+                    self.event_bus.emit(
+                        session_id=session_id,
+                        event_type=EventType.SESSION_COMPLETED,
+                        node_id=f"root_{session_id}",
+                        payload={"status": "completed", "summary": summary},
+                    )
+                    with self._lock:
+                        if session_id in self._sessions_meta:
+                            self._sessions_meta[session_id]["status"] = "Completed"
+                            self._sessions_meta[session_id]["final_answer"] = summary
 
             tier_name = (
                 "full_access" if session_mode == "full_access"

@@ -35,8 +35,9 @@ logger = logging.getLogger(__name__)
 AGENT_NODE_TYPES = (NodeType.AGENT, NodeType.DELEGATE, NodeType.TASK)
 TERMINAL = (WorkflowStatus.COMPLETED, WorkflowStatus.FAILED, WorkflowStatus.CANCELLED)
 RESERVED_OUTPUT_KEYS = {"agent_id", "agent_name", "agent_role", "node_mission", "response", "status", "steps", "iteration", "simulated"}
-DEFAULT_NODE_STEPS = 12
-MAX_NODE_STEPS = 50
+DEFAULT_NODE_STEPS = 30
+DEFAULT_AUTO_NODE_RETRIES = 2  # reintentos automáticos de un nodo fallido en misiones autónomas
+MAX_NODE_STEPS = 500
 DEFAULT_TOTAL_NODE_RUNS = 200
 
 
@@ -50,20 +51,58 @@ def node_mission(node: WorkflowNode) -> str:
     return node.name
 
 
-def parse_structured_output(text: str) -> Dict[str, Any]:
-    """Extrae un objeto JSON de la respuesta final (entero o en bloque ```json```) para que las condiciones del grafo lo lean."""
-    if not text:
-        return {}
-    candidates: List[str] = [text.strip()]
-    candidates += re.findall(r"```(?:json)?\s*(\{.*?\})\s*```", text, flags=re.DOTALL)
-    for cand in candidates:
+def _json_objects(text: str) -> List[Dict[str, Any]]:
+    """Todos los objetos JSON que aparecen en el texto, estén donde estén (entre comillas inversas, en prosa, en bloques)."""
+    decoder = json.JSONDecoder()
+    found: List[Dict[str, Any]] = []
+    i = 0
+    while True:
+        i = text.find("{", i)
+        if i == -1:
+            break
         try:
-            data = json.loads(cand)
-        except (ValueError, TypeError):
+            data, end = decoder.raw_decode(text, i)
+        except ValueError:
+            i += 1
             continue
         if isinstance(data, dict):
-            return data
-    return {}
+            found.append(data)
+            i = end
+        else:
+            i += 1
+    return found
+
+
+def parse_structured_output(text: str, prefer_keys: Optional[Set[str]] = None) -> Dict[str, Any]:
+    """Extrae el resultado estructurado de la respuesta final para que las condiciones del grafo lo lean.
+
+    Acepta el JSON entero, en un bloque ```json```, entre comillas inversas o suelto dentro de un informe en prosa.
+    Con `prefer_keys` se elige el objeto que trae esos campos (p. ej. `approved`); si el texto solo escribe
+    «approved: false» sin JSON, se recupera ese valor booleano.
+    """
+    if not text:
+        return {}
+    objects = [o for o in _json_objects(text) if o]
+    wanted = {k for k in (prefer_keys or set()) if k}
+    if wanted:
+        with_keys = [o for o in objects if wanted & set(o)]
+        if with_keys:
+            return with_keys[-1]
+        loose: Dict[str, Any] = {}
+        for key in wanted:
+            m = re.findall(r"""["'`*_]*%s["'`*_]*\s*[:=]\s*["'`*_]*(true|false)\b""" % re.escape(key), text, flags=re.IGNORECASE)
+            if m:
+                loose[key] = m[-1].lower() == "true"
+        if loose:
+            return loose
+    stripped = text.strip()
+    try:
+        whole = json.loads(stripped)
+        if isinstance(whole, dict):
+            return whole
+    except (ValueError, TypeError):
+        pass
+    return objects[-1] if objects else {}
 
 
 def _clip(text: str, limit: int) -> str:
@@ -89,6 +128,8 @@ class WorkflowMissionDriver:
         llm_for_agent: Callable[[Any], Any],
         supervised_runner: Any = None,
         poll_seconds: float = 0.3,
+        on_node_completed: Optional[Callable[[str, Dict[str, Any]], None]] = None,
+        on_node_started: Optional[Callable[[str, Dict[str, Any]], None]] = None,
     ):
         self.workflow = workflow
         self.mission = mission
@@ -98,8 +139,15 @@ class WorkflowMissionDriver:
         self.run_agent_loop = run_agent_loop
         self.llm_for_agent = llm_for_agent
         self.poll_seconds = poll_seconds
+        self.on_node_completed = on_node_completed
+        self.on_node_started = on_node_started
         self.runs: Dict[str, int] = {}
+        self._cursor: Optional[str] = None  # última acción del nodo anterior: de ahí cuelga el siguiente
+        self._prev_trace: Optional[Dict[str, Any]] = None
         self.history: Dict[str, List[Dict[str, Any]]] = {}
+        self.failures: Dict[str, str] = {}      # último error de cada nodo que se reintenta
+        self.auto_retried: Dict[str, int] = {}  # reintentos automáticos ya gastados por nodo
+        self.max_auto_retries = int(self.mission.get("auto_node_retries", DEFAULT_AUTO_NODE_RETRIES))
         self.total_runs = 0
         self.max_total_runs = int(workflow.metadata.get("max_total_node_runs") or DEFAULT_TOTAL_NODE_RUNS)
         sid = mission["session_id"]
@@ -116,10 +164,18 @@ class WorkflowMissionDriver:
         if not agent_id or self.agent_registry is None:
             return None
         try:
-            return self.agent_registry.get(agent_id)
+            agent = self.agent_registry.get(agent_id)
+            if agent is not None:
+                return agent
+            # Workflows guardados con el nombre visible («Nombre — Rol») en lugar del id
+            wanted = str(agent_id).strip().lower()
+            for cand in self.agent_registry.list_all():
+                labels = {cand.name.lower(), f"{cand.name} \u2014 {cand.role}".lower(), f"{cand.name} - {cand.role}".lower()}
+                if wanted in labels:
+                    return cand
         except Exception:
             logger.debug("Agente '%s' no disponible en el registro", agent_id, exc_info=True)
-            return None
+        return None
 
     def _label(self, node: WorkflowNode) -> str:
         agent = self._agent_for(node, {})
@@ -145,6 +201,51 @@ class WorkflowMissionDriver:
 
         walk(node_id)
         return found
+
+    @staticmethod
+    def _condition_field(cond: Any) -> str:
+        if cond is None:
+            return ""
+        if isinstance(cond, dict):
+            return str(cond.get("field") or "")
+        return str(getattr(cond, "field", "") or "")
+
+    def required_output_keys(self, node_id: str) -> List[str]:
+        """Campos del resultado de `node_id` de los que depende el grafo (bucles, decisiones, condiciones de aristas)."""
+        keys: List[str] = []
+        seen: Set[str] = set()
+        control = (NodeType.WHILE, NodeType.IF, NodeType.DECISION)
+
+        def key_of(cond: Any) -> Optional[str]:
+            f = self._condition_field(cond)
+            if f.startswith("output."):
+                return f[len("output."):]
+            if f.startswith("outputs."):
+                parts = f.split(".")
+                if len(parts) >= 3 and parts[1] == node_id:
+                    return ".".join(parts[2:])
+            return None
+
+        def add(cond: Any) -> None:
+            k = key_of(cond)
+            if k and k not in keys:
+                keys.append(k)
+
+        def walk(nid: str) -> None:
+            if nid in seen:
+                return
+            seen.add(nid)
+            for edge in self.workflow.edges:
+                if edge.from_node != nid:
+                    continue
+                add(getattr(edge, "condition", None))
+                target = self.workflow.nodes.get(edge.to_node)
+                if target is not None and target.node_type in control:
+                    add((target.control_config or {}).get("condition"))
+                    walk(target.node_id)
+
+        walk(node_id)
+        return keys
 
     def effective_downstream(self, node_id: str) -> List[str]:
         found: List[str] = []
@@ -209,6 +310,27 @@ class WorkflowMissionDriver:
                 "Corrige o mejora según la información recibida de los nodos anteriores (p. ej. los comentarios de un revisor).",
             ]
 
+        failure = self.failures.get(node.node_id)
+        if failure:
+            parts += [
+                "",
+                "=== TU INTENTO ANTERIOR FUE INTERRUMPIDO ===",
+                _clip(failure, 1500),
+                "Lo que ya escribiste en el directorio de trabajo sigue ahí: usa list_dir y read_file para ver tu avance y continúa "
+                "desde ahí en lugar de empezar de cero. Cambia de enfoque en lo que falló; no repitas la misma acción.",
+            ]
+
+        required = self.required_output_keys(node.node_id)
+        if required:
+            example = json.dumps({k: "<valor>" for k in required}, ensure_ascii=False)
+            parts += [
+                "",
+                "=== FORMATO OBLIGATORIO DE TU RESULTADO ===",
+                f"El flujo decide su siguiente paso leyendo estos campos de tu resultado: {', '.join(required)}.",
+                f"Tu finish DEBE incluir un objeto JSON con ellos, por ejemplo {example}. "
+                "Los booleanos van como true o false. El informe detallado puede ir en un campo \"feedback\" o junto al JSON.",
+            ]
+
         downstream = self.effective_downstream(node.node_id)
         if downstream:
             parts += ["", "=== QUIÉN RECIBIRÁ TU RESULTADO ==="]
@@ -226,6 +348,28 @@ class WorkflowMissionDriver:
         return "\n".join(parts)
 
     # ------------------------------------------------------------------ ejecución de nodos
+    def _finish_check(self, node: WorkflowNode) -> Optional[Callable[[str], Optional[str]]]:
+        """Rechaza el finish de un nodo si no trae los campos de los que depende el grafo (p. ej. `approved`)."""
+        required = self.required_output_keys(node.node_id)
+        if not required:
+            return None
+        wanted = set(required)
+
+        def check(summary: str) -> Optional[str]:
+            got = parse_structured_output(summary, prefer_keys=wanted)
+            missing = [k for k in required if k not in got]
+            if not missing:
+                return None
+            example = json.dumps({k: ("true o false" if k == "approved" else "<valor>") for k in required}, ensure_ascii=False)
+            return (
+                "🚨 [SUPERVISOR PRAXEON - RESULTADO INCOMPLETO]: el flujo necesita estos campos en tu resultado y faltan: "
+                f"{', '.join(missing)}.\n"
+                f"Vuelve a llamar a finish incluyendo un objeto JSON como {example}; el informe completo puede ir en un campo "
+                '"feedback" o antes del JSON.'
+            )
+
+        return check
+
     def _tool_filter(self, agent: Any) -> Optional[Callable[[str], Optional[str]]]:
         if agent is None:
             return None
@@ -258,6 +402,30 @@ class WorkflowMissionDriver:
         iteration = self.runs.get(node.node_id, 0) + 1
         self.runs[node.node_id] = iteration
         agent = self._agent_for(node, inputs)
+        configured = inputs.get("_target_agent_id") or node.agent_id
+        if configured and agent is None and self.agent_registry is not None:
+            raise RuntimeError(
+                f"El agente '{configured}' configurado en el nodo '{node.name}' no está registrado. "
+                "Elige un agente existente en el editor del workflow."
+            )
+        if self.on_node_started:
+            try:
+                self.on_node_started(
+                    node.node_id,
+                    {
+                        "node_id": node.node_id,
+                        "node_name": node.name,
+                        "agent_id": agent.agent_id if agent else node.agent_id,
+                        "agent_name": (agent.name if agent else None) or node.agent_id or "Agente",
+                        "agent_role": agent.role if agent else None,
+                        "iteration": iteration,
+                        "handoff_from": (self._prev_trace or {}).get("agent_name"),
+                        "parent_id": self._cursor,
+                        "retry_reason": self.failures.get(node.node_id),
+                    },
+                )
+            except Exception:
+                logger.debug("No se pudo emitir el inicio del nodo", exc_info=True)
         briefing = self.build_briefing(node, inputs, iteration)
         llm = self.llm_for_agent(agent)
 
@@ -280,8 +448,24 @@ class WorkflowMissionDriver:
                     f"IDENTIDAD DEL AGENTE: {agent.name} — rol {agent.role}.\n{agent.system_prompt.strip()}\n\n"
                     "Actúas como un nodo de un workflow orquestado por PRAXEON; sigue exactamente la misión de tu nodo.\n\n"
                 )
+            trace = {
+                "node_id": node.node_id,
+                "node_name": node.name,
+                "agent_id": base["agent_id"],
+                "agent_name": base["agent_name"] or base["agent_id"] or "Agente",
+                "agent_role": base["agent_role"],
+                "iteration": iteration,
+                "handoff_from": (self._prev_trace or {}).get("agent_name") if self._prev_trace else None,
+            }
             steps_cfg = node.metadata.get("max_steps") if isinstance(node.metadata, dict) else None
-            max_steps = max(1, min(int(steps_cfg or DEFAULT_NODE_STEPS), MAX_NODE_STEPS))
+            # metadata.max_steps: ausente = por defecto; 0 = sin límite; N = máximo de N pasos (tope MAX_NODE_STEPS)
+            if steps_cfg is None or steps_cfg == "":
+                # sin ajuste propio, el nodo hereda «sin límite» si la misión se lanzó así
+                max_steps = 0 if int(self.mission.get("max_steps") or 0) == 0 and "max_steps" in self.mission else DEFAULT_NODE_STEPS
+            elif int(steps_cfg) <= 0:
+                max_steps = 0
+            else:
+                max_steps = min(int(steps_cfg), MAX_NODE_STEPS)
             result = self.run_agent_loop(
                 self.mission,
                 llm,
@@ -294,9 +478,19 @@ class WorkflowMissionDriver:
                 owns_session=False,
                 role_preamble=preamble,
                 tool_filter=self._tool_filter(agent),
+                trace=trace,
+                start_parent_id=self._cursor,
+                finish_check=self._finish_check(node),
             )
+            if result.get("last_action_id"):
+                self._cursor = result["last_action_id"]
+                self._prev_trace = trace
             if self.mission.get("stopped"):
                 raise RuntimeError("Misión detenida por el operador")
+            if result.get("forced_termination"):
+                raise RuntimeError(
+                    f"El supervisor interrumpió al agente del nodo '{node.node_id}' (bucle de acciones sin fundamento): {result.get('final_answer')}"
+                )
             response = result.get("final_answer")
             if not response:
                 raise RuntimeError(
@@ -304,11 +498,30 @@ class WorkflowMissionDriver:
                 )
             output = {**base, "response": str(response), "status": "completed", "steps": result.get("steps_used", 0)}
 
-        structured = parse_structured_output(output["response"])
+        structured = parse_structured_output(output["response"], prefer_keys=set(self.required_output_keys(node.node_id)))
         for key, value in structured.items():
             if key not in RESERVED_OUTPUT_KEYS:
                 output[key] = value
         self.history.setdefault(node.node_id, []).append({"iteration": iteration, "response": output["response"]})
+        self.failures.pop(node.node_id, None)
+        if self.on_node_completed:
+            try:
+                self.on_node_completed(
+                    node.node_id,
+                    {
+                        "node_id": node.node_id,
+                        "node_name": node.name,
+                        "agent_id": base["agent_id"],
+                        "agent_name": base["agent_name"] or base["agent_id"],
+                        "agent_role": base["agent_role"],
+                        "iteration": iteration,
+                        "steps": output.get("steps", 0),
+                        "summary": output["response"],
+                        "simulated": bool(output.get("simulated")),
+                    },
+                )
+            except Exception:
+                logger.debug("No se pudo emitir el hito del nodo", exc_info=True)
         return output
 
     # ------------------------------------------------------------------ bucle del grafo
@@ -369,6 +582,11 @@ class WorkflowMissionDriver:
             self.workflow_service.unregister_external_engine(engine.context.execution_id)
         return engine.context.status == WorkflowStatus.COMPLETED
 
+    def _unattended(self) -> bool:
+        """Misión autónoma (Full Access confirmado por el operador): no se pide intervención paso a paso."""
+        m = self.mission
+        return bool((m.get("autonomous") or m.get("allow_unattended_execution")) and not m.get("require_step_confirmation"))
+
     def _failed_node(self) -> Optional[str]:
         for nid, st in self.engine.context.node_states.items():
             if st == NodeStatus.FAILED:
@@ -389,6 +607,17 @@ class WorkflowMissionDriver:
         with engine._lock:
             engine.context.variables["_pending_failure"] = {"node_id": nid, "error": str(error)}
             engine.context.variables.pop("_failure_decision", None)
+        self.failures[nid] = str(error)
+        if self._unattended() and self.auto_retried.get(nid, 0) < self.max_auto_retries:
+            # Full Access autónomo: el operador no interviene hasta que el workflow agote sus recursos
+            self.auto_retried[nid] = self.auto_retried.get(nid, 0) + 1
+            logger.warning(
+                "Nodo '%s' fallido (%s): reintento automático %d/%d", nid, error, self.auto_retried[nid], self.max_auto_retries
+            )
+            with engine._lock:
+                engine.context.variables.pop("_pending_failure", None)
+            engine.context.node_retries[nid] = 0
+            return engine.retry_node(nid)
         self._sync()
         self.workflow_service.announce_failure(engine, nid, node.name, str(error))
         timeout = self.mission.get("approval_timeout_seconds")

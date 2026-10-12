@@ -75,7 +75,7 @@ class RunMissionRequest(BaseModel):
     base_url: Optional[str] = Field(None, description="URL base opcional para endpoints locales o personalizados")
     supervisor: Optional[str] = Field("laya", description="Motor de supervisión ('laya', 'typesafe', 'cascade')")
     decision_model: Optional[Any] = Field(None, description="Configuración tipada del modelo System-1 (DecisionModelConfig)")
-    max_steps: Optional[int] = Field(25, ge=1, le=500, description="Límite máximo de pasos para la misión (por defecto 25, ampliable hasta 500)")
+    max_steps: Optional[int] = Field(25, ge=0, le=100000, description="Límite máximo de pasos para la misión (por defecto 25). 0 = sin límite: la misión solo termina al concluir, por un fallo irrecuperable o cuando el operador la detiene")
     step_delay_ms: Optional[int] = Field(900, description="Retardo en ms entre pasos para visualización en tiempo real")
     full_access_confirmed: bool = Field(False, description="El operador confirmó explícitamente (doble confirmación) la activación de Full Access")
     require_step_confirmation: bool = Field(False, description="Opt-in: exigir confirmación humana por paso incluso en Full Access autorizado")

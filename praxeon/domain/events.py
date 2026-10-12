@@ -57,6 +57,8 @@ class EventType(str, Enum):
     INTERVENTION_APPLIED = "intervention.applied"
     SESSION_ROLLBACK = "session.rollback"
     SESSION_COMPLETED = "session.completed"
+    WORKFLOW_NODE_STARTED = "workflow.node_started"
+    WORKFLOW_NODE_COMPLETED = "workflow.node_completed"
 
 
 class RuntimeEvent(BaseModel):

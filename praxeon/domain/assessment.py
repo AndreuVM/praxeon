@@ -54,6 +54,15 @@ class RiskLevel(str, Enum):
     HIGH = "high"
     CRITICAL = "critical"
 
+    @classmethod
+    def _missing_(cls, value):
+        """Acepta cualquier capitalización («HIGH», «High»): la API y los formularios no deben depender de ella."""
+        if isinstance(value, str):
+            for member in cls:
+                if member.value == value.strip().lower():
+                    return member
+        return None
+
 
 class RiskAssessment(BaseModel):
     """Evaluación objetiva del riesgo operacional de una herramienta."""

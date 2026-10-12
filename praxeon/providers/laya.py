@@ -222,34 +222,46 @@ class LayaProvider(BaseReasoningProvider):
         req_evidence = cand.get("requires_evidence") or []
         evidence_lower = [e.lower() for e in ctx.active_evidence]
 
-        # 1. Comprobación de repetición o bucle frente a pasos previos
-        recent_tools = [h.get("tool") for h in ctx.history_window if h.get("tool")]
-        repetition_count = recent_tools.count(tool_name) if tool_name else 0
+        # 1. Comprobación de repetición o bucle frente a pasos previos.
+        # Un bucle es repetir la MISMA acción sobre el MISMO objetivo (mismo archivo, mismo comando), no usar
+        # varias veces una herramienta: crear cinco archivos distintos con edit_file es progreso, no un ciclo.
+        write_tools = ("edit_file", "write_file")
+
+        def _target(a: Dict[str, Any]) -> str:
+            return str(
+                a.get("path") or a.get("file") or a.get("command") or a.get("cmd") or a.get("raw") or a.get("query") or ""
+            ).strip().lower()
+
+        def _content(a: Dict[str, Any]) -> str:
+            return str(a.get("content") or a.get("diff") or "")
 
         cmd_str = str(args.get("command") or args.get("cmd") or args.get("raw") or desc).strip().lower()
         target_path = str(args.get("path") or args.get("file") or "").strip().lower()
+        my_target = _target(args)
+
+        history = [h for h in ctx.history_window if isinstance(h, dict)]
+        same_target = [
+            h for h in history
+            if (h.get("tool") or "") == tool_name and _target(h.get("arguments") or {}) == my_target
+        ]
+        if tool_name in write_tools:
+            # Reescribir un archivo con contenido distinto es refinar; solo el contenido idéntico es repetición
+            same_target = [h for h in same_target if _content(h.get("arguments") or {}) == _content(args)]
+        repetition_count = len(same_target) if (tool_name and my_target) else 0
 
         is_loop = 0.05
-        if repetition_count >= 3:
+        if repetition_count >= 2:
             is_loop = 0.88
-        elif repetition_count >= 2:
-            is_loop = 0.65
+        elif repetition_count >= 1:
+            is_loop = 0.65 if tool_name in ("run_command", "run_script") else 0.88
 
         # Detección de repetición del mismo comando exacto
         recent_commands = [
             str(h.get("arguments", {}).get("command") or h.get("operation") or "").strip().lower()
-            for h in ctx.history_window if isinstance(h, dict)
+            for h in history
         ]
-        if cmd_str and recent_commands.count(cmd_str) >= 2:
+        if cmd_str and tool_name not in write_tools and recent_commands.count(cmd_str) >= 2:
             is_loop = max(is_loop, 0.85)
-
-        # Detección de repetición de la misma ruta de archivo
-        recent_paths = [
-            str(h.get("arguments", {}).get("path") or h.get("arguments", {}).get("file") or "").strip().lower()
-            for h in ctx.history_window if isinstance(h, dict) and h.get("arguments")
-        ]
-        if target_path and recent_paths.count(target_path) >= 1:
-            is_loop = max(is_loop, 0.88)
 
         # Detección de estancamiento tras fallos consecutivos
         recent_obs = [str(h.get("observation", "")).lower() for h in ctx.history_window[-3:] if isinstance(h, dict)]
