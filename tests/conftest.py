@@ -1,7 +1,15 @@
 """Configuración global de Pytest y categorización automática por niveles (unit, integration, e2e, security, providers, benchmark)."""
 
-import pytest
+import os
+import tempfile
 from pathlib import Path
+
+import pytest
+
+# Aislamiento: ningún test debe escribir en la caché real del usuario (.jev_cache / .praxeon_cache).
+# Antes, cada ejecución de la suite añadía workflows duplicados (p. ej. «MyReviewLoop») a la lista guardada.
+# Se fija antes de que se cree cualquier servicio global; los tests que necesitan otra ruta la sobreescriben.
+os.environ.setdefault("PRAXEON_CACHE_DIR", tempfile.mkdtemp(prefix="praxeon_test_cache_"))
 
 
 def pytest_collection_modifyitems(config, items):
