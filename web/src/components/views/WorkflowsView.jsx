@@ -28,6 +28,9 @@ import {
 import {
   fetchWorkflows,
   setWorkflowActive,
+  getWorkflowExecution,
+  approveExecutionNode,
+  resolveFailedNode,
   createWorkflow,
   getWorkflowDetail,
   addWorkflowNode,
@@ -48,7 +51,7 @@ import {
   fetchAgents,
 } from '../../services/api';
 
-export default function WorkflowsView({ session: _session = {}, events: _events = [] }) {
+export default function WorkflowsView({ session: _session = {}, events: _events = [], followExecution = null }) {
   const [workflows, setWorkflows] = useState([]);
   const [activeWorkflowId, setActiveWorkflowId] = useState(null);
   const [workflow, setWorkflow] = useState(null);
@@ -203,12 +206,56 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
     }
   }, [activeWorkflowId]);
 
-  // Nodos normalizados como Array siempre
+  // Ejecución de una misión gobernada por este workflow: el lienzo muestra su avance nodo a nodo
+  const [liveExecution, setLiveExecution] = useState(null);
+  const followId = followExecution?.executionId || null;
+  const followWorkflowId = followExecution?.workflowId || null;
+  useEffect(() => {
+    if (!followId) {
+      setLiveExecution(null);
+      return undefined;
+    }
+    if (followWorkflowId) setActiveWorkflowId(followWorkflowId);
+    let stopped = false;
+    const poll = async () => {
+      try {
+        const res = await getWorkflowExecution(followId);
+        if (!stopped && res?.data) setLiveExecution(res.data);
+      } catch {
+        /* la ejecución aún no existe o terminó: se reintenta en el siguiente ciclo */
+      }
+    };
+    poll();
+    const timer = setInterval(poll, 1000);
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+    };
+  }, [followId, followWorkflowId]);
+
+  // Nodos normalizados como Array siempre (con el estado en vivo de la misión si se está siguiendo una)
   const nodesArray = useMemo(() => {
     if (!workflow || !workflow.nodes) return [];
-    if (Array.isArray(workflow.nodes)) return workflow.nodes;
-    return Object.values(workflow.nodes);
-  }, [workflow]);
+    const base = Array.isArray(workflow.nodes) ? workflow.nodes : Object.values(workflow.nodes);
+    if (!liveExecution || liveExecution.workflow_id !== workflow.workflow_id) return base;
+    const states = liveExecution.node_states || {};
+    const outputs = liveExecution.node_outputs || {};
+    return base.map((n) => {
+      const nid = n.node_id || n.id;
+      return { ...n, status: states[nid] || 'PENDING', outputs: outputs[nid] || {} };
+    });
+  }, [workflow, liveExecution]);
+
+  const pendingFailure = liveExecution?.variables?._pending_failure || null;
+  const handleResolveFailure = async (action) => {
+    if (!pendingFailure) return;
+    try {
+      await resolveFailedNode(followId, pendingFailure.node_id, action);
+      addLog('WORKFLOW', `Nodo '${pendingFailure.node_id}': decisión '${action}'.`);
+    } catch (err) {
+      addLog('ERROR', `No se pudo aplicar la decisión: ${err.message}`);
+    }
+  };
 
   // Aristas normalizadas como Array
   const edgesArray = useMemo(() => {
@@ -747,12 +794,12 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
   const handleApproveNode = async (nodeId, approved) => {
     if (!activeWorkflowId) return;
     try {
-      await approveWorkflowNode(
-        activeWorkflowId,
-        nodeId,
-        approved,
-        approved ? 'Aprobado desde supervisor visual' : 'Rechazado desde supervisor visual'
-      );
+      const comment = approved ? 'Aprobado desde supervisor visual' : 'Rechazado desde supervisor visual';
+      if (liveExecution && liveExecution.workflow_id === activeWorkflowId) {
+        await approveExecutionNode(followId, nodeId, approved, comment);
+      } else {
+        await approveWorkflowNode(activeWorkflowId, nodeId, approved, comment);
+      }
       addLog('APPROVAL', `Nodo '${nodeId}' ${approved ? 'APROBADO' : 'RECHAZADO'}.`);
       await loadActiveWorkflow(activeWorkflowId);
     } catch (err) {
@@ -954,6 +1001,47 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
         position: 'relative',
       }}
     >
+      {liveExecution && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+            padding: '6px 14px',
+            backgroundColor: pendingFailure ? 'rgba(248, 81, 73, 0.12)' : 'rgba(56, 189, 248, 0.10)',
+            borderBottom: `1px solid ${pendingFailure ? 'rgba(248, 81, 73, 0.4)' : 'rgba(56, 189, 248, 0.3)'}`,
+            fontSize: '11.5px',
+            color: pendingFailure ? '#fca5a5' : '#7dd3fc',
+          }}
+        >
+          <span style={{ fontWeight: 700 }}>Misión en curso con este workflow · {liveExecution.status}</span>
+          {pendingFailure && (
+            <>
+              <span style={{ flex: 1 }}>
+                El nodo «{pendingFailure.node_id}» falló: {String(pendingFailure.error || '').slice(0, 200)}
+              </span>
+              {['retry', 'skip', 'abort'].map((action) => (
+                <button
+                  key={action}
+                  onClick={() => handleResolveFailure(action)}
+                  style={{
+                    padding: '3px 10px',
+                    borderRadius: '5px',
+                    border: '1px solid #475569',
+                    backgroundColor: action === 'abort' ? '#3b1c1c' : '#1e293b',
+                    color: '#f8fafc',
+                    fontSize: '11px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {action === 'retry' ? 'Reintentar' : action === 'skip' ? 'Omitir nodo' : 'Abortar'}
+                </button>
+              ))}
+            </>
+          )}
+        </div>
+      )}
+
       {/* Barra de Herramientas Superior */}
       <div
         style={{

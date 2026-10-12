@@ -191,7 +191,7 @@ def test_agent_tool_restrictions_are_enforced_inside_the_node(runtime, tmp_path)
     assert execution.status.value == "COMPLETED"
 
 
-def test_node_failure_stops_the_mission_without_inventing_an_answer(runtime, tmp_path):
+def _failing_workflow(runtime):
     from praxeon.workflows.models import NodeType, WorkflowDefinition, WorkflowEdge, WorkflowNode
 
     wf = WorkflowDefinition(
@@ -201,27 +201,88 @@ def test_node_failure_stops_the_mission_without_inventing_an_answer(runtime, tmp
             "start": WorkflowNode(node_id="start", name="Start", node_type=NodeType.START),
             "work": WorkflowNode(node_id="work", name="Trabajar", node_type=NodeType.AGENT, agent_id="ag_dev_01",
                                  metadata={"mission": "Haz algo", "max_steps": 2}),
+            "after": WorkflowNode(node_id="after", name="Cerrar", node_type=NodeType.AGENT, agent_id="ag_rev_01",
+                                  metadata={"mission": "Resume lo hecho"}),
             "end": WorkflowNode(node_id="end", name="End", node_type=NodeType.END),
         },
         edges=[
             WorkflowEdge(edge_id="e1", from_node="start", to_node="work"),
-            WorkflowEdge(edge_id="e2", from_node="work", to_node="end"),
+            WorkflowEdge(edge_id="e2", from_node="work", to_node="after"),
+            WorkflowEdge(edge_id="e3", from_node="after", to_node="end"),
         ],
         metadata={"active": True},
     )
     runtime.workflow_editor_service.register_workflow(wf)
-    # El agente nunca llama a finish: agota sus pasos
-    llm = ScriptedLLM(['Thought: sigo\nAction: run_command({"command": "echo %d"})' % i for i in range(20)])
+
+
+def _never_finishes(n=2):
+    return ['Thought: sigo\nAction: run_command({"command": "echo %d"})' % i for i in range(n)]
+
+
+def _wait_pending_failure(runtime, exec_id):
+    def pending():
+        ex = runtime.workflow_service.get_execution(exec_id)
+        return bool(ex and ex.variables.get("_pending_failure"))
+
+    return _wait(pending, 60)
+
+
+def test_failed_node_asks_the_operator_and_abort_ends_without_inventing_an_answer(runtime, tmp_path):
+    _failing_workflow(runtime)
+    llm = ScriptedLLM(_never_finishes(20))  # el agente nunca llama a finish
     with patch("praxeon.agent_llm.create_agent_llm", return_value=llm):
         meta = runtime.start_mission(goal="Trabaja", session_id="wf-m3", llm_provider="scripted",
                                      workspace_root=str(tmp_path), workflow_id="wf_fail", step_delay_ms=0)
-        sid = meta["session_id"]
+        sid, exec_id = meta["session_id"], "wfx-wf-m3"
+        assert _wait_pending_failure(runtime, exec_id), "la misión debía quedar esperando la decisión del operador"
+        # Mientras decide, la misión sigue viva (no se dio por terminada ni se inventó respuesta)
+        assert runtime._running_missions[sid].get("status") is None
+        assert runtime.workflow_service.resolve_failed_node(exec_id, "after", "abort") is False  # nodo equivocado
+        assert runtime.workflow_service.resolve_failed_node(exec_id, "work", "abort") is True
+        assert _wait(lambda: runtime._running_missions.get(sid, {}).get("status") is not None, 30)
+
+    execution = runtime.workflow_service.get_execution(exec_id)
+    assert execution.status.value == "FAILED" and execution.node_states["work"].value == "FAILED"
+    assert runtime.get_session_summary(sid)["status"] == "Intervened"
+    with pytest.raises(ValueError):
+        runtime.workflow_service.resolve_failed_node(exec_id, "work", "explotar")
+
+
+def test_failed_node_retry_runs_it_again_and_the_flow_continues(runtime, tmp_path):
+    _failing_workflow(runtime)
+    llm = ScriptedLLM(_never_finishes(2) + [finish("Trabajo hecho tras el reintento, con detalle suficiente."),
+                                              finish("Cierre final del flujo.")])
+    with patch("praxeon.agent_llm.create_agent_llm", return_value=llm):
+        meta = runtime.start_mission(goal="Trabaja", session_id="wf-m4", llm_provider="scripted",
+                                     workspace_root=str(tmp_path), workflow_id="wf_fail", step_delay_ms=0)
+        sid, exec_id = meta["session_id"], "wfx-wf-m4"
+        assert _wait_pending_failure(runtime, exec_id)
+        assert runtime.workflow_service.resolve_failed_node(exec_id, "work", "retry") is True
         assert _wait(lambda: runtime._running_missions.get(sid, {}).get("status") is not None, 60)
 
-    execution = runtime.workflow_service.get_execution(f"wfx-{sid}")
-    assert execution.status.value == "FAILED"
-    assert execution.node_states["work"].value == "FAILED"
-    assert runtime.get_session_summary(sid)["status"] == "Intervened"
+    execution = runtime.workflow_service.get_execution(exec_id)
+    assert execution.status.value == "COMPLETED"
+    assert "Trabajo hecho tras el reintento" in execution.node_outputs["work"]["response"]
+    assert runtime.get_session_summary(sid)["status"] == "Completed"
+
+
+def test_failed_node_skip_continues_with_the_next_node(runtime, tmp_path):
+    _failing_workflow(runtime)
+    llm = ScriptedLLM(_never_finishes(2) + [finish("Cierre sin el nodo omitido, con detalle suficiente.")])
+    with patch("praxeon.agent_llm.create_agent_llm", return_value=llm):
+        meta = runtime.start_mission(goal="Trabaja", session_id="wf-m5", llm_provider="scripted",
+                                     workspace_root=str(tmp_path), workflow_id="wf_fail", step_delay_ms=0)
+        sid, exec_id = meta["session_id"], "wfx-wf-m5"
+        assert _wait_pending_failure(runtime, exec_id)
+        assert runtime.workflow_service.resolve_failed_node(exec_id, "work", "skip") is True
+        assert _wait(lambda: runtime._running_missions.get(sid, {}).get("status") is not None, 60)
+
+    execution = runtime.workflow_service.get_execution(exec_id)
+    assert execution.status.value == "COMPLETED"
+    assert execution.node_outputs["work"]["skipped_by_operator"] is True
+    assert "Cierre sin el nodo omitido" in execution.node_outputs["after"]["response"]
+    # el nodo siguiente sabe que el anterior fue omitido (lo recibe como información, no como silencio)
+    assert "omitido por el operador" in llm.calls[-1]["system"].lower()
 
 
 def test_node_mission_resolution_order():

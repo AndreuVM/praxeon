@@ -70,6 +70,7 @@ export default function App() {
 
   const [runtimeActive, setRuntimeActive] = useState(true);
   const [isRunning, setIsRunning] = useState(false);
+  const [followExecution, setFollowExecution] = useState(null); // misión gobernada por workflow
   const [isPaused, setIsPaused] = useState(false);
   const [isProposeOpen, setIsProposeOpen] = useState(false);
   const [isSessionsOpen, setIsSessionsOpen] = useState(false);
@@ -772,6 +773,7 @@ export default function App() {
       sessionId: newSid,
       status: 'Ready',
       agent: 'CodingAgent',
+        setFollowExecution(workflow_id ? { workflowId: workflow_id, executionId: `wfx-${sid}` } : null);
       goal: 'Nueva sesión limpia. Introduce un prompt para iniciar la misión.',
       execution_mode: missionConfig.executionMode || 'local_restricted',
       metrics: { totalDecisions: 0, allowed: 0, blocked: 0, review: 0 },
@@ -1264,7 +1266,7 @@ export default function App() {
                 />
               )}
 
-              {activeNav === 'workflows' && <WorkflowsView />}
+              {activeNav === 'workflows' && <WorkflowsView followExecution={followExecution} />}
 
               {activeNav === 'providers' && <ProvidersView />}
 

@@ -421,3 +421,28 @@ Tests: `tests/security/test_final_security_hardening.py` (19). Suite: **954 pasa
 - **Tests:** `tests/test_full_access_no_step_confirmation.py` (12): con autorización, lectura fuera del workspace, `git push` y operación desconocida pasan a `ALLOW`; sin autorización o fuera de Full Access siguen en `REVIEW`; `rm -rf /` sigue en `BLOCK`; la API solo autoriza con `full_access_confirmed`. Suite: 990 pasados, 1 omitido.
 
 **Riesgo asumido (explícito):** con esta decisión, una sesión Full Access autorizada ejecuta sin preguntar acciones de riesgo alto, incluida la lectura de rutas sensibles fuera del workspace (p. ej. `~/.ssh`) y mutaciones remotas (`git push`). Si más adelante se quiere un término medio, `require_step_confirmation` o una lista de rutas/operaciones que sigan pidiendo confirmación son el punto de extensión.
+
+
+### 10.14 Rutas inexistentes: aviso explícito al agente
+
+**Hallazgo del propietario:** las acciones se bloqueaban correctamente; el modelo alucinaba rutas inexistentes dentro del proyecto. Se confirmó que `read_file`/`view_file` sobre una ruta inexistente se vetan con `REPLAN` (`UNGROUNDED_FILE_NOT_FOUND`).
+
+**Mejoras:** (1) el agente recibe ahora una observación explícita ("la ruta X NO EXISTE… no la reintentes… usa `list_dir`") con el contenido real del directorio existente más cercano, en lugar del mensaje genérico de "poda"; (2) la comprobación de existencia resolvía las rutas relativas contra el cwd del servidor y no contra el `workspace_root` de la sesión (podía vetar lecturas válidas, p. ej. en la app de escritorio). Tests: `tests/test_missing_path_feedback.py`.
+
+### 10.15 Misiones gobernadas por workflow (diseño del propietario)
+
+**Comportamiento pedido:** el usuario guarda los workflows que quiera y los activa o no; al lanzar una tarea con un workflow activo, la tarea se ejecuta cumpliendo sus pasos (nodos visibles como siempre), invocando a los agentes necesarios, respetando los bucles entre agentes y pasando la información de forma ordenada y completa indicando la misión de cada uno.
+
+**Implementación:**
+- **Activación:** `metadata.active` del workflow (`POST /v1/workflows/{id}/activate|deactivate`, campo `active` en el listado). Solo los activos pueden gobernar una tarea; el lanzador de misiones los lista y envía `workflow_id`.
+- **Bucle ReAct reutilizable:** el bucle supervisado del LLM se extrajo del worker a `_run_llm_loop` (sin cambio de comportamiento para misiones normales) con prefijo de ids propio, sin poseer la sesión, preámbulo de identidad del agente y filtro de herramientas.
+- **`WorkflowMissionDriver` (`praxeon/workflows/mission_driver.py`):** el `WorkflowEngine` manda (orden, bifurcaciones, `WHILE`, aprobaciones humanas); cada nodo `AGENT`/`DELEGATE`/`TASK` abstracto se ejecuta como mini-misión supervisada (misma política, recibos y sandbox) vía el nuevo hook `node_runner` del motor.
+- **Briefing por nodo:** objetivo global, misión del nodo (`metadata.mission` > `inputs.mission/instruction/task/prompt` > nombre), rol y `system_prompt` del agente, **resultado íntegro** de los nodos de los que depende (atravesando nodos de control) con quién lo produjo y con qué misión, su intento anterior cuando el nodo se repite en un bucle, y quién recibirá su resultado. Solo el prompt se recorta si no cabe; el texto completo queda en el estado del workflow.
+- **Bucles entre agentes:** una respuesta final JSON (p. ej. `{"approved": false, "feedback": "…"}`) se expone como campos del output del nodo, por lo que las condiciones de `WHILE`/`DECISION`/aristas operan sobre salidas reales. Límites: pasos por nodo (`metadata.max_steps`, 12 por defecto), iteraciones del `WHILE` y tope total de ejecuciones de nodos (200).
+- **Agentes:** respetan `allowed_tools`/`forbidden_tools`; usan su propio proveedor/modelo si lo personalizaron y, si no, el elegido al lanzar la misión.
+- **Supervisión por nodo:** la detección de bucles/evidencia del proveedor se evalúa con la trayectoria del nodo (repetir acciones parecidas entre iteraciones no es un bucle); un veredicto breve es un `finish` válido en un nodo de workflow. Hallado por el test de integración, que lo detectó como veto `HIGH_LOOP_PROBABILITY`.
+- **Fallo de nodo:** agotados los reintentos, la misión **se detiene y pide decisión** (aviso `approval.requested` con `kind: node_failure` + notificación de escritorio): `POST /v1/workflows/executions/{id}/nodes/{nid}/resolve` con `retry | skip | abort`. No se inventa respuesta final.
+- **Visibilidad:** el estado se persiste tras cada paso; la vista Workflows sigue la ejecución de la misión (nodo a nodo, aprobaciones por nodo y botones de decisión de fallo).
+- **Tests:** `tests/test_workflow_governed_missions.py` (9), incluido un flujo completo desarrollador → revisor (rechaza) → desarrollador (recibe su intento y el feedback) → revisor (aprueba) → aprobación humana, con LLM guionizado que registra los prompts, y los tres desenlaces de un nodo fallido. Suite: 1003 pasados, 1 omitido.
+
+**Límites conocidos:** los nodos se ejecutan secuencialmente (las ramas paralelas no se ejecutan a la vez en una misión); no se ha probado con un modelo real; la UI no se ha comprobado visualmente; las misiones con workflow no reanudan tras reiniciar el servidor.

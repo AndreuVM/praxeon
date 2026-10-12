@@ -67,6 +67,10 @@ class ApproveNodeRequest(BaseModel):
     comment: str = ""
 
 
+class ResolveFailedNodeRequest(BaseModel):
+    action: str  # retry | skip | abort
+
+
 
 class ConnectNodesRequest(BaseModel):
     from_node: str
@@ -379,6 +383,20 @@ def approve_execution_node(
     if ok is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ejecución no activa.")
     return APIResponse(data={"success": ok, "execution_id": execution_id, "node_id": node_id})
+
+
+@router.post("/executions/{execution_id}/nodes/{node_id}/resolve", response_model=APIResponse[Dict[str, Any]])
+def resolve_failed_node(execution_id: str, node_id: str, payload: ResolveFailedNodeRequest):
+    """Decide qué hacer con un nodo fallido de una misión con workflow: retry | skip | abort."""
+    try:
+        ok = _workflow_service().resolve_failed_node(execution_id, node_id, payload.action)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    if ok is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ejecución no activa.")
+    if not ok:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="El nodo no está esperando una decisión.")
+    return APIResponse(data={"execution_id": execution_id, "node_id": node_id, "action": payload.action})
 
 
 @router.get("/templates/canonical", response_model=APIResponse[List[Dict[str, Any]]])

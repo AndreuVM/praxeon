@@ -524,6 +524,32 @@ export async function fetchWorkflows() {
   return await res.json();
 }
 
+// Ejecuciones de workflow (incluidas las de misiones gobernadas por un workflow)
+export async function getWorkflowExecution(executionId) {
+  const res = await authFetch(`${API_BASE}/workflows/executions/${encodeURIComponent(executionId)}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+  return await res.json();
+}
+
+export async function approveExecutionNode(executionId, nodeId, approved = true, comment = '') {
+  const res = await authFetch(
+    `${API_BASE}/workflows/executions/${encodeURIComponent(executionId)}/nodes/${encodeURIComponent(nodeId)}/approve`,
+    { method: 'POST', body: JSON.stringify({ approved, comment }) }
+  );
+  if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+  return await res.json();
+}
+
+// Decisión del operador sobre un nodo fallido: 'retry' | 'skip' | 'abort'
+export async function resolveFailedNode(executionId, nodeId, action) {
+  const res = await authFetch(
+    `${API_BASE}/workflows/executions/${encodeURIComponent(executionId)}/nodes/${encodeURIComponent(nodeId)}/resolve`,
+    { method: 'POST', body: JSON.stringify({ action }) }
+  );
+  if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+  return await res.json();
+}
+
 // Activa/desactiva un workflow: solo los activos pueden gobernar una tarea
 export async function setWorkflowActive(workflowId, active) {
   const action = active ? 'activate' : 'deactivate';

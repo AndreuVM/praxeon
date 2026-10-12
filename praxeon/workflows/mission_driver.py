@@ -333,6 +333,9 @@ class WorkflowMissionDriver:
                     break
                 while self.mission.get("paused") and not self.mission.get("stopped"):
                     time.sleep(0.2)
+                if engine.context.status == WorkflowStatus.FAILED and self._await_failure_decision():
+                    self._sync()
+                    continue
                 if engine.context.status in TERMINAL:
                     break
                 if engine.check_global_timeout():
@@ -365,6 +368,52 @@ class WorkflowMissionDriver:
             self._sync()
             self.workflow_service.unregister_external_engine(engine.context.execution_id)
         return engine.context.status == WorkflowStatus.COMPLETED
+
+    def _failed_node(self) -> Optional[str]:
+        for nid, st in self.engine.context.node_states.items():
+            if st == NodeStatus.FAILED:
+                return nid
+        return None
+
+    def _await_failure_decision(self) -> bool:
+        """Un nodo agotó sus reintentos: la misión se detiene y pide decisión (retry | skip | abort).
+
+        Devuelve True si el operador reanudó el flujo (retry/skip); False si abortó, se detuvo la misión o no hay nodo fallido.
+        """
+        engine = self.engine
+        nid = self._failed_node()
+        if nid is None:
+            return False
+        node = self.workflow.nodes[nid]
+        error = (engine.context.node_outputs.get(nid) or {}).get("error") or engine.context.error_message or "error desconocido"
+        with engine._lock:
+            engine.context.variables["_pending_failure"] = {"node_id": nid, "error": str(error)}
+            engine.context.variables.pop("_failure_decision", None)
+        self._sync()
+        self.workflow_service.announce_failure(engine, nid, node.name, str(error))
+        timeout = self.mission.get("approval_timeout_seconds")
+        deadline = time.time() + float(timeout) if timeout else None
+        decision = None
+        while True:
+            if self.mission.get("stopped"):
+                break
+            with engine._lock:
+                chosen = engine.context.variables.get("_failure_decision")
+            if chosen and chosen.get("node_id") == nid:
+                decision = chosen.get("action")
+                break
+            if deadline is not None and time.time() >= deadline:
+                break
+            time.sleep(self.poll_seconds)
+        with engine._lock:
+            engine.context.variables.pop("_pending_failure", None)
+            engine.context.variables.pop("_failure_decision", None)
+        if decision == "retry":
+            engine.context.node_retries[nid] = 0
+            return engine.retry_node(nid)
+        if decision == "skip":
+            return engine.skip_node(nid)
+        return False
 
     def final_answer(self) -> str:
         """Respuesta final: la del último nodo de trabajo completado, o el motivo del fallo."""

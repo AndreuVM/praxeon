@@ -1390,6 +1390,24 @@ class WorkflowEngine:
         return False
 
     @_synchronized
+    def skip_node(self, node_id: str, reason: str = "Omitido por el operador") -> bool:
+        """Da por resuelto un nodo fallido sin ejecutarlo (decisión del operador) y reanuda el flujo."""
+        if self.context.node_states.get(node_id) not in (NodeStatus.FAILED, NodeStatus.TIMEOUT, NodeStatus.CANCELLED):
+            return False
+        self.context.node_states[node_id] = NodeStatus.COMPLETED
+        self.context.node_outputs[node_id] = {"status": "skipped", "skipped_by_operator": True, "response": f"({reason})"}
+        self.context.execution_history.append(node_id)
+        self.context.node_retry_after.pop(node_id, None)
+        if self.context.status in (WorkflowStatus.FAILED, WorkflowStatus.CANCELLED):
+            self.context.status = WorkflowStatus.RUNNING
+            self.context.error_message = None
+            self.context.finished_at = None
+        self._propagate_skips(node_id)
+        if self._should_complete_workflow():
+            self._finalize_terminal_state()
+        return True
+
+    @_synchronized
     def backtrack_to_node(self, target_node_id: str) -> bool:
         """Ejecuta un retroceso determinista (backtrack) al estado inmediatamente anterior al nodo especificado.
         
