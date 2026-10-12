@@ -315,10 +315,15 @@ export default function MissionChat({
     setMessages((prev) => [...prev, userMsg, assistantMsg]);
     setInputText('');
 
+    const isFullAccess = executionMode === 'full_access';
+
     // Disparar inicio de misión en backend
     onStartMission?.({
       goal: task,
       execution_mode: executionMode,
+      full_access_confirmed: isFullAccess && Boolean(fullAccessConfirmed),
+      autonomous: isFullAccess && Boolean(fullAccessConfirmed),
+      allow_unattended_execution: isFullAccess && Boolean(fullAccessConfirmed),
       workspace_root: effectiveConfig.workspaceRoot?.trim() || undefined,
       llm_provider: llmProvider,
       llm_model: customModel.trim() || undefined,

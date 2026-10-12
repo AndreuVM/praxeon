@@ -66,7 +66,7 @@ export default function DecisionInspector({
     actionCommand = 'git push origin main',
     tool = 'git',
     provider = 'JEV',
-    model = 'Claude-3.5-sonnet',
+    model: rawModel = null,
     riskLevel = 'HIGH',
     _riskScore = 0.82,
     semanticEvaluation = [
@@ -96,13 +96,58 @@ export default function DecisionInspector({
   const rawDecisionTab = decision?.decisionTab || decision?.decision_tab || {};
   const opAssessment = rawDecisionTab.operation_assessment || decision?.operation_assessment || decision?.operationAssessment || null;
   const opCategory = (rawDecisionTab.operation_category || decision?.operation_category || opAssessment?.category || 'inspection').toLowerCase();
-  const executionMode = rawDecisionTab.execution_mode || decision?.execution_mode || decision?.executionMode || 'local_restricted';
-  const isolation = rawDecisionTab.isolation || (executionMode === 'full_access' ? 'None (Host OS)' : 'Active');
-  const workingDirectory = rawDecisionTab.working_directory || '/workspace';
-  const networkMode = rawDecisionTab.network_mode || (executionMode === 'full_access' ? 'Host Direct' : 'Isolated (Restricted)');
-  const executionBackend = rawDecisionTab.execution_backend || (
-    executionMode === 'full_access' ? 'FullAccessExecutor' : (executionMode === 'container' ? 'DockerContainer' : 'LocalProcessSandbox')
-  );
+
+  const executionMode =
+    rawDecisionTab.execution_mode ||
+    decision?.execution_mode ||
+    decision?.executionMode ||
+    session?.execution_mode ||
+    'local_restricted';
+
+  const isolation =
+    rawDecisionTab.isolation ||
+    decision?.isolation ||
+    (executionMode === 'full_access' ? 'None (Host OS)' : 'Active');
+
+  const workingDirectory =
+    rawDecisionTab.working_directory ||
+    decision?.working_directory ||
+    decision?.workingDirectory ||
+    session?.workspace_root ||
+    session?.working_directory ||
+    (executionMode === 'full_access' ? '.' : '/workspace');
+
+  const networkMode =
+    rawDecisionTab.network_mode ||
+    decision?.network_mode ||
+    (executionMode === 'full_access' ? 'Host Direct' : 'Isolated (Restricted)');
+
+  const executionBackend =
+    rawDecisionTab.execution_backend ||
+    decision?.execution_backend ||
+    decision?.executionBackend ||
+    (executionMode === 'full_access'
+      ? 'FullAccessExecutor'
+      : executionMode === 'container'
+      ? 'DockerContainer'
+      : 'LocalProcessSandbox');
+
+  const effectiveModel =
+    rawDecisionTab.model ||
+    rawModel ||
+    decision?.model ||
+    session?.decision_model_effective?.model_id ||
+    session?.decisionModel?.model_id ||
+    session?.llm_model ||
+    (session?.runtime?.provider ? session.runtime.provider.split('+')[0].trim() : null) ||
+    'Auto';
+
+  const effectiveProvider =
+    rawDecisionTab.provider ||
+    decision?.provider ||
+    session?.decision_model_effective?.provider ||
+    session?.decisionModel?.provider ||
+    provider;
 
   const handleCopyCommand = () => {
     navigator.clipboard?.writeText(actionCommand);
@@ -427,11 +472,11 @@ export default function DecisionInspector({
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span style={{ color: '#8b949e' }}>Provider</span>
-                <span style={{ color: '#f0f6fc' }}>{provider}</span>
+                <span style={{ color: '#f0f6fc' }}>{effectiveProvider}</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span style={{ color: '#8b949e' }}>Model</span>
-                <span style={{ color: '#f0f6fc' }}>{model}</span>
+                <span style={{ color: '#f0f6fc' }}>{effectiveModel}</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ color: '#8b949e' }}>Risk Level</span>

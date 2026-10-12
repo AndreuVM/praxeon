@@ -183,7 +183,10 @@ export default function App() {
           } else if (evType === 'capability.issued') {
             logMsg = `Capability token issued & signed with HMAC`;
           } else if (evType === 'execution.started') {
-            logMsg = `Executing action in local sandbox: ${ev.payload?.tool}...`;
+            const isFull = (session.execution_mode === 'full_access');
+            logMsg = isFull
+              ? `Executing action on Host OS (Full Access): ${ev.payload?.tool}...`
+              : `Executing action in local sandbox: ${ev.payload?.tool}...`;
           } else if (evType === 'execution.completed') {
             logMsg = `Action executed ${ev.payload?.success ? 'successfully' : 'with error'} in ${ev.payload?.execution_time_ms || 12}ms`;
           } else if (evType === 'observation.recorded') {
@@ -253,6 +256,14 @@ export default function App() {
             }));
 
             // Registrar borrador de decisión para inspección inmediata en las 4 pestañas
+            const effMode = session.execution_mode || 'local_restricted';
+            const effIso = effMode === 'full_access' ? 'None (Host OS)' : 'Active';
+            const effBack = effMode === 'full_access' ? 'FullAccessExecutor' : (effMode === 'container' ? 'DockerContainer' : 'LocalProcessSandbox');
+            const effNet = effMode === 'full_access' ? 'Host Direct' : 'Isolated (Restricted)';
+            const effWs = session.workspace_root || session.working_directory || (effMode === 'full_access' ? '.' : '/workspace');
+            const effModel = session.decision_model_effective?.model_id || session.decisionModel?.model_id || session.llm_model || missionConfig?.customModel || 'qwen2.5-coder:7b';
+            const effProvider = ev.payload?.source || session?.decisionModel?.provider || session?.runtime?.provider || 'JEV';
+
             setDecisionsMap((prevMap) => ({
               ...prevMap,
               [actId]: {
@@ -261,8 +272,13 @@ export default function App() {
                 status: 'PENDING',
                 actionCommand: `${tool} ${JSON.stringify(ev.payload?.arguments || {})}`,
                 tool: tool,
-                provider: ev.payload?.source || 'JEV',
-                model: 'Claude-3.5-sonnet',
+                provider: effProvider,
+                model: effModel,
+                execution_mode: effMode,
+                isolation: effIso,
+                execution_backend: effBack,
+                network_mode: effNet,
+                working_directory: effWs,
                 riskLevel: 'LOW',
                 riskScore: 0.15,
                 semanticEvaluation: [
@@ -289,6 +305,24 @@ export default function App() {
                   actionHash: 'sha256:' + actId,
                   stateHash: 'sha256:state_' + actId,
                   nonce: 'non_' + actId,
+                },
+                decisionTab: {
+                  decision_id: ev.decision_id || `d_${actId}`,
+                  session_id: session.sessionId,
+                  action_id: actId,
+                  tool: tool,
+                  arguments: ev.payload?.arguments || {},
+                  status: 'PENDING',
+                  provider: effProvider,
+                  model: effModel,
+                  execution_mode: effMode,
+                  isolation: effIso,
+                  execution_backend: effBack,
+                  network_mode: effNet,
+                  working_directory: effWs,
+                  risk_level: 'LOW',
+                  risk_score: 0.15,
+                  reason: ev.payload?.thought_rationale || 'Evaluando paso en el pipeline...',
                 },
                 relatedDecisions: [],
               },
@@ -417,17 +451,31 @@ export default function App() {
             // Actualizar datos de decisión en el mapa
             setDecisionsMap((prevMap) => {
               const current = prevMap[actId] || {};
+              const curTab = current.decisionTab || {};
+              const effMode = ev.payload?.execution_mode || current.execution_mode || session.execution_mode || 'local_restricted';
+              const effIso = effMode === 'full_access' ? 'None (Host OS)' : (current.isolation || 'Active');
+              const effBack = effMode === 'full_access' ? 'FullAccessExecutor' : (current.execution_backend || 'LocalProcessSandbox');
               return {
                 ...prevMap,
                 [actId]: {
                   ...current,
                   status: statusStr,
+                  execution_mode: effMode,
+                  isolation: effIso,
+                  execution_backend: effBack,
                   policyDecision: {
                     status: requiresConf ? 'Requires confirmation' : 'Authorized by policy',
                     requiresConfirmation: requiresConf,
                     rulesActivated: requiresConf ? ['EgressPolicy', 'PathContainment'] : ['StandardPolicy'],
                     reasonCodes: [ev.payload?.reason_code || 'POLICY_EVALUATED'],
                     precedence: 'Deterministic Safety Precedence',
+                  },
+                  decisionTab: {
+                    ...curTab,
+                    status: statusStr,
+                    execution_mode: effMode,
+                    isolation: effIso,
+                    execution_backend: effBack,
                   },
                 },
               };
@@ -487,9 +535,27 @@ export default function App() {
 
           if (evType === 'execution.started') {
             const actId = ev.node_id;
+            const isFull = (session.execution_mode === 'full_access');
             setNodes((prevNodes) =>
               prevNodes.map((n) => (n.id === actId ? { ...n, status: 'EXECUTING' } : n))
             );
+            setDecisionsMap((prevMap) => {
+              const current = prevMap[actId] || {};
+              const curTab = current.decisionTab || {};
+              return {
+                ...prevMap,
+                [actId]: {
+                  ...current,
+                  execution_backend: isFull ? 'FullAccessExecutor' : (current.execution_backend || 'LocalProcessSandbox'),
+                  isolation: isFull ? 'None (Host OS)' : (current.isolation || 'Active'),
+                  decisionTab: {
+                    ...curTab,
+                    execution_backend: isFull ? 'FullAccessExecutor' : (curTab.execution_backend || 'LocalProcessSandbox'),
+                    isolation: isFull ? 'None (Host OS)' : (curTab.isolation || 'Active'),
+                  },
+                },
+              };
+            });
           }
 
           if (evType === 'execution.completed') {
@@ -594,6 +660,44 @@ export default function App() {
   // Selección de nodo en el árbol
   const currentDecision = decisionsMap[selectedNodeId] || Object.values(decisionsMap)[0] || null;
 
+  // Recuperar detalles completos de decisión desde el backend para DecisionInspector
+  const fetchAndSetDecision = async (nodeId, decisionId) => {
+    if (!decisionId || nodeId === 'start') return;
+    try {
+      const res = await api.fetchDecisionDetail(decisionId);
+      const detail = res?.data || res;
+      if (detail && detail.decision_tab) {
+        setDecisionsMap((prev) => {
+          const current = prev[nodeId] || {};
+          return {
+            ...prev,
+            [nodeId]: {
+              ...current,
+              decisionId: detail.decision_id || decisionId,
+              decisionTab: detail.decision_tab,
+              evidenceTab: detail.evidence_tab || current.evidenceTab,
+              policyTab: detail.policy_tab || current.policyTab,
+              receiptTab: detail.receipt_tab || current.receiptTab,
+              execution_mode: detail.decision_tab.execution_mode || current.execution_mode,
+              isolation: detail.decision_tab.isolation || current.isolation,
+              working_directory: detail.decision_tab.working_directory || current.working_directory,
+              network_mode: detail.decision_tab.network_mode || current.network_mode,
+              execution_backend: detail.decision_tab.execution_backend || current.execution_backend,
+              model: detail.decision_tab.model || current.model,
+              provider: detail.decision_tab.provider || current.provider,
+              status: detail.decision_tab.status || current.status,
+              riskLevel: detail.decision_tab.risk_level || current.riskLevel,
+              riskScore: detail.decision_tab.risk_score ?? current.riskScore,
+              reason: detail.decision_tab.reason || current.reason,
+            },
+          };
+        });
+      }
+    } catch {
+      // fallo silencioso en fallback
+    }
+  };
+
   const handleSelectNode = (nodeId) => {
     setSelectedNodeId(nodeId);
     setInspectorTab('decision');
@@ -604,8 +708,23 @@ export default function App() {
         ...prev,
         { time: timeStr, level: 'INFO', message: `Inspecting decision #${found.sequence || 1}: ${found.actionCommand}` },
       ]);
+      const decId = found.decisionId || (nodeId.startsWith('d_') ? nodeId : `d_${nodeId}`);
+      fetchAndSetDecision(nodeId, decId);
+    } else if (nodeId && nodeId !== 'start') {
+      const decId = nodeId.startsWith('d_') ? nodeId : `d_${nodeId}`;
+      fetchAndSetDecision(nodeId, decId);
     }
   };
+
+  // Enriquecer automáticamente la decisión seleccionada si aún no tiene decisionTab
+  useEffect(() => {
+    if (!selectedNodeId || selectedNodeId === 'start') return;
+    const cur = decisionsMap[selectedNodeId];
+    if (cur && (!cur.decisionTab || !cur.decisionTab.execution_mode)) {
+      const decId = cur.decisionId || (selectedNodeId.startsWith('d_') ? selectedNodeId : `d_${selectedNodeId}`);
+      fetchAndSetDecision(selectedNodeId, decId);
+    }
+  }, [selectedNodeId]);
 
   // Lanzar misión interactiva en tiempo real
   const handleStartMission = async ({
@@ -624,6 +743,7 @@ export default function App() {
     base_url,
     workspace_root,
     chat_history,
+    workflow_id,
   }) => {
     setIsRunning(true);
     setIsPaused(false);
@@ -648,10 +768,12 @@ export default function App() {
         step_delay_ms: 1000,
         workspace_root,
         chat_history,
+        workflow_id,
       });
 
       if (res?.data) {
         const sid = res.data.session_id;
+        setFollowExecution(workflow_id ? { workflowId: workflow_id, executionId: `wfx-${sid}` } : null);
         const effModel = res.data.decision_model_effective || decision_model;
         const newSess = {
           sessionId: sid,
@@ -743,7 +865,6 @@ export default function App() {
     setIsPaused(false);
     const timeStr = new Date().toTimeString().split(' ')[0];
     setLogs((prev) => [
-    workflow_id,
       ...prev,
       { time: timeStr, level: 'WARN', message: `Misión detenida.` },
     ]);
@@ -768,12 +889,10 @@ export default function App() {
     const newSid = `s-${Math.random().toString(36).substring(2, 9)}`;
     const timeStr = new Date().toTimeString().split(' ')[0];
 
-        workflow_id,
     setSession({
       sessionId: newSid,
       status: 'Ready',
       agent: 'CodingAgent',
-        setFollowExecution(workflow_id ? { workflowId: workflow_id, executionId: `wfx-${sid}` } : null);
       goal: 'Nueva sesión limpia. Introduce un prompt para iniciar la misión.',
       execution_mode: missionConfig.executionMode || 'local_restricted',
       metrics: { totalDecisions: 0, allowed: 0, blocked: 0, review: 0 },
@@ -926,7 +1045,9 @@ export default function App() {
         const decRes = await api.fetchSessionDecisions(sid);
         if (decRes && decRes.data && Array.isArray(decRes.data)) {
           const map = {};
+          const sessionMode = d.execution_mode || 'local_restricted';
           decRes.data.forEach((item) => {
+            const itemMode = item.execution_mode || sessionMode;
             map[item.decision_id] = {
               decisionId: item.decision_id,
               status: item.status,
@@ -938,6 +1059,11 @@ export default function App() {
               groundingScore: item.grounding_score,
               signature: item.signature,
               actionHash: item.action_hash,
+              execution_mode: itemMode,
+              isolation: itemMode === 'full_access' ? 'None (Host OS)' : 'Active',
+              execution_backend: itemMode === 'full_access' ? 'FullAccessExecutor' : 'LocalProcessSandbox',
+              network_mode: itemMode === 'full_access' ? 'Host Direct' : 'Isolated (Restricted)',
+              working_directory: d.workspace_root || d.working_directory || (itemMode === 'full_access' ? '.' : '/workspace'),
             };
           });
           setDecisionsMap(map);
