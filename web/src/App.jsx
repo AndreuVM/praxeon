@@ -742,6 +742,7 @@ export default function App() {
     setIsPaused(false);
     const timeStr = new Date().toTimeString().split(' ')[0];
     setLogs((prev) => [
+    workflow_id,
       ...prev,
       { time: timeStr, level: 'WARN', message: `Misión detenida.` },
     ]);
@@ -766,6 +767,7 @@ export default function App() {
     const newSid = `s-${Math.random().toString(36).substring(2, 9)}`;
     const timeStr = new Date().toTimeString().split(' ')[0];
 
+        workflow_id,
     setSession({
       sessionId: newSid,
       status: 'Ready',

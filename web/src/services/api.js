@@ -524,6 +524,14 @@ export async function fetchWorkflows() {
   return await res.json();
 }
 
+// Activa/desactiva un workflow: solo los activos pueden gobernar una tarea
+export async function setWorkflowActive(workflowId, active) {
+  const action = active ? 'activate' : 'deactivate';
+  const res = await authFetch(`${API_BASE}/workflows/${encodeURIComponent(workflowId)}/${action}`, { method: 'POST' });
+  if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+  return await res.json();
+}
+
 export async function createWorkflow(workflowData) {
   const res = await authFetch(`${API_BASE}/workflows`, {
     method: 'POST',

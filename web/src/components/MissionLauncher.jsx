@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Play, Pause, Square, Sparkles, Terminal, Cpu, Shield, RefreshCw, AlertTriangle, Activity, Settings2 } from 'lucide-react';
-import { fetchProviders } from '../services/api';
+import { fetchProviders, fetchWorkflows } from '../services/api';
 
 export default function MissionLauncher({
   isRunning = false,
@@ -33,6 +33,8 @@ export default function MissionLauncher({
   // General state
   const [maxSteps, setMaxSteps] = useState(25);
   const [workspaceRoot, setWorkspaceRoot] = useState('');
+  const [workflowId, setWorkflowId] = useState('');
+  const [activeWorkflows, setActiveWorkflows] = useState([]);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [isExpanded, setIsExpanded] = useState(true);
 
@@ -111,6 +113,22 @@ export default function MissionLauncher({
     };
   }, []);
 
+  // Workflows activos: si se elige uno, el grafo gobierna la tarea y los agentes ejecutan sus nodos
+  useEffect(() => {
+    let isMounted = true;
+    fetchWorkflows()
+      .then((resp) => {
+        if (!isMounted) return;
+        const active = (resp?.data || []).filter((w) => w.active);
+        setActiveWorkflows(active);
+        setWorkflowId((cur) => (active.some((w) => w.workflow_id === cur) ? cur : ''));
+      })
+      .catch(() => {});
+    return () => {
+      isMounted = false;
+    };
+  }, [isRunning]);
+
   const presetGoals = [
     'Fix authentication bug in the API',
     'Auditar y ejecutar suite de tests con pytest',
@@ -133,6 +151,7 @@ export default function MissionLauncher({
 
     onStartMission?.({
       goal: goal.trim(),
+      workflow_id: workflowId || undefined,
       workspace_root: workspaceRoot.trim() || undefined,
       execution_mode: executionMode,
       // Doble confirmación: seleccionar Full Access + aceptar el aviso de seguridad. Autoriza al agente sin confirmación por paso.
@@ -295,6 +314,35 @@ export default function MissionLauncher({
                 {providersCatalog.llm_providers.map((lp) => (
                   <option key={lp.provider_id} value={lp.provider_id}>
                     {lp.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Workflow que gobierna la tarea (solo los activos) */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <Settings2 size={13} style={{ color: '#38bdf8' }} />
+              <label style={{ fontSize: '11px', color: '#8b949e', fontWeight: '500' }}>Workflow:</label>
+              <select
+                value={workflowId}
+                onChange={(e) => setWorkflowId(e.target.value)}
+                disabled={isRunning}
+                title="Si eliges un workflow activo, la tarea se ejecuta siguiendo sus nodos, agentes y bucles"
+                style={{
+                  backgroundColor: '#0c0f14',
+                  border: '1px solid #202737',
+                  borderRadius: '6px',
+                  padding: '5px 8px',
+                  color: '#f0f6fc',
+                  fontSize: '11.5px',
+                  cursor: 'pointer',
+                  outline: 'none',
+                }}
+              >
+                <option value="">Sin workflow (agente único)</option>
+                {activeWorkflows.map((w) => (
+                  <option key={w.workflow_id} value={w.workflow_id}>
+                    {w.name}
                   </option>
                 ))}
               </select>

@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import {
   fetchWorkflows,
+  setWorkflowActive,
   createWorkflow,
   getWorkflowDetail,
   addWorkflowNode,
@@ -1023,10 +1024,46 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
           >
             {workflows.map((wf) => (
               <option key={wf.workflow_id} value={wf.workflow_id}>
+                {wf.active ? '● ' : ''}
                 {wf.name} ({wf.node_count ?? Object.keys(wf.nodes || {}).length} nodos)
               </option>
             ))}
           </select>
+
+          {activeWorkflowId && (() => {
+            const current = workflows.find((w) => w.workflow_id === activeWorkflowId);
+            const isActive = Boolean(current?.active);
+            return (
+              <button
+                onClick={async () => {
+                  try {
+                    await setWorkflowActive(activeWorkflowId, !isActive);
+                    addLog('INFO', isActive ? 'Workflow desactivado' : 'Workflow activado: ya puede gobernar tareas');
+                    await loadWorkflows();
+                  } catch (err) {
+                    addLog('ERROR', `No se pudo cambiar el estado del workflow: ${err.message}`);
+                  }
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  padding: '4px 8px',
+                  borderRadius: '5px',
+                  backgroundColor: isActive ? '#10261c' : '#1c2230',
+                  border: `1px solid ${isActive ? '#1f6f4a' : '#2f3a50'}`,
+                  color: isActive ? '#4ade80' : '#94a3b8',
+                  fontSize: '11px',
+                  cursor: 'pointer',
+                  fontWeight: '500',
+                }}
+                title={isActive ? 'Activo: aparece en el lanzador de misiones. Clic para desactivar' : 'Inactivo: no se ofrece para tareas. Clic para activar'}
+              >
+                <Check size={12} />
+                <span>{isActive ? 'Activo' : 'Inactivo'}</span>
+              </button>
+            );
+          })()}
 
           <button
             onClick={() => setShowCreateWfModal(true)}
