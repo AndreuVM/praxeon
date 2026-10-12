@@ -346,14 +346,7 @@ class SessionContextManager:
 
 def get_default_workspace_root() -> str:
     """Retorna la ruta raíz predeterminada del workspace del proyecto."""
-    env_root = os.environ.get("PRAXEON_WORKSPACE_ROOT")
-    if env_root and os.path.exists(env_root):
-        return str(Path(env_root).resolve())
+    from praxeon.workspace_store import resolve_default_workspace
 
-    # Search for git or pyproject root from cwd
-    curr = Path.cwd().resolve()
-    for parent in [curr] + list(curr.parents):
-        if (parent / ".git").exists() or (parent / "pyproject.toml").exists():
-            return str(parent)
-    return str(curr)
+    return resolve_default_workspace()[0]
 

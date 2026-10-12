@@ -38,7 +38,9 @@ logger = logging.getLogger("praxeon.server.coordinators")
 
 def get_default_workspace_root() -> str:
     """Calcula la raíz de trabajo por defecto para sesiones de agente."""
-    return os.path.abspath(os.getcwd())
+    from praxeon.workspace_store import resolve_default_workspace
+
+    return resolve_default_workspace()[0]
 
 
 class SessionLifecycleCoordinator:

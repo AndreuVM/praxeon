@@ -154,9 +154,22 @@ def run_window(local: LocalServer, debug: bool = False, notifications: bool = Tr
             "(o usa  praxeon app --browser)."
         ) from exc
 
+    class DesktopApi:
+        """Funciones nativas que la interfaz puede invocar (window.pywebview.api)."""
+
+        def pick_folder(self, start: str = "") -> Optional[str]:
+            """Abre el selector de carpetas del sistema. Devuelve la ruta o None si se cancela."""
+            dialog_type = getattr(getattr(webview, "FileDialog", None), "FOLDER", None)
+            if dialog_type is None:
+                dialog_type = webview.FOLDER_DIALOG
+            start_dir = start if start and os.path.isdir(start) else ""
+            result = window.create_file_dialog(dialog_type, directory=start_dir)
+            return str(result[0]) if result else None
+
     window = webview.create_window(
         APP_TITLE,
         local.window_url,
+        js_api=DesktopApi(),
         width=1440,
         height=900,
         min_size=(1024, 680),

@@ -79,19 +79,9 @@ class SandboxAdapter(ABC):
 
 def get_default_workspace_root() -> str:
     """Retorna la ruta raíz predeterminada del workspace del proyecto."""
-    env_root = os.environ.get("PRAXEON_DEFAULT_WORKSPACE_ROOT") or os.environ.get("PRAXEON_WORKSPACE_ROOT")
-    if env_root and os.path.exists(env_root):
-        return os.path.abspath(env_root)
-    curr = os.getcwd()
-    check = curr
-    while True:
-        if os.path.exists(os.path.join(check, ".git")) or os.path.exists(os.path.join(check, "pyproject.toml")):
-            return os.path.abspath(check)
-        parent = os.path.dirname(check)
-        if parent == check:
-            break
-        check = parent
-    return os.path.abspath(curr)
+    from praxeon.workspace_store import resolve_default_workspace
+
+    return resolve_default_workspace()[0]
 
 
 class LocalProcessSandbox(SandboxAdapter):

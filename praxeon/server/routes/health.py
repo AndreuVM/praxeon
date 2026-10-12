@@ -61,7 +61,7 @@ def get_system_context(
 
         allowed_roots_env = os.environ.get("PRAXEON_ALLOWED_WORKSPACE_ROOTS", "")
         allowed_roots = [os.path.realpath(r.strip()) for r in allowed_roots_env.split(",") if r.strip()]
-        allowed_roots.append(default_root)
+        allowed_roots.append(default_root)  # incluye el workspace elegido por el operador
         allowed_roots.append(os.path.realpath(os.getcwd()))
 
         is_allowed = False
