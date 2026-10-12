@@ -372,10 +372,557 @@ class MissionRuntimeMixin:
         """Worker asíncrono delegado en SessionLifecycleCoordinator."""
         return self.session_coordinator.run_mission_worker(mission)
 
+    def _run_llm_loop(
+        self,
+        mission: Dict[str, Any],
+        agent_llm: Any,
+        *,
+        goal: str,
+        max_steps: int,
+        delay_sec: float,
+        provider_name: str,
+        session_mode: str,
+        system_prompt: Optional[str] = None,
+        id_prefix: str = "",
+        root_id: Optional[str] = None,
+        owns_session: bool = True,
+    ) -> Dict[str, Any]:
+        """Bucle ReAct supervisado de un agente (Thought/Action -> política -> ejecución -> observación).
+
+        Lo usa la misión completa (`owns_session=True`, comportamiento histórico) y cada nodo de un workflow
+        (`owns_session=False`, con `id_prefix`/`root_id` propios para no colisionar en el árbol de decisiones).
+        """
+        from praxeon.live_agent import parse_llm_steps
+
+        sid = mission["session_id"]
+        root_id = root_id or f"root_{sid}"
+        step_idx = 0
+        if system_prompt is None:
+            # Recolectar información detallada del sistema operativo y espacio de trabajo real
+            ws_root = mission.get("workspace_root") or get_default_workspace_root()
+            from praxeon.core.session_context import SessionContextManager
+            ctx_mgr = SessionContextManager()
+            env_info = ctx_mgr.get_environment_info(root_dir=ws_root)
+
+            system_prompt = (
+                "Eres un asistente y agente de software autónomo supervisado cognitivamente en tiempo real por PRAXEON (JEV Reasoning Navigator).\n"
+                f"OBJETIVO O PREGUNTA DEL USUARIO: {goal}\n"
+                f"DIRECTORIO DE TRABAJO BASE PARA ESTA SESIÓN: '{ws_root}'\n\n"
+                f"{env_info}\n\n"
+                "FORMATO DE RESPUESTA EN CADA TURNO (Estricto ReAct):\n"
+                "Thought: <análisis concreto de lo que vas a hacer y por qué>\n"
+                "Action: <herramienta>(<argumentos_en_json_o_string>)\n\n"
+                "Herramientas disponibles:\n"
+                "- read_file(path: str) -> Lee el contenido de un archivo del espacio de trabajo local si la tarea requiere auditar código o configuración existente.\n"
+                "- edit_file(path: str, diff: str) -> Aplica modificaciones a un archivo en el espacio de trabajo local cuando la tarea pide editar código existente.\n"
+                "- run_command(command: str) -> Ejecuta un comando en la consola del SO (PowerShell en Windows, bash en Unix).\n"
+                "- git(command: str) -> Ejecuta comandos git en el repositorio (status, diff, log, etc.).\n"
+                "- finish(summary: str) -> Concluye entregando la respuesta directa a la pregunta, especificación, diseño, informe o solución solicitada por el usuario.\n\n"
+                "PRINCIPIOS OPERATIVOS Y RAZONAMIENTO COGNITIVO:\n"
+                "1. COMPRENSIÓN DEL ÁMBITO DEL PROYECTO (ANTI-SESGO DETERMINISTA): Atiende estrictamente a lo que el usuario solicita. Si el usuario te pide un informe, especificación, arquitectura, estructura de carpetas, requisitos funcionales/no funcionales o user stories para OTRO proyecto externo, una nueva aplicación o una propuesta puramente conceptual, NO asumas que se refiere al proyecto local ni leas archivos locales innecesariamente. Elabora y entrega el diseño de dicho proyecto directamente mediante finish(summary=\"...\").\n"
+                "2. AUDITORÍA Y ANÁLISIS DE ESTE PROYECTO / REPOSITORIO LOCAL: Si el usuario te pide explícitamente analizar, inspeccionar, explicar o auditar archivos, módulos o flujos del proyecto local ('analiza los archivos', 'cómo funciona el workflow', 'inspecciona el código', 'explica la arquitectura', etc.), DEBES obligatoriamente usar 'read_file' o 'run_command' para examinar las evidencias reales. El supervisor cognitivo PRAXEON VETARÁ (con REPLAN por falta de evidencia empírica / LOW_GROUNDED_PROBABILITY) cualquier llamada prematura a 'finish' que no haya consultado previamente los archivos requeridos.\n"
+                "3. PREGUNTAS Y VALORACIONES CONCEPTUALES: Si te consultan tu opinión general, teoría o valoraciones abstractas sin referencia a archivos de este entorno, responde de forma crítica y fundamentada directamente con finish(summary=\"...\").\n"
+                "4. TAREAS DE CÓDIGO TÉCNICO SOBRE EL REPOSITORIO LOCAL: Si la tarea solicita implementar código, corregir un bug o ejecutar pruebas sobre archivos existentes de este entorno, utiliza read_file, edit_file o run_command antes de dar por resuelta la tarea.\n"
+                "5. COMPATIBILIDAD DE SO: En Windows, NO uses comandos Unix/Linux como 'ls', 'cat', 'grep'. Utiliza 'read_file(path)' o comandos de PowerShell en run_command.\n"
+                "6. RETROCESO Y VETOS DEL SUPERVISOR: Si una acción (incluido un intento de 'finish') es vetada por el supervisor o rechazada por falta de evidencia, reflexiona en 'Thought:' sobre la observación de veto recibida y ejecuta la herramienta de inspección correspondiente (ej. read_file) para fundamentar empíricamente tu razonamiento antes de intentar finalizar de nuevo."
+            )
+
+        step_records: List[Dict[str, Any]] = []
+        active_parent_id = root_id
+        consecutive_failures = 0
+        final_answer: Optional[str] = None
+        technical_failures = 0
+        semantic_fixations = 0
+        recent_action_signatures: List[str] = []
+        circuit_breaker_triggered = False
+        llm_fail_policy = (mission.get("llm_failure_policy") or "synthetic_fallback").lower().strip()
+
+        while step_idx < max_steps:
+            if mission.get("stopped"):
+                break
+
+            while mission.get("paused") and not mission.get("stopped"):
+                time.sleep(0.2)
+
+            step_idx += 1
+            mission["current_step"] = step_idx
+
+            # Reconciliación / persistencia periódica en SQLite
+            if hasattr(self.state_store, "save_mission"):
+                try:
+                    self.state_store.save_mission(dict(mission))
+                except Exception as save_err:
+                    logger.debug("Error persistiendo misión en SQLite: %s", save_err)
+
+            # ContextManager como única autoridad de ensamblado de prompt y compresión semántica
+            conversation = self.context_manager.assemble_mission_prompt(
+                goal=goal,
+                system_prompt=system_prompt,
+                steps_history=step_records,
+                environment_info=None,
+                chat_history=mission.get("chat_history"),
+            )
+
+            # Invocar LLM real
+            llm_output = ""
+            try:
+                llm_output = agent_llm.generate(conversation, system_prompt=system_prompt)
+                technical_failures = 0  # Éxito técnico: resetear contador técnico
+            except Exception as gen_err:
+                technical_failures += 1
+                logger.warning("Error durante generación con LLM '%s': %s", provider_name, gen_err)
+
+                if technical_failures >= 3:
+                    self.event_bus.emit(
+                        session_id=sid,
+                        event_type=EventType.INTERVENTION_APPLIED,
+                        node_id=root_id,
+                        payload={
+                            "intervention": "TECHNICAL_CIRCUIT_BREAKER",
+                            "message": f"⚡ PRAXEON TECHNICAL CIRCUIT BREAKER: Fallos técnicos consecutivos ({technical_failures}) con el proveedor LLM '{provider_name}'. Circuito técnico ABIERTO para prevenir saturación.",
+                            "consecutive_technical_failures": technical_failures,
+                        },
+                    )
+                    mission["stopped"] = True
+                    break
+
+                if llm_fail_policy == "fail_closed":
+                    self.event_bus.emit(
+                        session_id=sid,
+                        event_type=EventType.INTERVENTION_APPLIED,
+                        node_id=root_id,
+                        payload={
+                            "error": f"Fallo de generación en LLM '{provider_name}' bajo política fail_closed: {gen_err}",
+                            "fatal": True,
+                            "llm_failure_policy": "fail_closed",
+                        },
+                    )
+                    mission["stopped"] = True
+                    break
+
+                self.event_bus.emit(
+                    session_id=sid,
+                    event_type=EventType.INTERVENTION_APPLIED,
+                    node_id=root_id,
+                    payload={
+                        "warning": f"[DEGRADED_MODE: SYNTHETIC_PLANNER] Fallo temporal de LLM '{provider_name}' ({gen_err}). Activando contingencia contextual.",
+                        "degraded_mode": True,
+                        "planner": "synthetic",
+                    },
+                )
+                steps_backup = generate_goal_tailored_steps(goal=goal, max_steps=max_steps)
+                backup_idx = min(step_idx - 1, len(steps_backup) - 1)
+                b_step = steps_backup[backup_idx] if (steps_backup and backup_idx >= 0) else {
+                    "tool_name": "run_command",
+                    "tool_args": {"command": "python -c \"print('Paso de inspección segura')\""},
+                    "thought_rationale": "Paso de contingencia tras fallo del proveedor LLM.",
+                }
+                llm_output = f"Thought: [DEGRADED_MODE: SYNTHETIC_PLANNER] [Contingencia por fallo temporal en {provider_name}]: {b_step.get('thought_rationale', '')}\nAction: {b_step.get('tool_name', 'run_command')}({json.dumps(b_step.get('tool_args', {}))})"
+
+            # Parsear Thought + Action
+            parsed_steps = parse_llm_steps(llm_output)
+            if parsed_steps:
+                st = parsed_steps[0]
+                raw_tool = (st.get("tool_name") or "").strip().lower()
+                if raw_tool in ("action", "undefined", "none", "null", "step", ""):
+                    # Degradación sintáctica del modelo
+                    tool = "run_command"
+                    args = {"command": "python -c \"print('Paso de inspección segura')\""}
+                    thought = "El modelo emitió una herramienta no especificada ('undefined'). El supervisor redirige a inspección segura."
+                else:
+                    tool = raw_tool
+                    args = st.get("tool_args") or {}
+                    thought = st.get("thought_rationale") or f"Paso {step_idx} generado por {agent_llm.model_name} para '{goal}'."
+            else:
+                finish_match = re.search(
+                    r'finish\s*\(\s*(?:summary\s*=\s*)?(?:"""(.*?)"""|\'\'\'(.*?)\'\'\'|"((?:[^"\\]|\\.)*)"|\'((?:[^\'\\]|\\.)*)\'|(.*?))\s*\)',
+                    llm_output,
+                    re.DOTALL,
+                )
+                if finish_match:
+                    raw_summary = (
+                        finish_match.group(1)
+                        or finish_match.group(2)
+                        or finish_match.group(3)
+                        or finish_match.group(4)
+                        or finish_match.group(5)
+                        or ""
+                    )
+                    tool = "finish"
+                    args = {"summary": raw_summary.strip()}
+                    thought = "Conclusión directa emitida por el agente."
+                elif any(w in llm_output.lower() for w in ("finish", "complet", "conclu", "finaliz", "resuelt", "respuesta", "opini")):
+                    clean_ans = llm_output
+                    if "thought:" in llm_output.lower():
+                        parts = re.split(r"(?i)thought\s*:", llm_output)
+                        clean_ans = parts[-1].strip()
+                    tool = "finish"
+                    args = {"summary": clean_ans.strip()}
+                    thought = "Conclusión directa emitida por el agente."
+                else:
+                    is_technical_action = any(
+                        k in goal.lower()
+                        for k in (
+                            "test", "pytest", "bug", "error", "edit", "modific", "implement", "crea",
+                            "analiz", "archivo", "archivos", "codigo", "código", "como funciona",
+                            "cómo funciona", "audita", "inspeccion", "revisa"
+                        )
+                    )
+                    if not is_technical_action or step_idx > 1:
+                        clean_ans = llm_output
+                        if "thought:" in llm_output.lower():
+                            parts = re.split(r"(?i)thought\s*:", llm_output)
+                            clean_ans = parts[-1].strip()
+                        tool = "finish"
+                        args = {"summary": clean_ans.strip()}
+                        thought = "Respuesta directa emitida por el agente."
+                    else:
+                        # En el paso inicial de una tarea técnica o de análisis de código, forzar inspección empírica
+                        tool = "run_command"
+                        args = {"command": "python -c \"import os; print('Archivos del proyecto:', [f for f in os.listdir('.') if not f.startswith('.')][:12])\""}
+                        thought = llm_output[:250].strip() or f"Paso inicial de inspección de archivos requerido para fundamentar: '{goal}'."
+
+            # CIRCUITO DE FIJACIÓN SEMÁNTICA (SEMANTIC CIRCUIT BREAKER): Detección de bucles repetitivos de herramientas
+            action_sig = f"{tool}:{json.dumps(args, sort_keys=True)}"
+            if recent_action_signatures and recent_action_signatures[-1] == action_sig:
+                semantic_fixations += 1
+            else:
+                semantic_fixations = 0
+            recent_action_signatures.append(action_sig)
+            if len(recent_action_signatures) > 10:
+                recent_action_signatures.pop(0)
+
+            if semantic_fixations >= 2:
+                self.event_bus.emit(
+                    session_id=sid,
+                    event_type=EventType.INTERVENTION_APPLIED,
+                    node_id=f"{id_prefix}act_{step_idx}",
+                    parent_id=active_parent_id,
+                    payload={
+                        "intervention": "SEMANTIC_CIRCUIT_BREAKER_LOOP_PRUNED",
+                        "message": f"⚡ PRAXEON SEMANTIC CIRCUIT BREAKER: Fijación semántica / bucle del agente detectado en '{tool}'. El supervisor poda la rama y fuerza REPLAN.",
+                        "action_signature": action_sig,
+                        "backtrack_to": active_parent_id,
+                    },
+                )
+                step_records.append({
+                    "step": step_idx,
+                    "thought": thought,
+                    "tool": tool,
+                    "arguments": args,
+                    "verdict": "REPLAN",
+                    "reason_code": "SEMANTIC_CIRCUIT_BREAKER_LOOP",
+                    "observation": (
+                        f"🚨 [SUPERVISOR PRAXEON - SEMANTIC CIRCUIT BREAKER]: Bucle de fijación semántica detectado.\n"
+                        f"Has propuesto '{tool}' con argumentos idénticos repetidamente sin avance comprobable. Esta rama queda PODADA.\n"
+                        "DEBES formular una alternativa de razonamiento diferente, inspeccionar otros archivos o cambiar tu estrategia."
+                    ),
+                    "success": False,
+                })
+                semantic_fixations = 0
+                time.sleep(delay_sec)
+                continue
+
+            operation = f"{step_idx}. {tool}"
+            action_node_id = f"{id_prefix}act_{step_idx}"
+
+            req = ProposeActionRequest(
+                action_id=action_node_id,
+                parent_id=active_parent_id,
+                tool=tool,
+                operation=operation,
+                arguments=args,
+                thought_rationale=thought,
+                provenance={
+                    "source": f"LLM ({agent_llm.provider_name.upper()} - {agent_llm.model_name})",
+                    "step": step_idx,
+                },
+                context={"goal": goal},
+            )
+
+            obs_output = ""
+            executed_successfully = False
+            pending_approval = False
+            try:
+                resp = self.propose_action(session_id=sid, proposal=req)
+
+                if resp.status == "BLOCK":
+                    executed_successfully = False
+                    obs_output = f"Acción clasificada como PELIGROSA o destructiva por seguridad: {', '.join(resp.policy.reason_codes or ['Veto operacional'])}"
+                elif resp.status == "REPLAN":
+                    executed_successfully = False
+                    missing = _missing_path_from_reasons(resp.policy.reason_codes)
+                    if missing:
+                        obs_output = _missing_path_feedback(missing, mission.get("workspace_root"))
+                    else:
+                        obs_output = f"Acción clasificada como INNECESARIA, desvío o bucle por el supervisor JEV-LAYA: {', '.join(resp.policy.reason_codes or ['Poda cognitiva'])}"
+                # Si requiere confirmación humana (ej. REVIEW por git push)
+                elif resp.status == "REVIEW" or resp.policy.requires_confirmation:
+                    allow_unattended = bool(
+                        mission.get("allow_unattended_execution")
+                        or mission.get("autonomous")
+                        or False
+                    )
+                    full_access_authorized = bool(
+                        mission.get("full_access_authorized_by_operator")
+                        or mission.get("operator_authorized")
+                    )
+                    if session_mode == "full_access" and full_access_authorized and not mission.get("require_step_confirmation"):
+                        # Auto-confirmación sólo si explícitamente se configuró allow_unattended_execution / autonomous
+                        logger.warning(
+                            "[SECURITY AUDIT] Auto-confirmando decisión %s en modo FULL_ACCESS_AUTONOMOUS...",
+                            resp.decision_id,
+                        )
+                        try:
+                            conf_res = self.confirm_decision(
+                                decision_id=resp.decision_id,
+                                approved=True,
+                                reason="Auto-autorizado por consentimiento explícito de sesión en modo Full Access Autónomo",
+                                operator_id="operator_full_access_auto",
+                                role="operator",
+                            )
+                            if conf_res.status == "ALLOW":
+                                exec_res = self.execute_decision(decision_id=resp.decision_id)
+                                obs_output = exec_res.output or ""
+                                executed_successfully = exec_res.success and not exec_res.is_error
+                        except Exception as ex:
+                            obs_output = f"Error en ejecución Full Access: {ex}"
+                            executed_successfully = False
+                    else:
+                        dec_status = self._await_human_decision(resp.decision_id, mission)
+                        if dec_status == "ALLOW":
+                            try:
+                                exec_res = self.execute_decision(decision_id=resp.decision_id)
+                                obs_output = exec_res.output or ""
+                                executed_successfully = exec_res.success and not exec_res.is_error
+                            except Exception as ex:
+                                logger.debug("Execution note: %s", ex)
+                                obs_output = str(ex)
+                        elif dec_status != "BLOCKED" and not mission.get("stopped"):
+                            # Sigue esperando al operador: no ha sido rechazada ni ejecutada (no es un veto)
+                            pending_approval = True
+                            obs_output = (
+                                "⏳ Acción pendiente de aprobación humana: NO ha sido rechazada ni ejecutada. "
+                                "No la repitas; continúa con otra acción de lectura o espera la decisión del operador."
+                            )
+                elif resp.status == "ALLOW":
+                    try:
+                        exec_res = self.execute_decision(decision_id=resp.decision_id)
+                        obs_output = exec_res.output or ""
+                        executed_successfully = exec_res.success and not exec_res.is_error
+                    except Exception as ex:
+                        logger.debug("Execution note: %s", ex)
+                        obs_output = str(ex)
+            except Exception as err:
+                logger.error(f"Error proponiendo paso {step_idx} en sesión {sid}: {err}")
+                obs_output = str(err)
+                executed_successfully = False
+
+            step_verdict = getattr(resp, "status", "ERROR") if 'resp' in locals() and resp else "ERROR"
+            step_reasons = ", ".join(getattr(getattr(resp, "policy", None), "reason_codes", []) or []) if 'resp' in locals() and resp else ""
+
+            if pending_approval:
+                # Aprobación humana en curso: sin poda, sin retroceso y sin contar como fallo consecutivo
+                step_records.append({
+                    "step": step_idx,
+                    "thought": thought,
+                    "tool": tool,
+                    "arguments": args,
+                    "verdict": "REVIEW",
+                    "reason_code": step_reasons or "APPROVAL_PENDING",
+                    "observation": obs_output,
+                    "success": False,
+                    "pending_approval": True,
+                })
+                time.sleep(delay_sec)
+                continue
+
+            if executed_successfully:
+                # Acción exitosa: el cursor activo del árbol avanza
+                consecutive_failures = 0
+                active_parent_id = action_node_id
+                raw_obs = obs_output or "Acción ejecutada correctamente."
+                if len(raw_obs) > 50_000:
+                    keep_h = 35_000
+                    keep_t = 15_000
+                    omitted = len(raw_obs) - 50_000
+                    llm_obs = f"{raw_obs[:keep_h]}\n\n[... Truncado: {omitted} caracteres intermedios omitidos por JEV para optimizar contexto del LLM ...]\n\n{raw_obs[-keep_t:]}"
+                else:
+                    llm_obs = raw_obs
+
+                step_records.append({
+                    "step": step_idx,
+                    "thought": thought,
+                    "tool": tool,
+                    "arguments": args,
+                    "verdict": step_verdict,
+                    "reason_code": step_reasons,
+                    "observation": llm_obs,
+                    "success": True,
+                })
+            else:
+                consecutive_failures += 1
+
+                # RETROCESO (BACKTRACK) Y BIFURCACIÓN CONTEXTUAL:
+                is_initial_step = active_parent_id == root_id or step_idx == 1
+                if is_initial_step:
+                    interv_name = "INITIAL_HYPOTHESIS_VETOED"
+                    interv_msg = (
+                        f"Acción inicial '{action_node_id}' vetada por el supervisor ({step_reasons or 'falta de evidencias empíricas'}). "
+                        f"Se exige recopilar evidencias inspeccionando archivos antes de emitir conclusiones."
+                    )
+                else:
+                    interv_name = "BACKTRACK_AND_BRANCH"
+                    interv_msg = (
+                        f"Fallo o veto en '{action_node_id}'. El supervisor realiza un retroceso a '{active_parent_id}' "
+                        f"para bifurcar una hipótesis alternativa."
+                    )
+
+                self.event_bus.emit(
+                    session_id=sid,
+                    event_type=EventType.INTERVENTION_APPLIED,
+                    node_id=action_node_id,
+                    parent_id=active_parent_id,
+                    payload={
+                        "intervention": interv_name,
+                        "message": interv_msg,
+                        "backtrack_to": active_parent_id,
+                        "failed_node": action_node_id,
+                    },
+                )
+
+                obs_fail = obs_output or "Acción no autorizada o fallida."
+
+                # CIRCUITO DE BLOQUEO Y DETECCIÓN DE BUCLE PERSISTENTE (JEV CIRCUIT BREAKER)
+                if consecutive_failures >= 2 and not circuit_breaker_triggered:
+                    circuit_breaker_triggered = True
+                    cwd = os.getcwd()
+                    real_files = []
+                    try:
+                        real_files = [f for f in os.listdir(cwd) if not f.startswith(".")][:12]
+                    except Exception:
+                        real_files = ["praxeon", "web", "tests"]
+                    real_files_str = ", ".join(real_files)
+
+                    self.event_bus.emit(
+                        session_id=sid,
+                        event_type=EventType.INTERVENTION_APPLIED,
+                        node_id=action_node_id,
+                        parent_id=root_id,
+                        payload={
+                            "intervention": "CIRCUIT_BREAKER_GROUNDING_INJECTION",
+                            "message": f"⚡ JEV CIRCUIT BREAKER: Bucle de alucinación/fallos consecutivos ({consecutive_failures}) intentando acceder a archivos/scripts inexistentes. El supervisor poda la rama, fuerza retroceso a la raíz e inyecta la estructura real del proyecto.",
+                            "real_files": real_files,
+                            "backtrack_to": root_id,
+                        },
+                    )
+
+                    obs_fail += f"\n🚨 [CIRCUIT BREAKER GROUNDING]: Archivos reales: [{real_files_str}]. Trabaja exclusivamente sobre rutas reales o usa 'finish'."
+                    step_records.append({
+                        "step": step_idx,
+                        "thought": thought,
+                        "tool": tool,
+                        "arguments": args,
+                        "verdict": step_verdict if step_verdict != "ALLOW" else "BLOCK",
+                        "reason_code": step_reasons or "CIRCUIT_BREAKER_GROUNDING",
+                        "observation": obs_fail,
+                        "success": False,
+                    })
+                    active_parent_id = root_id
+                    time.sleep(delay_sec)
+                    continue
+
+                elif consecutive_failures >= 4:
+                    logger.warning("Terminación preventiva por supervisor JEV en sesión %s tras 4 fallos continuos.", sid)
+                    summary_final = f"Misión concluida preventivamente por el supervisor JEV para detener bucle de alucinación tras {step_idx} turnos. El agente insistió repetidamente en recursos no fundamentados."
+                    self.event_bus.emit(
+                        session_id=sid,
+                        event_type=EventType.INTERVENTION_APPLIED,
+                        node_id=action_node_id,
+                        parent_id=root_id,
+                        payload={
+                            "intervention": "SUPERVISOR_FORCED_TERMINATION",
+                            "message": "Supervisión JEV: Se cortó la ejecución para evitar un bucle de alucinación infinito. Misión concluida de forma segura.",
+                        },
+                    )
+                    final_answer = summary_final
+                    if owns_session:
+                        self.event_bus.emit(
+                            session_id=sid,
+                            event_type=EventType.SESSION_COMPLETED,
+                            node_id=root_id,
+                            payload={"status": "completed", "summary": summary_final},
+                        )
+                        with self._lock:
+                            if sid in self._sessions_meta:
+                                self._sessions_meta[sid]["status"] = "Completed"
+                                self._sessions_meta[sid]["final_answer"] = summary_final
+                    step_records.append({
+                        "step": step_idx,
+                        "thought": thought,
+                        "tool": tool,
+                        "arguments": args,
+                        "verdict": "BLOCK",
+                        "reason_code": "SUPERVISOR_FORCED_TERMINATION",
+                        "observation": summary_final,
+                        "success": False,
+                    })
+                    break
+                else:
+                    step_records.append({
+                        "step": step_idx,
+                        "thought": thought,
+                        "tool": tool,
+                        "arguments": args,
+                        "verdict": step_verdict if step_verdict != "ALLOW" else "BLOCK",
+                        "reason_code": step_reasons or "EXECUTION_FAILURE",
+                        "observation": obs_fail,
+                        "success": False,
+                    })
+
+            if tool in ("finish", "complete_task", "done", "complete", "task_completed"):
+                if executed_successfully:
+                    final_ans = (
+                        args.get("summary")
+                        or args.get("final_answer")
+                        or obs_output.replace("Tarea concluida: ", "")
+                    )
+                    final_answer = final_ans
+                    if owns_session:
+                        with self._lock:
+                            if sid in self._sessions_meta:
+                                self._sessions_meta[sid]["final_answer"] = final_ans
+                    break
+                else:
+                    # Veto del supervisor a la conclusión prematura: alimentar al LLM para corregir rumbo
+                    v_reason = step_reasons or "FALTA_DE_EVIDENCIAS_EMPÍRICAS"
+                    logger.warning(
+                        "Intento de finalización ('%s') vetado en paso %d (motivo: %s). Se retroalimenta al agente para continuar.",
+                        tool,
+                        step_idx,
+                        v_reason,
+                    )
+                    supervisor_feedback = (
+                        f"🚨 [VETO DEL SUPERVISOR PRAXEON - {v_reason}]:\n"
+                        f"Tu intento de concluir la misión mediante '{tool}' ha sido RECHAZADO por falta de evidencia empírica fundamentada.\n"
+                        "NO se permite emitir conclusiones sin antes haber inspeccionado los archivos reales del proyecto.\n"
+                        "EN EL SIGUIENTE TURNO DEBES ejecutar 'read_file(path)' o 'run_command' para examinar los archivos relevantes."
+                    )
+                    if step_records and step_records[-1]["step"] == step_idx:
+                        step_records[-1]["observation"] = supervisor_feedback
+                        step_records[-1]["verdict"] = "REPLAN"
+                        step_records[-1]["reason_code"] = v_reason
+
+                    time.sleep(delay_sec)
+                    continue
+
+            time.sleep(delay_sec)
+
+        return {"step_records": step_records, "final_answer": final_answer, "steps_used": step_idx}
+
     def _run_mission_worker_impl(self, mission: Dict[str, Any]) -> None:
         """Implementación del worker asíncrono de misiones interactivas."""
         from praxeon.agent_llm import BaseAgentLLM, SimulatedAgentLLM, create_agent_llm
-        from praxeon.live_agent import parse_llm_steps
 
         sid = mission["session_id"]
         goal = mission["goal"]
@@ -456,523 +1003,20 @@ class MissionRuntimeMixin:
         step_idx = 0
 
         # =========================================================================
-        # MODO A: LLM REAL (Ollama, Groq, OpenRouter, OpenAI, Gemini)
+        # MODO A: LLM REAL (Ollama, Groq, OpenRouter, OpenAI, Gemini) -> _run_llm_loop
         # =========================================================================
         if use_real_llm and agent_llm is not None:
-            # Recolectar información detallada del sistema operativo y espacio de trabajo real
-            ws_root = mission.get("workspace_root") or get_default_workspace_root()
-            from praxeon.core.session_context import SessionContextManager
-            ctx_mgr = SessionContextManager()
-            env_info = ctx_mgr.get_environment_info(root_dir=ws_root)
-
-            system_prompt = (
-                "Eres un asistente y agente de software autónomo supervisado cognitivamente en tiempo real por PRAXEON (JEV Reasoning Navigator).\n"
-                f"OBJETIVO O PREGUNTA DEL USUARIO: {goal}\n"
-                f"DIRECTORIO DE TRABAJO BASE PARA ESTA SESIÓN: '{ws_root}'\n\n"
-                f"{env_info}\n\n"
-                "FORMATO DE RESPUESTA EN CADA TURNO (Estricto ReAct):\n"
-                "Thought: <análisis concreto de lo que vas a hacer y por qué>\n"
-                "Action: <herramienta>(<argumentos_en_json_o_string>)\n\n"
-                "Herramientas disponibles:\n"
-                "- read_file(path: str) -> Lee el contenido de un archivo del espacio de trabajo local si la tarea requiere auditar código o configuración existente.\n"
-                "- edit_file(path: str, diff: str) -> Aplica modificaciones a un archivo en el espacio de trabajo local cuando la tarea pide editar código existente.\n"
-                "- run_command(command: str) -> Ejecuta un comando en la consola del SO (PowerShell en Windows, bash en Unix).\n"
-                "- git(command: str) -> Ejecuta comandos git en el repositorio (status, diff, log, etc.).\n"
-                "- finish(summary: str) -> Concluye entregando la respuesta directa a la pregunta, especificación, diseño, informe o solución solicitada por el usuario.\n\n"
-                "PRINCIPIOS OPERATIVOS Y RAZONAMIENTO COGNITIVO:\n"
-                "1. COMPRENSIÓN DEL ÁMBITO DEL PROYECTO (ANTI-SESGO DETERMINISTA): Atiende estrictamente a lo que el usuario solicita. Si el usuario te pide un informe, especificación, arquitectura, estructura de carpetas, requisitos funcionales/no funcionales o user stories para OTRO proyecto externo, una nueva aplicación o una propuesta puramente conceptual, NO asumas que se refiere al proyecto local ni leas archivos locales innecesariamente. Elabora y entrega el diseño de dicho proyecto directamente mediante finish(summary=\"...\").\n"
-                "2. AUDITORÍA Y ANÁLISIS DE ESTE PROYECTO / REPOSITORIO LOCAL: Si el usuario te pide explícitamente analizar, inspeccionar, explicar o auditar archivos, módulos o flujos del proyecto local ('analiza los archivos', 'cómo funciona el workflow', 'inspecciona el código', 'explica la arquitectura', etc.), DEBES obligatoriamente usar 'read_file' o 'run_command' para examinar las evidencias reales. El supervisor cognitivo PRAXEON VETARÁ (con REPLAN por falta de evidencia empírica / LOW_GROUNDED_PROBABILITY) cualquier llamada prematura a 'finish' que no haya consultado previamente los archivos requeridos.\n"
-                "3. PREGUNTAS Y VALORACIONES CONCEPTUALES: Si te consultan tu opinión general, teoría o valoraciones abstractas sin referencia a archivos de este entorno, responde de forma crítica y fundamentada directamente con finish(summary=\"...\").\n"
-                "4. TAREAS DE CÓDIGO TÉCNICO SOBRE EL REPOSITORIO LOCAL: Si la tarea solicita implementar código, corregir un bug o ejecutar pruebas sobre archivos existentes de este entorno, utiliza read_file, edit_file o run_command antes de dar por resuelta la tarea.\n"
-                "5. COMPATIBILIDAD DE SO: En Windows, NO uses comandos Unix/Linux como 'ls', 'cat', 'grep'. Utiliza 'read_file(path)' o comandos de PowerShell en run_command.\n"
-                "6. RETROCESO Y VETOS DEL SUPERVISOR: Si una acción (incluido un intento de 'finish') es vetada por el supervisor o rechazada por falta de evidencia, reflexiona en 'Thought:' sobre la observación de veto recibida y ejecuta la herramienta de inspección correspondiente (ej. read_file) para fundamentar empíricamente tu razonamiento antes de intentar finalizar de nuevo."
+            loop_result = self._run_llm_loop(
+                mission,
+                agent_llm,
+                goal=goal,
+                max_steps=max_steps,
+                delay_sec=delay_sec,
+                provider_name=provider_name,
+                session_mode=session_mode,
             )
-
-            step_records: List[Dict[str, Any]] = []
-            active_parent_id = f"root_{sid}"
-            consecutive_failures = 0
-            technical_failures = 0
-            semantic_fixations = 0
-            recent_action_signatures: List[str] = []
-            circuit_breaker_triggered = False
-            llm_fail_policy = (mission.get("llm_failure_policy") or "synthetic_fallback").lower().strip()
-
-            while step_idx < max_steps:
-                if mission.get("stopped"):
-                    break
-
-                while mission.get("paused") and not mission.get("stopped"):
-                    time.sleep(0.2)
-
-                step_idx += 1
-                mission["current_step"] = step_idx
-
-                # Reconciliación / persistencia periódica en SQLite
-                if hasattr(self.state_store, "save_mission"):
-                    try:
-                        self.state_store.save_mission(dict(mission))
-                    except Exception as save_err:
-                        logger.debug("Error persistiendo misión en SQLite: %s", save_err)
-
-                # ContextManager como única autoridad de ensamblado de prompt y compresión semántica
-                conversation = self.context_manager.assemble_mission_prompt(
-                    goal=goal,
-                    system_prompt=system_prompt,
-                    steps_history=step_records,
-                    environment_info=None,
-                    chat_history=mission.get("chat_history"),
-                )
-
-                # Invocar LLM real
-                llm_output = ""
-                try:
-                    llm_output = agent_llm.generate(conversation, system_prompt=system_prompt)
-                    technical_failures = 0  # Éxito técnico: resetear contador técnico
-                except Exception as gen_err:
-                    technical_failures += 1
-                    logger.warning("Error durante generación con LLM '%s': %s", provider_name, gen_err)
-
-                    if technical_failures >= 3:
-                        self.event_bus.emit(
-                            session_id=sid,
-                            event_type=EventType.INTERVENTION_APPLIED,
-                            node_id=f"root_{sid}",
-                            payload={
-                                "intervention": "TECHNICAL_CIRCUIT_BREAKER",
-                                "message": f"⚡ PRAXEON TECHNICAL CIRCUIT BREAKER: Fallos técnicos consecutivos ({technical_failures}) con el proveedor LLM '{provider_name}'. Circuito técnico ABIERTO para prevenir saturación.",
-                                "consecutive_technical_failures": technical_failures,
-                            },
-                        )
-                        mission["stopped"] = True
-                        break
-
-                    if llm_fail_policy == "fail_closed":
-                        self.event_bus.emit(
-                            session_id=sid,
-                            event_type=EventType.INTERVENTION_APPLIED,
-                            node_id=f"root_{sid}",
-                            payload={
-                                "error": f"Fallo de generación en LLM '{provider_name}' bajo política fail_closed: {gen_err}",
-                                "fatal": True,
-                                "llm_failure_policy": "fail_closed",
-                            },
-                        )
-                        mission["stopped"] = True
-                        break
-
-                    self.event_bus.emit(
-                        session_id=sid,
-                        event_type=EventType.INTERVENTION_APPLIED,
-                        node_id=f"root_{sid}",
-                        payload={
-                            "warning": f"[DEGRADED_MODE: SYNTHETIC_PLANNER] Fallo temporal de LLM '{provider_name}' ({gen_err}). Activando contingencia contextual.",
-                            "degraded_mode": True,
-                            "planner": "synthetic",
-                        },
-                    )
-                    steps_backup = generate_goal_tailored_steps(goal=goal, max_steps=max_steps)
-                    backup_idx = min(step_idx - 1, len(steps_backup) - 1)
-                    b_step = steps_backup[backup_idx] if (steps_backup and backup_idx >= 0) else {
-                        "tool_name": "run_command",
-                        "tool_args": {"command": "python -c \"print('Paso de inspección segura')\""},
-                        "thought_rationale": "Paso de contingencia tras fallo del proveedor LLM.",
-                    }
-                    llm_output = f"Thought: [DEGRADED_MODE: SYNTHETIC_PLANNER] [Contingencia por fallo temporal en {provider_name}]: {b_step.get('thought_rationale', '')}\nAction: {b_step.get('tool_name', 'run_command')}({json.dumps(b_step.get('tool_args', {}))})"
-
-                # Parsear Thought + Action
-                parsed_steps = parse_llm_steps(llm_output)
-                if parsed_steps:
-                    st = parsed_steps[0]
-                    raw_tool = (st.get("tool_name") or "").strip().lower()
-                    if raw_tool in ("action", "undefined", "none", "null", "step", ""):
-                        # Degradación sintáctica del modelo
-                        tool = "run_command"
-                        args = {"command": "python -c \"print('Paso de inspección segura')\""}
-                        thought = "El modelo emitió una herramienta no especificada ('undefined'). El supervisor redirige a inspección segura."
-                    else:
-                        tool = raw_tool
-                        args = st.get("tool_args") or {}
-                        thought = st.get("thought_rationale") or f"Paso {step_idx} generado por {agent_llm.model_name} para '{goal}'."
-                else:
-                    finish_match = re.search(
-                        r'finish\s*\(\s*(?:summary\s*=\s*)?(?:"""(.*?)"""|\'\'\'(.*?)\'\'\'|"((?:[^"\\]|\\.)*)"|\'((?:[^\'\\]|\\.)*)\'|(.*?))\s*\)',
-                        llm_output,
-                        re.DOTALL,
-                    )
-                    if finish_match:
-                        raw_summary = (
-                            finish_match.group(1)
-                            or finish_match.group(2)
-                            or finish_match.group(3)
-                            or finish_match.group(4)
-                            or finish_match.group(5)
-                            or ""
-                        )
-                        tool = "finish"
-                        args = {"summary": raw_summary.strip()}
-                        thought = "Conclusión directa emitida por el agente."
-                    elif any(w in llm_output.lower() for w in ("finish", "complet", "conclu", "finaliz", "resuelt", "respuesta", "opini")):
-                        clean_ans = llm_output
-                        if "thought:" in llm_output.lower():
-                            parts = re.split(r"(?i)thought\s*:", llm_output)
-                            clean_ans = parts[-1].strip()
-                        tool = "finish"
-                        args = {"summary": clean_ans.strip()}
-                        thought = "Conclusión directa emitida por el agente."
-                    else:
-                        is_technical_action = any(
-                            k in goal.lower()
-                            for k in (
-                                "test", "pytest", "bug", "error", "edit", "modific", "implement", "crea",
-                                "analiz", "archivo", "archivos", "codigo", "código", "como funciona",
-                                "cómo funciona", "audita", "inspeccion", "revisa"
-                            )
-                        )
-                        if not is_technical_action or step_idx > 1:
-                            clean_ans = llm_output
-                            if "thought:" in llm_output.lower():
-                                parts = re.split(r"(?i)thought\s*:", llm_output)
-                                clean_ans = parts[-1].strip()
-                            tool = "finish"
-                            args = {"summary": clean_ans.strip()}
-                            thought = "Respuesta directa emitida por el agente."
-                        else:
-                            # En el paso inicial de una tarea técnica o de análisis de código, forzar inspección empírica
-                            tool = "run_command"
-                            args = {"command": "python -c \"import os; print('Archivos del proyecto:', [f for f in os.listdir('.') if not f.startswith('.')][:12])\""}
-                            thought = llm_output[:250].strip() or f"Paso inicial de inspección de archivos requerido para fundamentar: '{goal}'."
-
-                # CIRCUITO DE FIJACIÓN SEMÁNTICA (SEMANTIC CIRCUIT BREAKER): Detección de bucles repetitivos de herramientas
-                action_sig = f"{tool}:{json.dumps(args, sort_keys=True)}"
-                if recent_action_signatures and recent_action_signatures[-1] == action_sig:
-                    semantic_fixations += 1
-                else:
-                    semantic_fixations = 0
-                recent_action_signatures.append(action_sig)
-                if len(recent_action_signatures) > 10:
-                    recent_action_signatures.pop(0)
-
-                if semantic_fixations >= 2:
-                    self.event_bus.emit(
-                        session_id=sid,
-                        event_type=EventType.INTERVENTION_APPLIED,
-                        node_id=f"act_{step_idx}",
-                        parent_id=active_parent_id,
-                        payload={
-                            "intervention": "SEMANTIC_CIRCUIT_BREAKER_LOOP_PRUNED",
-                            "message": f"⚡ PRAXEON SEMANTIC CIRCUIT BREAKER: Fijación semántica / bucle del agente detectado en '{tool}'. El supervisor poda la rama y fuerza REPLAN.",
-                            "action_signature": action_sig,
-                            "backtrack_to": active_parent_id,
-                        },
-                    )
-                    step_records.append({
-                        "step": step_idx,
-                        "thought": thought,
-                        "tool": tool,
-                        "arguments": args,
-                        "verdict": "REPLAN",
-                        "reason_code": "SEMANTIC_CIRCUIT_BREAKER_LOOP",
-                        "observation": (
-                            f"🚨 [SUPERVISOR PRAXEON - SEMANTIC CIRCUIT BREAKER]: Bucle de fijación semántica detectado.\n"
-                            f"Has propuesto '{tool}' con argumentos idénticos repetidamente sin avance comprobable. Esta rama queda PODADA.\n"
-                            "DEBES formular una alternativa de razonamiento diferente, inspeccionar otros archivos o cambiar tu estrategia."
-                        ),
-                        "success": False,
-                    })
-                    semantic_fixations = 0
-                    time.sleep(delay_sec)
-                    continue
-
-                operation = f"{step_idx}. {tool}"
-                action_node_id = f"act_{step_idx}"
-
-                req = ProposeActionRequest(
-                    action_id=action_node_id,
-                    parent_id=active_parent_id,
-                    tool=tool,
-                    operation=operation,
-                    arguments=args,
-                    thought_rationale=thought,
-                    provenance={
-                        "source": f"LLM ({agent_llm.provider_name.upper()} - {agent_llm.model_name})",
-                        "step": step_idx,
-                    },
-                    context={"goal": goal},
-                )
-
-                obs_output = ""
-                executed_successfully = False
-                pending_approval = False
-                try:
-                    resp = self.propose_action(session_id=sid, proposal=req)
-
-                    if resp.status == "BLOCK":
-                        executed_successfully = False
-                        obs_output = f"Acción clasificada como PELIGROSA o destructiva por seguridad: {', '.join(resp.policy.reason_codes or ['Veto operacional'])}"
-                    elif resp.status == "REPLAN":
-                        executed_successfully = False
-                        missing = _missing_path_from_reasons(resp.policy.reason_codes)
-                        if missing:
-                            obs_output = _missing_path_feedback(missing, mission.get("workspace_root"))
-                        else:
-                            obs_output = f"Acción clasificada como INNECESARIA, desvío o bucle por el supervisor JEV-LAYA: {', '.join(resp.policy.reason_codes or ['Poda cognitiva'])}"
-                    # Si requiere confirmación humana (ej. REVIEW por git push)
-                    elif resp.status == "REVIEW" or resp.policy.requires_confirmation:
-                        allow_unattended = bool(
-                            mission.get("allow_unattended_execution")
-                            or mission.get("autonomous")
-                            or False
-                        )
-                        full_access_authorized = bool(
-                            mission.get("full_access_authorized_by_operator")
-                            or mission.get("operator_authorized")
-                        )
-                        if session_mode == "full_access" and full_access_authorized and not mission.get("require_step_confirmation"):
-                            # Auto-confirmación sólo si explícitamente se configuró allow_unattended_execution / autonomous
-                            logger.warning(
-                                "[SECURITY AUDIT] Auto-confirmando decisión %s en modo FULL_ACCESS_AUTONOMOUS...",
-                                resp.decision_id,
-                            )
-                            try:
-                                conf_res = self.confirm_decision(
-                                    decision_id=resp.decision_id,
-                                    approved=True,
-                                    reason="Auto-autorizado por consentimiento explícito de sesión en modo Full Access Autónomo",
-                                    operator_id="operator_full_access_auto",
-                                    role="operator",
-                                )
-                                if conf_res.status == "ALLOW":
-                                    exec_res = self.execute_decision(decision_id=resp.decision_id)
-                                    obs_output = exec_res.output or ""
-                                    executed_successfully = exec_res.success and not exec_res.is_error
-                            except Exception as ex:
-                                obs_output = f"Error en ejecución Full Access: {ex}"
-                                executed_successfully = False
-                        else:
-                            dec_status = self._await_human_decision(resp.decision_id, mission)
-                            if dec_status == "ALLOW":
-                                try:
-                                    exec_res = self.execute_decision(decision_id=resp.decision_id)
-                                    obs_output = exec_res.output or ""
-                                    executed_successfully = exec_res.success and not exec_res.is_error
-                                except Exception as ex:
-                                    logger.debug("Execution note: %s", ex)
-                                    obs_output = str(ex)
-                            elif dec_status != "BLOCKED" and not mission.get("stopped"):
-                                # Sigue esperando al operador: no ha sido rechazada ni ejecutada (no es un veto)
-                                pending_approval = True
-                                obs_output = (
-                                    "⏳ Acción pendiente de aprobación humana: NO ha sido rechazada ni ejecutada. "
-                                    "No la repitas; continúa con otra acción de lectura o espera la decisión del operador."
-                                )
-                    elif resp.status == "ALLOW":
-                        try:
-                            exec_res = self.execute_decision(decision_id=resp.decision_id)
-                            obs_output = exec_res.output or ""
-                            executed_successfully = exec_res.success and not exec_res.is_error
-                        except Exception as ex:
-                            logger.debug("Execution note: %s", ex)
-                            obs_output = str(ex)
-                except Exception as err:
-                    logger.error(f"Error proponiendo paso {step_idx} en sesión {sid}: {err}")
-                    obs_output = str(err)
-                    executed_successfully = False
-
-                step_verdict = getattr(resp, "status", "ERROR") if 'resp' in locals() and resp else "ERROR"
-                step_reasons = ", ".join(getattr(getattr(resp, "policy", None), "reason_codes", []) or []) if 'resp' in locals() and resp else ""
-
-                if pending_approval:
-                    # Aprobación humana en curso: sin poda, sin retroceso y sin contar como fallo consecutivo
-                    step_records.append({
-                        "step": step_idx,
-                        "thought": thought,
-                        "tool": tool,
-                        "arguments": args,
-                        "verdict": "REVIEW",
-                        "reason_code": step_reasons or "APPROVAL_PENDING",
-                        "observation": obs_output,
-                        "success": False,
-                        "pending_approval": True,
-                    })
-                    time.sleep(delay_sec)
-                    continue
-
-                if executed_successfully:
-                    # Acción exitosa: el cursor activo del árbol avanza
-                    consecutive_failures = 0
-                    active_parent_id = action_node_id
-                    raw_obs = obs_output or "Acción ejecutada correctamente."
-                    if len(raw_obs) > 50_000:
-                        keep_h = 35_000
-                        keep_t = 15_000
-                        omitted = len(raw_obs) - 50_000
-                        llm_obs = f"{raw_obs[:keep_h]}\n\n[... Truncado: {omitted} caracteres intermedios omitidos por JEV para optimizar contexto del LLM ...]\n\n{raw_obs[-keep_t:]}"
-                    else:
-                        llm_obs = raw_obs
-
-                    step_records.append({
-                        "step": step_idx,
-                        "thought": thought,
-                        "tool": tool,
-                        "arguments": args,
-                        "verdict": step_verdict,
-                        "reason_code": step_reasons,
-                        "observation": llm_obs,
-                        "success": True,
-                    })
-                else:
-                    consecutive_failures += 1
-
-                    # RETROCESO (BACKTRACK) Y BIFURCACIÓN CONTEXTUAL:
-                    is_initial_step = active_parent_id.startswith("root_") or step_idx == 1
-                    if is_initial_step:
-                        interv_name = "INITIAL_HYPOTHESIS_VETOED"
-                        interv_msg = (
-                            f"Acción inicial '{action_node_id}' vetada por el supervisor ({step_reasons or 'falta de evidencias empíricas'}). "
-                            f"Se exige recopilar evidencias inspeccionando archivos antes de emitir conclusiones."
-                        )
-                    else:
-                        interv_name = "BACKTRACK_AND_BRANCH"
-                        interv_msg = (
-                            f"Fallo o veto en '{action_node_id}'. El supervisor realiza un retroceso a '{active_parent_id}' "
-                            f"para bifurcar una hipótesis alternativa."
-                        )
-
-                    self.event_bus.emit(
-                        session_id=sid,
-                        event_type=EventType.INTERVENTION_APPLIED,
-                        node_id=action_node_id,
-                        parent_id=active_parent_id,
-                        payload={
-                            "intervention": interv_name,
-                            "message": interv_msg,
-                            "backtrack_to": active_parent_id,
-                            "failed_node": action_node_id,
-                        },
-                    )
-
-                    obs_fail = obs_output or "Acción no autorizada o fallida."
-
-                    # CIRCUITO DE BLOQUEO Y DETECCIÓN DE BUCLE PERSISTENTE (JEV CIRCUIT BREAKER)
-                    if consecutive_failures >= 2 and not circuit_breaker_triggered:
-                        circuit_breaker_triggered = True
-                        cwd = os.getcwd()
-                        real_files = []
-                        try:
-                            real_files = [f for f in os.listdir(cwd) if not f.startswith(".")][:12]
-                        except Exception:
-                            real_files = ["praxeon", "web", "tests"]
-                        real_files_str = ", ".join(real_files)
-
-                        self.event_bus.emit(
-                            session_id=sid,
-                            event_type=EventType.INTERVENTION_APPLIED,
-                            node_id=action_node_id,
-                            parent_id=f"root_{sid}",
-                            payload={
-                                "intervention": "CIRCUIT_BREAKER_GROUNDING_INJECTION",
-                                "message": f"⚡ JEV CIRCUIT BREAKER: Bucle de alucinación/fallos consecutivos ({consecutive_failures}) intentando acceder a archivos/scripts inexistentes. El supervisor poda la rama, fuerza retroceso a la raíz e inyecta la estructura real del proyecto.",
-                                "real_files": real_files,
-                                "backtrack_to": f"root_{sid}",
-                            },
-                        )
-
-                        obs_fail += f"\n🚨 [CIRCUIT BREAKER GROUNDING]: Archivos reales: [{real_files_str}]. Trabaja exclusivamente sobre rutas reales o usa 'finish'."
-                        step_records.append({
-                            "step": step_idx,
-                            "thought": thought,
-                            "tool": tool,
-                            "arguments": args,
-                            "verdict": step_verdict if step_verdict != "ALLOW" else "BLOCK",
-                            "reason_code": step_reasons or "CIRCUIT_BREAKER_GROUNDING",
-                            "observation": obs_fail,
-                            "success": False,
-                        })
-                        active_parent_id = f"root_{sid}"
-                        time.sleep(delay_sec)
-                        continue
-
-                    elif consecutive_failures >= 4:
-                        logger.warning("Terminación preventiva por supervisor JEV en sesión %s tras 4 fallos continuos.", sid)
-                        summary_final = f"Misión concluida preventivamente por el supervisor JEV para detener bucle de alucinación tras {step_idx} turnos. El agente insistió repetidamente en recursos no fundamentados."
-                        self.event_bus.emit(
-                            session_id=sid,
-                            event_type=EventType.INTERVENTION_APPLIED,
-                            node_id=action_node_id,
-                            parent_id=f"root_{sid}",
-                            payload={
-                                "intervention": "SUPERVISOR_FORCED_TERMINATION",
-                                "message": "Supervisión JEV: Se cortó la ejecución para evitar un bucle de alucinación infinito. Misión concluida de forma segura.",
-                            },
-                        )
-                        self.event_bus.emit(
-                            session_id=sid,
-                            event_type=EventType.SESSION_COMPLETED,
-                            node_id=f"root_{sid}",
-                            payload={"status": "completed", "summary": summary_final},
-                        )
-                        with self._lock:
-                            if sid in self._sessions_meta:
-                                self._sessions_meta[sid]["status"] = "Completed"
-                                self._sessions_meta[sid]["final_answer"] = summary_final
-                        step_records.append({
-                            "step": step_idx,
-                            "thought": thought,
-                            "tool": tool,
-                            "arguments": args,
-                            "verdict": "BLOCK",
-                            "reason_code": "SUPERVISOR_FORCED_TERMINATION",
-                            "observation": summary_final,
-                            "success": False,
-                        })
-                        break
-                    else:
-                        step_records.append({
-                            "step": step_idx,
-                            "thought": thought,
-                            "tool": tool,
-                            "arguments": args,
-                            "verdict": step_verdict if step_verdict != "ALLOW" else "BLOCK",
-                            "reason_code": step_reasons or "EXECUTION_FAILURE",
-                            "observation": obs_fail,
-                            "success": False,
-                        })
-
-                if tool in ("finish", "complete_task", "done", "complete", "task_completed"):
-                    if executed_successfully:
-                        final_ans = (
-                            args.get("summary")
-                            or args.get("final_answer")
-                            or obs_output.replace("Tarea concluida: ", "")
-                        )
-                        with self._lock:
-                            if sid in self._sessions_meta:
-                                self._sessions_meta[sid]["final_answer"] = final_ans
-                        break
-                    else:
-                        # Veto del supervisor a la conclusión prematura: alimentar al LLM para corregir rumbo
-                        v_reason = step_reasons or "FALTA_DE_EVIDENCIAS_EMPÍRICAS"
-                        logger.warning(
-                            "Intento de finalización ('%s') vetado en paso %d (motivo: %s). Se retroalimenta al agente para continuar.",
-                            tool,
-                            step_idx,
-                            v_reason,
-                        )
-                        supervisor_feedback = (
-                            f"🚨 [VETO DEL SUPERVISOR PRAXEON - {v_reason}]:\n"
-                            f"Tu intento de concluir la misión mediante '{tool}' ha sido RECHAZADO por falta de evidencia empírica fundamentada.\n"
-                            "NO se permite emitir conclusiones sin antes haber inspeccionado los archivos reales del proyecto.\n"
-                            "EN EL SIGUIENTE TURNO DEBES ejecutar 'read_file(path)' o 'run_command' para examinar los archivos relevantes."
-                        )
-                        if step_records and step_records[-1]["step"] == step_idx:
-                            step_records[-1]["observation"] = supervisor_feedback
-                            step_records[-1]["verdict"] = "REPLAN"
-                            step_records[-1]["reason_code"] = v_reason
-
-                        time.sleep(delay_sec)
-                        continue
-
-                time.sleep(delay_sec)
+            step_records = loop_result["step_records"]
+            step_idx = loop_result["steps_used"]
 
         # =========================================================================
         # MODO B: PLANIFICADOR CONTEXTUAL DINÁMICO (Simulator o Fallback de Provider)
