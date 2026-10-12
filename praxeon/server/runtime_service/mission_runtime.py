@@ -11,7 +11,7 @@ import os
 import re
 import threading
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 import uuid
 
 logger = logging.getLogger("praxeon.server.dependencies")
@@ -110,9 +110,19 @@ class MissionRuntimeMixin:
         llm_failure_policy: str = "synthetic_fallback",
         chat_history: Optional[List[Dict[str, str]]] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        workflow_id: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Inicia una misión interactiva supervisada en tiempo real."""
+        """Inicia una misión interactiva supervisada en tiempo real.
+
+        Con `workflow_id` (un workflow activo) el grafo gobierna la tarea: ver `WorkflowMissionDriver`.
+        """
         sid = session_id or f"s-{uuid.uuid4().hex[:8]}"
+        if workflow_id:
+            wf = self.workflow_editor_service.get_workflow(workflow_id)
+            if wf is None:
+                raise ValueError(f"Workflow '{workflow_id}' no encontrado.")
+            if not wf.metadata.get("active", False):
+                raise ValueError(f"El workflow '{workflow_id}' no está activo. Actívalo antes de usarlo en una tarea.")
 
         # Validación anti-SSRF estricta para endpoint remoto o base_url (SEC-01)
         if base_url:
@@ -172,6 +182,9 @@ class MissionRuntimeMixin:
             "allow_unattended_execution": unattended,
             "llm_failure_policy": llm_failure_policy,
         }
+        if workflow_id:
+            sess_metadata["workflow_id"] = workflow_id
+            sess_metadata["workflow_execution_id"] = f"wfx-{sid}"
         if metadata:
             sess_metadata.update(metadata)
 
@@ -209,6 +222,7 @@ class MissionRuntimeMixin:
             "full_access_authorized_by_operator": full_access_auth,
             "llm_failure_policy": llm_failure_policy,
             "chat_history": chat_history,
+            "workflow_id": workflow_id,
             # Tiempo máximo (s) que la misión espera una aprobación humana antes de seguir sin vetar la acción
             "approval_timeout_seconds": (metadata or {}).get("approval_timeout_seconds"),
             "require_step_confirmation": bool((metadata or {}).get("require_step_confirmation", False)),
@@ -386,11 +400,15 @@ class MissionRuntimeMixin:
         id_prefix: str = "",
         root_id: Optional[str] = None,
         owns_session: bool = True,
+        role_preamble: str = "",
+        tool_filter: Optional[Callable[[str], Optional[str]]] = None,
     ) -> Dict[str, Any]:
         """Bucle ReAct supervisado de un agente (Thought/Action -> política -> ejecución -> observación).
 
         Lo usa la misión completa (`owns_session=True`, comportamiento histórico) y cada nodo de un workflow
         (`owns_session=False`, con `id_prefix`/`root_id` propios para no colisionar en el árbol de decisiones).
+        `role_preamble` antepone la identidad/misión del agente al prompt de sistema y `tool_filter(tool)` devuelve
+        un motivo de rechazo si el agente no tiene permitida esa herramienta.
         """
         from praxeon.live_agent import parse_llm_steps
 
@@ -404,7 +422,7 @@ class MissionRuntimeMixin:
             ctx_mgr = SessionContextManager()
             env_info = ctx_mgr.get_environment_info(root_dir=ws_root)
 
-            system_prompt = (
+            system_prompt = role_preamble + (
                 "Eres un asistente y agente de software autónomo supervisado cognitivamente en tiempo real por PRAXEON (JEV Reasoning Navigator).\n"
                 f"OBJETIVO O PREGUNTA DEL USUARIO: {goal}\n"
                 f"DIRECTORIO DE TRABAJO BASE PARA ESTA SESIÓN: '{ws_root}'\n\n"
@@ -622,6 +640,23 @@ class MissionRuntimeMixin:
                 semantic_fixations = 0
                 time.sleep(delay_sec)
                 continue
+
+            if tool_filter is not None and tool not in ("finish", "complete_task", "done", "complete", "task_completed"):
+                denied = tool_filter(tool)
+                if denied:
+                    consecutive_failures += 1
+                    step_records.append({
+                        "step": step_idx,
+                        "thought": thought,
+                        "tool": tool,
+                        "arguments": args,
+                        "verdict": "BLOCK",
+                        "reason_code": "AGENT_TOOL_NOT_ALLOWED",
+                        "observation": denied,
+                        "success": False,
+                    })
+                    time.sleep(delay_sec)
+                    continue
 
             operation = f"{step_idx}. {tool}"
             action_node_id = f"{id_prefix}act_{step_idx}"
@@ -920,6 +955,73 @@ class MissionRuntimeMixin:
 
         return {"step_records": step_records, "final_answer": final_answer, "steps_used": step_idx}
 
+    def _run_workflow_mission(self, mission: Dict[str, Any], base_llm: Any, session_mode: str) -> bool:
+        """Ejecuta la tarea siguiendo el workflow: el grafo manda y cada agente trabaja dentro de su nodo."""
+        from praxeon import agent_llm as llm_mod
+        from praxeon.agents.definition import ModelConfig
+        from praxeon.workflows.mission_driver import WorkflowMissionDriver
+
+        sid = mission["session_id"]
+        workflow = self.workflow_editor_service.get_workflow(mission["workflow_id"])
+        if workflow is None:
+            self._report_workflow_failure(sid, f"Workflow '{mission['workflow_id']}' no encontrado.")
+            return False
+
+        own_llms: Dict[Any, Any] = {}
+
+        def llm_for_agent(agent: Any) -> Any:
+            """El agente usa su propio proveedor/modelo si lo personalizó; si no, el que eligió el usuario al lanzar."""
+            if base_llm is None or agent is None or agent.model == ModelConfig():
+                return base_llm
+            key = (agent.model.provider, agent.model.model_name)
+            if key not in own_llms:
+                try:
+                    own_llms[key] = llm_mod.create_agent_llm(
+                        provider=agent.model.provider,
+                        model=agent.model.model_name,
+                        timeout=float(os.getenv("PRAXEON_LLM_TIMEOUT", "180.0")),
+                    )
+                except Exception as err:
+                    logger.warning(
+                        "Modelo propio del agente '%s' no disponible (%s): se usa el modelo de la misión.", agent.agent_id, err
+                    )
+                    own_llms[key] = base_llm
+            return own_llms[key]
+
+        driver = WorkflowMissionDriver(
+            workflow=workflow,
+            mission=mission,
+            goal=mission["goal"],
+            agent_registry=self.agent_registry,
+            workflow_service=self.workflow_service,
+            run_agent_loop=self._run_llm_loop,
+            llm_for_agent=llm_for_agent,
+            supervised_runner=self.workflow_editor_service.supervised_runner,
+        )
+        ok = False
+        try:
+            ok = driver.run()
+        except Exception as err:
+            logger.error("Error ejecutando la misión con workflow %s: %s", workflow.workflow_id, err, exc_info=True)
+            self._report_workflow_failure(sid, f"Error ejecutando el workflow: {err}")
+            return False
+        if ok:
+            answer = driver.final_answer()
+            with self._lock:
+                if sid in self._sessions_meta:
+                    self._sessions_meta[sid]["final_answer"] = answer
+        else:
+            self._report_workflow_failure(sid, driver.final_answer())
+        return ok
+
+    def _report_workflow_failure(self, sid: str, message: str) -> None:
+        self.event_bus.emit(
+            session_id=sid,
+            event_type=EventType.INTERVENTION_APPLIED,
+            node_id=f"root_{sid}",
+            payload={"intervention": "WORKFLOW_FAILED", "message": message, "fatal": True},
+        )
+
     def _run_mission_worker_impl(self, mission: Dict[str, Any]) -> None:
         """Implementación del worker asíncrono de misiones interactivas."""
         from praxeon.agent_llm import BaseAgentLLM, SimulatedAgentLLM, create_agent_llm
@@ -1005,7 +1107,10 @@ class MissionRuntimeMixin:
         # =========================================================================
         # MODO A: LLM REAL (Ollama, Groq, OpenRouter, OpenAI, Gemini) -> _run_llm_loop
         # =========================================================================
-        if use_real_llm and agent_llm is not None:
+        if mission.get("workflow_id"):
+            wf_ok = self._run_workflow_mission(mission, agent_llm if use_real_llm else None, session_mode)
+            step_records = [{"success": wf_ok}]
+        elif use_real_llm and agent_llm is not None:
             loop_result = self._run_llm_loop(
                 mission,
                 agent_llm,

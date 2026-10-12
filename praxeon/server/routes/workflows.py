@@ -120,6 +120,26 @@ def get_workflow_detail(workflow_id: str):
     return APIResponse(data=wf.to_dict())
 
 
+@router.post("/{workflow_id}/activate", response_model=APIResponse[Dict[str, Any]])
+def activate_workflow(workflow_id: str):
+    """Activa el workflow: queda disponible para gobernar tareas lanzadas por el usuario."""
+    return _set_active(workflow_id, True)
+
+
+@router.post("/{workflow_id}/deactivate", response_model=APIResponse[Dict[str, Any]])
+def deactivate_workflow(workflow_id: str):
+    """Desactiva el workflow: deja de ofrecerse para nuevas tareas (las en curso no se ven afectadas)."""
+    return _set_active(workflow_id, False)
+
+
+def _set_active(workflow_id: str, active: bool) -> APIResponse[Dict[str, Any]]:
+    try:
+        wf = get_workflow_editor_service().set_workflow_active(workflow_id, active)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return APIResponse(data={"workflow_id": wf.workflow_id, "active": bool(wf.metadata.get("active", False))})
+
+
 @router.post("/{workflow_id}/nodes", response_model=APIResponse[Dict[str, Any]])
 def add_node(workflow_id: str, payload: AddNodeRequest):
     """Añade un nodo al flujo de trabajo."""

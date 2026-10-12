@@ -63,6 +63,7 @@ class SessionSnapshotResponse(BaseModel):
 class RunMissionRequest(BaseModel):
     """Petición para iniciar interactivamente una misión supervisada en tiempo real."""
     goal: str = Field(..., description="Prompt u objetivo inicial de la misión")
+    workflow_id: Optional[str] = Field(None, description="Workflow ACTIVO que gobierna la tarea (los agentes del grafo ejecutan sus nodos)")
     session_id: Optional[str] = Field(None, description="Identificador de sesión opcional")
     agent_name: Optional[str] = Field("CodingAgent", description="Nombre del agente autónomo")
     execution_mode: Optional[str] = Field("local_restricted", description="Modo de ejecución física ('container', 'local_restricted', 'full_access')")

@@ -160,6 +160,16 @@ class WorkflowEditorService:
                 logger.warning("No se pudo persistir el workflow/ejecución", exc_info=True)
 
     @_locked
+    def set_workflow_active(self, workflow_id: str, active: bool) -> WorkflowDefinition:
+        """Activa o desactiva un workflow: solo los activos se ofrecen para gobernar misiones."""
+        wf = self.get_workflow(workflow_id)
+        if wf is None:
+            raise ValueError(f"Workflow '{workflow_id}' no encontrado.")
+        updated = wf.model_copy(update={"metadata": {**wf.metadata, "active": bool(active)}})
+        self.register_workflow(updated)
+        return updated
+
+    @_locked
     def delete_workflow(self, workflow_id: str) -> bool:
         """Elimina un workflow registrado de memoria y persistencia."""
         self._active_engines.pop(workflow_id, None)
@@ -192,6 +202,7 @@ class WorkflowEditorService:
                 "name": wf.name,
                 "description": wf.description,
                 "version": wf.version,
+                "active": bool(wf.metadata.get("active", False)),
                 "node_count": len(wf.nodes),
                 "edge_count": len(wf.edges),
                 "updated_at": wf.updated_at.isoformat(),

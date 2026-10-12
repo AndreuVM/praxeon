@@ -1,0 +1,379 @@
+"""Misiones gobernadas por un workflow.
+
+Cuando el usuario lanza una tarea con un workflow activo, el grafo manda: el `WorkflowEngine` decide qué nodo toca,
+los bucles, las bifurcaciones y las aprobaciones, y cada nodo de agente/tarea se ejecuta como una *mini-misión*
+supervisada (el mismo bucle ReAct + política que una misión normal) con un briefing completo:
+
+- objetivo global de la tarea,
+- la misión concreta del nodo y el rol del agente,
+- el resultado íntegro de los nodos de los que depende (quién lo produjo y con qué misión),
+- su intento anterior y el veredicto recibido cuando el nodo se repite dentro de un bucle,
+- quién recibirá su resultado después.
+
+El estado de los nodos se persiste tras cada paso, de modo que la UI sigue mostrando el avance por nodos.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import re
+import time
+from typing import Any, Callable, Dict, List, Optional, Set
+
+from praxeon.workflows.engine import WorkflowEngine
+from praxeon.workflows.models import (
+    NodeStatus,
+    NodeType,
+    WorkflowDefinition,
+    WorkflowNode,
+    WorkflowStatus,
+)
+
+logger = logging.getLogger(__name__)
+
+AGENT_NODE_TYPES = (NodeType.AGENT, NodeType.DELEGATE, NodeType.TASK)
+TERMINAL = (WorkflowStatus.COMPLETED, WorkflowStatus.FAILED, WorkflowStatus.CANCELLED)
+RESERVED_OUTPUT_KEYS = {"agent_id", "agent_name", "agent_role", "node_mission", "response", "status", "steps", "iteration", "simulated"}
+DEFAULT_NODE_STEPS = 12
+MAX_NODE_STEPS = 50
+DEFAULT_TOTAL_NODE_RUNS = 200
+
+
+def node_mission(node: WorkflowNode) -> str:
+    """Misión textual del nodo: metadata.mission > inputs.mission/instruction/task/prompt > nombre."""
+    for source in (node.metadata, node.inputs):
+        for key in ("mission", "instruction", "task", "prompt"):
+            value = source.get(key) if isinstance(source, dict) else None
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    return node.name
+
+
+def parse_structured_output(text: str) -> Dict[str, Any]:
+    """Extrae un objeto JSON de la respuesta final (entero o en bloque ```json```) para que las condiciones del grafo lo lean."""
+    if not text:
+        return {}
+    candidates: List[str] = [text.strip()]
+    candidates += re.findall(r"```(?:json)?\s*(\{.*?\})\s*```", text, flags=re.DOTALL)
+    for cand in candidates:
+        try:
+            data = json.loads(cand)
+        except (ValueError, TypeError):
+            continue
+        if isinstance(data, dict):
+            return data
+    return {}
+
+
+def _clip(text: str, limit: int) -> str:
+    if len(text) <= limit:
+        return text
+    head = int(limit * 0.7)
+    tail = limit - head
+    return f"{text[:head]}\n[... {len(text) - limit} caracteres intermedios omitidos solo en este prompt; el texto completo queda guardado en el workflow ...]\n{text[-tail:]}"
+
+
+class WorkflowMissionDriver:
+    """Ejecuta un workflow como misión: el grafo gobierna y los agentes trabajan dentro de cada nodo."""
+
+    def __init__(
+        self,
+        *,
+        workflow: WorkflowDefinition,
+        mission: Dict[str, Any],
+        goal: str,
+        agent_registry: Any,
+        workflow_service: Any,
+        run_agent_loop: Callable[..., Dict[str, Any]],
+        llm_for_agent: Callable[[Any], Any],
+        supervised_runner: Any = None,
+        poll_seconds: float = 0.3,
+    ):
+        self.workflow = workflow
+        self.mission = mission
+        self.goal = goal
+        self.agent_registry = agent_registry
+        self.workflow_service = workflow_service
+        self.run_agent_loop = run_agent_loop
+        self.llm_for_agent = llm_for_agent
+        self.poll_seconds = poll_seconds
+        self.runs: Dict[str, int] = {}
+        self.history: Dict[str, List[Dict[str, Any]]] = {}
+        self.total_runs = 0
+        self.max_total_runs = int(workflow.metadata.get("max_total_node_runs") or DEFAULT_TOTAL_NODE_RUNS)
+        sid = mission["session_id"]
+        self.engine = WorkflowEngine(
+            workflow,
+            execution_id=f"wfx-{sid}",
+            node_runner=self._run_node,
+            supervised_runner=supervised_runner,
+        )
+
+    # ------------------------------------------------------------------ briefing
+    def _agent_for(self, node: WorkflowNode, inputs: Dict[str, Any]) -> Any:
+        agent_id = inputs.get("_target_agent_id") or node.agent_id
+        if not agent_id or self.agent_registry is None:
+            return None
+        try:
+            return self.agent_registry.get(agent_id)
+        except Exception:
+            logger.debug("Agente '%s' no disponible en el registro", agent_id, exc_info=True)
+            return None
+
+    def _label(self, node: WorkflowNode) -> str:
+        agent = self._agent_for(node, {})
+        who = f"agente {agent.name} ({agent.role})" if agent else (f"agente {node.agent_id}" if node.agent_id else "tarea")
+        return f"«{node.name}» ({node.node_id}, {who})"
+
+    def effective_upstream(self, node_id: str) -> List[str]:
+        """Nodos de trabajo (agente/tarea) de los que depende `node_id`, atravesando nodos de control."""
+        found: List[str] = []
+        seen: Set[str] = set()
+
+        def walk(nid: str) -> None:
+            for up in self.workflow.get_upstream_node_ids(nid):
+                if up in seen or up == node_id:
+                    continue
+                seen.add(up)
+                up_node = self.workflow.nodes[up]
+                if up_node.node_type in AGENT_NODE_TYPES:
+                    if up not in found:
+                        found.append(up)
+                else:
+                    walk(up)
+
+        walk(node_id)
+        return found
+
+    def effective_downstream(self, node_id: str) -> List[str]:
+        found: List[str] = []
+        seen: Set[str] = set()
+
+        def walk(nid: str) -> None:
+            for down in self.workflow.get_downstream_node_ids(nid):
+                if down in seen or down == node_id:
+                    continue
+                seen.add(down)
+                down_node = self.workflow.nodes[down]
+                if down_node.node_type in AGENT_NODE_TYPES:
+                    if down not in found:
+                        found.append(down)
+                elif down_node.node_type != NodeType.END:
+                    walk(down)
+
+        walk(node_id)
+        return found
+
+    def build_briefing(self, node: WorkflowNode, inputs: Dict[str, Any], iteration: int) -> str:
+        agent = self._agent_for(node, inputs)
+        outputs = self.engine.context.node_outputs
+        parts: List[str] = [
+            "=== OBJETIVO GLOBAL DE LA TAREA DEL USUARIO ===",
+            self.goal,
+            "",
+            f"=== TU PAPEL EN EL WORKFLOW «{self.workflow.name}» ===",
+            f"Nodo: {node.name} ({node.node_id})"
+            + (f" · Agente: {agent.name} · Rol: {agent.role}" if agent else ""),
+            f"Iteración de este nodo: {iteration}",
+            f"TU MISIÓN EN ESTE NODO: {node_mission(node)}",
+        ]
+        expected = node.metadata.get("expected_output") if isinstance(node.metadata, dict) else None
+        if expected:
+            parts.append(f"FORMATO DE RESULTADO ESPERADO: {expected}")
+
+        upstream = [u for u in self.effective_upstream(node.node_id) if outputs.get(u, {}).get("response") is not None]
+        parts += ["", "=== INFORMACIÓN RECIBIDA DE NODOS ANTERIORES ==="]
+        if not upstream:
+            parts.append("(ninguna: eres el primer nodo de trabajo del flujo)")
+        for up_id in upstream:
+            up_node = self.workflow.nodes[up_id]
+            out = outputs[up_id]
+            parts += [
+                f"--- De {self._label(up_node)} ---",
+                f"Misión de ese nodo: {node_mission(up_node)}",
+                "Resultado completo:",
+                _clip(str(out.get("response", "")), 12000),
+            ]
+            structured = {k: v for k, v in out.items() if k not in RESERVED_OUTPUT_KEYS}
+            if structured:
+                parts.append(f"Campos estructurados: {json.dumps(structured, ensure_ascii=False, default=str)[:2000]}")
+
+        previous = self.history.get(node.node_id) or []
+        if previous:
+            last = previous[-1]
+            parts += [
+                "",
+                f"=== TU INTENTO ANTERIOR EN ESTE NODO (iteración {last['iteration']}) ===",
+                _clip(str(last.get("response", "")), 6000),
+                "Corrige o mejora según la información recibida de los nodos anteriores (p. ej. los comentarios de un revisor).",
+            ]
+
+        downstream = self.effective_downstream(node.node_id)
+        if downstream:
+            parts += ["", "=== QUIÉN RECIBIRÁ TU RESULTADO ==="]
+            for d in downstream:
+                parts.append(f"- {self._label(self.workflow.nodes[d])}: {node_mission(self.workflow.nodes[d])}")
+
+        parts += [
+            "",
+            "=== INSTRUCCIONES ===",
+            "Trabaja SOLO en tu misión. Termina con finish(summary=\"...\") entregando tu resultado COMPLETO y autosuficiente:",
+            "el siguiente agente no verá tu razonamiento ni tus herramientas, solo ese resumen.",
+            "Si tu misión consiste en emitir un veredicto, haz que el resumen sea un objeto JSON con los campos pedidos"
+            " (p. ej. {\"approved\": true, \"feedback\": \"...\"}).",
+        ]
+        return "\n".join(parts)
+
+    # ------------------------------------------------------------------ ejecución de nodos
+    def _tool_filter(self, agent: Any) -> Optional[Callable[[str], Optional[str]]]:
+        if agent is None:
+            return None
+        allowed = [t.lower() for t in (agent.allowed_tools or ["*"])]
+        forbidden = {t.lower() for t in (agent.forbidden_tools or [])}
+        if "*" in allowed and not forbidden:
+            return None
+
+        def check(tool: str) -> Optional[str]:
+            t = (tool or "").lower()
+            if t in forbidden:
+                return f"❌ El agente «{agent.name}» tiene PROHIBIDA la herramienta '{tool}'. Usa otra de las permitidas o concluye con finish."
+            if "*" not in allowed and t not in allowed:
+                return (
+                    f"❌ La herramienta '{tool}' no está permitida para el agente «{agent.name}». "
+                    f"Herramientas permitidas: {', '.join(agent.allowed_tools)} (y finish)."
+                )
+            return None
+
+        return check
+
+    def _run_node(self, node: WorkflowNode, inputs: Dict[str, Any], engine: WorkflowEngine) -> Dict[str, Any]:
+        if self.mission.get("stopped"):
+            raise RuntimeError("Misión detenida por el operador")
+        self.total_runs += 1
+        if self.total_runs > self.max_total_runs:
+            raise RuntimeError(
+                f"Se superó el máximo de {self.max_total_runs} ejecuciones de nodos en el workflow (posible bucle sin salida)."
+            )
+        iteration = self.runs.get(node.node_id, 0) + 1
+        self.runs[node.node_id] = iteration
+        agent = self._agent_for(node, inputs)
+        briefing = self.build_briefing(node, inputs, iteration)
+        llm = self.llm_for_agent(agent)
+
+        base: Dict[str, Any] = {
+            "agent_id": agent.agent_id if agent else node.agent_id,
+            "agent_name": agent.name if agent else None,
+            "agent_role": agent.role if agent else None,
+            "node_mission": node_mission(node),
+            "iteration": iteration,
+        }
+
+        if llm is None:
+            # Sin LLM real (simulador): el flujo se recorre y se ve por nodos, sin trabajo de modelo
+            response = f"[simulado] {node_mission(node)}"
+            output = {**base, "response": response, "status": "completed", "steps": 0, "simulated": True}
+        else:
+            preamble = ""
+            if agent is not None:
+                preamble = (
+                    f"IDENTIDAD DEL AGENTE: {agent.name} — rol {agent.role}.\n{agent.system_prompt.strip()}\n\n"
+                    "Actúas como un nodo de un workflow orquestado por PRAXEON; sigue exactamente la misión de tu nodo.\n\n"
+                )
+            steps_cfg = node.metadata.get("max_steps") if isinstance(node.metadata, dict) else None
+            max_steps = max(1, min(int(steps_cfg or DEFAULT_NODE_STEPS), MAX_NODE_STEPS))
+            result = self.run_agent_loop(
+                self.mission,
+                llm,
+                goal=briefing,
+                max_steps=max_steps,
+                delay_sec=max(0.0, self.mission.get("step_delay_ms", 900) / 1000.0),
+                provider_name=getattr(llm, "provider_name", "llm"),
+                session_mode=self.mission.get("execution_mode") or "local_restricted",
+                id_prefix=f"{node.node_id}_i{iteration}_",
+                owns_session=False,
+                role_preamble=preamble,
+                tool_filter=self._tool_filter(agent),
+            )
+            if self.mission.get("stopped"):
+                raise RuntimeError("Misión detenida por el operador")
+            response = result.get("final_answer")
+            if not response:
+                raise RuntimeError(
+                    f"El agente del nodo '{node.node_id}' no concluyó su misión en {max_steps} pasos (sin finish válido)."
+                )
+            output = {**base, "response": str(response), "status": "completed", "steps": result.get("steps_used", 0)}
+
+        structured = parse_structured_output(output["response"])
+        for key, value in structured.items():
+            if key not in RESERVED_OUTPUT_KEYS:
+                output[key] = value
+        self.history.setdefault(node.node_id, []).append({"iteration": iteration, "response": output["response"]})
+        return output
+
+    # ------------------------------------------------------------------ bucle del grafo
+    def _sync(self) -> None:
+        try:
+            self.workflow_service.sync_engine(self.engine)
+        except Exception:
+            logger.warning("No se pudo sincronizar el estado del workflow", exc_info=True)
+
+    def run(self) -> bool:
+        """Recorre el grafo hasta un estado terminal. Devuelve True si el workflow terminó con éxito."""
+        engine = self.engine
+        engine.start(initial_variables={"goal": self.goal, "workspace_root": self.mission.get("workspace_root")})
+        self.workflow_service.register_external_engine(engine)
+        self.mission["workflow_execution_id"] = engine.context.execution_id
+        self._sync()
+        stalled = 0
+        try:
+            while True:
+                if self.mission.get("stopped"):
+                    engine.cancel("Misión detenida por el operador")
+                    break
+                while self.mission.get("paused") and not self.mission.get("stopped"):
+                    time.sleep(0.2)
+                if engine.context.status in TERMINAL:
+                    break
+                if engine.check_global_timeout():
+                    break
+                try:
+                    stepped = engine.step()
+                except Exception as exc:
+                    logger.error("Error avanzando el workflow %s: %s", engine.context.execution_id, exc, exc_info=True)
+                    engine.context.status = WorkflowStatus.FAILED
+                    engine.context.error_message = f"Error del motor: {exc}"
+                    break
+                self._sync()
+                if stepped is not None:
+                    stalled = 0
+                    continue
+                waiting = any(
+                    st in (NodeStatus.WAITING_APPROVAL, NodeStatus.WAITING_RESULT, NodeStatus.RETRYING)
+                    for st in engine.context.node_states.values()
+                )
+                if waiting:
+                    stalled = 0
+                else:
+                    stalled += 1
+                    if stalled >= 5 and engine.context.status not in TERMINAL:
+                        engine.context.status = WorkflowStatus.FAILED
+                        engine.context.error_message = "El workflow quedó bloqueado: no hay nodos listos ni en espera."
+                        break
+                time.sleep(self.poll_seconds)
+        finally:
+            self._sync()
+            self.workflow_service.unregister_external_engine(engine.context.execution_id)
+        return engine.context.status == WorkflowStatus.COMPLETED
+
+    def final_answer(self) -> str:
+        """Respuesta final: la del último nodo de trabajo completado, o el motivo del fallo."""
+        ctx = self.engine.context
+        if ctx.status != WorkflowStatus.COMPLETED:
+            return ctx.error_message or f"El workflow terminó en estado {ctx.status.value}."
+        for nid in reversed(ctx.execution_history):
+            node = self.workflow.nodes.get(nid)
+            out = ctx.node_outputs.get(nid) or {}
+            if node and node.node_type in AGENT_NODE_TYPES and out.get("response"):
+                return str(out["response"])
+        return f"Workflow «{self.workflow.name}» completado."

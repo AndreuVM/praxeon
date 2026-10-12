@@ -163,6 +163,11 @@ class WorkflowScheduler:
 
         return report
 
+    def sync_engine(self, engine: WorkflowEngine) -> None:
+        """Publica aprobaciones y persiste el estado de un motor que avanza fuera del scheduler (misiones con workflow)."""
+        self._publish_approval_transitions(engine.context.execution_id, engine)
+        self._persist_execution_safe(engine)
+
     def _publish_approval_transitions(self, exec_id: str, engine: WorkflowEngine) -> None:
         """Emite eventos cuando un nodo entra o sale de WAITING_APPROVAL (alimenta notificaciones y la UI)."""
         if self.event_bus is None:

@@ -41,6 +41,8 @@ class WorkflowService:
             persistence_store=persistence_store,
         )
         self.scheduler = WorkflowScheduler(persistence_store=self.persistence_store, event_bus=event_bus)
+        # Motores que avanzan fuera del scheduler (misiones gobernadas por workflow): aprobar/cancelar siguen funcionando
+        self._external_engines: Dict[str, WorkflowEngine] = {}
         if enable_scheduler:
             self.scheduler.start()
 
@@ -90,8 +92,17 @@ class WorkflowService:
             self.scheduler.start()  # idempotente: avanza, reintenta y aplica timeouts sin polling del cliente
         return exec_snapshot
 
+    def register_external_engine(self, engine: WorkflowEngine) -> None:
+        self._external_engines[engine.context.execution_id] = engine
+
+    def unregister_external_engine(self, execution_id: str) -> None:
+        self._external_engines.pop(execution_id, None)
+
+    def sync_engine(self, engine: WorkflowEngine) -> None:
+        self.scheduler.sync_engine(engine)
+
     def _active_engine(self, execution_id: str) -> Optional[WorkflowEngine]:
-        return self.scheduler.get_active_engines().get(execution_id)
+        return self._external_engines.get(execution_id) or self.scheduler.get_active_engines().get(execution_id)
 
     def cancel_execution(self, execution_id: str, reason: str = "Cancelada por el operador") -> Optional[WorkflowExecution]:
         """Cancela una ejecución activa (no altera una ya terminada)."""

@@ -28,6 +28,7 @@ from praxeon.workflows.models import (
     NodeType,
     WorkflowDefinition,
     WorkflowExecution,
+    WorkflowNode,
     WorkflowStatus,
 )
 from praxeon.workflows.supervised import SupervisedToolRunner, WorkflowApprovalRequired
@@ -185,6 +186,7 @@ class WorkflowEngine:
         tool_registry: Optional[Any] = None,
         allow_synthetic_fallback: bool = False,
         supervised_runner: Optional[SupervisedToolRunner] = None,
+        node_runner: Optional[Callable[[WorkflowNode, Dict[str, Any], "WorkflowEngine"], Dict[str, Any]]] = None,
         execution: Optional[WorkflowExecution] = None,
         execution_id: Optional[str] = None,
     ):
@@ -193,6 +195,8 @@ class WorkflowEngine:
         self.tool_registry = tool_registry
         self.allow_synthetic_fallback = allow_synthetic_fallback
         self.supervised_runner = supervised_runner
+        # Ejecutor de nodos de agente/tarea abstracta (mini-misión supervisada). Si existe, sustituye al bus de agentes
+        self.node_runner = node_runner
         self._handlers: Dict[str, Callable[[Dict[str, Any]], Dict[str, Any]]] = dict(task_handlers or {})
         self._lock = threading.RLock()
 
@@ -518,6 +522,8 @@ class WorkflowEngine:
                         tool_name=node.tool_name,
                         arguments={**node.inputs, **{k: v for k, v in resolved_inputs.items() if k in ("command", "cmd", "path", "content")}},
                     )
+                elif self.node_runner is not None and not node.tool_name:
+                    output = self.node_runner(node, resolved_inputs, self)
                 elif self.allow_synthetic_fallback:
                     output = {
                         "task_result": f"Executed {handler_key}",
@@ -532,7 +538,9 @@ class WorkflowEngine:
                     )
 
             elif node.node_type == NodeType.AGENT:
-                if self.agent_bus and node.agent_id:
+                if self.node_runner is not None:
+                    output = self.node_runner(node, resolved_inputs, self)
+                elif self.agent_bus and node.agent_id:
                     # Enviar mensaje formal al buzón del agente
                     msg = AgentMessage(
                         message_id=f"wf_agent_{node_id}_{uuid.uuid4().hex[:8]}",
@@ -712,7 +720,10 @@ class WorkflowEngine:
                 if not target_agent:
                     raise ValueError(f"Nodo DELEGATE '{node_id}' no tiene agente asignado ni candidatos válidos.")
 
-                if self.agent_bus:
+                if self.node_runner is not None:
+                    output = self.node_runner(node, {**resolved_inputs, "_target_agent_id": target_agent}, self)
+                    output["delegated_to"] = target_agent
+                elif self.agent_bus:
                     msg = AgentMessage(
                         message_id=f"wf_delegate_{node_id}_{uuid.uuid4().hex[:8]}",
                         sender_id="praxeon_supervisor",

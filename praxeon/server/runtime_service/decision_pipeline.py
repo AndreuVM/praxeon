@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 import hmac
 import logging
 import os
+import re
 from typing import Any, Dict, List, Optional
 import uuid
 
@@ -71,6 +72,18 @@ class DecisionPipelineMixin:
     ) -> DecisionResponse:
         """Punto de entrada de una propuesta externa pasando por todo el pipeline formal (delegado en StepExecutionCoordinator)."""
         return self.step_coordinator.propose_action(session_id, proposal)
+
+    @staticmethod
+    def _node_scoped_state(state: SessionState, session_meta: Dict[str, Any], action_id: str) -> SessionState:
+        """Vista del estado con solo los pasos del nodo de workflow que propone la acción (el resto de sesiones, intacto)."""
+        if not session_meta.get("workflow_id"):
+            return state
+        m = re.match(r"^(?P<prefix>.+_i\d+_)act_\d+$", action_id or "")
+        if not m:
+            return state
+        prefix = m.group("prefix")
+        own = [st for st in state.steps if str(getattr(st, "id", "")).startswith(prefix)]
+        return state.model_copy(update={"steps": own})
 
     def _propose_action_impl(
         self,
@@ -219,13 +232,22 @@ class DecisionPipelineMixin:
             )
 
             # Evasión real: texto vacío, extremadamente corto (< 30 chars) o con frases de evasión explícitas
-            is_evasive = len(summary_text) < 30 or any(m in summary_text.lower() for m in ("pendiente de lectura", "sin analizar", "no se ha realizado", "no he podido revisar"))
+            explicit_evasion = any(m in summary_text.lower() for m in ("pendiente de lectura", "sin analizar", "no se ha realizado", "no he podido revisar"))
+            if _meta.get("workflow_id"):
+                # Nodo de un workflow: un veredicto breve (p. ej. {"approved": true}) es un resultado legítimo del nodo
+                is_evasive = explicit_evasion or not summary_text
+                is_local_codebase_investigation = False
+            else:
+                is_evasive = len(summary_text) < 30 or explicit_evasion
 
             successful_obs = [s for s in state.steps if s.observation and len(str(s.observation).strip()) > 20]
             if is_evasive or (is_local_codebase_investigation and len(successful_obs) == 0 and len(summary_text) < 250):
                 is_premature_finish = True
 
-        evidences = self.evidence_engine.assess(state, action)
+        # En una misión con workflow cada nodo se supervisa con su propia trayectoria: repetir acciones parecidas
+        # entre nodos (p. ej. dos iteraciones de un bucle desarrollador/revisor) no es un bucle del agente
+        eval_state = self._node_scoped_state(state, _meta, action_id)
+        evidences = self.evidence_engine.assess(eval_state, action)
         if is_missing_resource or is_premature_finish:
             grounding_score = 0.05
         else:
@@ -280,7 +302,7 @@ class DecisionPipelineMixin:
 
         # 4. Evaluación de Proveedores Semánticos aislada por sesión (LAYA / TypeSafe / Mock)
         session_provider = self.get_session_provider(session_id)
-        assessments = session_provider.evaluate(state, [action])
+        assessments = session_provider.evaluate(eval_state, [action])
         assessment = assessments[0] if assessments else ProviderAssessment(
             provider=getattr(session_provider, "name", self.config.provider.name),
             available=False,

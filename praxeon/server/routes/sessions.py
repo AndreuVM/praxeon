@@ -36,30 +36,34 @@ def run_mission(
 ):
     """Inicia una nueva misión interactiva con ejecución y supervisión en tiempo real."""
     full_access_authorized = is_full_access_authorized(req.execution_mode, req.full_access_confirmed)
-    meta = service.start_mission(
-        goal=req.goal,
-        session_id=req.session_id,
-        agent_name=req.agent_name or "CodingAgent",
-        execution_mode=req.execution_mode or "local_restricted",
-        workspace_root=req.workspace_root,
-        llm_provider=req.llm_provider or "simulator",
-        llm_model=req.llm_model,
-        api_key=req.api_key,
-        base_url=req.base_url,
-        supervisor=req.supervisor or "laya",
-        decision_model=req.decision_model,
-        max_steps=req.max_steps or 25,
-        step_delay_ms=req.step_delay_ms or 900,
-        autonomous=bool(req.autonomous or req.allow_unattended_execution or full_access_authorized),
-        allow_unattended_execution=bool(req.autonomous or req.allow_unattended_execution or full_access_authorized),
-        llm_failure_policy=req.llm_failure_policy or "synthetic_fallback",
-        chat_history=req.chat_history,
-        metadata={
-            "created_by": "api_client",
-            "full_access_authorized_by_operator": full_access_authorized,
-            "require_step_confirmation": bool(req.require_step_confirmation),
-        },
-    )
+    try:
+        meta = service.start_mission(
+            workflow_id=req.workflow_id,
+            goal=req.goal,
+            session_id=req.session_id,
+            agent_name=req.agent_name or "CodingAgent",
+            execution_mode=req.execution_mode or "local_restricted",
+            workspace_root=req.workspace_root,
+            llm_provider=req.llm_provider or "simulator",
+            llm_model=req.llm_model,
+            api_key=req.api_key,
+            base_url=req.base_url,
+            supervisor=req.supervisor or "laya",
+            decision_model=req.decision_model,
+            max_steps=req.max_steps or 25,
+            step_delay_ms=req.step_delay_ms or 900,
+            autonomous=bool(req.autonomous or req.allow_unattended_execution or full_access_authorized),
+            allow_unattended_execution=bool(req.autonomous or req.allow_unattended_execution or full_access_authorized),
+            llm_failure_policy=req.llm_failure_policy or "synthetic_fallback",
+            chat_history=req.chat_history,
+            metadata={
+                "created_by": "api_client",
+                "full_access_authorized_by_operator": full_access_authorized,
+                "require_step_confirmation": bool(req.require_step_confirmation),
+            },
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     summary = service.get_session_summary(meta["session_id"])
     if not summary:
         raise HTTPException(status_code=500, detail="Error inicializando el resumen de la misión.")
