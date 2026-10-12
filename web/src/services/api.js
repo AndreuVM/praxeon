@@ -310,6 +310,25 @@ export async function fetchEvents(sessionId, page = 1, pageSize = 50, afterSeque
   }
 }
 
+/** Todos los eventos de una sesión (más antiguo primero), paginando con after_sequence. */
+export async function fetchAllEvents(sessionId, maxPages = 20) {
+  const all = [];
+  let after = 0;
+  for (let page = 0; page < maxPages; page += 1) {
+    try {
+      const res = await authFetch(`${API_BASE}/sessions/${encodeURIComponent(sessionId)}/events?after_sequence=${after}&limit=1000`);
+      if (!res.ok) break;
+      const data = (await res.json()).data || {};
+      all.push(...(data.events || []));
+      if (!data.has_more || data.latest_sequence <= after) break;
+      after = data.latest_sequence;
+    } catch {
+      break;
+    }
+  }
+  return all;
+}
+
 /**
  * Solicita al servidor un ticket efímero de streaming para una sesión.
  */
@@ -551,6 +570,43 @@ export async function resolveFailedNode(executionId, nodeId, action) {
 }
 
 // Activa/desactiva un workflow: solo los activos pueden gobernar una tarea
+// ---------------------------------------------------------------- workspace del proyecto
+async function workspaceCall(path, options) {
+  const res = await authFetch(`${API_BASE}/workspace${path}`, options);
+  if (!res.ok) {
+    let detail = `HTTP ${res.status}`;
+    try {
+      detail = (await res.json()).detail || detail;
+    } catch { /* cuerpo no JSON */ }
+    throw new Error(detail);
+  }
+  return (await res.json()).data;
+}
+
+// Avisa a todos los componentes que muestran el workspace de que ha cambiado.
+async function workspaceMutation(path, options) {
+  const data = await workspaceCall(path, options);
+  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('praxeon:workspace-changed', { detail: data }));
+  return data;
+}
+
+export const fetchWorkspace = () => workspaceCall('');
+export const selectWorkspace = (path) => workspaceMutation('', { method: 'PUT', body: JSON.stringify({ path }) });
+export const clearWorkspace = () => workspaceMutation('', { method: 'DELETE' });
+export const forgetWorkspace = (path) => workspaceMutation('/forget', { method: 'POST', body: JSON.stringify({ path }) });
+export const validateWorkspacePath = (path) => workspaceCall(`/validate?path=${encodeURIComponent(path)}`);
+export const browseWorkspace = (path = '', showHidden = false) =>
+  workspaceCall(`/browse?path=${encodeURIComponent(path)}&show_hidden=${showHidden}`);
+
+// Selector de carpetas nativo (solo en la app de escritorio); null si no está disponible o se cancela.
+export function canPickFolderNatively() {
+  return typeof window !== 'undefined' && typeof window.pywebview?.api?.pick_folder === 'function';
+}
+export async function pickFolderNatively(start = '') {
+  if (!canPickFolderNatively()) return null;
+  return (await window.pywebview.api.pick_folder(start)) || null;
+}
+
 export async function setWorkflowActive(workflowId, active) {
   const action = active ? 'activate' : 'deactivate';
   const res = await authFetch(`${API_BASE}/workflows/${encodeURIComponent(workflowId)}/${action}`, { method: 'POST' });

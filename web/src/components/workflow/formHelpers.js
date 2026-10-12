@@ -165,7 +165,8 @@ export function nodeToForm(node, nodeIds = []) {
     tool_name: node.tool_name || '',
     mission,
     expected_output: typeof meta.expected_output === 'string' ? meta.expected_output : '',
-    max_steps: meta.max_steps ?? '',
+    max_steps: meta.max_steps === 0 ? '' : meta.max_steps ?? '',
+    unlimited_steps: meta.max_steps === 0,
     param_rows: rows,
     preserved_inputs: preserved,
     raw_inputs: inputs,
@@ -240,8 +241,12 @@ export function formToNodeUpdate(form) {
   if (isWork) {
     if ((form.mission || '').trim()) metadata.mission = form.mission.trim();
     if ((form.expected_output || '').trim()) metadata.expected_output = form.expected_output.trim();
-    const steps = Number(form.max_steps);
-    if (steps > 0) metadata.max_steps = Math.min(Math.floor(steps), 50);
+    // 0 = sin límite: el agente solo se detiene al concluir, por un fallo irrecuperable o si lo paras tú
+    if (form.unlimited_steps) metadata.max_steps = 0;
+    else {
+      const steps = Number(form.max_steps);
+      if (steps > 0) metadata.max_steps = Math.min(Math.floor(steps), 500);
+    }
   }
 
   return {

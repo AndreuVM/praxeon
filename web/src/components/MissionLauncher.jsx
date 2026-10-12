@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import WorkspaceField from './workspace/WorkspaceField';
 import { Play, Pause, Square, Sparkles, Terminal, Cpu, Shield, RefreshCw, AlertTriangle, Activity, Settings2 } from 'lucide-react';
 import { fetchProviders, fetchWorkflows } from '../services/api';
 
@@ -773,24 +774,9 @@ export default function MissionLauncher({
               {/* Workspace Root */}
               <div>
                 <label style={{ display: 'block', fontSize: '10.5px', color: '#8b949e', marginBottom: '3px' }}>
-                  Workspace Root (Directorio de Trabajo):
+                  Carpeta de trabajo (workspace):
                 </label>
-                <input
-                  type="text"
-                  value={workspaceRoot}
-                  onChange={(e) => setWorkspaceRoot(e.target.value)}
-                  placeholder="Directorio local (ej. ./ o C:/path)"
-                  style={{
-                    width: '100%',
-                    backgroundColor: '#0c0f14',
-                    border: '1px solid #202737',
-                    borderRadius: '4px',
-                    padding: '4px 8px',
-                    color: '#f0f6fc',
-                    fontSize: '11px',
-                    outline: 'none',
-                  }}
-                />
+                <WorkspaceField value={workspaceRoot} onChange={setWorkspaceRoot} compact />
               </div>
             </div>
           )}

@@ -1,5 +1,5 @@
 import React from 'react';
-import { ChevronDown, User, Cpu, Shield, AlertTriangle, Box, Plus, Key } from 'lucide-react';
+import { ChevronDown, User, Cpu, Shield, AlertTriangle, Box, Plus, Key, FolderOpen } from 'lucide-react';
 
 export default function Header({
   sessionId = '7f3a2c',
@@ -15,7 +15,12 @@ export default function Header({
   onOpenPropose: _onOpenPropose,
   onNewSession,
   onOpenAuth,
+  workspace = null,
+  sessionWorkspace = null,
+  onOpenWorkspace,
 }) {
+  const wsName = (p) => (p || '').split(/[\\/]/).filter(Boolean).pop() || p;
+  const sessionDiffers = Boolean(sessionWorkspace && workspace?.path && sessionWorkspace !== workspace.path);
   const getModeBadge = () => {
     const mode = (executionMode || '').toLowerCase();
     if (mode === 'full_access' || mode.startsWith('full_access')) {
@@ -149,6 +154,44 @@ export default function Header({
           >
             <AlertTriangle size={12} />
             <span>SYNTHETIC FALLBACK ⚠</span>
+          </div>
+        )}
+
+        {/* Workspace del proyecto */}
+        {onOpenWorkspace && (
+          <button
+            type="button"
+            onClick={onOpenWorkspace}
+            title={`Workspace del proyecto: ${workspace?.path || 'cargando…'}\nClic para cambiarlo`}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              maxWidth: '260px',
+              padding: '4px 11px',
+              borderRadius: '9999px',
+              backgroundColor: 'rgba(56, 139, 253, 0.12)',
+              border: '1px solid rgba(56, 139, 253, 0.35)',
+              color: '#79c0ff',
+              fontSize: '11px',
+              fontWeight: '600',
+              cursor: 'pointer',
+            }}
+          >
+            <FolderOpen size={12} style={{ flexShrink: 0 }} />
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {workspace?.path ? wsName(workspace.path) : 'Elegir workspace'}
+            </span>
+            <ChevronDown size={12} style={{ flexShrink: 0 }} />
+          </button>
+        )}
+        {sessionDiffers && (
+          <div
+            title={`Esta sesión trabaja en otra carpeta: ${sessionWorkspace}`}
+            style={{ display: 'flex', alignItems: 'center', gap: '5px', maxWidth: '200px', padding: '3px 9px', borderRadius: '9999px', backgroundColor: 'rgba(234, 179, 8, 0.14)', border: '1px solid rgba(234, 179, 8, 0.4)', color: '#eab308', fontSize: '10.5px', fontWeight: 600 }}
+          >
+            <AlertTriangle size={11} style={{ flexShrink: 0 }} />
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Sesión: {wsName(sessionWorkspace)}</span>
           </div>
         )}
 

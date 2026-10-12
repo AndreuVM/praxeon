@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import WorkspaceField from '../workspace/WorkspaceField';
 import {
   Settings,
   Save,
@@ -131,8 +132,6 @@ export default function SettingsView({
           base_url: settings.ollamaBaseUrl,
           supervisor: settings.defaultSupervisor,
           execution_mode: settings.defaultExecutionMode,
-          workspace_root: settings.defaultWorkspaceRoot || undefined,
-          workspaceRoot: settings.defaultWorkspaceRoot || undefined,
           max_steps: settings.maxStepsDefault,
           step_delay_ms: settings.stepDelayMs,
         }));
@@ -704,28 +703,12 @@ export default function SettingsView({
 
             <div>
               <label style={{ fontSize: '12.5px', fontWeight: '600', color: '#f8fafc', display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                <span>Ruta Raíz del Espacio de Trabajo (Workspace Root)</span>
+                <span>Workspace del proyecto</span>
                 <span style={{ fontSize: '11px', color: '#58a6ff' }}>Confinamiento de ruta física</span>
               </label>
-              <input
-                type="text"
-                value={settings.defaultWorkspaceRoot || ''}
-                onChange={(e) => handleChange('defaultWorkspaceRoot', e.target.value)}
-                placeholder="Ruta base del proyecto (dejar vacío para auto-detectar raíz del repositorio)"
-                style={{
-                  width: '100%',
-                  padding: '9px 12px',
-                  borderRadius: '6px',
-                  backgroundColor: '#0c111a',
-                  border: '1px solid #1e293b',
-                  color: '#f8fafc',
-                  fontSize: '12px',
-                  fontFamily: 'var(--font-mono)',
-                  outline: 'none',
-                }}
-              />
+              <WorkspaceField global />
               <p style={{ fontSize: '11px', color: '#73849c', marginTop: '4px' }}>
-                Define el directorio raíz sobre el que el sandbox y el supervisor permitirán operaciones de archivo y comandos. Por omisión se auto-detecta la raíz del repositorio o directorio de trabajo actual.
+                Carpeta sobre la que trabajan todas las tareas nuevas: el sandbox y el supervisor solo permiten operar dentro de ella. Se guarda en el servidor y también puedes cambiarla desde la cabecera. Cada tarea puede usar otra carpeta si lo necesita.
               </p>
             </div>
 

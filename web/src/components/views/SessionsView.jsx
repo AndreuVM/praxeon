@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import WorkspaceField from '../workspace/WorkspaceField';
 import {
   FolderKanban,
   Plus,
@@ -748,25 +749,12 @@ export default function SessionsView({
 
               <div>
                 <label style={{ fontSize: '11.5px', fontWeight: '600', color: '#cbd5e1', display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
-                  <span>Ruta Raíz del Espacio de Trabajo (Workspace Root)</span>
-                  <span style={{ fontSize: '10px', color: '#64748b' }}>Opcional</span>
+                  <span>Carpeta de trabajo (workspace)</span>
+                  <span style={{ fontSize: '10px', color: '#64748b' }}>Por defecto, la del proyecto</span>
                 </label>
-                <input
-                  type="text"
+                <WorkspaceField
                   value={formData.workspace_root || ''}
-                  onChange={(e) => setFormData({ ...formData, workspace_root: e.target.value })}
-                  placeholder="Ruta base del proyecto (dejar vacío para auto-detectar)"
-                  style={{
-                    width: '100%',
-                    padding: '8px 10px',
-                    borderRadius: '6px',
-                    backgroundColor: '#0a0e16',
-                    border: '1px solid #1e293b',
-                    color: '#f8fafc',
-                    fontSize: '12px',
-                    fontFamily: 'var(--font-mono)',
-                    outline: 'none',
-                  }}
+                  onChange={(path) => setFormData({ ...formData, workspace_root: path })}
                 />
               </div>
 

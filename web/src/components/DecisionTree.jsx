@@ -1,18 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
-import {
-  Plus,
-  Minus,
-  Maximize2,
-  Download,
-  Play,
-  Check,
-  X,
-  AlertTriangle,
-  Clock,
-  Sparkles,
-  RefreshCw,
-  RotateCcw,
-} from 'lucide-react';
+import { Plus, Minus, Maximize2, Download } from 'lucide-react';
+import { agentColor } from '../utils/agentColor';
+import WorkflowBlocks, { buildBlocks } from './WorkflowBlocks';
+import TreeCanvas from './TreeCanvas';
+
+export { agentColor };
 
 export default function DecisionTree({
   nodes = [],
@@ -25,6 +17,15 @@ export default function DecisionTree({
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [autoLayout, setAutoLayout] = useState(true);
   const canvasRef = useRef(null);
+  const [blockOpen, setBlockOpen] = useState({}); // decisión explícita del usuario por bloque (abrir/cerrar)
+
+  // Con un workflow, los pasos se agrupan en bloques (uno por agente y nodo) en lugar de un árbol gigante
+  const hasWorkflow = nodes.some((n) => n.agentName);
+  const blocks = React.useMemo(() => (hasWorkflow ? buildBlocks(nodes) : []), [nodes, hasWorkflow]);
+  // Sin elección del usuario: se abre solo el bloque en curso; al completarse se pliega
+  const isBlockOpen = (b) => (blockOpen[b.key] !== undefined ? blockOpen[b.key] : b.state === 'running' && b.index === blocks.length - 1);
+  const toggleBlock = (b) => setBlockOpen((prev) => ({ ...prev, [b.key]: !isBlockOpen(b) }));
+  const setAllBlocks = (value) => setBlockOpen(Object.fromEntries(blocks.map((b) => [b.key, value])));
 
   // Zoom controls
   const handleZoomIn = () => setZoom((z) => Math.min(z + 0.15, 1.8));
@@ -63,152 +64,28 @@ export default function DecisionTree({
     }
   }, [nodes, autoLayout]);
 
-  // Helper to find parent coordinates for bezier curves
-  const nodeMap = React.useMemo(() => {
-    const map = {};
+  const canvasSize = React.useMemo(() => {
+    let maxX = 0;
+    let maxY = 0;
     nodes.forEach((n) => {
-      map[n.id] = n;
+      maxX = Math.max(maxX, (n.x || 0) + 260);
+      maxY = Math.max(maxY, (n.y || 0) + 140);
     });
-    return map;
+    return { width: Math.max(1200, maxX), height: Math.max(900, maxY) };
   }, [nodes]);
 
-  // Render SVG connecting curves between nodes
-  const renderConnections = () => {
-    return nodes.map((node) => {
-      if (!node.parentId || !nodeMap[node.parentId]) return null;
-      const parent = nodeMap[node.parentId];
-
-      const startX = parent.x + (parent.type === 'start' ? 40 : 100);
-      const startY = parent.y + (parent.type === 'start' ? 28 : 42);
-      const endX = node.x + (node.type === 'start' ? 40 : 100);
-      const endY = node.y;
-
-      const midY = (startY + endY) / 2;
-      const pathData = `M ${startX} ${startY} C ${startX} ${midY}, ${endX} ${midY}, ${endX} ${endY}`;
-
-      // Pick edge color based on target node status
-      let strokeColor = '#3b4961';
-      let particleColor = '#60a5fa';
-      if (node.status === 'ALLOW') {
-        strokeColor = 'rgba(16, 185, 129, 0.7)';
-        particleColor = '#34d399';
-      } else if (node.status === 'PROPOSE') {
-        strokeColor = 'rgba(168, 85, 247, 0.7)';
-        particleColor = '#c084fc';
-      } else if (node.status === 'REVIEW') {
-        strokeColor = 'rgba(245, 158, 11, 0.75)';
-        particleColor = '#fbbf24';
-      } else if (node.status === 'BLOCK') {
-        strokeColor = 'rgba(239, 68, 68, 0.7)';
-        particleColor = '#f87171';
-      } else if (node.status === 'REPLAN') {
-        strokeColor = 'rgba(168, 85, 247, 0.75)';
-        particleColor = '#c084fc';
-      } else if (node.status === 'EXECUTING') {
-        strokeColor = 'rgba(56, 189, 248, 0.85)';
-        particleColor = '#38bdf8';
-      }
-
-      return (
-        <g key={`edge-${node.parentId}-${node.id}`}>
-          {/* Resplandor sutil del enlace */}
-          <path
-            d={pathData}
-            fill="none"
-            stroke={strokeColor}
-            strokeWidth="3.5"
-            opacity="0.25"
-            filter="blur(1px)"
-          />
-          {/* Trazado principal animado al unirse al grafo */}
-          <path
-            className="edge-path-animated"
-            d={pathData}
-            fill="none"
-            stroke={strokeColor}
-            strokeWidth="2"
-            strokeDasharray={node.status === 'REVIEW' ? '4 3' : 'none'}
-          />
-          {/* Partícula en movimiento continuo indicando flujo de datos en tiempo real */}
-          <circle r="2.5" fill={particleColor} opacity="0.95">
-            <animateMotion dur="2.2s" repeatCount="indefinite" path={pathData} />
-          </circle>
-          {/* Punta de flecha indicadora */}
-          <polygon
-            points={`${endX},${endY} ${endX - 4},${endY - 6} ${endX + 4},${endY - 6}`}
-            fill={strokeColor}
-          />
-        </g>
-      );
+  // Agente que tiene el control: el del último paso del árbol que pertenece a un workflow
+  const controlling = React.useMemo(() => {
+    for (let i = nodes.length - 1; i >= 0; i -= 1) if (nodes[i].agentName) return nodes[i];
+    return null;
+  }, [nodes]);
+  const agentLegend = React.useMemo(() => {
+    const seen = new Map();
+    nodes.forEach((n) => {
+      if (n.agentName && !seen.has(n.agentName)) seen.set(n.agentName, n.agentRole);
     });
-  };
-
-  // Node icon and style dispatcher
-  const getNodeVisuals = (node, isSelected) => {
-    let icon = Check;
-    let iconBg = 'rgba(16, 185, 129, 0.15)';
-    let iconBorder = 'rgba(16, 185, 129, 0.35)';
-    let iconColor = '#34d399';
-    let borderColor = '#1e293b';
-    let bg = '#121824';
-
-    if (node.type === 'start') {
-      icon = Play;
-      iconBg = '#1e293b';
-      iconBorder = '#334155';
-      iconColor = '#cbd5e1';
-      bg = '#162030';
-    } else if (node.status === 'PROPOSE' || node.type === 'hub') {
-      icon = Sparkles;
-      iconBg = 'rgba(139, 92, 246, 0.2)';
-      iconBorder = 'rgba(139, 92, 246, 0.4)';
-      iconColor = '#c084fc';
-      borderColor = 'rgba(139, 92, 246, 0.4)';
-      bg = '#1a1f33';
-    } else if (node.status === 'BLOCK') {
-      icon = X;
-      iconBg = 'rgba(239, 68, 68, 0.18)';
-      iconBorder = 'rgba(239, 68, 68, 0.35)';
-      iconColor = '#f87171';
-      borderColor = 'rgba(239, 68, 68, 0.28)';
-      bg = '#1a151b';
-    } else if (node.status === 'REVIEW') {
-      icon = AlertTriangle;
-      iconBg = 'rgba(245, 158, 11, 0.18)';
-      iconBorder = 'rgba(245, 158, 11, 0.35)';
-      iconColor = '#fbbf24';
-      borderColor = 'rgba(245, 158, 11, 0.28)';
-      bg = '#1c1b18';
-    } else if (node.status === 'REPLAN') {
-      icon = RotateCcw;
-      iconBg = 'rgba(168, 85, 247, 0.2)';
-      iconBorder = 'rgba(168, 85, 247, 0.4)';
-      iconColor = '#c084fc';
-      borderColor = 'rgba(168, 85, 247, 0.35)';
-      bg = '#181424';
-    } else if (node.status === 'PENDING') {
-      icon = Clock;
-      iconBg = 'rgba(100, 116, 139, 0.2)';
-      iconBorder = 'rgba(100, 116, 139, 0.35)';
-      iconColor = '#94a3b8';
-      borderColor = '#293548';
-      bg = '#131a26';
-    } else if (node.status === 'EXECUTING') {
-      icon = RefreshCw;
-      iconBg = 'rgba(56, 189, 248, 0.2)';
-      iconBorder = 'rgba(56, 189, 248, 0.45)';
-      iconColor = '#38bdf8';
-      borderColor = 'rgba(56, 189, 248, 0.45)';
-      bg = '#0e1726';
-    }
-
-    if (isSelected) {
-      borderColor = '#5a6882';
-      bg = '#1c2432';
-    }
-
-    return { icon, iconBg, iconBorder, iconColor, borderColor, bg };
-  };
+    return [...seen.entries()];
+  }, [nodes]);
 
   return (
     <div
@@ -239,6 +116,16 @@ export default function DecisionTree({
             Decision Tree (Live)
           </span>
           <span className="pulse-dot" style={{ width: '6px', height: '6px' }} />
+          {controlling && (
+            <span
+              title={`Agente con el control ahora: ${controlling.agentName}${controlling.agentRole ? ` (${controlling.agentRole})` : ''} · nodo «${controlling.wfNodeName || controlling.wfNodeId}»`}
+              style={{ display: 'flex', alignItems: 'center', gap: '6px', marginLeft: '8px', padding: '2px 9px', borderRadius: '9999px', fontSize: '11px', fontWeight: 600, color: agentColor(controlling.agentName), border: `1px solid ${agentColor(controlling.agentName)}`, backgroundColor: 'rgba(255,255,255,0.03)' }}
+            >
+              <span style={{ width: '7px', height: '7px', borderRadius: '50%', backgroundColor: agentColor(controlling.agentName) }} />
+              En control: {controlling.agentName}
+              <span style={{ color: '#8b949e', fontWeight: 400 }}>· {controlling.wfNodeName || controlling.wfNodeId}</span>
+            </span>
+          )}
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
@@ -272,6 +159,17 @@ export default function DecisionTree({
             </div>
           </div>
 
+          {hasWorkflow && (
+            <div style={{ display: 'flex', gap: '6px' }}>
+              <button type="button" onClick={() => setAllBlocks(true)} style={{ fontSize: '11px', color: '#8b949e', background: 'transparent', border: '1px solid #243044', borderRadius: '5px', padding: '2px 8px', cursor: 'pointer' }}>
+                Expandir todo
+              </button>
+              <button type="button" onClick={() => setAllBlocks(false)} style={{ fontSize: '11px', color: '#8b949e', background: 'transparent', border: '1px solid #243044', borderRadius: '5px', padding: '2px 8px', cursor: 'pointer' }}>
+                Contraer todo
+              </button>
+            </div>
+          )}
+
           {/* Action icons */}
           <button
             onClick={handleResetZoom}
@@ -290,6 +188,25 @@ export default function DecisionTree({
           </button>
         </div>
       </div>
+
+      {!hasWorkflow && agentLegend.length > 0 && (
+        <div
+          style={{ position: 'absolute', bottom: '12px', left: '16px', zIndex: 10, display: 'flex', flexDirection: 'column', gap: '4px', padding: '8px 10px', backgroundColor: '#141924', border: '1px solid #1e2636', borderRadius: '8px', fontSize: '10.5px', color: '#c9d1d9' }}
+        >
+          <span style={{ color: '#8b949e', fontWeight: 600 }}>Agentes</span>
+          {agentLegend.map(([name, role]) => (
+            <span key={name} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ width: '9px', height: '9px', borderRadius: '2px', backgroundColor: agentColor(name) }} />
+              {name}
+              {role ? <span style={{ color: '#64748b' }}>· {role}</span> : null}
+            </span>
+          ))}
+          <span style={{ color: '#64748b', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <svg width="18" height="6"><line x1="0" y1="3" x2="18" y2="3" stroke="#94a3b8" strokeWidth="2" strokeDasharray="5 3" /></svg>
+            traspaso de tarea
+          </span>
+        </div>
+      )}
 
       {/* Floating Canvas Zoom Toolbar */}
       <div
@@ -368,147 +285,30 @@ export default function DecisionTree({
           backgroundSize: '24px 24px',
         }}
       >
+        {hasWorkflow ? (
+          <WorkflowBlocks
+            blocks={blocks}
+            isOpen={isBlockOpen}
+            onToggle={toggleBlock}
+            selectedNodeId={selectedNodeId}
+            onSelectNode={onSelectNode}
+            autoScroll={autoLayout}
+            zoom={zoom}
+          />
+        ) : (
         <div
           style={{
             transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
             transformOrigin: '0 0',
             position: 'absolute',
-            width: '1200px',
-            height: '900px',
+            width: `${canvasSize.width}px`,
+            height: `${canvasSize.height}px`,
             transition: isDragging ? 'none' : 'transform 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
           }}
         >
-          {/* SVG Connection Paths */}
-          <svg
-            style={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              width: '100%',
-              height: '100%',
-              pointerEvents: 'none',
-            }}
-          >
-            {renderConnections()}
-          </svg>
-
-          {/* HTML Nodes */}
-          {nodes.map((node, idx) => {
-            const isSelected = selectedNodeId === node.id;
-            const isLatest = idx === nodes.length - 1 && node.type !== 'start';
-            const isExecuting = node.status === 'EXECUTING';
-            const visuals = getNodeVisuals(node, isSelected);
-            const Icon = visuals.icon;
-
-            if (node.type === 'start') {
-              return (
-                <div
-                  key={node.id}
-                  className="tree-node"
-                  onClick={() => onSelectNode(node.id)}
-                  style={{
-                    position: 'absolute',
-                    left: `${node.x}px`,
-                    top: `${node.y}px`,
-                    width: '80px',
-                    height: '28px',
-                    borderRadius: '9999px',
-                    backgroundColor: visuals.bg,
-                    border: `1px solid ${visuals.borderColor}`,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '6px',
-                    color: '#e2e8f0',
-                    fontSize: '11px',
-                    fontWeight: '600',
-                    cursor: 'pointer',
-                    userSelect: 'none',
-                    boxShadow: isSelected ? '0 0 12px rgba(56, 189, 248, 0.4)' : 'var(--shadow-sm)',
-                    transition: 'all 0.25s ease',
-                  }}
-                >
-                  <Play size={11} style={{ fill: '#e2e8f0' }} />
-                  <span>Start</span>
-                </div>
-              );
-            }
-
-            return (
-              <div
-                key={node.id}
-                className={`tree-node ${node.isNew ? 'tree-node-enter' : ''} ${isLatest || isExecuting ? 'tree-node-active-pulse' : ''}`}
-                onClick={() => onSelectNode(node.id)}
-                style={{
-                  position: 'absolute',
-                  left: `${node.x}px`,
-                  top: `${node.y}px`,
-                  width: '205px',
-                  height: '44px',
-                  borderRadius: '8px',
-                  backgroundColor: visuals.bg,
-                  border: `1px solid ${visuals.borderColor}`,
-                  display: 'flex',
-                  alignItems: 'center',
-                  padding: '0 10px',
-                  gap: '9px',
-                  cursor: 'pointer',
-                  userSelect: 'none',
-                  transition: 'all 0.22s ease',
-                  boxShadow: isSelected
-                    ? '0 0 12px rgba(90, 104, 130, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.1)'
-                    : isLatest
-                    ? '0 0 12px rgba(56, 189, 248, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.08)'
-                    : 'var(--shadow-clay-sm)',
-                }}
-              >
-                {/* Node icon pill */}
-                <div
-                  style={{
-                    width: '24px',
-                    height: '24px',
-                    borderRadius: '50%',
-                    backgroundColor: visuals.iconBg,
-                    border: `1px solid ${visuals.iconBorder}`,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    color: visuals.iconColor,
-                    flexShrink: 0,
-                  }}
-                >
-                  <Icon size={12} strokeWidth={2.4} style={{ animation: isExecuting ? 'softPulse 1s infinite' : 'none' }} />
-                </div>
-
-                {/* Node Text labels */}
-                <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-                  <span
-                    style={{
-                      fontSize: '11.5px',
-                      fontWeight: '600',
-                      color: isSelected ? '#ffffff' : '#f0f6fc',
-                      whiteSpace: 'nowrap',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                    }}
-                  >
-                    {node.label}
-                  </span>
-                  <span
-                    style={{
-                      fontSize: '10px',
-                      color: '#8b949e',
-                      marginTop: '1px',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {node.subtitle}
-                  </span>
-                </div>
-              </div>
-            );
-          })}
+          <TreeCanvas nodes={nodes} selectedNodeId={selectedNodeId} onSelectNode={onSelectNode} />
         </div>
+        )}
       </div>
     </div>
   );

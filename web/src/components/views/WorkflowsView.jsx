@@ -132,7 +132,10 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
     try {
       const res = await fetchAgents();
       if (res && res.data) {
-        setRegisteredAgents(Array.isArray(res.data) ? res.data : Object.values(res.data));
+        // El API identifica al agente con `agent_id`; los formularios usan `id` (sin esto el desplegable
+        // guardaba el texto visible como id y el nodo no encontraba a su agente).
+        const list = Array.isArray(res.data) ? res.data : Object.values(res.data);
+        setRegisteredAgents(list.map((a) => ({ ...a, id: a.agent_id || a.id })));
       }
     } catch (err) {
       console.warn('No se pudieron cargar los agentes registrados:', err);

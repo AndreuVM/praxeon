@@ -1,6 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
+import WorkspaceField from './workspace/WorkspaceField';
+import { fetchWorkflows } from '../services/api';
+import ModelPicker from './ModelPicker';
+import { deriveChatState } from '../utils/chatFromEvents';
+import { PROVIDERS, saveChoice, savedChoice } from '../utils/modelCatalog';
 import {
   Send,
+  Maximize2,
+  Minimize2,
   Play,
   Pause,
   Square,
@@ -18,7 +25,6 @@ import {
   ChevronUp,
   RefreshCw,
   Clock,
-  ArrowRight,
 } from 'lucide-react';
 
 export default function MissionChat({
@@ -37,6 +43,8 @@ export default function MissionChat({
   onLoadDemo,
 }) {
   const [inputText, setInputText] = useState('');
+  const [inputExpanded, setInputExpanded] = useState(false);
+  const inputRef = useRef(null);
 
   // Configuración persistente con fallback local
   const [localConfig, setLocalConfig] = useState({
@@ -67,19 +75,33 @@ export default function MissionChat({
   const baseUrl = effectiveConfig.baseUrl;
 
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [activeWorkflows, setActiveWorkflows] = useState([]);
+  const workflowId = effectiveConfig.workflowId || '';
+
+  // Solo los workflows activos pueden gobernar una tarea
+  const loadActiveWorkflows = () => {
+    fetchWorkflows()
+      .then((resp) => {
+        const active = (resp?.data || []).filter((w) => w.active);
+        setActiveWorkflows(active);
+        if (workflowId && !active.some((w) => w.workflow_id === workflowId)) updateConfig({ workflowId: '' });
+      })
+      .catch(() => {});
+  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(loadActiveWorkflows, []);
   const [copied, setCopied] = useState(false);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!effectiveConfig.customModel) {
+      const remembered = savedChoice(effectiveConfig.llmProvider);
+      if (remembered) updateConfig({ customModel: remembered });
+    }
+  }, []);
   const [showPastThoughts, setShowPastThoughts] = useState(false);
 
   // Historial de mensajes persistente con fallback local
-  const [localMessages, setLocalMessages] = useState([
-    {
-      id: 'welcome',
-      role: 'assistant',
-      text: 'Hola, soy el asistente de supervisión de PRAXEON. Introduce una tarea para el agente autónomo. El supervisor evaluará cada acción en tiempo real, aplicando políticas deterministas, comprobación de evidencias y ejecución confinada en sandbox.',
-      time: 'Listo',
-      isWelcome: true,
-    },
-  ]);
+  const [localMessages, setLocalMessages] = useState([]);
 
   const messages = chatMessages !== undefined ? chatMessages : localMessages;
   const setMessages = React.useCallback((updater) => {
@@ -93,11 +115,13 @@ export default function MissionChat({
   const prevSessionIdRef = useRef(session.sessionId);
   const lastEventCountRef = useRef(0);
 
-  const presetGoals = [
-    'Fix authentication bug in the API',
-    'Auditar y ejecutar suite con pytest',
-    'Inspeccionar contención de red y variables de entorno',
-  ];
+  // El campo de texto crece con el contenido (hasta su altura máxima, después tiene scroll)
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight + 2}px`;
+  }, [inputText, inputExpanded]);
 
   // Auto-scroll al final del chat cuando se añaden mensajes o pasos de razonamiento
   const scrollToBottom = () => {
@@ -185,45 +209,8 @@ export default function MissionChat({
     if (events.length === lastEventCountRef.current) return;
     lastEventCountRef.current = events.length;
 
-    // Buscar eventos relevantes de razonamiento
-    const relevantEvents = [...events].reverse(); // de más antiguo a más reciente
-    const thoughts = [];
-    let currentThoughtText = '';
-
-    for (const ev of relevantEvents) {
-      if (ev.type === 'action.proposed') {
-        const payload = ev.payload || {};
-        const stepNum = payload.step || thoughts.length + 1;
-        const thoughtRationale = payload.thought_rationale || payload.detail || '';
-        if (thoughtRationale) currentThoughtText = thoughtRationale;
-
-        thoughts.push({
-          step: stepNum,
-          tool: payload.tool && payload.tool !== 'action' ? payload.tool : (payload.operation || 'acción'),
-          operation: payload.operation || `${stepNum}. ${payload.tool || 'acción'}`,
-          thought: thoughtRationale || (payload.tool ? `Paso ${stepNum}: Proponiendo ${payload.tool}` : `Paso ${stepNum}: Proponiendo acción`),
-          verdict: 'PENDING',
-          source: payload.source || 'LLM',
-        });
-      } else if (ev.type === 'provider.evaluated' && thoughts.length > 0) {
-        const last = thoughts[thoughts.length - 1];
-        last.score = ev.payload?.score;
-        last.verdict = ev.payload?.verdict || last.verdict;
-        last.provider = ev.payload?.provider_name;
-      } else if (ev.type === 'policy.decided' && thoughts.length > 0) {
-        const last = thoughts[thoughts.length - 1];
-        last.verdict = ev.payload?.status || last.verdict;
-        last.reason = ev.payload?.reason_code;
-      } else if (ev.type === 'execution.completed' && thoughts.length > 0) {
-        const last = thoughts[thoughts.length - 1];
-        last.executionOutput = ev.payload?.output;
-        last.executionTimeMs = ev.payload?.execution_time_ms;
-      } else if (ev.type === 'intervention.applied' && thoughts.length > 0) {
-        const last = thoughts[thoughts.length - 1];
-        last.verdict = ev.payload?.intervention || 'BACKTRACK';
-        last.interventionMessage = ev.payload?.message;
-      }
-    }
+    // Razonamiento, hitos y agente en control derivados de los eventos (del más antiguo al más reciente)
+    const { thoughts, milestones, activeNode, currentThought: currentThoughtText } = deriveChatState([...events].reverse());
 
     queueMicrotask(() => {
       setMessages((prev) => {
@@ -234,6 +221,8 @@ export default function MissionChat({
             {
               ...lastMsg,
               thoughts: thoughts.length > 0 ? thoughts : lastMsg.thoughts,
+              milestones: milestones.length > 0 ? milestones : lastMsg.milestones,
+              activeNode: activeNode || null,
               currentThought: currentThoughtText || lastMsg.currentThought,
               status: session.status === 'Completed' || session.finalAnswer ? 'completed' : 'running',
               finalAnswer: session.finalAnswer || lastMsg.finalAnswer,
@@ -331,6 +320,7 @@ export default function MissionChat({
       base_url: baseUrl.trim() || undefined,
       supervisor: supervisor,
       max_steps: Number(maxSteps),
+      workflow_id: workflowId || undefined,
       chat_history: history.length > 0 ? history : undefined,
     });
   };
@@ -501,93 +491,7 @@ export default function MissionChat({
             );
           }
 
-          // Mensaje de bienvenida inicial
-          if (msg.isWelcome) {
-            return (
-              <div
-                key={msg.id}
-                style={{
-                  display: 'flex',
-                  gap: '10px',
-                  backgroundColor: '#121722',
-                  border: '1px solid #1e2638',
-                  borderRadius: '10px',
-                  padding: '12px 14px',
-                  boxShadow: 'var(--shadow-clay-sm)',
-                }}
-              >
-                <div
-                  style={{
-                    width: '28px',
-                    height: '28px',
-                    borderRadius: '7px',
-                    backgroundColor: 'rgba(88, 166, 255, 0.15)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    color: '#58a6ff',
-                    flexShrink: 0,
-                  }}
-                >
-                  <Bot size={16} />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
-                    <span style={{ fontSize: '12px', fontWeight: '700', color: '#f0f6fc' }}>
-                      PRAXEON Supervisor
-                    </span>
-                    <span style={{ fontSize: '10px', color: '#8b949e' }}>v1.0.0</span>
-                  </div>
-                  <p style={{ margin: 0, fontSize: '12px', color: '#cbd5e1', lineHeight: '1.45' }}>
-                    {msg.text}
-                  </p>
-
-                  {/* Sugerencias de tareas rápidas */}
-                  <div style={{ marginTop: '10px' }}>
-                    <span style={{ fontSize: '10.5px', color: '#8b949e', fontWeight: '600', display: 'block', marginBottom: '5px' }}>
-                      Prueba con una tarea de ejemplo:
-                    </span>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                      {presetGoals.map((g, idx) => (
-                        <button
-                          key={idx}
-                          type="button"
-                          onClick={() => setInputText(g)}
-                          style={{
-                            background: '#161c28',
-                            border: '1px solid #232c3f',
-                            borderRadius: '6px',
-                            padding: '6px 10px',
-                            color: '#c9d1d9',
-                            fontSize: '11px',
-                            textAlign: 'left',
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            transition: 'all 0.15s ease',
-                          }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.backgroundColor = '#1f2738';
-                            e.currentTarget.style.borderColor = '#384661';
-                            e.currentTarget.style.color = '#f0f6fc';
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.backgroundColor = '#161c28';
-                            e.currentTarget.style.borderColor = '#232c3f';
-                            e.currentTarget.style.color = '#c9d1d9';
-                          }}
-                        >
-                          <span>{g}</span>
-                          <ArrowRight size={11} style={{ opacity: 0.6 }} />
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            );
-          }
+          if (msg.isWelcome) return null;
 
           // Mensaje normal del asistente (con razonamiento en tiempo real y respuesta final)
           const isActivelyThinking = msg.status === 'running' || (isRunning && msg === messages[messages.length - 1]);
@@ -677,6 +581,9 @@ export default function MissionChat({
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                         <span style={{ fontSize: '11px', fontWeight: '700', color: '#f0f6fc', fontFamily: 'var(--font-mono)' }}>
                           Paso {latestThought.step}: {latestThought.tool}
+                          {latestThought.agentName && (
+                            <span style={{ fontWeight: 400, color: '#8b949e' }}> · {latestThought.agentName}</span>
+                          )}
                         </span>
                         <span
                           style={{
@@ -767,6 +674,48 @@ export default function MissionChat({
                       ))}
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* Agente que tiene ahora el control en el workflow */}
+              {msg.activeNode && msg.status !== 'completed' && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '7px', fontSize: '11.5px', color: '#38bdf8', backgroundColor: 'rgba(56,189,248,0.08)', border: '1px solid rgba(56,189,248,0.3)', borderRadius: '6px', padding: '6px 9px' }}>
+                  <span className="pulse-dot" style={{ backgroundColor: '#38bdf8' }} />
+                  <span>
+                    <strong>{msg.activeNode.agent_name}</strong>
+                    {msg.activeNode.handoff_from ? ` recibe la tarea de ${msg.activeNode.handoff_from}` : ' toma el control'}
+                    {' · '}«{msg.activeNode.node_name || msg.activeNode.node_id}»
+                    {msg.activeNode.iteration > 1 ? ` (pasada ${msg.activeNode.iteration})` : ''}
+                    {msg.activeNode.retry_reason ? ' · reintento automático tras una interrupción' : ''}
+                  </span>
+                </div>
+              )}
+
+              {/* HITOS DEL WORKFLOW: resultado de cada nodo; NO es la respuesta final */}
+              {msg.milestones?.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                  <div style={{ fontSize: '10.5px', fontWeight: 700, color: '#8b949e', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    Hitos del workflow
+                  </div>
+                  {msg.milestones.map((m) => (
+                    <details
+                      key={m.key}
+                      style={{ backgroundColor: '#0d1520', border: '1px solid #1e2b3f', borderLeft: '3px solid #58a6ff', borderRadius: '6px', padding: '6px 9px' }}
+                    >
+                      <summary style={{ cursor: 'pointer', fontSize: '11.5px', color: '#f0f6fc', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                        <CheckCircle2 size={12} style={{ color: '#3fb950', flexShrink: 0 }} />
+                        <strong>{m.nodeName}</strong>
+                        <span style={{ color: '#8b949e' }}>
+                          {m.agentName ? `· ${m.agentName}` : ''}
+                          {m.agentRole ? ` (${m.agentRole})` : ''}
+                          {m.iteration > 1 ? ` · pasada ${m.iteration}` : ''}
+                        </span>
+                      </summary>
+                      <div style={{ marginTop: '6px', fontSize: '11px', color: '#a0aec0', lineHeight: 1.45, whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: '220px', overflowY: 'auto' }}>
+                        {m.summary}
+                      </div>
+                    </details>
+                  ))}
                 </div>
               )}
 
@@ -875,7 +824,7 @@ export default function MissionChat({
             <Cpu size={11} style={{ color: '#58a6ff', flexShrink: 0 }} />
             <select
               value={llmProvider}
-              onChange={(e) => updateConfig({ llmProvider: e.target.value })}
+              onChange={(e) => updateConfig({ llmProvider: e.target.value, customModel: savedChoice(e.target.value) })}
               disabled={isRunning}
               style={{
                 background: 'none',
@@ -886,14 +835,13 @@ export default function MissionChat({
                 outline: 'none',
                 cursor: isRunning ? 'not-allowed' : 'pointer',
               }}
-              title="Modelo LLM de razonamiento"
+              title="Proveedor del modelo (el modelo exacto se elige en los ajustes del chat)"
             >
-              <option value="simulator" style={{ background: '#0f1420' }}>Simulated (Offline)</option>
-              <option value="groq" style={{ background: '#0f1420' }}>Groq (llama-3.3)</option>
-              <option value="ollama" style={{ background: '#0f1420' }}>Ollama (qwen2.5)</option>
-              <option value="gemini" style={{ background: '#0f1420' }}>Gemini (1.5-flash)</option>
-              <option value="openai" style={{ background: '#0f1420' }}>OpenAI (gpt-4o)</option>
-              <option value="openrouter" style={{ background: '#0f1420' }}>OpenRouter</option>
+              {PROVIDERS.map((p) => (
+                <option key={p.value} value={p.value} style={{ background: '#0f1420' }}>
+                  {p.label}
+                </option>
+              ))}
             </select>
           </div>
 
@@ -994,6 +942,41 @@ export default function MissionChat({
           </button>
         </div>
 
+        {/* Workflow que gobierna la tarea */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <label style={{ fontSize: '10.5px', color: '#8b949e', whiteSpace: 'nowrap' }}>Workflow:</label>
+          <select
+            value={workflowId}
+            onChange={(e) => updateConfig({ workflowId: e.target.value })}
+            onFocus={loadActiveWorkflows}
+            disabled={isRunning}
+            title="Con un workflow activo, la tarea se ejecuta siguiendo sus nodos, agentes y bucles (se ven en la pestaña Workflows)"
+            style={{
+              flex: 1,
+              minWidth: 0,
+              backgroundColor: workflowId ? 'rgba(52, 211, 153, 0.08)' : '#090c12',
+              border: `1px solid ${workflowId ? 'rgba(52, 211, 153, 0.45)' : '#1d2536'}`,
+              borderRadius: '6px',
+              color: workflowId ? '#34d399' : '#f0f6fc',
+              fontSize: '11px',
+              padding: '4px 6px',
+              cursor: isRunning ? 'not-allowed' : 'pointer',
+            }}
+          >
+            <option value="" style={{ background: '#0f1420', color: '#f0f6fc' }}>Sin workflow (agente único)</option>
+            {activeWorkflows.map((w) => (
+              <option key={w.workflow_id} value={w.workflow_id} style={{ background: '#0f1420', color: '#f0f6fc' }}>
+                {w.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        {activeWorkflows.length === 0 && (
+          <div style={{ fontSize: '10px', color: '#64748b', marginTop: '-4px' }}>
+            No hay workflows activos: actívalos en la pestaña Workflows para usarlos aquí.
+          </div>
+        )}
+
         {/* Alerta y confirmación inline para Full Access */}
         {executionMode === 'full_access' && (
           <div
@@ -1038,48 +1021,24 @@ export default function MissionChat({
           >
             <div style={{ gridColumn: 'span 2' }}>
               <label style={{ fontSize: '10px', color: '#8b949e', display: 'flex', justifyContent: 'space-between', marginBottom: '2px' }}>
-                <span>Espacio de Trabajo (Workspace Root):</span>
-                <span style={{ color: '#58a6ff', fontSize: '9.5px' }}>{effectiveConfig.workspaceRoot ? 'Personalizado' : 'Predeterminado del sistema'}</span>
+                <span>Carpeta de trabajo (workspace):</span>
               </label>
-              <input
-                type="text"
+              <WorkspaceField
                 value={effectiveConfig.workspaceRoot || ''}
-                onChange={(e) => updateConfig({ workspaceRoot: e.target.value })}
-                placeholder="Ruta absoluta del proyecto (dejar vacío para usar predeterminado)"
+                onChange={(path) => updateConfig({ workspaceRoot: path })}
                 disabled={isRunning}
-                style={{
-                  width: '100%',
-                  backgroundColor: '#121722',
-                  border: '1px solid #202737',
-                  borderRadius: '4px',
-                  padding: '4px 6px',
-                  color: '#f0f6fc',
-                  fontSize: '10.5px',
-                  fontFamily: 'var(--font-mono)',
-                  outline: 'none',
-                }}
+                compact
               />
             </div>
-            <div>
-              <label style={{ fontSize: '10px', color: '#8b949e', display: 'block', marginBottom: '2px' }}>Modelo custom:</label>
-              <input
-                type="text"
-                value={customModel}
-                onChange={(e) => updateConfig({ customModel: e.target.value })}
-                placeholder="ej. llama-3.3-70b-versatile"
-                disabled={isRunning}
-                style={{
-                  width: '100%',
-                  backgroundColor: '#121722',
-                  border: '1px solid #202737',
-                  borderRadius: '4px',
-                  padding: '4px 6px',
-                  color: '#f0f6fc',
-                  fontSize: '10.5px',
-                  outline: 'none',
-                }}
-              />
-            </div>
+            <ModelPicker
+              provider={llmProvider}
+              value={customModel}
+              onChange={(model) => {
+                saveChoice(llmProvider, model);
+                updateConfig({ customModel: model });
+              }}
+              disabled={isRunning}
+            />
             <div>
               <label style={{ fontSize: '10px', color: '#8b949e', display: 'block', marginBottom: '2px' }}>API Key / Token:</label>
               <input
@@ -1124,16 +1083,17 @@ export default function MissionChat({
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '3px' }}>
                 <label style={{ fontSize: '10px', color: '#8b949e' }}>Límite de pasos:</label>
                 <span style={{ fontSize: '10px', color: '#58a6ff', fontFamily: 'var(--font-mono)', fontWeight: '600' }}>
-                  {maxSteps} pasos
+                  {Number(maxSteps) === 0 ? 'sin límite' : `${maxSteps} pasos`}
                 </span>
               </div>
               <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
                 <input
                   type="number"
                   min={1}
-                  max={200}
-                  value={maxSteps}
-                  onChange={(e) => updateConfig({ maxSteps: Math.max(1, Math.min(200, Number(e.target.value) || 1)) })}
+                  max={500}
+                  value={Number(maxSteps) === 0 ? '' : maxSteps}
+                  placeholder="∞"
+                  onChange={(e) => updateConfig({ maxSteps: Math.max(1, Math.min(500, Number(e.target.value) || 1)) })}
                   disabled={isRunning}
                   style={{
                     width: '64px',
@@ -1149,7 +1109,7 @@ export default function MissionChat({
                   }}
                 />
                 <div style={{ display: 'flex', gap: '3px', flex: 1 }}>
-                  {[10, 25, 50, 100].map((preset) => (
+                  {[10, 25, 50, 100, 0].map((preset) => (
                     <button
                       key={preset}
                       type="button"
@@ -1168,7 +1128,7 @@ export default function MissionChat({
                         transition: 'all 0.15s ease',
                       }}
                     >
-                      {preset}
+                      {preset === 0 ? '∞' : preset}
                     </button>
                   ))}
                 </div>
@@ -1182,28 +1142,53 @@ export default function MissionChat({
           onSubmit={handleSend}
           style={{
             display: 'flex',
-            alignItems: 'center',
+            alignItems: 'flex-end',
             gap: '6px',
           }}
         >
-          <input
-            type="text"
-            value={inputText}
-            onChange={(e) => setInputText(e.target.value)}
-            placeholder={isRunning ? 'Misión en curso... (observando razonamiento)' : 'Escribe la tarea para el agente...'}
-            disabled={isRunning}
-            style={{
-              flex: 1,
-              backgroundColor: '#080b10',
-              border: '1px solid #1e2638',
-              borderRadius: '7px',
-              padding: '8px 12px',
-              color: '#f0f6fc',
-              fontSize: '12px',
-              outline: 'none',
-              boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.5)',
-            }}
-          />
+          <div style={{ flex: 1, position: 'relative', minWidth: 0 }}>
+            <textarea
+              ref={inputRef}
+              value={inputText}
+              onChange={(e) => setInputText(e.target.value)}
+              onKeyDown={(e) => {
+                // Enter envía; Mayús+Enter inserta un salto de línea
+                if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                  e.preventDefault();
+                  if (inputText.trim() && !isRunning && !(executionMode === 'full_access' && !fullAccessConfirmed)) handleSend(e);
+                }
+              }}
+              placeholder={isRunning ? 'Misión en curso... (observando razonamiento)' : 'Escribe la tarea para el agente… (Mayús+Enter para nueva línea)'}
+              disabled={isRunning}
+              rows={3}
+              style={{
+                width: '100%',
+                display: 'block',
+                minHeight: '78px',
+                maxHeight: inputExpanded ? '60vh' : '240px',
+                resize: 'none',
+                backgroundColor: '#080b10',
+                border: '1px solid #1e2638',
+                borderRadius: '7px',
+                padding: '9px 30px 9px 12px',
+                color: '#f0f6fc',
+                fontSize: '12.5px',
+                lineHeight: 1.5,
+                fontFamily: 'inherit',
+                outline: 'none',
+                boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.5)',
+                overflowY: 'auto',
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => setInputExpanded((v) => !v)}
+              title={inputExpanded ? 'Reducir el campo' : 'Ampliar el campo para ver todo el prompt'}
+              style={{ position: 'absolute', top: '5px', right: '5px', background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', padding: '2px' }}
+            >
+              {inputExpanded ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
+            </button>
+          </div>
 
           {!isRunning ? (
             <button

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, Suspense } from 'react';
+import React, { useState, useEffect, useRef, useCallback, Suspense } from 'react';
 import Header from './components/Header';
 import TopNav from './components/TopNav';
 import SessionKPIs from './components/SessionKPIs';
@@ -8,6 +8,10 @@ import DecisionInspector from './components/DecisionInspector';
 import ProposeActionModal from './components/ProposeActionModal';
 import SessionsModal from './components/SessionsModal';
 import UnauthorizedModal from './components/UnauthorizedModal';
+import WorkspacePicker from './components/workspace/WorkspacePicker';
+import useWorkspace from './components/workspace/useWorkspace';
+import { loadChatConfig, loadChats, persistChatConfig, persistChats } from './utils/chatStore';
+import { rebuildChatFromSession } from './utils/chatFromEvents';
 
 const SessionsView = React.lazy(() => import('./components/views/SessionsView'));
 const DecisionsView = React.lazy(() => import('./components/views/DecisionsView'));
@@ -75,6 +79,8 @@ export default function App() {
   const [isProposeOpen, setIsProposeOpen] = useState(false);
   const [isSessionsOpen, setIsSessionsOpen] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [isWorkspaceOpen, setIsWorkspaceOpen] = useState(false);
+  const { workspace, choose: chooseWorkspace, forget: forgetWorkspace } = useWorkspace();
   const [inspectorTab, setInspectorTab] = useState('chat');
   const maxSeqRef = useRef(0);
 
@@ -99,17 +105,37 @@ export default function App() {
     customModel: '',
     apiKey: '',
     baseUrl: '',
+    ...loadChatConfig(), // última configuración usada: modelo, supervisor, modo, workflow, pasos…
   });
+  useEffect(() => {
+    persistChatConfig(missionConfig);
+  }, [missionConfig]);
 
-  const [chatMessages, setChatMessages] = useState([
-    {
-      id: 'welcome',
-      role: 'assistant',
-      text: 'Hola, soy el asistente de supervisión de PRAXEON. Introduce una tarea para el agente autónomo. El supervisor evaluará cada acción en tiempo real, aplicando políticas deterministas, comprobación de evidencias y ejecución confinada en sandbox.',
-      time: 'Listo',
-      isWelcome: true,
+  const [chatMessages, setChatMessages] = useState([]);
+
+  // Historial del chat de cada sesión: sobrevive al cambio de sesión y a reiniciar la aplicación
+  const chatsRef = useRef(loadChats());
+  const sidRef = useRef(null);
+  const saveTimerRef = useRef(null);
+  const scheduleChatSave = useCallback(() => {
+    clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => persistChats(chatsRef.current), 400);
+  }, []);
+  const updateChat = useCallback(
+    (updater) => {
+      setChatMessages((prev) => {
+        const next = typeof updater === 'function' ? updater(prev) : updater;
+        const sid = sidRef.current;
+        if (sid) {
+          delete chatsRef.current[sid]; // reinserta al final: las sesiones recientes son las últimas
+          chatsRef.current[sid] = next;
+          scheduleChatSave();
+        }
+        return next;
+      });
     },
-  ]);
+    [scheduleChatSave]
+  );
 
   // Comprobar salud del backend y listar sesiones previas
   useEffect(() => {
@@ -195,6 +221,10 @@ export default function App() {
             logMsg = `Decision pruned: ${ev.payload?.reason}`;
           } else if (evType === 'intervention.applied') {
             logMsg = `[INTERVENTION] ${ev.payload?.intervention || 'Supervisor'}: ${ev.payload?.message || ''}`;
+          } else if (evType === 'workflow.node_started') {
+            logMsg = `[WORKFLOW] Nodo «${ev.payload?.node_name || ev.payload?.node_id}»: ${ev.payload?.agent_name || 'agente'} toma el control`;
+          } else if (evType === 'workflow.node_completed') {
+            logMsg = `[WORKFLOW] Nodo «${ev.payload?.node_name || ev.payload?.node_id}» completado por ${ev.payload?.agent_name || 'agente'}`;
           } else if (evType === 'session.completed') {
             logMsg = `Mission complete: ${ev.payload?.summary || 'Completed successfully'}`;
           }
@@ -204,7 +234,41 @@ export default function App() {
             { time: timeStr, level, message: logMsg },
           ]);
 
-          // 3. Procesamiento dinámico del Decision Tree en tiempo real
+          // 3a. Un nodo de workflow empieza: el agente toma el control ya, sin esperar a su primera acción
+          if (evType === 'workflow.node_started') {
+            const w = ev.payload || {};
+            const pendingId = `${w.node_id}_i${w.iteration}_pending`;
+            setNodes((rawNodes) => {
+              const prevNodes = rawNodes.map((n) =>
+                n.wfNodeId === w.node_id && n.wfIteration < w.iteration && !n.blockDone ? { ...n, blockFailed: true } : n
+              );
+              if (prevNodes.some((n) => n.id === pendingId)) return prevNodes;
+              const parent = prevNodes.find((n) => n.id === w.parent_id) || [...prevNodes].reverse().find((n) => n.type !== 'start') || prevNodes[0];
+              const handoff = Boolean(parent && parent.wfNodeId && (parent.wfNodeId !== w.node_id || parent.wfIteration !== w.iteration));
+              const pending = {
+                id: pendingId,
+                label: 'Trabajando…',
+                subtitle: `${w.node_name || w.node_id}${w.iteration > 1 ? ` · pasada ${w.iteration}` : ''}`,
+                agentName: w.agent_name || null,
+                agentRole: w.agent_role || null,
+                wfNodeId: w.node_id,
+                wfNodeName: w.node_name,
+                wfIteration: w.iteration,
+                handoff,
+                handoffFrom: handoff ? parent.agentName : null,
+                isPending: true,
+                type: 'step',
+                status: 'EXECUTING',
+                x: 420,
+                y: 105,
+                parentId: parent ? parent.id : 'start',
+                isNew: true,
+              };
+              return computeTreeLayout([...prevNodes, pending]);
+            });
+          }
+
+          // 3b. Procesamiento dinámico del Decision Tree en tiempo real
           if (evType === 'action.proposed') {
             const actId = ev.node_id;
             const tool = ev.payload?.tool || 'action';
@@ -228,11 +292,26 @@ export default function App() {
                 }
               }
 
-              const isHub = op.includes('Propose') || stepNum === 5;
+              const wf = ev.payload?.workflow_node || null; // nodo/agente del workflow que ejecuta este paso
+              const parentNode = prevNodes.find((n) => n.id === resolvedParentId);
+              const handoff = Boolean(
+                wf && parentNode && parentNode.wfNodeId && (parentNode.wfNodeId !== wf.node_id || parentNode.wfIteration !== wf.iteration)
+              );
+              const isHub = !wf && (op.includes('Propose') || stepNum === 5);
+              const cleanOp = String(op).replace(/^\s*\d+\.\s*/, '');
               const newNode = {
                 id: actId,
-                label: `${stepNum}. ${op}`,
-                subtitle: `${timeStr} · LLM (${ev.payload?.source?.replace('LLM (', '').replace(')', '') || 'JEV'})`,
+                label: `${stepNum}. ${cleanOp}`,
+                subtitle: wf
+                  ? `${wf.node_name || wf.node_id}${wf.iteration > 1 ? ` · pasada ${wf.iteration}` : ''}`
+                  : `${timeStr} · LLM (${ev.payload?.source?.replace('LLM (', '').replace(')', '') || 'JEV'})`,
+                agentName: wf?.agent_name || null,
+                agentRole: wf?.agent_role || null,
+                wfNodeId: wf?.node_id || null,
+                wfNodeName: wf?.node_name || null,
+                wfIteration: wf?.iteration || null,
+                handoff,
+                handoffFrom: handoff ? parentNode.agentName : null,
                 type: isHub ? 'hub' : 'step',
                 status: 'PENDING',
                 action: op,
@@ -242,7 +321,10 @@ export default function App() {
                 isNew: true,
               };
 
-              const updatedNodes = [...prevNodes, newNode];
+              const updatedNodes = [
+                ...prevNodes.filter((n) => !(n.isPending && wf && n.wfNodeId === wf.node_id && n.wfIteration === wf.iteration)),
+                newNode,
+              ];
               return computeTreeLayout(updatedNodes);
             });
 
@@ -610,6 +692,24 @@ export default function App() {
             }
           }
 
+          if (evType === 'approval.requested' && ev.payload?.kind === 'node_failure') {
+            setNodes((prevNodes) =>
+              prevNodes.map((n) => (n.wfNodeId === ev.node_id && !n.blockDone ? { ...n, blockFailed: true } : n))
+            );
+          }
+
+          if (evType === 'workflow.node_completed') {
+            const w = ev.payload || {};
+            setNodes((prevNodes) =>
+              prevNodes.map((n) => {
+                if (n.wfNodeId !== w.node_id || n.wfIteration !== w.iteration) return n;
+                return n.isPending
+                  ? { ...n, label: 'Completado', status: 'ALLOW', isPending: false, blockDone: true }
+                  : { ...n, blockDone: true };
+              })
+            );
+          }
+
           if (evType === 'observation.recorded') {
             const actId = ev.node_id;
             const output = ev.payload?.output || '';
@@ -623,7 +723,9 @@ export default function App() {
                 },
               };
             });
-            if (output && (output.includes('Tarea concluida:') || output.includes('conclu') || output.includes('finaliz'))) {
+            // El finish de un nodo de workflow (ids «nodo_iN_act_M») no cierra la misión: es un hito del nodo
+            const isWorkflowStep = /_i\d+_act_\d+$/.test(actId || '');
+            if (!isWorkflowStep && output && (output.includes('Tarea concluida:') || output.includes('conclu') || output.includes('finaliz'))) {
               const cleanAnswer = output.replace('Tarea concluida:', '').trim();
               setSession((prevSess) => ({
                 ...prevSess,
@@ -773,6 +875,19 @@ export default function App() {
 
       if (res?.data) {
         const sid = res.data.session_id;
+        const previousSid = sidRef.current;
+        const wasRealSession = sessionsList.some((x) => x.session_id === previousSid);
+        sidRef.current = sid;
+        setChatMessages((prev) => {
+          // La conversación continúa en la sesión nueva; la anterior conserva lo que tenía antes de este mensaje
+          chatsRef.current[sid] = prev;
+          if (previousSid && previousSid !== sid) {
+            if (wasRealSession) chatsRef.current[previousSid] = prev.slice(0, -2);
+            else delete chatsRef.current[previousSid];
+          }
+          scheduleChatSave();
+          return prev;
+        });
         setFollowExecution(workflow_id ? { workflowId: workflow_id, executionId: `wfx-${sid}` } : null);
         const effModel = res.data.decision_model_effective || decision_model;
         const newSess = {
@@ -912,15 +1027,8 @@ export default function App() {
     setSelectedNodeId('start');
     setDecisionsMap({});
     setEvents([]);
-    setChatMessages([
-      {
-        id: 'welcome',
-        role: 'assistant',
-        text: 'Hola, soy el asistente de supervisión de PRAXEON. Introduce una tarea para el agente autónomo. El supervisor evaluará cada acción en tiempo real, aplicando políticas deterministas, comprobación de evidencias y ejecución confinada en sandbox.',
-        time: 'Listo',
-        isWelcome: true,
-      },
-    ]);
+    sidRef.current = newSid;
+    setChatMessages([]);
     setInspectorTab('chat');
     setLogs([
       {
@@ -985,6 +1093,12 @@ export default function App() {
     setIsRunning(false);
     setIsPaused(false);
     const timeStr = new Date().toTimeString().split(' ')[0];
+
+    // El chat de la sesión elegida: la copia guardada, o vacío hasta reconstruirlo desde el backend
+    sidRef.current = sid;
+    const cachedChat = chatsRef.current[sid];
+    setChatMessages(cachedChat || []);
+    setEvents([]);
 
     try {
       const snap = await api.fetchSession(sid);
@@ -1067,6 +1181,20 @@ export default function App() {
             };
           });
           setDecisionsMap(map);
+        }
+
+        // Eventos de la sesión (más recientes primero, como el stream en vivo) y chat reconstruido si no había copia
+        const history = await api.fetchAllEvents(sid);
+        if (sidRef.current === sid) {
+          setEvents([...history].reverse());
+          if (!cachedChat) {
+            const rebuilt = rebuildChatFromSession({ goal: d.goal, events: history, createdAt: d.created_at });
+            if (rebuilt.length > 0) {
+              chatsRef.current[sid] = rebuilt;
+              scheduleChatSave();
+              setChatMessages(rebuilt);
+            }
+          }
         }
 
         setLogs((prev) => [
@@ -1285,6 +1413,18 @@ export default function App() {
         onOpenPropose={() => setIsProposeOpen(true)}
         onNewSession={handleNewCleanSession}
         onOpenAuth={() => setIsAuthModalOpen(true)}
+        workspace={workspace}
+        sessionWorkspace={session.workspace_root || session.working_directory || null}
+        onOpenWorkspace={() => setIsWorkspaceOpen(true)}
+      />
+      <WorkspacePicker
+        open={isWorkspaceOpen}
+        title="Workspace del proyecto"
+        initialPath={workspace?.path || ''}
+        recent={workspace?.recent || []}
+        onSelect={chooseWorkspace}
+        onForget={forgetWorkspace}
+        onClose={() => setIsWorkspaceOpen(false)}
       />
 
       {/* 2. Main Work Layout (Left: TopNav + Content; Right: DecisionInspector / MissionChat) */}
@@ -1433,7 +1573,7 @@ export default function App() {
             isPaused={isPaused}
             events={events}
             chatMessages={chatMessages}
-            onMessagesChange={setChatMessages}
+            onMessagesChange={updateChat}
             missionConfig={missionConfig}
             onConfigChange={setMissionConfig}
             onStartMission={handleStartMission}

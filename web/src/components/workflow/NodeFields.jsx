@@ -131,15 +131,31 @@ export default function NodeFields({ form, setForm, nodes, outgoingEdges, agents
             />
           </Field>
 
-          <Field label="Máximo de pasos del agente" hint="Límite de acciones que puede hacer en este nodo (por defecto 12).">
+          <Field
+            label="Máximo de pasos del agente"
+            hint={
+              form.unlimited_steps
+                ? 'Sin límite: el agente trabaja hasta concluir. Se detiene si hay fallos repetidos sin avance o si paras la misión.'
+                : 'Límite de acciones que puede hacer en este nodo (por defecto 30, hasta 500).'
+            }
+          >
+            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11.5px', color: '#e2e8f0', marginBottom: '5px', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={Boolean(form.unlimited_steps)}
+                onChange={(e) => set({ unlimited_steps: e.target.checked })}
+              />
+              Sin límite de pasos
+            </label>
             <input
               type="number"
               min="1"
-              max="50"
-              placeholder="12"
+              max="500"
+              placeholder="30"
+              disabled={Boolean(form.unlimited_steps)}
               value={form.max_steps}
               onChange={(e) => set({ max_steps: e.target.value })}
-              style={fieldStyle}
+              style={{ ...fieldStyle, opacity: form.unlimited_steps ? 0.45 : 1 }}
             />
           </Field>
 
