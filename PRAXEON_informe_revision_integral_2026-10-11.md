@@ -446,3 +446,15 @@ Tests: `tests/security/test_final_security_hardening.py` (19). Suite: **954 pasa
 - **Tests:** `tests/test_workflow_governed_missions.py` (9), incluido un flujo completo desarrollador → revisor (rechaza) → desarrollador (recibe su intento y el feedback) → revisor (aprueba) → aprobación humana, con LLM guionizado que registra los prompts, y los tres desenlaces de un nodo fallido. Suite: 1003 pasados, 1 omitido.
 
 **Límites conocidos:** los nodos se ejecutan secuencialmente (las ramas paralelas no se ejecutan a la vez en una misión); no se ha probado con un modelo real; la UI no se ha comprobado visualmente; las misiones con workflow no reanudan tras reiniciar el servidor.
+
+### 10.16 Edición de workflows sin JSON (campos de texto y desplegables)
+
+Petición del propietario: programar cada nodo (tarea, objetivo, relaciones) debe ser fácil para el usuario, con campos de texto o selección y sin JSON.
+
+- **Nodo de trabajo (agente/tarea/delegación):** nombre, «qué hace este nodo» (tipos en lenguaje natural), **misión**, agente (desplegable con nombre y rol), herramienta fija (desplegable; «ninguna» = lo resuelve un agente), **resultado esperado**, máximo de pasos y «datos adicionales» como pares nombre/valor. Se guardan en `metadata.mission/expected_output/max_steps` e `inputs`, que lee el `WorkflowMissionDriver`.
+- **Relaciones y control:** las condiciones (bucle, si/entonces, decisión y condición de cada camino) se construyen con un único editor en lenguaje natural: «mirar el resultado de [nodo] · dato · [es igual a / es mayor que / contiene / es verdadero…] · valor». Los nodos de entrada/salida de un bucle, los caminos «si se cumple / si no» y el destino de un rechazo son desplegables con los nombres de los nodos y caminos reales (ya no se escriben IDs).
+- **Aprobación humana, delegación y unión paralela:** campos y desplegables en español (pregunta, tiempo de espera, quién aprueba, candidatos con casillas, política de espera y de mezcla).
+- **Resultados:** el último resultado del nodo se muestra como texto legible, no como JSON editable; las estructuras que la UI no edita se conservan al guardar.
+- **Código:** `web/src/components/workflow/` (`formHelpers.js`, `ConditionBuilder.jsx`, `NodeFields.jsx`); la conversión formulario ↔ modelo está en funciones puras verificadas con ida y vuelta.
+
+**Límites:** no se ha comprobado visualmente; los caminos de un nodo `IF/DECISION` ya guardados no se pueden «vaciar» desde la UI (el backend fusiona la configuración); el tiempo límite y los reintentos por nodo siguen sin editor.

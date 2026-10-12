@@ -292,3 +292,17 @@ def test_node_mission_resolution_order():
     assert node_mission(n) == "M"
     assert node_mission(WorkflowNode(node_id="n", name="Nombre", node_type=NodeType.AGENT, inputs={"task": "T"})) == "T"
     assert node_mission(WorkflowNode(node_id="n", name="Nombre", node_type=NodeType.AGENT)) == "Nombre"
+
+
+def test_friendly_node_form_payload_is_stored_and_drives_the_node(runtime):
+    """Lo que envía el formulario (misión, resultado esperado, pasos) llega al nodo y lo lee el driver."""
+    wf = runtime.workflow_editor_service.instantiate_template("code_review_loop")
+    runtime.workflow_editor_service.update_node(
+        wf.workflow_id, "dev",
+        agent_id="ag_dev_01", tool_name="",
+        inputs={"lang": "py"},
+        metadata={"mission": "Implementa la función suma", "expected_output": "código completo", "max_steps": 6},
+    )
+    node = runtime.workflow_editor_service.get_workflow(wf.workflow_id).nodes["dev"]
+    assert node_mission(node) == "Implementa la función suma"
+    assert node.metadata["max_steps"] == 6 and node.inputs == {"lang": "py"} and node.tool_name is None

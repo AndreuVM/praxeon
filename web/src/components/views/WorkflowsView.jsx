@@ -25,6 +25,18 @@ import {
   Check,
   Focus,
 } from 'lucide-react';
+import NodeFields from '../workflow/NodeFields';
+import ConditionBuilder from '../workflow/ConditionBuilder';
+import {
+  NODE_TYPE_LABELS,
+  TOOL_CHOICES,
+  WORK_TYPES,
+  conditionToForm,
+  emptyCondition,
+  formToCondition,
+  formToNodeUpdate,
+  nodeToForm,
+} from '../workflow/formHelpers';
 import {
   fetchWorkflows,
   setWorkflowActive,
@@ -300,55 +312,7 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
     }
     const node = nodesArray.find((n) => (n.node_id || n.id) === selectedNodeId);
     if (node) {
-      const cfg = node.control_config || {};
-      const cond = cfg.condition;
-      let condField = '';
-      let condOp = '==';
-      let condVal = '';
-
-      if (cond) {
-        if (typeof cond === 'string') {
-          condField = cond;
-        } else if (typeof cond === 'object') {
-          condField = cond.field || '';
-          condOp = cond.operator || cond.op || '==';
-          const rawVal = cond.expected_value !== undefined ? cond.expected_value : cond.value;
-          condVal = rawVal !== undefined ? (typeof rawVal === 'object' ? JSON.stringify(rawVal) : String(rawVal)) : '';
-        }
-      }
-
-      setNodeEditForm({
-        node_id: node.node_id || node.id,
-        name: node.name || '',
-        node_type: node.node_type || 'TASK',
-        agent_id: node.agent_id || '',
-        tool_name: node.tool_name || '',
-        inputs_json: JSON.stringify(node.inputs || {}, null, 2),
-        status: node.status || 'PENDING',
-        outputs_json: JSON.stringify(node.outputs || {}, null, 2),
-        // Preservar configuración cruda para no perder campos no editados
-        raw_control_config: cfg,
-        // Campos de Semántica de Control
-        max_iterations: cfg.max_iterations ?? 10,
-        on_limit: cfg.on_limit || 'ABORT',
-        body_entry: cfg.body_entry || '',
-        exit_target: cfg.exit_target || '',
-        prompt: cfg.prompt || 'Se requiere aprobación de un supervisor humano.',
-        timeout_seconds: cfg.timeout_seconds || 3600,
-        approver_role: cfg.approver_role || 'supervisor',
-        reject_target: cfg.reject_target || '',
-        routing_mode: (cfg.routing_mode || cfg.strategy || 'MANUAL').toUpperCase(),
-        strategy: (cfg.strategy || cfg.routing_mode || 'MANUAL').toUpperCase(),
-        candidate_agents: Array.isArray(cfg.candidate_agents) ? cfg.candidate_agents.join(', ') : '',
-        join_policy: cfg.join_policy || 'all',
-        merge_policy: cfg.merge_policy || 'namespace',
-        true_edge: cfg.true_edge || '',
-        false_edge: cfg.false_edge || '',
-        default_edge: cfg.default_edge || '',
-        condition_field: condField,
-        condition_operator: condOp,
-        condition_expected_value: condVal,
-      });
+      setNodeEditForm(nodeToForm(node, nodesArray.map((n) => n.node_id || n.id)));
       setSelectedEdgeId(null);
     }
   }, [selectedNodeId, nodesArray]);
@@ -361,16 +325,13 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
     }
     const edge = edgesArray.find((e) => e.edge_id === selectedEdgeId);
     if (edge) {
-      const cond = edge.condition || {};
       setEdgeEditForm({
         edge_id: edge.edge_id,
         from_node: edge.from_node,
         to_node: edge.to_node,
         label: edge.label || '',
         has_condition: Boolean(edge.condition),
-        field: cond.field || 'output.status',
-        operator: cond.operator || '==',
-        expected_value: cond.expected_value !== undefined ? (typeof cond.expected_value === 'object' ? JSON.stringify(cond.expected_value) : String(cond.expected_value)) : 'SUCCESS',
+        cond: conditionToForm(edge.condition, nodesArray.map((n) => n.node_id || n.id)),
       });
       setSelectedNodeId(null);
     }
@@ -415,7 +376,7 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
         node_type: createNodeForm.node_type,
         x: Number(createNodeForm.x) || 300,
         y: Number(createNodeForm.y) || 200,
-        agent_id: createNodeForm.node_type === 'AGENT' ? (createNodeForm.agent_id.trim() || null) : null,
+        agent_id: WORK_TYPES.includes(createNodeForm.node_type) ? (createNodeForm.agent_id.trim() || null) : null,
         tool_name: createNodeForm.node_type === 'TASK' ? (createNodeForm.tool_name.trim() || null) : null,
       };
       const res = await addWorkflowNode(activeWorkflowId, payload);
@@ -441,8 +402,8 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
     setCreateNodeForm({
       name: defaultName,
       node_type: type,
-      agent_id: type === 'AGENT' && registeredAgents.length > 0 ? registeredAgents[0].id : '',
-      tool_name: type === 'TASK' ? 'execute_command' : '',
+      agent_id: WORK_TYPES.includes(type) && registeredAgents.length > 0 ? registeredAgents[0].id : '',
+      tool_name: '',
       x: 200 + Math.floor(Math.random() * 200),
       y: 150 + Math.floor(Math.random() * 150),
     });
@@ -454,96 +415,12 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
     e.preventDefault();
     if (!activeWorkflowId || !nodeEditForm) return;
     try {
-      let parsedInputs = {};
-      try {
-        parsedInputs = nodeEditForm.inputs_json.trim() ? JSON.parse(nodeEditForm.inputs_json) : {};
-      } catch (jsonErr) {
-        alert(`Error en sintaxis JSON de Inputs: ${jsonErr.message}`);
+      const update = formToNodeUpdate(nodeEditForm);
+      if (['WHILE', 'IF', 'DECISION'].includes(nodeEditForm.node_type) && !formToCondition(nodeEditForm.cond)) {
+        alert('Indica qué dato del resultado se debe comprobar en la condición.');
         return;
       }
-
-      // Partir de la configuración previa para preservar campos no expuestos en este formulario
-      const baseConfig = { ...(nodeEditForm.raw_control_config || {}) };
-      let controlConfig = null;
-      const nt = nodeEditForm.node_type;
-
-      if (nt === 'WHILE') {
-        let cond = baseConfig.condition || null;
-        if (nodeEditForm.condition_field?.trim()) {
-          let expVal = nodeEditForm.condition_expected_value;
-          if (expVal === 'true') expVal = true;
-          else if (expVal === 'false') expVal = false;
-          else if (!isNaN(Number(expVal)) && expVal.trim() !== '') expVal = Number(expVal);
-          cond = {
-            field: nodeEditForm.condition_field.trim(),
-            operator: nodeEditForm.condition_operator || '==',
-            expected_value: expVal,
-          };
-        }
-        controlConfig = {
-          ...baseConfig,
-          max_iterations: Number(nodeEditForm.max_iterations) || 10,
-          on_limit: nodeEditForm.on_limit || 'ABORT',
-          ...(nodeEditForm.body_entry?.trim() ? { body_entry: nodeEditForm.body_entry.trim() } : {}),
-          ...(nodeEditForm.exit_target?.trim() ? { exit_target: nodeEditForm.exit_target.trim() } : {}),
-          ...(cond ? { condition: cond } : {}),
-        };
-      } else if (nt === 'IF' || nt === 'DECISION') {
-        let cond = baseConfig.condition || null;
-        if (nodeEditForm.condition_field?.trim()) {
-          let expVal = nodeEditForm.condition_expected_value;
-          if (expVal === 'true') expVal = true;
-          else if (expVal === 'false') expVal = false;
-          else if (!isNaN(Number(expVal)) && expVal.trim() !== '') expVal = Number(expVal);
-          cond = {
-            field: nodeEditForm.condition_field.trim(),
-            operator: nodeEditForm.condition_operator || '==',
-            expected_value: expVal,
-          };
-        }
-        controlConfig = {
-          ...baseConfig,
-          ...(nodeEditForm.true_edge?.trim() ? { true_edge: nodeEditForm.true_edge.trim() } : {}),
-          ...(nodeEditForm.false_edge?.trim() ? { false_edge: nodeEditForm.false_edge.trim() } : {}),
-          ...(nodeEditForm.default_edge?.trim() ? { default_edge: nodeEditForm.default_edge.trim() } : {}),
-          ...(cond ? { condition: cond } : {}),
-        };
-      } else if (nt === 'HUMAN_APPROVAL') {
-        controlConfig = {
-          ...baseConfig,
-          prompt: nodeEditForm.prompt?.trim() || 'Aprobación requerida para continuar.',
-          timeout_seconds: Number(nodeEditForm.timeout_seconds) || 3600,
-          approver_role: nodeEditForm.approver_role?.trim() || 'supervisor',
-          ...(nodeEditForm.reject_target?.trim() ? { reject_target: nodeEditForm.reject_target.trim() } : {}),
-        };
-      } else if (nt === 'DELEGATE') {
-        const candidates = (nodeEditForm.candidate_agents || '')
-          .split(',')
-          .map((s) => s.trim())
-          .filter(Boolean);
-        const rMode = (nodeEditForm.routing_mode || nodeEditForm.strategy || 'MANUAL').toUpperCase();
-        controlConfig = {
-          ...baseConfig,
-          routing_mode: rMode,
-          strategy: rMode,
-          candidate_agents: candidates,
-        };
-      } else if (nt === 'PARALLEL_JOIN') {
-        controlConfig = {
-          ...baseConfig,
-          join_policy: nodeEditForm.join_policy || 'all',
-          merge_policy: nodeEditForm.merge_policy || 'namespace',
-        };
-      }
-
-      await updateWorkflowNode(activeWorkflowId, nodeEditForm.node_id, {
-        name: nodeEditForm.name.trim(),
-        node_type: nodeEditForm.node_type,
-        agent_id: nodeEditForm.node_type === 'AGENT' ? (nodeEditForm.agent_id.trim() || null) : null,
-        tool_name: nodeEditForm.node_type === 'TASK' ? (nodeEditForm.tool_name.trim() || null) : null,
-        inputs: parsedInputs,
-        ...(controlConfig ? { control_config: controlConfig } : {}),
-      });
+      await updateWorkflowNode(activeWorkflowId, nodeEditForm.node_id, update);
 
       addLog('NODE', `Propiedades de nodo '${nodeEditForm.name}' actualizadas.`);
       await loadActiveWorkflow(activeWorkflowId);
@@ -559,28 +436,11 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
     try {
       let condition = null;
       if (edgeEditForm.has_condition) {
-        let expectedVal = edgeEditForm.expected_value;
-        if (edgeEditForm.operator === 'is_true' || edgeEditForm.operator === 'is_false') {
-          expectedVal = null;
-        } else if (expectedVal === 'true') {
-          expectedVal = true;
-        } else if (expectedVal === 'false') {
-          expectedVal = false;
-        } else if (!isNaN(Number(expectedVal)) && expectedVal.trim() !== '') {
-          expectedVal = Number(expectedVal);
-        } else {
-          try {
-            expectedVal = JSON.parse(expectedVal);
-          } catch {
-            // Dejar como string
-          }
+        condition = formToCondition(edgeEditForm.cond);
+        if (!condition) {
+          alert('Indica qué dato del resultado se debe comprobar en la condición.');
+          return;
         }
-
-        condition = {
-          field: edgeEditForm.field.trim() || 'output.status',
-          operator: edgeEditForm.operator,
-          expected_value: expectedVal,
-        };
       }
 
       await updateWorkflowEdge(activeWorkflowId, edgeEditForm.edge_id, {
@@ -588,7 +448,7 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
         condition: condition,
       });
 
-      addLog('EDGE', `Conexión '${edgeEditForm.edge_id}' actualizada (Condición: ${condition ? `${condition.field} ${condition.operator}` : 'Ninguna'}).`);
+      addLog('EDGE', `Conexión '${edgeEditForm.edge_id}' actualizada (${condition ? 'con condición' : 'sin condición'}).`);
       await loadActiveWorkflow(activeWorkflowId);
     } catch (err) {
       alert(`Error al actualizar unión: ${err.message}`);
@@ -2164,364 +2024,13 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
               </div>
 
               <form onSubmit={handleSaveNodeProperties} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                <div>
-                  <label style={{ fontSize: '10.5px', color: '#94a3b8', display: 'block', marginBottom: '3px' }}>ID del Nodo</label>
-                  <input
-                    type="text"
-                    readOnly
-                    value={nodeEditForm.node_id}
-                    style={{ width: '100%', backgroundColor: '#111827', border: '1px solid #1e293b', borderRadius: '5px', padding: '5px 8px', fontSize: '11px', color: '#94a3b8', fontFamily: 'var(--font-mono)' }}
-                  />
-                </div>
-
-                <div>
-                  <label style={{ fontSize: '10.5px', color: '#94a3b8', display: 'block', marginBottom: '3px' }}>Nombre</label>
-                  <input
-                    type="text"
-                    required
-                    value={nodeEditForm.name}
-                    onChange={(e) => setNodeEditForm({ ...nodeEditForm, name: e.target.value })}
-                    style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '5px', padding: '5px 8px', fontSize: '11.5px', color: '#f8fafc' }}
-                  />
-                </div>
-
-                <div>
-                  <label style={{ fontSize: '10.5px', color: '#94a3b8', display: 'block', marginBottom: '3px' }}>Tipo de Nodo</label>
-                  <select
-                    value={nodeEditForm.node_type}
-                    onChange={(e) => setNodeEditForm({ ...nodeEditForm, node_type: e.target.value })}
-                    style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '5px', padding: '5px 8px', fontSize: '11.5px', color: '#f8fafc' }}
-                  >
-                    <option value="AGENT">AGENT (Agente Autónomo)</option>
-                    <option value="TASK">TASK (Tarea / Herramienta)</option>
-                    <option value="IF">IF (Bifurcación Condicional)</option>
-                    <option value="DECISION">DECISION (Compuerta Condicional)</option>
-                    <option value="WHILE">WHILE (Bucle Acotado)</option>
-                    <option value="DELEGATE">DELEGATE (Router / Delegación)</option>
-                    <option value="HUMAN_APPROVAL">HUMAN_APPROVAL (Aprobación Humana)</option>
-                    <option value="PARALLEL_FORK">PARALLEL_FORK (Bifurcación Concurrente)</option>
-                    <option value="PARALLEL_JOIN">PARALLEL_JOIN (Sincronización / Join)</option>
-                    <option value="START">START (Inicio)</option>
-                    <option value="END">END (Fin)</option>
-                  </select>
-                </div>
-
-                {nodeEditForm.node_type === 'AGENT' && (
-                  <div>
-                    <label style={{ fontSize: '10.5px', color: '#94a3b8', display: 'block', marginBottom: '3px' }}>Agente Asignado</label>
-                    <select
-                      value={nodeEditForm.agent_id}
-                      onChange={(e) => setNodeEditForm({ ...nodeEditForm, agent_id: e.target.value })}
-                      style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '5px', padding: '5px 8px', fontSize: '11.5px', color: '#10b981', marginBottom: '4px' }}
-                    >
-                      <option value="">-- Personalizado / Escribir ID --</option>
-                      {registeredAgents.map((ag) => (
-                        <option key={ag.id} value={ag.id}>
-                          {ag.name || ag.id} ({ag.role || 'agent'})
-                        </option>
-                      ))}
-                    </select>
-                    <input
-                      type="text"
-                      placeholder="O escribe agent_id personalizado..."
-                      value={nodeEditForm.agent_id}
-                      onChange={(e) => setNodeEditForm({ ...nodeEditForm, agent_id: e.target.value })}
-                      style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '5px', padding: '5px 8px', fontSize: '11px', color: '#f8fafc', fontFamily: 'var(--font-mono)' }}
-                    />
-                  </div>
-                )}
-
-                {nodeEditForm.node_type === 'TASK' && (
-                  <div>
-                    <label style={{ fontSize: '10.5px', color: '#94a3b8', display: 'block', marginBottom: '3px' }}>Herramienta / Tool Name</label>
-                    <input
-                      type="text"
-                      placeholder="ej. deploy_service, run_audit"
-                      value={nodeEditForm.tool_name}
-                      onChange={(e) => setNodeEditForm({ ...nodeEditForm, tool_name: e.target.value })}
-                      style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '5px', padding: '5px 8px', fontSize: '11.5px', color: '#38bdf8' }}
-                    />
-                  </div>
-                )}
-
-                {/* Panel Especial: Bucle WHILE */}
-                {nodeEditForm.node_type === 'WHILE' && (
-                  <div style={{ backgroundColor: '#0d1926', border: '1px solid rgba(6, 182, 212, 0.3)', borderRadius: '6px', padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    <div style={{ fontSize: '11px', fontWeight: '700', color: '#06b6d4', display: 'flex', alignItems: 'center', gap: '5px' }}>
-                      <RotateCcw size={12} />
-                      <span>Configuración de Bucle (WHILE)</span>
-                    </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
-                      <div>
-                        <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Máx. Iteraciones:</label>
-                        <input
-                          type="number"
-                          min="1"
-                          max="100"
-                          value={nodeEditForm.max_iterations}
-                          onChange={(e) => setNodeEditForm({ ...nodeEditForm, max_iterations: e.target.value })}
-                          style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#06b6d4' }}
-                        />
-                      </div>
-                      <div>
-                        <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Al superar límite:</label>
-                        <select
-                          value={nodeEditForm.on_limit}
-                          onChange={(e) => setNodeEditForm({ ...nodeEditForm, on_limit: e.target.value })}
-                          style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#f8fafc' }}
-                        >
-                          <option value="ABORT">ABORT (Detener)</option>
-                          <option value="ESCALATE">ESCALATE (Escalar)</option>
-                        </select>
-                      </div>
-                    </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
-                      <div>
-                        <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Entrada Cuerpo (body_entry):</label>
-                        <input
-                          type="text"
-                          placeholder="node_body_id"
-                          value={nodeEditForm.body_entry || ''}
-                          onChange={(e) => setNodeEditForm({ ...nodeEditForm, body_entry: e.target.value })}
-                          style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#06b6d4', fontFamily: 'var(--font-mono)' }}
-                        />
-                      </div>
-                      <div>
-                        <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Salida Bucle (exit_target):</label>
-                        <input
-                          type="text"
-                          placeholder="node_exit_id"
-                          value={nodeEditForm.exit_target || ''}
-                          onChange={(e) => setNodeEditForm({ ...nodeEditForm, exit_target: e.target.value })}
-                          style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#06b6d4', fontFamily: 'var(--font-mono)' }}
-                        />
-                      </div>
-                    </div>
-                    <div>
-                      <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Campo condición retorno (opcional):</label>
-                      <input
-                        type="text"
-                        placeholder="ej. outputs.reviewer.needs_revision"
-                        value={nodeEditForm.condition_field}
-                        onChange={(e) => setNodeEditForm({ ...nodeEditForm, condition_field: e.target.value })}
-                        style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#f8fafc', fontFamily: 'var(--font-mono)' }}
-                      />
-                    </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
-                      <div>
-                        <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Operador:</label>
-                        <select
-                          value={nodeEditForm.condition_operator || '=='}
-                          onChange={(e) => setNodeEditForm({ ...nodeEditForm, condition_operator: e.target.value })}
-                          style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#f8fafc' }}
-                        >
-                          <option value="==">==</option>
-                          <option value="!=">!=</option>
-                          <option value=">">&gt;</option>
-                          <option value="<">&lt;</option>
-                          <option value="contains">contains</option>
-                          <option value="is_true">is_true</option>
-                          <option value="is_false">is_false</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Valor esperado:</label>
-                        <input
-                          type="text"
-                          placeholder="true"
-                          value={nodeEditForm.condition_expected_value || ''}
-                          onChange={(e) => setNodeEditForm({ ...nodeEditForm, condition_expected_value: e.target.value })}
-                          style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#f8fafc' }}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Panel Especial: Bifurcación Condicional IF / DECISION */}
-                {(nodeEditForm.node_type === 'IF' || nodeEditForm.node_type === 'DECISION') && (
-                  <div style={{ backgroundColor: '#1c1917', border: '1px solid rgba(245, 158, 11, 0.3)', borderRadius: '6px', padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    <div style={{ fontSize: '11px', fontWeight: '700', color: '#f59e0b', display: 'flex', alignItems: 'center', gap: '5px' }}>
-                      <GitBranch size={12} />
-                      <span>Condición de Decisión (IF)</span>
-                    </div>
-                    <div>
-                      <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Campo a evaluar:</label>
-                      <input
-                        type="text"
-                        placeholder="ej. outputs.triage.category"
-                        value={nodeEditForm.condition_field}
-                        onChange={(e) => setNodeEditForm({ ...nodeEditForm, condition_field: e.target.value })}
-                        style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#f8fafc', fontFamily: 'var(--font-mono)' }}
-                      />
-                    </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
-                      <div>
-                        <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Operador:</label>
-                        <select
-                          value={nodeEditForm.condition_operator || '=='}
-                          onChange={(e) => setNodeEditForm({ ...nodeEditForm, condition_operator: e.target.value })}
-                          style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#f8fafc' }}
-                        >
-                          <option value="==">==</option>
-                          <option value="!=">!=</option>
-                          <option value=">">&gt;</option>
-                          <option value="<">&lt;</option>
-                          <option value="contains">contains</option>
-                          <option value="is_true">is_true</option>
-                          <option value="is_false">is_false</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Valor esperado:</label>
-                        <input
-                          type="text"
-                          placeholder="deep"
-                          value={nodeEditForm.condition_expected_value || ''}
-                          onChange={(e) => setNodeEditForm({ ...nodeEditForm, condition_expected_value: e.target.value })}
-                          style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#f8fafc' }}
-                        />
-                      </div>
-                    </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
-                      <div>
-                        <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Rama True (true_edge):</label>
-                        <input
-                          type="text"
-                          placeholder="id_arista_o_nodo"
-                          value={nodeEditForm.true_edge || ''}
-                          onChange={(e) => setNodeEditForm({ ...nodeEditForm, true_edge: e.target.value })}
-                          style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#10b981', fontFamily: 'var(--font-mono)' }}
-                        />
-                      </div>
-                      <div>
-                        <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Rama False (false_edge):</label>
-                        <input
-                          type="text"
-                          placeholder="id_arista_o_nodo"
-                          value={nodeEditForm.false_edge || ''}
-                          onChange={(e) => setNodeEditForm({ ...nodeEditForm, false_edge: e.target.value })}
-                          style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#ef4444', fontFamily: 'var(--font-mono)' }}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Panel Especial: Aprobación Humana */}
-                {nodeEditForm.node_type === 'HUMAN_APPROVAL' && (
-                  <div style={{ backgroundColor: '#21101d', border: '1px solid rgba(236, 72, 153, 0.3)', borderRadius: '6px', padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    <div style={{ fontSize: '11px', fontWeight: '700', color: '#ec4899', display: 'flex', alignItems: 'center', gap: '5px' }}>
-                      <ShieldCheck size={12} />
-                      <span>Compuerta de Aprobación Humana</span>
-                    </div>
-                    <div>
-                      <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Prompt / Pregunta de Aprobación:</label>
-                      <textarea
-                        rows={2}
-                        value={nodeEditForm.prompt}
-                        onChange={(e) => setNodeEditForm({ ...nodeEditForm, prompt: e.target.value })}
-                        placeholder="¿Autorizar la publicación del informe?"
-                        style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#f8fafc', resize: 'vertical' }}
-                      />
-                    </div>
-                    <div>
-                      <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Timeout (segundos):</label>
-                      <input
-                        type="number"
-                        value={nodeEditForm.timeout_seconds}
-                        onChange={(e) => setNodeEditForm({ ...nodeEditForm, timeout_seconds: e.target.value })}
-                        style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#ec4899' }}
-                      />
-                    </div>
-                  </div>
-                )}
-
-                {/* Panel Especial: DELEGATE / Router */}
-                {nodeEditForm.node_type === 'DELEGATE' && (
-                  <div style={{ backgroundColor: '#1a102b', border: '1px solid rgba(168, 85, 247, 0.3)', borderRadius: '6px', padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    <div style={{ fontSize: '11px', fontWeight: '700', color: '#a855f7', display: 'flex', alignItems: 'center', gap: '5px' }}>
-                      <Bot size={12} />
-                      <span>Router de Delegación</span>
-                    </div>
-                    <div>
-                      <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Modo de Enrutamiento (routing_mode):</label>
-                      <select
-                        value={nodeEditForm.routing_mode || nodeEditForm.strategy || 'MANUAL'}
-                        onChange={(e) => setNodeEditForm({ ...nodeEditForm, routing_mode: e.target.value, strategy: e.target.value })}
-                        style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#f8fafc' }}
-                      >
-                        <option value="MANUAL">MANUAL (Supervisión humana / Lista fija)</option>
-                        <option value="AUTOMATIC">AUTOMATIC (Despacho dinámico a candidato)</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Agentes Candidatos (separados por coma):</label>
-                      <input
-                        type="text"
-                        placeholder="agent_alpha, agent_beta"
-                        value={nodeEditForm.candidate_agents}
-                        onChange={(e) => setNodeEditForm({ ...nodeEditForm, candidate_agents: e.target.value })}
-                        style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#f8fafc' }}
-                      />
-                    </div>
-                  </div>
-                )}
-
-                {/* Panel Especial: PARALLEL_JOIN */}
-                {nodeEditForm.node_type === 'PARALLEL_JOIN' && (
-                  <div style={{ backgroundColor: '#13182e', border: '1px solid rgba(129, 140, 248, 0.3)', borderRadius: '6px', padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    <div style={{ fontSize: '11px', fontWeight: '700', color: '#818cf8', display: 'flex', alignItems: 'center', gap: '5px' }}>
-                      <GitMerge size={12} />
-                      <span>Sincronización Parallel Join</span>
-                    </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
-                      <div>
-                        <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Política de Espera:</label>
-                        <select
-                          value={nodeEditForm.join_policy}
-                          onChange={(e) => setNodeEditForm({ ...nodeEditForm, join_policy: e.target.value })}
-                          style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#f8fafc' }}
-                        >
-                          <option value="all">all (Espera todas)</option>
-                          <option value="any">any (Primera en llegar)</option>
-                          <option value="quorum">quorum (Mayoría)</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Mezcla de Salidas:</label>
-                        <select
-                          value={nodeEditForm.merge_policy}
-                          onChange={(e) => setNodeEditForm({ ...nodeEditForm, merge_policy: e.target.value })}
-                          style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#f8fafc' }}
-                        >
-                          <option value="namespace">namespace (Aislado)</option>
-                          <option value="shallow">shallow (Directo)</option>
-                        </select>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                <div>
-                  <label style={{ fontSize: '10.5px', color: '#94a3b8', display: 'block', marginBottom: '3px' }}>Inputs (Parámetros JSON)</label>
-                  <textarea
-                    rows={4}
-                    value={nodeEditForm.inputs_json}
-                    onChange={(e) => setNodeEditForm({ ...nodeEditForm, inputs_json: e.target.value })}
-                    style={{ width: '100%', backgroundColor: '#111827', border: '1px solid #243044', borderRadius: '5px', padding: '6px', fontSize: '10.5px', color: '#f8fafc', fontFamily: 'var(--font-mono)', resize: 'vertical' }}
-                  />
-                </div>
-
-                <div>
-                  <label style={{ fontSize: '10.5px', color: '#94a3b8', display: 'block', marginBottom: '3px' }}>Resultados (Outputs)</label>
-                  <textarea
-                    rows={3}
-                    readOnly
-                    value={nodeEditForm.outputs_json}
-                    style={{ width: '100%', backgroundColor: '#111827', border: '1px solid #1e293b', borderRadius: '5px', padding: '6px', fontSize: '10.5px', color: '#94a3b8', fontFamily: 'var(--font-mono)', resize: 'none' }}
-                  />
-                </div>
+                <NodeFields
+                  form={nodeEditForm}
+                  setForm={setNodeEditForm}
+                  nodes={nodesArray}
+                  outgoingEdges={edgesArray.filter((e) => e.from_node === nodeEditForm.node_id)}
+                  agents={registeredAgents}
+                />
 
                 <div style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
                   <button
@@ -2586,87 +2095,42 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
               <form onSubmit={handleSaveEdgeProperties} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 <div>
                   <label style={{ fontSize: '10.5px', color: '#94a3b8', display: 'block', marginBottom: '3px' }}>Conexión</label>
-                  <div style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: '#38bdf8', backgroundColor: '#111827', padding: '6px 8px', borderRadius: '5px' }}>
-                    {edgeEditForm.from_node} &rarr; {edgeEditForm.to_node}
+                  <div style={{ fontSize: '11.5px', color: '#38bdf8', backgroundColor: '#111827', padding: '6px 8px', borderRadius: '5px' }}>
+                    {nodesArray.find((n) => (n.node_id || n.id) === edgeEditForm.from_node)?.name || edgeEditForm.from_node}
+                    {' '}&rarr;{' '}
+                    {nodesArray.find((n) => (n.node_id || n.id) === edgeEditForm.to_node)?.name || edgeEditForm.to_node}
                   </div>
                 </div>
 
                 <div>
-                  <label style={{ fontSize: '10.5px', color: '#94a3b8', display: 'block', marginBottom: '3px' }}>Etiqueta Visual</label>
+                  <label style={{ fontSize: '10.5px', color: '#94a3b8', display: 'block', marginBottom: '3px' }}>Nombre del camino (opcional)</label>
                   <input
                     type="text"
-                    placeholder="ej. Rama Éxito, Validación OK"
+                    placeholder="p. ej. Aprobado, Necesita cambios"
                     value={edgeEditForm.label}
                     onChange={(e) => setEdgeEditForm({ ...edgeEditForm, label: e.target.value })}
                     style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '5px', padding: '5px 8px', fontSize: '11.5px', color: '#f8fafc' }}
                   />
                 </div>
 
-                {/* Configuración de Condición Lógica */}
                 <div style={{ backgroundColor: '#111827', border: '1px solid #1e293b', borderRadius: '6px', padding: '10px' }}>
                   <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: '600', color: '#c084fc', cursor: 'pointer', marginBottom: '8px' }}>
                     <input
                       type="checkbox"
                       checked={edgeEditForm.has_condition}
-                      onChange={(e) => setEdgeEditForm({ ...edgeEditForm, has_condition: e.target.checked })}
+                      onChange={(e) => setEdgeEditForm({ ...edgeEditForm, has_condition: e.target.checked, cond: edgeEditForm.cond || emptyCondition() })}
                     />
-                    <span>Habilitar Condición Lógica (EdgeCondition)</span>
+                    <span>Seguir este camino solo si…</span>
                   </label>
 
                   {edgeEditForm.has_condition && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      <div>
-                        <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>
-                          Campo a evaluar (ej. output.status, score):
-                        </label>
-                        <input
-                          type="text"
-                          value={edgeEditForm.field}
-                          onChange={(e) => setEdgeEditForm({ ...edgeEditForm, field: e.target.value })}
-                          style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#f8fafc', fontFamily: 'var(--font-mono)' }}
-                        />
-                      </div>
-
-                      <div>
-                        <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>
-                          Operador:
-                        </label>
-                        <select
-                          value={edgeEditForm.operator}
-                          onChange={(e) => setEdgeEditForm({ ...edgeEditForm, operator: e.target.value })}
-                          style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#f8fafc' }}
-                        >
-                          <option value="==">== (Igual a)</option>
-                          <option value="!=">!= (Distinto de)</option>
-                          <option value=">">&gt; (Mayor que)</option>
-                          <option value=">=">&gt;= (Mayor o igual)</option>
-                          <option value="<">&lt; (Menor que)</option>
-                          <option value="<=">&lt;= (Menor o igual)</option>
-                          <option value="in">in (Contenido en lista)</option>
-                          <option value="contains">contains (Contiene substring/elemento)</option>
-                          <option value="is_true">is_true (Verdadero)</option>
-                          <option value="is_false">is_false (Falso)</option>
-                        </select>
-                      </div>
-
-                      {edgeEditForm.operator !== 'is_true' && edgeEditForm.operator !== 'is_false' && (
-                        <div>
-                          <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>
-                            Valor Esperado:
-                          </label>
-                          <input
-                            type="text"
-                            value={edgeEditForm.expected_value}
-                            onChange={(e) => setEdgeEditForm({ ...edgeEditForm, expected_value: e.target.value })}
-                            style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#f8fafc', fontFamily: 'var(--font-mono)' }}
-                          />
-                        </div>
-                      )}
-
-                      <div style={{ fontSize: '9.5px', color: '#64748b', fontStyle: 'italic', marginTop: '2px' }}>
-                        Se transitará a {edgeEditForm.to_node} solo si context.{edgeEditForm.field} {edgeEditForm.operator} {edgeEditForm.expected_value}.
-                      </div>
-                    </div>
+                    <ConditionBuilder
+                      value={edgeEditForm.cond}
+                      onChange={(cond) => setEdgeEditForm({ ...edgeEditForm, cond })}
+                      nodes={nodesArray}
+                      excludeNodeId={edgeEditForm.to_node}
+                      lastResultLabel="El nodo de origen de este camino"
+                    />
                   )}
                 </div>
 
@@ -2899,33 +2363,30 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
                 <div>
-                  <label style={{ fontSize: '11px', color: '#94a3b8', display: 'block', marginBottom: '3px' }}>Tipo de Nodo:</label>
+                  <label style={{ fontSize: '11px', color: '#94a3b8', display: 'block', marginBottom: '3px' }}>Qué hace este nodo:</label>
                   <select
                     value={createNodeForm.node_type}
                     onChange={(e) => setCreateNodeForm({ ...createNodeForm, node_type: e.target.value })}
                     style={{ width: '100%', backgroundColor: '#0c1017', border: '1px solid #243044', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', color: '#f8fafc' }}
                   >
-                    <option value="AGENT">AGENT (Agente IA)</option>
-                    <option value="TASK">TASK (Tarea / Herramienta)</option>
-                    <option value="IF">IF (Bifurcación Condicional)</option>
-                    <option value="DECISION">DECISION (Compuerta)</option>
-                    <option value="WHILE">WHILE (Bucle Acotado)</option>
-                    <option value="DELEGATE">DELEGATE (Router)</option>
-                    <option value="HUMAN_APPROVAL">HUMAN_APPROVAL (Aprobación Humana)</option>
-                    <option value="PARALLEL_FORK">PARALLEL_FORK (Fork)</option>
-                    <option value="PARALLEL_JOIN">PARALLEL_JOIN (Join)</option>
-                    <option value="END">END (Fin)</option>
+                    {Object.entries(NODE_TYPE_LABELS)
+                      .filter(([value]) => value !== 'START')
+                      .map(([value, label]) => (
+                        <option key={value} value={value}>
+                          {label}
+                        </option>
+                      ))}
                   </select>
                 </div>
                 <div>
-                  <label style={{ fontSize: '11px', color: '#94a3b8', display: 'block', marginBottom: '3px' }}>Agente Asignado:</label>
-                  {createNodeForm.node_type === 'AGENT' ? (
+                  <label style={{ fontSize: '11px', color: '#94a3b8', display: 'block', marginBottom: '3px' }}>Agente que lo ejecuta:</label>
+                  {WORK_TYPES.includes(createNodeForm.node_type) ? (
                     <select
                       value={createNodeForm.agent_id}
                       onChange={(e) => setCreateNodeForm({ ...createNodeForm, agent_id: e.target.value })}
                       style={{ width: '100%', backgroundColor: '#0c1017', border: '1px solid #243044', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', color: '#10b981' }}
                     >
-                      <option value="">(Selecciona o escribe)</option>
+                      <option value="">Elige un agente…</option>
                       {registeredAgents.map((ag) => (
                         <option key={ag.id} value={ag.id}>
                           {ag.name || ag.id}
@@ -2936,38 +2397,33 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
                     <input
                       type="text"
                       disabled
-                      placeholder="N/A"
+                      placeholder="No aplica"
                       style={{ width: '100%', backgroundColor: '#0c1017', border: '1px solid #1e293b', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', color: '#64748b' }}
                     />
                   )}
                 </div>
               </div>
 
-              {createNodeForm.node_type === 'AGENT' && (
+              {createNodeForm.node_type === 'TASK' && (
                 <div>
-                  <label style={{ fontSize: '11px', color: '#94a3b8', display: 'block', marginBottom: '3px' }}>ID de Agente Personalizado (opcional):</label>
-                  <input
-                    type="text"
-                    value={createNodeForm.agent_id}
-                    onChange={(e) => setCreateNodeForm({ ...createNodeForm, agent_id: e.target.value })}
-                    placeholder="ej. ag_security_auditor"
-                    style={{ width: '100%', backgroundColor: '#0c1017', border: '1px solid #243044', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', color: '#f8fafc', fontFamily: 'var(--font-mono)' }}
-                  />
+                  <label style={{ fontSize: '11px', color: '#94a3b8', display: 'block', marginBottom: '3px' }}>Herramienta fija:</label>
+                  <select
+                    value={createNodeForm.tool_name}
+                    onChange={(e) => setCreateNodeForm({ ...createNodeForm, tool_name: e.target.value })}
+                    style={{ width: '100%', backgroundColor: '#0c1017', border: '1px solid #243044', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', color: '#f8fafc' }}
+                  >
+                    {TOOL_CHOICES.map((t) => (
+                      <option key={t.value} value={t.value}>
+                        {t.label}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               )}
 
-              {createNodeForm.node_type === 'TASK' && (
-                <div>
-                  <label style={{ fontSize: '11px', color: '#94a3b8', display: 'block', marginBottom: '3px' }}>Herramienta / Tool Name:</label>
-                  <input
-                    type="text"
-                    value={createNodeForm.tool_name}
-                    onChange={(e) => setCreateNodeForm({ ...createNodeForm, tool_name: e.target.value })}
-                    placeholder="ej. deploy_service"
-                    style={{ width: '100%', backgroundColor: '#0c1017', border: '1px solid #243044', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', color: '#f8fafc' }}
-                  />
-                </div>
-              )}
+              <div style={{ fontSize: '10.5px', color: '#64748b' }}>
+                La misión del nodo, el resultado esperado y las conexiones se configuran después en el panel derecho.
+              </div>
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '6px' }}>
                 <button type="button" onClick={() => setShowAddNodeModal(false)} style={{ padding: '6px 12px', borderRadius: '5px', backgroundColor: '#1e293b', border: 'none', color: '#f8fafc', fontSize: '11.5px', cursor: 'pointer' }}>
