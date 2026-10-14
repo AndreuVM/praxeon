@@ -485,6 +485,8 @@ class ContextManager:
         preserve_recent_steps: int = 4,
         chat_history: Optional[List[Dict[str, Any]]] = None,
         node_mode: bool = False,
+        compress_batch: int = 1,
+        compress: bool = True,
     ) -> List[Dict[str, str]]:
         """Ensambla el historial y prompt optimizado para el LLM actuando como autoridad única (CTX-01).
 
@@ -493,6 +495,11 @@ class ContextManager:
         2. Compresión semántica de pasos de ejecución antiguos reteniendo el feedback de supervisión.
         3. Preservación intacta de los últimos `preserve_recent_steps` con sus observaciones completas.
         4. Control estricto de presupuesto de tokens y telemetría de reducción.
+
+        `compress_batch` > 1 comprime por lotes: el resumen solo cambia cada `compress_batch` pasos y, entre medias,
+        la conversación solo crece por el final. Así el prefijo se mantiene idéntico entre turnos y el caché de
+        prompt del proveedor (o la sesión abierta de la CLI) puede reutilizarlo. Con `compress=False` no se
+        comprime nada (proveedores que ya guardan la conversación en una sesión con contexto amplio).
         """
         import json
 
@@ -531,7 +538,12 @@ class ContextManager:
             return messages
 
         # Particionar pasos: antiguos (comprimibles) y recientes (intactos)
-        cutoff = max(0, total_steps - preserve_recent_steps)
+        if not compress:
+            cutoff = 0
+        else:
+            excess = max(0, total_steps - preserve_recent_steps)
+            batch = max(1, int(compress_batch))
+            cutoff = (excess // batch) * batch   # solo avanza de lote en lote: el resumen queda congelado entre medias
         older_steps = steps[:cutoff]
         recent_steps = steps[cutoff:]
 
