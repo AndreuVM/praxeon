@@ -33,6 +33,9 @@ from praxeon.server.services import (
 
 _MISSING_PREFIX = "UNGROUNDED_FILE_NOT_FOUND ("
 
+# El resumen de pasos antiguos solo se rehace cada tantos pasos: entre medias la conversación solo crece por el final
+COMPRESS_BATCH = 6
+
 
 def _missing_path_from_reasons(reason_codes: Optional[List[str]]) -> Optional[str]:
     for code in reason_codes or []:
@@ -454,7 +457,7 @@ class MissionRuntimeMixin:
                 f"DIRECTORIO DE TRABAJO BASE PARA ESTA SESIÓN: '{ws_root}'\n\n"
                 f"{env_info}\n\n"
                 "FORMATO DE RESPUESTA EN CADA TURNO (Estricto ReAct):\n"
-                "Thought: <análisis concreto de lo que vas a hacer y por qué>\n"
+                "Thought: <una frase con tu siguiente paso concreto>\n"
                 "Action: <herramienta>(<argumentos_en_json_o_string>)\n\n"
                 "Herramientas disponibles:\n"
                 "- read_file(path: str) -> Lee el contenido de un archivo del espacio de trabajo local si la tarea requiere auditar código o configuración existente.\n"
@@ -513,6 +516,10 @@ class MissionRuntimeMixin:
                 environment_info=None,
                 chat_history=None if trace is not None else mission.get("chat_history"),
                 node_mode=trace is not None,
+                # compresión por lotes: el prefijo se mantiene estable entre turnos (caché de prompt del proveedor); un
+                # proveedor con sesión propia (CLI) guarda la conversación entera y no necesita comprimir
+                compress_batch=COMPRESS_BATCH,
+                compress=not getattr(agent_llm, "stateful_session", False),
             )
 
             # Invocar LLM real
@@ -520,6 +527,8 @@ class MissionRuntimeMixin:
             llm_ms = 0.0
             try:
                 t_llm = time.perf_counter()
+                if hasattr(agent_llm, "last_usage"):
+                    agent_llm.last_usage = None
                 llm_output = agent_llm.generate(conversation, system_prompt=system_prompt)
                 llm_ms = (time.perf_counter() - t_llm) * 1000.0
                 logger.info(
@@ -529,6 +538,19 @@ class MissionRuntimeMixin:
                     len(llm_output), (trace or {}).get("node_id", "misión"), step_idx,
                 )
                 technical_failures = 0  # Éxito técnico: resetear contador técnico
+                usage = getattr(agent_llm, "last_usage", None)
+                if isinstance(usage, dict):
+                    cached = usage.get("cached_tokens", 0)
+                    self.context_manager.record_actual_tokens(
+                        prompt_tokens=usage.get("prompt_tokens", 0),
+                        output_tokens=usage.get("output_tokens", 0),
+                        cached_tokens=cached,
+                        cache_hit_status="hit" if cached else "miss",
+                    )
+                    logger.info(
+                        "Tokens reales %s: prompt %d (caché %d), salida %d",
+                        provider_name, usage.get("prompt_tokens", 0), cached, usage.get("output_tokens", 0),
+                    )
             except Exception as gen_err:
                 technical_failures += 1
                 logger.warning("Error durante generación con LLM '%s': %s", provider_name, gen_err)
@@ -1267,18 +1289,26 @@ class MissionRuntimeMixin:
         # MODO A: LLM REAL (Ollama, Groq, OpenRouter, OpenAI, Gemini) -> _run_llm_loop
         # =========================================================================
         if mission.get("workflow_id"):
-            wf_ok = self._run_workflow_mission(mission, agent_llm if use_real_llm else None, session_mode)
+            try:
+                wf_ok = self._run_workflow_mission(mission, agent_llm if use_real_llm else None, session_mode)
+            finally:
+                if callable(getattr(agent_llm, "end_session", None)):
+                    agent_llm.end_session()
             step_records = [{"success": wf_ok}]
         elif use_real_llm and agent_llm is not None:
-            loop_result = self._run_llm_loop(
-                mission,
-                agent_llm,
-                goal=goal,
-                max_steps=max_steps,
-                delay_sec=delay_sec,
-                provider_name=provider_name,
-                session_mode=session_mode,
-            )
+            try:
+                loop_result = self._run_llm_loop(
+                    mission,
+                    agent_llm,
+                    goal=goal,
+                    max_steps=max_steps,
+                    delay_sec=delay_sec,
+                    provider_name=provider_name,
+                    session_mode=session_mode,
+                )
+            finally:
+                if callable(getattr(agent_llm, "end_session", None)):
+                    agent_llm.end_session()
             step_records = loop_result["step_records"]
             step_idx = loop_result["steps_used"]
 

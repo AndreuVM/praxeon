@@ -782,6 +782,8 @@ export default function SessionsView({
                     <option value="groq">Groq Cloud (Llama 3.3 / Qwen)</option>
                     <option value="openai">OpenAI (GPT-4o)</option>
                     <option value="gemini">Google Gemini</option>
+                    <option value="anthropic">Claude (Anthropic API)</option>
+                    <option value="claude_cli">Claude CLI (suscripción)</option>
                   </select>
                 </div>
 

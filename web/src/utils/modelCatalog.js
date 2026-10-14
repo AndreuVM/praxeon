@@ -7,6 +7,8 @@ export const PROVIDERS = [
   { value: 'ollama', label: 'Ollama' },
   { value: 'gemini', label: 'Gemini' },
   { value: 'openai', label: 'OpenAI' },
+  { value: 'anthropic', label: 'Claude (Anthropic)' },
+  { value: 'claude_cli', label: 'Claude CLI (suscripción)' },
   { value: 'openrouter', label: 'OpenRouter' },
 ];
 
@@ -15,6 +17,8 @@ export const BUILTIN_MODELS = {
   ollama: ['qwen2.5-coder:7b', 'qwen2.5-coder:1.5b', 'qwen2.5-coder:14b', 'llama3.2:3b', 'deepseek-r1:7b', 'mistral:7b'],
   gemini: ['gemini-3.6-flash', 'gemma-4-26b-a4b-it', 'gemma-4-31b-it'],
   openai: ['gpt-4o-mini', 'gpt-4o'],
+  anthropic: ['claude-sonnet-5-5', 'claude-opus-5-5', 'claude-haiku-5-5', 'claude-fable-5-1'],
+  claude_cli: ['sonnet', 'opus', 'haiku'],
   openrouter: ['qwen/qwen-2.5-coder-32b-instruct:free', 'meta-llama/llama-3.3-70b-instruct:free', 'deepseek/deepseek-r1:free'],
 };
 

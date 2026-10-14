@@ -466,22 +466,31 @@ class WorkflowMissionDriver:
                 max_steps = 0
             else:
                 max_steps = min(int(steps_cfg), MAX_NODE_STEPS)
-            result = self.run_agent_loop(
-                self.mission,
-                llm,
-                goal=briefing,
-                max_steps=max_steps,
-                delay_sec=max(0.0, self.mission.get("step_delay_ms", 900) / 1000.0),
-                provider_name=getattr(llm, "provider_name", "llm"),
-                session_mode=self.mission.get("execution_mode") or "local_restricted",
-                id_prefix=f"{node.node_id}_i{iteration}_",
-                owns_session=False,
-                role_preamble=preamble,
-                tool_filter=self._tool_filter(agent),
-                trace=trace,
-                start_parent_id=self._cursor,
-                finish_check=self._finish_check(node),
-            )
+            try:
+                result = self.run_agent_loop(
+                    self.mission,
+                    llm,
+                    goal=briefing,
+                    max_steps=max_steps,
+                    delay_sec=max(0.0, self.mission.get("step_delay_ms", 900) / 1000.0),
+                    provider_name=getattr(llm, "provider_name", "llm"),
+                    session_mode=self.mission.get("execution_mode") or "local_restricted",
+                    id_prefix=f"{node.node_id}_i{iteration}_",
+                    owns_session=False,
+                    role_preamble=preamble,
+                    tool_filter=self._tool_filter(agent),
+                    trace=trace,
+                    start_parent_id=self._cursor,
+                    finish_check=self._finish_check(node),
+                )
+            finally:
+                # la conversación del nodo termina aquí: libera lo que el proveedor mantenga abierto (p. ej. la CLI de Claude)
+                end_session = getattr(llm, "end_session", None)
+                if callable(end_session):
+                    try:
+                        end_session()
+                    except Exception:
+                        logger.debug("No se pudo cerrar la sesión del LLM", exc_info=True)
             if result.get("last_action_id"):
                 self._cursor = result["last_action_id"]
                 self._prev_trace = trace

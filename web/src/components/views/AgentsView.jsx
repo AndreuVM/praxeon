@@ -1076,6 +1076,7 @@ export default function AgentsView({
                     <option value="gemini">Gemini</option>
                     <option value="openai">OpenAI</option>
                     <option value="anthropic">Anthropic</option>
+                    <option value="claude_cli">Claude CLI</option>
                     <option value="ollama">Ollama</option>
                     <option value="mock">Mock Provider</option>
                   </select>

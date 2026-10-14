@@ -132,6 +132,8 @@ export default function ProvidersView() {
     { provider_id: 'groq', name: 'Groq Cloud Inference', default_model: 'llama-3.3-70b-versatile', type: 'cloud' },
     { provider_id: 'gemini', name: 'Google Gemini', default_model: 'gemini-1.5-flash', type: 'cloud' },
     { provider_id: 'openai', name: 'OpenAI', default_model: 'gpt-4o-mini', type: 'cloud' },
+    { provider_id: 'anthropic', name: 'Anthropic Claude (API)', default_model: 'claude-sonnet-5-5', type: 'cloud' },
+    { provider_id: 'claude_cli', name: 'Claude CLI (suscripción)', default_model: 'sonnet', type: 'local' },
     { provider_id: 'openrouter', name: 'OpenRouter Cloud', default_model: 'anthropic/claude-3.5-sonnet', type: 'cloud' },
   ];
 

@@ -69,7 +69,7 @@ class RunMissionRequest(BaseModel):
     execution_mode: Optional[str] = Field("local_restricted", description="Modo de ejecución física ('container', 'local_restricted', 'full_access')")
     workspace_root: Optional[str] = Field(None, description="Ruta raíz del workspace para la misión")
     network_policy: Optional[str] = Field("isolated", description="Política de red ('isolated', 'restricted', 'host')")
-    llm_provider: Optional[str] = Field("simulator", description="Proveedor del LLM ('simulator', 'groq', 'ollama', 'gemini', 'openai', 'openrouter')")
+    llm_provider: Optional[str] = Field("simulator", description="Proveedor del LLM ('simulator', 'groq', 'ollama', 'gemini', 'openai', 'anthropic', 'claude_cli', 'openrouter')")
     llm_model: Optional[str] = Field(None, description="Modelo específico de LLM")
     api_key: Optional[str] = Field(None, description="Clave de API opcional para el proveedor LLM")
     base_url: Optional[str] = Field(None, description="URL base opcional para endpoints locales o personalizados")

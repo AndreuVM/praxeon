@@ -724,6 +724,8 @@ class RuntimeApplicationService(DecisionPipelineMixin, MissionRuntimeMixin):
             {"provider_id": "groq", "name": "Groq Cloud", "default_model": "llama-3.3-70b-versatile", "type": "cloud"},
             {"provider_id": "ollama", "name": "Ollama Local", "default_model": "qwen2.5-coder:7b", "type": "local"},
             {"provider_id": "gemini", "name": "Google Gemini", "default_model": "gemini-1.5-flash", "type": "cloud"},
+            {"provider_id": "anthropic", "name": "Anthropic Claude (API)", "default_model": "claude-sonnet-5-5", "type": "cloud"},
+            {"provider_id": "claude_cli", "name": "Claude CLI (suscripción)", "default_model": "sonnet", "type": "local"},
             {"provider_id": "openai", "name": "OpenAI", "default_model": "gpt-4o-mini", "type": "cloud"},
             {"provider_id": "openrouter", "name": "OpenRouter", "default_model": "anthropic/claude-3.5-sonnet", "type": "cloud"},
         ]

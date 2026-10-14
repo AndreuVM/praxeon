@@ -561,6 +561,8 @@ export default function SettingsView({
                 <option value="simulator">Simulador Determinista PRAXEON (Pruebas reproducibles)</option>
                 <option value="openai">OpenAI API (GPT-4o / GPT-4o-mini)</option>
                 <option value="gemini">Google Gemini API</option>
+                <option value="anthropic">Claude (Anthropic API)</option>
+                <option value="claude_cli">Claude CLI (suscripción)</option>
               </select>
             </div>
 

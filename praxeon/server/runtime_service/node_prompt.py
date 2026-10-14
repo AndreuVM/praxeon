@@ -14,7 +14,7 @@ DIRECTORIO DE TRABAJO: '{workspace}'
 === FIN DEL BRIEFING ===
 
 FORMATO DE RESPUESTA EN CADA TURNO (estricto):
-Thought: <qué vas a hacer ahora y por qué>
+Thought: <una frase con tu siguiente paso>
 Action: <herramienta>(<argumentos en JSON>)
 Escribe un único Thought y una única Action por turno. No escribas nada después de la Action ni inventes observaciones: la observación te la devuelve el sistema.
 
