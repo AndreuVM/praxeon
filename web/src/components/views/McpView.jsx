@@ -26,14 +26,24 @@ const fromTri = (value) => (value === 'yes' ? true : value === 'no' ? false : nu
 // ---- formulario de alta / edición -------------------------------------------------------------
 
 function emptyForm() {
-  return { mode: 'new', name: '', command: '', argsText: '', envText: '', cwd: '', timeout: 60, trustHints: false, envKeys: [] };
+  return {
+    mode: 'new', kind: 'local', name: '', command: '', argsText: '', envText: '', cwd: '', timeout: 60, trustHints: false, envKeys: [],
+    url: '', shownUrl: '', headersText: '', headerKeys: [], transport: 'auto',
+  };
 }
 
 function formFromServer(server) {
   return {
     mode: 'edit',
+    kind: server.kind === 'remote' ? 'remote' : 'local',
     name: server.name,
-    command: server.command,
+    command: server.command || '',
+    // la URL completa no se devuelve (puede llevar el token): vacío significa «conservar la guardada»
+    url: '',
+    shownUrl: server.url || '',
+    headersText: (server.header_keys || []).map((k) => `${k}=`).join('\n'),
+    headerKeys: server.header_keys || [],
+    transport: server.transport || 'auto',
     argsText: (server.args || []).join('\n'),
     // los valores no se devuelven nunca: se muestran las claves vacías y vacío significa «conservar el guardado»
     envText: (server.env_keys || []).map((k) => `${k}=`).join('\n'),
@@ -47,7 +57,9 @@ function formFromServer(server) {
 function ServerForm({ form, setForm, onSubmit, onCancel, busy, error }) {
   const set = (patch) => setForm({ ...form, ...patch });
   const nameOk = form.mode === 'edit' || NAME_RE.test(form.name) && !form.name.includes('__');
-  const canSave = nameOk && form.command.trim() && !busy;
+  const remote = form.kind === 'remote';
+  const target = remote ? (form.mode === 'edit' || form.url.trim()) : form.command.trim();
+  const canSave = nameOk && target && !busy;
   return (
     <div style={{ ...card, display: 'flex', flexDirection: 'column', gap: '12px', borderColor: '#2f4a6b' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -66,6 +78,46 @@ function ServerForm({ form, setForm, onSubmit, onCancel, busy, error }) {
             onChange={(e) => set({ name: e.target.value })} placeholder="github" />
         </div>
       )}
+      {form.mode === 'new' && (
+        <div role="radiogroup" aria-label="Tipo de servidor" style={{ display: 'flex', gap: '16px', fontSize: '12px', color: '#cbd5e1' }}>
+          <label style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+            <input type="radio" name="mcp-kind" checked={!remote} onChange={() => set({ kind: 'local' })} /> Local (comando en esta máquina)
+          </label>
+          <label style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+            <input type="radio" name="mcp-kind" checked={remote} onChange={() => set({ kind: 'remote' })} /> Remoto (URL)
+          </label>
+        </div>
+      )}
+      {remote && (
+        <>
+          <div>
+            <label style={label}>URL del servidor (SSE o HTTP streamable)</label>
+            <input style={input} value={form.url} onChange={(e) => set({ url: e.target.value })} autoComplete="off" spellCheck={false}
+              placeholder={form.mode === 'edit' ? `${form.shownUrl} (vacío = conservar la guardada)` : 'https://servidor.ejemplo.com/mcp/sse?token=${MI_TOKEN}'} />
+            <span style={{ fontSize: '10.5px', color: '#73849c' }}>
+              El token no lo escribas literal: usa «${'{'}VARIABLE{'}'}» y define la variable en tu entorno o en el .env de PRAXEON. La URL se guarda sin mostrarse nunca en pantalla.
+            </span>
+          </div>
+          <div>
+            <label style={label}>Cabeceras HTTP (CLAVE=valor, una por línea; p. ej. Authorization=Bearer ${'{'}MI_TOKEN{'}'})</label>
+            <textarea style={{ ...input, minHeight: '48px', fontFamily: 'var(--font-mono)' }} value={form.headersText}
+              onChange={(e) => set({ headersText: e.target.value })} autoComplete="off" spellCheck={false} />
+            {form.mode === 'edit' && form.headerKeys.length > 0 && (
+              <span style={{ fontSize: '10.5px', color: '#73849c' }}>Deja el valor vacío para conservar el guardado (nunca se muestra).</span>
+            )}
+          </div>
+          <div>
+            <label style={label}>Transporte</label>
+            <select style={input} value={form.transport} onChange={(e) => set({ transport: e.target.value })} aria-label="Transporte">
+              <option value="auto">Automático (una URL acabada en /sse es SSE; si no, HTTP streamable)</option>
+              <option value="sse">SSE clásico</option>
+              <option value="streamable_http">HTTP streamable</option>
+            </select>
+          </div>
+        </>
+      )}
+      {!remote && (
+        <>
       <div>
         <label style={label}>Comando</label>
         <input style={input} value={form.command} onChange={(e) => set({ command: e.target.value })} placeholder="npx, uvx, python…" />
@@ -85,15 +137,15 @@ function ServerForm({ form, setForm, onSubmit, onCancel, busy, error }) {
           <span style={{ fontSize: '10.5px', color: '#73849c' }}>Deja el valor vacío para conservar el guardado (nunca se muestra).</span>
         )}
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '10px' }}>
-        <div>
-          <label style={label}>Carpeta de trabajo (opcional)</label>
-          <input style={input} value={form.cwd} onChange={(e) => set({ cwd: e.target.value })} />
-        </div>
-        <div>
-          <label style={label}>Tiempo máx. por llamada (s)</label>
-          <input style={input} type="number" min="1" value={form.timeout} onChange={(e) => set({ timeout: e.target.value })} />
-        </div>
+      <div>
+        <label style={label}>Carpeta de trabajo (opcional)</label>
+        <input style={input} value={form.cwd} onChange={(e) => set({ cwd: e.target.value })} />
+      </div>
+        </>
+      )}
+      <div style={{ maxWidth: '220px' }}>
+        <label style={label}>Tiempo máx. por llamada (s)</label>
+        <input style={input} type="number" min="1" value={form.timeout} onChange={(e) => set({ timeout: e.target.value })} />
       </div>
       <label style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', fontSize: '12px', color: '#cbd5e1' }}>
         <input type="checkbox" checked={form.trustHints} onChange={(e) => set({ trustHints: e.target.checked })} />
@@ -106,7 +158,7 @@ function ServerForm({ form, setForm, onSubmit, onCancel, busy, error }) {
       </label>
       {form.mode === 'edit' && (
         <div style={{ fontSize: '11px', color: '#d29922' }}>
-          Si cambias el comando, los argumentos, el entorno o la carpeta, el servidor se desactivará y habrá que revisarlo y aprobarlo de nuevo.
+          Si cambias lo que se ejecuta o a qué te conectas (comando, argumentos, entorno, carpeta, URL, cabeceras o transporte), el servidor se desactivará y habrá que revisarlo y aprobarlo de nuevo.
         </div>
       )}
       {error && <div style={{ fontSize: '12px', color: '#f85149' }}>{error}</div>}
@@ -168,7 +220,8 @@ function ToolRow({ tool, onOverride }) {
 function ServerCard({ server, busy, expanded, onToggle, actions }) {
   const st = STATUS[server.status] || STATUS.stopped;
   const needsApproval = server.status === 'pending_approval' || server.status === 'changed';
-  const argsLine = [server.command, ...(server.args || [])].join(' ');
+  const remote = server.kind === 'remote';
+  const argsLine = remote ? server.url : [server.command, ...(server.args || [])].join(' ');
   return (
     <div style={card}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
@@ -179,7 +232,13 @@ function ServerCard({ server, busy, expanded, onToggle, actions }) {
             <span style={{ fontSize: '14px', fontWeight: 700 }}>{server.name}</span>
           </button>
           <div style={{ fontSize: '11.5px', color: '#73849c', fontFamily: 'var(--font-mono)', wordBreak: 'break-all', marginTop: '4px' }}>{argsLine}</div>
+          {remote && <div style={{ fontSize: '11px', color: '#73849c', marginTop: '2px' }}>Remoto · transporte {server.transport}{server.header_keys?.length > 0 ? ` · cabeceras: ${server.header_keys.join(', ')}` : ''}</div>}
           {server.env_keys?.length > 0 && <div style={{ fontSize: '11px', color: '#73849c', marginTop: '2px' }}>Entorno: {server.env_keys.join(', ')}</div>}
+          {(server.warnings || []).map((w) => (
+            <div key={w} style={{ fontSize: '11px', color: '#e3b341', marginTop: '6px', display: 'flex', gap: '6px' }}>
+              <AlertTriangle size={13} style={{ flexShrink: 0, marginTop: '1px' }} /><span>{w}</span>
+            </div>
+          ))}
         </div>
         <span style={{ fontSize: '11px', fontWeight: 600, color: st.color, border: `1px solid ${st.color}55`, borderRadius: '999px', padding: '2px 10px', whiteSpace: 'nowrap' }}>
           {st.label}
@@ -274,14 +333,16 @@ export default function McpView() {
   };
 
   const submitForm = async () => {
-    const config = {
-      command: form.command.trim(),
-      args: form.argsText.split('\n').map((l) => l.trim()).filter(Boolean),
-      env: parseEnv(form.envText, form.envKeys),
-      cwd: form.cwd.trim() || null,
-      trust_hints: form.trustHints,
-      timeout_s: Number(form.timeout) || 60,
-    };
+    const common = { trust_hints: form.trustHints, timeout_s: Number(form.timeout) || 60 };
+    const config = form.kind === 'remote'
+      ? { ...common, url: form.url.trim() || null, headers: parseEnv(form.headersText, form.headerKeys), transport: form.transport }
+      : {
+          ...common,
+          command: form.command.trim(),
+          args: form.argsText.split('\n').map((l) => l.trim()).filter(Boolean),
+          env: parseEnv(form.envText, form.envKeys),
+          cwd: form.cwd.trim() || null,
+        };
     setBusy(form.name);
     setFormError('');
     try {
