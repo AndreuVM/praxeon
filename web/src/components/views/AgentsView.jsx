@@ -17,6 +17,7 @@ import {
   createAgentVersion,
   fetchAgentVersions,
 } from '../../services/api';
+import McpToolPicker from '../McpToolPicker';
 
 export default function AgentsView({
   session: _session = {},
@@ -1146,6 +1147,10 @@ export default function AgentsView({
                     fontSize: '12px',
                     color: '#f8fafc',
                   }}
+                />
+                <McpToolPicker
+                  value={formData.allowed_tools}
+                  onChange={(next) => setFormData({ ...formData, allowed_tools: next })}
                 />
               </div>
 

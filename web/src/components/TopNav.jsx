@@ -6,6 +6,7 @@ import {
   Bot,
   Workflow,
   Cpu,
+  Plug,
   Shield,
   Settings,
 } from 'lucide-react';
@@ -23,6 +24,7 @@ export default function TopNav({
     { id: 'agents', label: 'Agents', icon: Bot, badge: null },
     { id: 'workflows', label: 'Workflows', icon: Workflow, badge: 'Visual' },
     { id: 'providers', label: 'Providers', icon: Cpu, badge: null },
+    { id: 'mcp', label: 'Tools (MCP)', icon: Plug, badge: null },
     { id: 'security', label: 'Security', icon: Shield, badge: 'Hardened' },
     { id: 'settings', label: 'Settings', icon: Settings, badge: null },
   ];

@@ -759,3 +759,30 @@ export async function instantiateCanonicalTemplate(templateKey, name = null) {
 
 
 
+
+// ---------------------------------------------------------------- servidores MCP (herramientas externas)
+async function mcpCall(path, options) {
+  const res = await authFetch(`${API_BASE}/mcp${path}`, options);
+  if (!res.ok) {
+    let detail = `HTTP ${res.status}`;
+    try {
+      const body = await res.json();
+      detail = typeof body.detail === 'string' ? body.detail : JSON.stringify(body.detail || body);
+    } catch { /* cuerpo no JSON */ }
+    throw new Error(detail);
+  }
+  return (await res.json()).data;
+}
+
+const enc = encodeURIComponent;
+const jsonBody = (method, body) => ({ method, body: JSON.stringify(body) });
+
+export const fetchMcpServers = () => mcpCall('/servers');
+export const saveMcpServer = (name, config) => mcpCall(`/servers/${enc(name)}`, jsonBody('PUT', config));
+export const deleteMcpServer = (name) => mcpCall(`/servers/${enc(name)}`, { method: 'DELETE' });
+export const enableMcpServer = (name) => mcpCall(`/servers/${enc(name)}/enable`, { method: 'POST' });
+export const disableMcpServer = (name) => mcpCall(`/servers/${enc(name)}/disable`, { method: 'POST' });
+export const restartMcpServer = (name) => mcpCall(`/servers/${enc(name)}/restart`, { method: 'POST' });
+export const approveMcpServer = (name, toolsHash) => mcpCall(`/servers/${enc(name)}/approve`, jsonBody('POST', { tools_hash: toolsHash }));
+export const setMcpToolOverride = (name, tool, override) =>
+  mcpCall(`/servers/${enc(name)}/tools/${enc(tool)}`, jsonBody('PUT', override));

@@ -17,6 +17,7 @@ const SessionsView = React.lazy(() => import('./components/views/SessionsView'))
 const DecisionsView = React.lazy(() => import('./components/views/DecisionsView'));
 const AgentsView = React.lazy(() => import('./components/views/AgentsView'));
 const ProvidersView = React.lazy(() => import('./components/views/ProvidersView'));
+const McpView = React.lazy(() => import('./components/views/McpView'));
 const SecurityView = React.lazy(() => import('./components/views/SecurityView'));
 const SettingsView = React.lazy(() => import('./components/views/SettingsView'));
 const WorkflowsView = React.lazy(() => import('./components/views/WorkflowsView'));
@@ -1570,6 +1571,8 @@ export default function App() {
               {activeNav === 'workflows' && <WorkflowsView followExecution={followExecution} />}
 
               {activeNav === 'providers' && <ProvidersView />}
+
+              {activeNav === 'mcp' && <McpView />}
 
               {activeNav === 'security' && (
                 <SecurityView

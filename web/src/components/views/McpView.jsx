@@ -1,0 +1,353 @@
+import React, { useCallback, useEffect, useState } from 'react';
+import { AlertTriangle, ChevronDown, ChevronRight, Pencil, Plug, Plus, Power, RefreshCw, RotateCw, ShieldCheck, Trash2, X } from 'lucide-react';
+import * as api from '../../services/api';
+import { parseEnv } from '../../utils/mcpForm';
+
+const STATUS = {
+  disabled: { label: 'Desactivado', color: '#8b949e' },
+  stopped: { label: 'Detenido', color: '#8b949e' },
+  running: { label: 'Activo', color: '#3fb950' },
+  pending_approval: { label: 'Pendiente de aprobar', color: '#d29922' },
+  changed: { label: 'Cambió: reaprobar', color: '#f85149' },
+  error: { label: 'Error', color: '#f85149' },
+};
+
+const NAME_RE = /^[a-z][a-z0-9_]{0,31}$/;
+const input = {
+  width: '100%', backgroundColor: '#0c1017', border: '1px solid #243044', borderRadius: '6px',
+  padding: '7px 10px', fontSize: '12px', color: '#f8fafc', fontFamily: 'inherit',
+};
+const label = { fontSize: '11px', color: '#94a3b8', display: 'block', marginBottom: '4px' };
+const card = { backgroundColor: '#121824', borderRadius: '10px', border: '1px solid #1e293b', padding: '16px' };
+
+const tri = (value) => (value === true ? 'yes' : value === false ? 'no' : '');
+const fromTri = (value) => (value === 'yes' ? true : value === 'no' ? false : null);
+
+// ---- formulario de alta / edición -------------------------------------------------------------
+
+function emptyForm() {
+  return { mode: 'new', name: '', command: '', argsText: '', envText: '', cwd: '', timeout: 60, trustHints: false, envKeys: [] };
+}
+
+function formFromServer(server) {
+  return {
+    mode: 'edit',
+    name: server.name,
+    command: server.command,
+    argsText: (server.args || []).join('\n'),
+    // los valores no se devuelven nunca: se muestran las claves vacías y vacío significa «conservar el guardado»
+    envText: (server.env_keys || []).map((k) => `${k}=`).join('\n'),
+    cwd: server.cwd || '',
+    timeout: server.timeout_s || 60,
+    trustHints: Boolean(server.trust_hints),
+    envKeys: server.env_keys || [],
+  };
+}
+
+function ServerForm({ form, setForm, onSubmit, onCancel, busy, error }) {
+  const set = (patch) => setForm({ ...form, ...patch });
+  const nameOk = form.mode === 'edit' || NAME_RE.test(form.name) && !form.name.includes('__');
+  const canSave = nameOk && form.command.trim() && !busy;
+  return (
+    <div style={{ ...card, display: 'flex', flexDirection: 'column', gap: '12px', borderColor: '#2f4a6b' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <h3 style={{ fontSize: '14px', fontWeight: 700, color: '#f0f6fc' }}>
+          {form.mode === 'new' ? 'Nuevo servidor MCP' : `Editar «${form.name}»`}
+        </h3>
+        <button className="btn btn-secondary" onClick={onCancel} style={{ padding: '4px 8px' }} aria-label="Cerrar formulario">
+          <X size={14} />
+        </button>
+      </div>
+
+      {form.mode === 'new' && (
+        <div>
+          <label style={label}>Nombre (minúsculas, dígitos y «_»; sin «__»)</label>
+          <input style={{ ...input, borderColor: form.name && !nameOk ? '#f85149' : '#243044' }} value={form.name}
+            onChange={(e) => set({ name: e.target.value })} placeholder="github" />
+        </div>
+      )}
+      <div>
+        <label style={label}>Comando</label>
+        <input style={input} value={form.command} onChange={(e) => set({ command: e.target.value })} placeholder="npx, uvx, python…" />
+      </div>
+      <div>
+        <label style={label}>Argumentos (uno por línea)</label>
+        <textarea style={{ ...input, minHeight: '64px', fontFamily: 'var(--font-mono)' }} value={form.argsText}
+          onChange={(e) => set({ argsText: e.target.value })} placeholder={'-y\n@modelcontextprotocol/server-filesystem\nC:/mi/carpeta'} />
+      </div>
+      <div>
+        <label style={label}>
+          Variables de entorno (CLAVE=valor, una por línea; «CLAVE=${'{'}VARIABLE{'}'}» toma el valor del entorno de PRAXEON)
+        </label>
+        <textarea style={{ ...input, minHeight: '56px', fontFamily: 'var(--font-mono)' }} value={form.envText}
+          onChange={(e) => set({ envText: e.target.value })} placeholder="GITHUB_TOKEN=${MI_TOKEN_GITHUB}" />
+        {form.mode === 'edit' && form.envKeys.length > 0 && (
+          <span style={{ fontSize: '10.5px', color: '#73849c' }}>Deja el valor vacío para conservar el guardado (nunca se muestra).</span>
+        )}
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '10px' }}>
+        <div>
+          <label style={label}>Carpeta de trabajo (opcional)</label>
+          <input style={input} value={form.cwd} onChange={(e) => set({ cwd: e.target.value })} />
+        </div>
+        <div>
+          <label style={label}>Tiempo máx. por llamada (s)</label>
+          <input style={input} type="number" min="1" value={form.timeout} onChange={(e) => set({ timeout: e.target.value })} />
+        </div>
+      </div>
+      <label style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', fontSize: '12px', color: '#cbd5e1' }}>
+        <input type="checkbox" checked={form.trustHints} onChange={(e) => set({ trustHints: e.target.checked })} />
+        <span>
+          Fiarme de lo que el servidor anuncia sobre sus herramientas (solo lectura / destructiva).
+          <span style={{ display: 'block', fontSize: '10.5px', color: '#73849c' }}>
+            Sin esto, toda herramienta MCP pide confirmación humana. Lo anuncia el propio servidor, así que actívalo solo con servidores de confianza.
+          </span>
+        </span>
+      </label>
+      {form.mode === 'edit' && (
+        <div style={{ fontSize: '11px', color: '#d29922' }}>
+          Si cambias el comando, los argumentos, el entorno o la carpeta, el servidor se desactivará y habrá que revisarlo y aprobarlo de nuevo.
+        </div>
+      )}
+      {error && <div style={{ fontSize: '12px', color: '#f85149' }}>{error}</div>}
+      <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+        <button className="btn btn-secondary" onClick={onCancel}>Cancelar</button>
+        <button className="btn btn-primary" onClick={onSubmit} disabled={!canSave}>Guardar</button>
+      </div>
+    </div>
+  );
+}
+
+// ---- herramientas de un servidor ---------------------------------------------------------------
+
+function ToolRow({ tool, onOverride }) {
+  const ov = tool.override || {};
+  const hints = tool.annotations || {};
+  const update = (patch) => onOverride(tool.name, { risk: ov.risk ?? null, read_only: ov.read_only ?? null, confirm: ov.confirm ?? null, disabled: Boolean(ov.disabled), ...patch });
+  const small = { ...input, padding: '3px 6px', width: 'auto', fontSize: '11px' };
+  return (
+    <div style={{ borderTop: '1px solid #1e293b', padding: '10px 0', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+      <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+        <code style={{ fontSize: '12px', color: tool.exposed ? '#3fb950' : '#8b949e' }} title="Nombre con el que lo ve el agente">{tool.exposed_as}</code>
+        <span style={{ fontSize: '10.5px', color: tool.exposed ? '#3fb950' : '#8b949e' }}>
+          {tool.exposed ? 'expuesta al agente' : ov.disabled ? 'desactivada' : 'no expuesta'}
+        </span>
+        {hints.readOnlyHint === true && <span className="badge" title="Lo anuncia el servidor; no se cree salvo que lo permitas">anuncia solo lectura</span>}
+        {hints.destructiveHint === true && <span className="badge badge-danger" title="Lo anuncia el servidor">anuncia destructiva</span>}
+      </div>
+      {tool.description && <div style={{ fontSize: '11.5px', color: '#94a3b8' }}>{tool.description}</div>}
+      <code style={{ fontSize: '11px', color: '#73849c' }}>{tool.exposed_as}({tool.signature})</code>
+      <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center', fontSize: '11px', color: '#94a3b8' }}>
+        <label>Riesgo{' '}
+          <select style={small} value={ov.risk || ''} onChange={(e) => update({ risk: e.target.value || null })} aria-label={`Riesgo de ${tool.name}`}>
+            <option value="">Auto</option>
+            <option value="LOW">LOW</option>
+            <option value="MEDIUM">MEDIUM</option>
+            <option value="HIGH">HIGH</option>
+            <option value="CRITICAL">CRITICAL</option>
+          </select>
+        </label>
+        <label>Solo lectura{' '}
+          <select style={small} value={tri(ov.read_only)} onChange={(e) => update({ read_only: fromTri(e.target.value) })} aria-label={`Solo lectura de ${tool.name}`}>
+            <option value="">Auto</option><option value="yes">Sí</option><option value="no">No</option>
+          </select>
+        </label>
+        <label>Pedir confirmación{' '}
+          <select style={small} value={tri(ov.confirm)} onChange={(e) => update({ confirm: fromTri(e.target.value) })} aria-label={`Confirmación de ${tool.name}`}>
+            <option value="">Auto</option><option value="yes">Sí</option><option value="no">No</option>
+          </select>
+        </label>
+        <label style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+          <input type="checkbox" checked={Boolean(ov.disabled)} onChange={(e) => update({ disabled: e.target.checked })} /> Desactivar
+        </label>
+      </div>
+    </div>
+  );
+}
+
+function ServerCard({ server, busy, expanded, onToggle, actions }) {
+  const st = STATUS[server.status] || STATUS.stopped;
+  const needsApproval = server.status === 'pending_approval' || server.status === 'changed';
+  const argsLine = [server.command, ...(server.args || [])].join(' ');
+  return (
+    <div style={card}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <button onClick={onToggle} style={{ background: 'none', border: 'none', color: '#f0f6fc', display: 'flex', alignItems: 'center', gap: '6px', padding: 0, cursor: 'pointer' }}
+            aria-expanded={expanded} aria-label={`Herramientas de ${server.name}`}>
+            {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            <span style={{ fontSize: '14px', fontWeight: 700 }}>{server.name}</span>
+          </button>
+          <div style={{ fontSize: '11.5px', color: '#73849c', fontFamily: 'var(--font-mono)', wordBreak: 'break-all', marginTop: '4px' }}>{argsLine}</div>
+          {server.env_keys?.length > 0 && <div style={{ fontSize: '11px', color: '#73849c', marginTop: '2px' }}>Entorno: {server.env_keys.join(', ')}</div>}
+        </div>
+        <span style={{ fontSize: '11px', fontWeight: 600, color: st.color, border: `1px solid ${st.color}55`, borderRadius: '999px', padding: '2px 10px', whiteSpace: 'nowrap' }}>
+          {st.label}
+        </span>
+      </div>
+
+      {server.error && (
+        <div style={{ marginTop: '10px', fontSize: '11.5px', color: '#f85149', display: 'flex', gap: '6px' }}>
+          <AlertTriangle size={14} style={{ flexShrink: 0 }} /><span style={{ wordBreak: 'break-word' }}>{server.error}</span>
+        </div>
+      )}
+
+      {needsApproval && (
+        <div style={{ marginTop: '10px', padding: '10px 12px', borderRadius: '8px', backgroundColor: 'rgba(210,153,34,0.1)', border: '1px solid rgba(210,153,34,0.35)', fontSize: '12px', color: '#e3b341', display: 'flex', gap: '12px', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
+          <span>
+            {server.status === 'changed'
+              ? 'El servidor cambió sus herramientas desde que las aprobaste. No se exponen hasta que las revises de nuevo.'
+              : `Revisa las ${server.tools.length} herramientas (despliega la tarjeta) y aprueba para exponerlas a los agentes.`}
+          </span>
+          <button className="btn btn-primary" disabled={busy || !server.tools_hash} onClick={actions.approve} style={{ padding: '5px 12px' }}>
+            <ShieldCheck size={13} /> Aprobar {server.tools.length} herramientas
+          </button>
+        </div>
+      )}
+
+      <div style={{ display: 'flex', gap: '8px', marginTop: '12px', flexWrap: 'wrap' }}>
+        {server.enabled ? (
+          <button className="btn btn-secondary" disabled={busy} onClick={actions.disable}><Power size={13} /> Desactivar</button>
+        ) : (
+          <button className="btn btn-primary" disabled={busy} onClick={actions.enable}><Power size={13} /> Activar y revisar</button>
+        )}
+        {server.enabled && <button className="btn btn-secondary" disabled={busy} onClick={actions.restart}><RotateCw size={13} /> Reiniciar</button>}
+        <button className="btn btn-secondary" disabled={busy} onClick={actions.edit}><Pencil size={13} /> Editar</button>
+        <button className="btn btn-secondary" disabled={busy} onClick={actions.remove} style={{ color: '#f85149' }}><Trash2 size={13} /> Eliminar</button>
+      </div>
+
+      {expanded && (
+        <div style={{ marginTop: '12px' }}>
+          {server.tools.length === 0 ? (
+            <div style={{ fontSize: '12px', color: '#73849c' }}>
+              {server.enabled ? 'El servidor no ha anunciado herramientas.' : 'Activa el servidor para ver sus herramientas.'}
+            </div>
+          ) : (
+            server.tools.map((tool) => <ToolRow key={tool.name} tool={tool} onOverride={actions.override} />)
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---- vista --------------------------------------------------------------------------------------
+
+export default function McpView() {
+  const [servers, setServers] = useState(null);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState('');
+  const [expanded, setExpanded] = useState({});
+  const [form, setForm] = useState(null);
+  const [formError, setFormError] = useState('');
+
+  const refresh = useCallback(async () => {
+    try {
+      setServers(await api.fetchMcpServers());
+      setError('');
+    } catch (err) {
+      setError(err.message);
+      setServers((prev) => prev || []);
+    }
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+    api.fetchMcpServers()
+      .then((list) => alive && setServers(list))
+      .catch((err) => alive && (setError(err.message), setServers([])));
+    return () => { alive = false; };
+  }, []);
+
+  const run = async (name, fn, { expand = false } = {}) => {
+    setBusy(name);
+    setError('');
+    try {
+      await fn();
+      if (expand) setExpanded((e) => ({ ...e, [name]: true }));
+      await refresh();
+    } catch (err) {
+      setError(`${name}: ${err.message}`);
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const submitForm = async () => {
+    const config = {
+      command: form.command.trim(),
+      args: form.argsText.split('\n').map((l) => l.trim()).filter(Boolean),
+      env: parseEnv(form.envText, form.envKeys),
+      cwd: form.cwd.trim() || null,
+      trust_hints: form.trustHints,
+      timeout_s: Number(form.timeout) || 60,
+    };
+    setBusy(form.name);
+    setFormError('');
+    try {
+      await api.saveMcpServer(form.name, config);
+      setForm(null);
+      await refresh();
+    } catch (err) {
+      setFormError(err.message);
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const actionsFor = (server) => ({
+    enable: () => run(server.name, () => api.enableMcpServer(server.name), { expand: true }),
+    disable: () => run(server.name, () => api.disableMcpServer(server.name)),
+    restart: () => run(server.name, () => api.restartMcpServer(server.name)),
+    approve: () => run(server.name, () => api.approveMcpServer(server.name, server.tools_hash)),
+    override: (tool, body) => run(server.name, () => api.setMcpToolOverride(server.name, tool, body)),
+    edit: () => { setFormError(''); setForm(formFromServer(server)); },
+    remove: () => {
+      if (window.confirm(`¿Eliminar el servidor «${server.name}»? Sus herramientas dejarán de estar disponibles.`)) {
+        run(server.name, () => api.deleteMcpServer(server.name));
+      }
+    },
+  });
+
+  return (
+    <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '18px', overflowY: 'auto', height: '100%' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap', alignItems: 'flex-start' }}>
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div style={{ width: '32px', height: '32px', borderRadius: '8px', backgroundColor: '#161c28', border: '1px solid #243044', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#38bdf8' }}>
+              <Plug size={18} />
+            </div>
+            <h1 style={{ fontSize: '18px', fontWeight: 700, color: '#f8fafc' }}>Herramientas externas (MCP)</h1>
+          </div>
+          <p style={{ fontSize: '12px', color: '#73849c', marginTop: '6px', maxWidth: '760px' }}>
+            Cada herramienta pasa por la misma supervisión que las nativas. Un servidor es un programa que se ejecuta con tus permisos:
+            nace desactivado, no expone nada hasta que revisas y apruebas sus herramientas, y si las cambia deja de exponerlas. Las que
+            tienen efectos siempre esperan tu confirmación, incluso en Full Access autónomo.
+          </p>
+        </div>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button className="btn btn-secondary" onClick={refresh} disabled={Boolean(busy)}><RefreshCw size={13} /> Actualizar</button>
+          <button className="btn btn-primary" onClick={() => { setFormError(''); setForm(emptyForm()); }}><Plus size={13} /> Añadir servidor</button>
+        </div>
+      </div>
+
+      {error && <div role="alert" style={{ padding: '10px 14px', borderRadius: '8px', backgroundColor: 'rgba(248,81,73,0.1)', border: '1px solid rgba(248,81,73,0.3)', fontSize: '12px', color: '#f85149' }}>{error}</div>}
+
+      {form && <ServerForm form={form} setForm={setForm} onSubmit={submitForm} onCancel={() => setForm(null)} busy={Boolean(busy)} error={formError} />}
+
+      {servers === null ? (
+        <div style={{ fontSize: '12px', color: '#73849c' }}>Cargando…</div>
+      ) : servers.length === 0 && !form ? (
+        <div style={{ ...card, fontSize: '12.5px', color: '#94a3b8' }}>
+          Aún no hay servidores. Pulsa «Añadir servidor» e indica el comando que lo arranca (por ejemplo <code>npx</code> o <code>uvx</code> con el
+          paquete del servidor). Cuando lo actives verás sus herramientas para revisarlas antes de aprobarlas.
+        </div>
+      ) : (
+        servers.map((server) => (
+          <ServerCard key={server.name} server={server} busy={busy === server.name} expanded={Boolean(expanded[server.name])}
+            onToggle={() => setExpanded((e) => ({ ...e, [server.name]: !e[server.name] }))} actions={actionsFor(server)} />
+        ))
+      )}
+    </div>
+  );
+}
