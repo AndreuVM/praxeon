@@ -27,6 +27,25 @@ servidor se desactiva y hay que volver a aprobarlo.
 { "command": "uvx", "args": ["mcp-server-time"], "env": { "API_KEY": "${MI_API_KEY}" } }
 ```
 
+## Servidores remotos (URL)
+
+Además de programas locales (`command` + `args`, por stdio), se pueden usar servidores remotos con una `url`:
+
+```json
+{ "url": "https://servidor.ejemplo.com/mcp/sse?token=${MI_TOKEN}", "headers": { "X-Api-Key": "${OTRA_CLAVE}" } }
+```
+
+- **Transportes**: SSE clásico y HTTP «streamable». Con `transport: "auto"` (por defecto) una URL acabada en `/sse` es SSE; en otro caso
+  se prueba streamable y, si el servidor no lo entiende, se retrocede a SSE.
+- **El token, en una variable**: escribe `${VARIABLE}` en la URL o las cabeceras y define la variable en el entorno de PRAXEON o en su
+  `.env`. Así `mcp.json` no guarda el secreto. Si falta la variable, el error la nombra sin mostrar ningún valor.
+- **La URL no se muestra**: la API y la interfaz devuelven la URL con los valores de la query y los tramos largos del path ocultos
+  (`…/sse?token=•••`); los errores y los registros también quitan los secretos. Al editar, dejar la URL vacía conserva la guardada.
+- **Avisos**: se avisa de `http://` hacia hosts que no son locales (el token viaja sin cifrar) y de valores secretos escritos
+  literalmente en vez de como `${VARIABLE}`.
+- **Seguridad del transporte**: en SSE, el endpoint de envío que anuncia el servidor debe ser del mismo origen que la URL; si no, se rechaza.
+- Todo lo demás (aprobación por huella, riesgo, confirmación, resultados no confiables) es igual que con un servidor local.
+
 ## Qué ve el agente
 
 Las herramientas se llaman `mcp__<servidor>__<herramienta>` y aparecen en su prompt con la firma de sus argumentos.
@@ -50,7 +69,7 @@ Se respetan `allowed_tools` / `forbidden_tools` de cada agente: puedes dar una h
 
 ## Límites actuales
 
-- Solo transporte stdio (no HTTP) y solo herramientas (no recursos ni prompts MCP).
+- Solo herramientas (no recursos ni prompts MCP) y sin OAuth: la autenticación remota es por token en la URL o en cabeceras.
 - Los resultados de las herramientas MCP no cuentan como evidencia para el supervisor.
 - `allowed_tools: ["*"]` (el valor por defecto de un agente) permite también todas las herramientas MCP aprobadas; para limitarlo,
   quita el `*` y elige las herramientas una a una.

@@ -10225,10 +10225,16 @@
       "ServerRequest": {
         "properties": {
           "command": {
-            "type": "string",
-            "minLength": 1,
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Command",
-            "description": "Ejecutable (npx, uvx, python…)"
+            "description": "Servidor local (stdio): ejecutable (npx, uvx, python…)"
           },
           "args": {
             "items": {
@@ -10236,6 +10242,43 @@
             },
             "type": "array",
             "title": "Args"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url",
+            "description": "Servidor remoto (SSE o HTTP streamable). Puede llevar «${VARIABLE}» para el token. Al editar, vacío conserva la guardada (la API nunca devuelve la URL completa)."
+          },
+          "headers": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": "object",
+            "title": "Headers",
+            "description": "Cabeceras HTTP (p. ej. Authorization); null conserva el valor guardado"
+          },
+          "transport": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "sse",
+              "streamable_http"
+            ],
+            "title": "Transport",
+            "default": "auto"
           },
           "env": {
             "additionalProperties": {
@@ -10277,9 +10320,6 @@
           }
         },
         "type": "object",
-        "required": [
-          "command"
-        ],
         "title": "ServerRequest"
       },
       "SessionSnapshotResponse": {

@@ -25,7 +25,17 @@ import time
 from typing import Any, Callable, Dict, List, Optional
 
 from praxeon.domain.models import RiskLevel
-from praxeon.integrations.mcp_client.client import McpError, StdioMcpClient, build_env
+from urllib.parse import parse_qsl, urlsplit
+
+from praxeon.integrations.mcp_client.client import (
+    McpError,
+    SseMcpClient,
+    StdioMcpClient,
+    StreamableHttpMcpClient,
+    build_env,
+    expand_vars,
+    redact_url,
+)
 from praxeon.integrations.mcp_client.config import McpConfigStore, McpServerConfig
 from praxeon.policy.registry import ToolSpec
 
@@ -135,14 +145,14 @@ class McpManager:
         with state.lock:
             self._stop_locked(state)
             cfg = state.config
-            client = StdioMcpClient(cfg.command, cfg.args, build_env(cfg.env), cfg.cwd, name=cfg.name)
+            timeout = min(cfg.timeout_s, 60.0)
             try:
-                client.start(timeout=min(cfg.timeout_s, 60.0))
-                tools = client.list_tools(timeout=min(cfg.timeout_s, 60.0))
+                client = self._connect(cfg, timeout)
+                tools = client.list_tools(timeout=timeout)
             except Exception as exc:
-                client.close()
-                state.status, state.error, state.error_at = "error", str(exc), time.time()
-                logger.warning("Servidor MCP «%s» no disponible: %s", name, exc)
+                message = _scrub_secrets(cfg, str(exc))
+                state.status, state.error, state.error_at = "error", message, time.time()
+                logger.warning("Servidor MCP «%s» no disponible: %s", name, message)
                 return self.describe(name)
             state.client, state.tools, state.hash, state.error = client, tools, tools_hash(tools), None
             if cfg.approved_hash is None:
@@ -154,6 +164,38 @@ class McpManager:
                 state.status = "running"
                 self._register(state)
         return self.describe(name)
+
+    @staticmethod
+    def _remote_candidates(cfg: McpServerConfig) -> List[str]:
+        """Transportes a probar, por orden. «auto»: una URL acabada en /sse es SSE clásico; si no, HTTP streamable con
+        retroceso a SSE si el servidor no lo entiende (así lo recomienda el protocolo)."""
+        if cfg.transport != "auto":
+            return [cfg.transport]
+        path = urlsplit(cfg.url or "").path.rstrip("/").lower()
+        return ["sse"] if path.endswith("/sse") else ["streamable_http", "sse"]
+
+    def _connect(self, cfg: McpServerConfig, timeout: float) -> Any:
+        """Crea y arranca el cliente adecuado; devuelve un cliente ya inicializado (o lanza McpError)."""
+        if not cfg.url:
+            client = StdioMcpClient(cfg.command or "", cfg.args, build_env(cfg.env), cfg.cwd, name=cfg.name)
+            client.start(timeout=timeout)
+            return client
+        url = expand_vars(cfg.url.strip(), "la URL del servidor")
+        headers = {k: expand_vars(v, f"la cabecera «{k}»") for k, v in cfg.headers.items()}
+        last: Optional[Exception] = None
+        for kind in self._remote_candidates(cfg):
+            cls = SseMcpClient if kind == "sse" else StreamableHttpMcpClient
+            client = cls(url, headers, name=cfg.name)
+            try:
+                client.start(timeout=timeout)
+                return client
+            except McpError as exc:
+                client.close()
+                last = exc
+                if cfg.transport != "auto" or exc.status not in (400, 404, 405, 415, None):
+                    break
+        assert last is not None
+        raise last
 
     def stop_server(self, name: str) -> None:
         state = self._states.get(name)
@@ -327,8 +369,13 @@ class McpManager:
         cfg = state.config
         return {
             "name": cfg.name,
+            "kind": "remote" if cfg.url else "local",
             "command": cfg.command,
             "args": cfg.args,
+            "url": redact_url(cfg.url) if cfg.url else None,   # sin secretos: nunca se devuelven los valores
+            "header_keys": sorted(cfg.headers),
+            "transport": cfg.transport,
+            "warnings": _warnings(cfg),
             "env_keys": sorted(cfg.env),          # nunca se devuelven los valores
             "cwd": cfg.cwd,
             "enabled": cfg.enabled,
@@ -354,6 +401,39 @@ class McpManager:
 
     def status(self) -> List[Dict[str, Any]]:
         return [self.describe(cfg.name) for cfg in self.store.list()]
+
+
+def _scrub_secrets(cfg: McpServerConfig, text: str) -> str:
+    """Quita de un mensaje de error cualquier valor secreto de la configuración (URL, cabeceras), resuelto o no."""
+    secrets = [cfg.url or "", *cfg.headers.values()]
+    try:
+        if cfg.url:
+            url = expand_vars(cfg.url.strip())
+            secrets += [url, *(v for _, v in parse_qsl(urlsplit(url).query, keep_blank_values=True))]
+        secrets += [expand_vars(v) for v in cfg.headers.values()]
+    except McpError:
+        pass
+    for secret in sorted({s for s in secrets if len(s) >= 4}, key=len, reverse=True):
+        text = text.replace(secret, "***")
+    return text
+
+
+def _warnings(cfg: McpServerConfig) -> List[str]:
+    """Avisos de seguridad sobre un servidor remoto (se muestran junto al servidor)."""
+    if not cfg.url:
+        return []
+    out: List[str] = []
+    parts = urlsplit(cfg.url)
+    host = (parts.hostname or "").lower()
+    if parts.scheme == "http" and host not in ("localhost", "127.0.0.1", "::1"):
+        out.append("Conexión sin cifrar (http): el token y todo lo que intercambies viajan en claro por la red. Usa https si el servicio lo ofrece.")
+    literal = [k for k, v in parse_qsl(parts.query, keep_blank_values=True) if v and "${" not in v]
+    if literal:
+        out.append(f"El valor de «{', '.join(literal)}» está escrito en la URL guardada en mcp.json. Mejor usa «${{VARIABLE}}» y define la variable en tu entorno o .env.")
+    literal_headers = [k for k, v in cfg.headers.items() if "${" not in v]
+    if literal_headers:
+        out.append(f"Las cabeceras {', '.join(literal_headers)} tienen el valor escrito en mcp.json. Mejor usa «${{VARIABLE}}».")
+    return out
 
 
 def _validate(schema: Dict[str, Any], args: Dict[str, Any]) -> None:

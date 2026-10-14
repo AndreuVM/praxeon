@@ -12,9 +12,10 @@ import os
 import re
 import threading
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Literal, Optional
+from urllib.parse import urlsplit
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from praxeon.config import resolve_cache_dir
 
@@ -43,8 +44,14 @@ class ToolOverride(BaseModel):
 
 class McpServerConfig(BaseModel):
     name: str
-    command: str = Field(..., min_length=1)
+    # Servidor local (stdio): `command` + `args`. Servidor remoto: `url` (+ `headers`). Exactamente uno de los dos.
+    command: Optional[str] = None
     args: List[str] = Field(default_factory=list)
+    # La URL y las cabeceras pueden llevar secretos (token en la query, Authorization): nunca se devuelven por la API.
+    # Admiten «${VARIABLE}» (valor del entorno de PRAXEON / .env), que es lo recomendable para el token.
+    url: Optional[str] = None
+    headers: Dict[str, str] = Field(default_factory=dict)
+    transport: Literal["auto", "sse", "streamable_http"] = "auto"
     # Variables del entorno del servidor: literales o «${VARIABLE}» para tomarlas del entorno de PRAXEON (.env)
     env: Dict[str, str] = Field(default_factory=dict)
     cwd: Optional[str] = None
@@ -63,9 +70,24 @@ class McpServerConfig(BaseModel):
             raise ValueError("el nombre debe ser minúsculas, dígitos y '_' (empezando por letra, sin '__', máx. 32)")
         return value
 
+    @model_validator(mode="after")
+    def _one_transport(self) -> "McpServerConfig":
+        has_cmd = bool((self.command or "").strip())
+        has_url = bool((self.url or "").strip())
+        if has_cmd == has_url:
+            raise ValueError("indica un comando (servidor local) o una url (servidor remoto), pero no ambos")
+        if has_url:
+            parts = urlsplit(self.url.strip())
+            if parts.scheme not in ("http", "https") or not parts.hostname:
+                raise ValueError("la url debe ser http:// o https:// con un host")
+        return self
+
     def launch_fingerprint(self) -> str:
-        """Identifica QUÉ se ejecuta (comando, argumentos, entorno, carpeta): si cambia, la aprobación deja de valer."""
-        raw = json.dumps([self.command, self.args, sorted(self.env.items()), self.cwd], ensure_ascii=False)
+        """Identifica QUÉ se ejecuta o a QUÉ se conecta: si cambia, la aprobación deja de valer."""
+        raw = json.dumps(
+            [self.command, self.args, sorted(self.env.items()), self.cwd, self.url, sorted(self.headers.items()), self.transport],
+            ensure_ascii=False,
+        )
         return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 

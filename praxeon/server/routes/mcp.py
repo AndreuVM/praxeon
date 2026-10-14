@@ -4,7 +4,7 @@ Dar de alta un servidor equivale a permitir que se ejecute un programa en esta m
 permisos de administración.
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
@@ -17,8 +17,15 @@ router = APIRouter(prefix="/v1/mcp", tags=["MCP"])
 
 
 class ServerRequest(BaseModel):
-    command: str = Field(..., min_length=1, description="Ejecutable (npx, uvx, python…)")
+    command: Optional[str] = Field(default=None, description="Servidor local (stdio): ejecutable (npx, uvx, python…)")
     args: List[str] = Field(default_factory=list)
+    url: Optional[str] = Field(
+        default=None,
+        description="Servidor remoto (SSE o HTTP streamable). Puede llevar «${VARIABLE}» para el token. Al editar, vacío conserva la guardada "
+        "(la API nunca devuelve la URL completa).",
+    )
+    headers: Dict[str, Optional[str]] = Field(default_factory=dict, description="Cabeceras HTTP (p. ej. Authorization); null conserva el valor guardado")
+    transport: Literal["auto", "sse", "streamable_http"] = "auto"
     env: Dict[str, Optional[str]] = Field(
         default_factory=dict,
         description="Variables del servidor; usa ${VAR} para tomarlas del entorno de PRAXEON. Un valor null conserva el ya guardado "
@@ -56,6 +63,13 @@ def put_server(name: str, req: ServerRequest, mcp=Depends(_mcp)):
     if kept_missing:
         raise HTTPException(status_code=422, detail=f"No hay valor guardado para: {', '.join(kept_missing)}")
     fields["env"] = {k: (stored_env[k] if v is None else v) for k, v in fields["env"].items()}
+    stored_headers = current.headers if current else {}
+    missing_headers = [k for k, v in fields["headers"].items() if v is None and k not in stored_headers]
+    if missing_headers:
+        raise HTTPException(status_code=422, detail=f"No hay valor guardado para las cabeceras: {', '.join(missing_headers)}")
+    fields["headers"] = {k: (stored_headers[k] if v is None else v) for k, v in fields["headers"].items()}
+    if not (fields.get("url") or "").strip() and not (fields.get("command") or "").strip() and current is not None and current.url:
+        fields["url"] = current.url   # editar sin reescribir la URL (que la API no devuelve): se conserva
     try:
         cfg = McpServerConfig(
             name=name, **fields,
