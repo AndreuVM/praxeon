@@ -4,6 +4,28 @@ Todas las modificaciones notables de este proyecto están documentadas en este a
 
 ---
 
+## [Unreleased]
+
+### Añadido
+- **Cliente MCP** (`praxeon.integrations.mcp_client`): PRAXEON consume herramientas de servidores MCP (locales por stdio y remotos por SSE o HTTP streamable) bajo la misma custodia que las nativas. Alta en tres pasos con aprobación por huella, retirada de herramientas que cambian, entorno aislado, secretos fuera de la API y de los errores, confirmación por defecto y herramientas con efectos que nunca se auto-aprueban en Full Access. API `/v1/mcp`, pestaña *Tools (MCP)* y selector de herramientas MCP por agente. Guía en `docs/MCP_CLIENT.md`.
+- **Proveedores Claude**: Claude por API (`anthropic`, con caching de prompt en la API oficial) y Claude por la CLI instalada (`claude_cli`, con un proceso abierto por nodo de workflow y sin claves de API). Ninguno se elige en modo `auto`.
+- **Ollama por su API nativa** con contexto fijo (`PRAXEON_OLLAMA_NUM_CTX`) para evitar el truncado silencioso de prompts largos.
+- **Uso real de tokens** de cada proveedor registrado en las métricas de contexto (`actual_prompt_tokens`, `actual_cached_tokens`).
+- **Interfaz**: selector de workspace siempre visible, chat con modelo por proveedor y listas ampliables, última configuración e historial por sesión, canvas por bloques de agente con árbol animado, workflows que gobiernan la misión y pasos ilimitados (`max_steps = 0`).
+
+### Cambiado
+- **Compresión de contexto por lotes**: el resumen de pasos antiguos solo se rehace cada 6 pasos, para que el prefijo sea estable entre turnos y los cachés de los proveedores puedan reutilizarlo.
+- La aplicación de escritorio conserva el puerto y guarda los datos de la ventana en la caché local, de modo que la configuración y los chats sobreviven al cierre.
+- El `PolicyEngine` comparte el `ToolRegistry` con el ejecutor (antes tenía una copia propia, así que las herramientas registradas dinámicamente eran «desconocidas» para la política).
+- El formato `Thought:` de los prompts pide un solo paso en lugar de una justificación: la redacción anterior activaba una salvaguarda de los modelos Claude grandes.
+- `praxeon-live` y `praxeon live` aceptan `--provider anthropic` y `--provider claude_cli`.
+
+### Seguridad
+- Cerrada la preautorización de Full Access para herramientas externas con efectos (pipeline de decisiones y bucle del agente).
+- `SECURITY.md` y `docs/FULL_ACCESS_POLICY.md` actualizados con el modelo de amenazas del cliente MCP y de los proveedores.
+
+---
+
 ## [1.1.0] — 2026-10-09
 
 ### Añadido

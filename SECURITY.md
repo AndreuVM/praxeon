@@ -6,8 +6,8 @@
 
 | Versión | Soportada | Estado de Mantenimiento |
 | :--- | :---: | :--- |
-| **1.0.x (v1.0.0)** | ✅ Sí | Versión activa, auditada y certificada para producción y defensa académica (DAM). Incluye Web API FastAPI con autenticación forzada, WebSocket streaming seguro, Decision Tree durable, Execution Modes (Container, Local Restricted, Full Access) con capability binding HMAC-SHA256 y fail-closed por defecto. |
-| < 1.0.0 | ❌ No | Deprecada y discontinuada. Se recomienda actualizar a v1.0.0. |
+| **1.1.x (v1.1.0 y rama principal)** | ✅ Sí | Versión activa. Incluye Web API FastAPI con autenticación forzada, WebSocket streaming seguro, Decision Tree durable, Execution Modes (Container, Local Restricted, Full Access) con capability binding HMAC-SHA256 y fail-closed por defecto, workflows multiagente supervisados, aplicación de escritorio autenticada en loopback y **cliente MCP** (herramientas externas supervisadas, ver §2.12). Los cambios posteriores a la etiqueta v1.1.0 están en la rama principal y constan en la sección *Unreleased* del `CHANGELOG.md`. |
+| < 1.1.0 | ❌ No | Sustituida por 1.1.x. Se recomienda actualizar. |
 
 ---
 
@@ -20,6 +20,8 @@ PRAXEON asume un entorno de adversarios hostiles donde el modelo de lenguaje (LL
 - **Evasión de límites del filesystem y ejecución arbitraria en el host**.
 - **Exfiltración o llamadas de red no autorizadas (Network Egress y SSRF a metadatos cloud)**.
 - **Evasión sintáctica y ofuscación de subshell** (`${IFS}`, base64 pipelines, pipes a intérpretes).
+- **Servidores MCP externos no confiables** (cliente MCP): herramientas con descripciones envenenadas, resultados con instrucciones ocultas, cambio silencioso de sus herramientas tras haberlas aprobado, abuso de herencia de entorno o exfiltración de secretos hacia el servidor.
+- **Fuga de credenciales de proveedores LLM** (claves de API en la interfaz, en `mcp.json`, en registros o en mensajes de error) y gasto involuntario en proveedores de pago.
 
 Para mitigar estas amenazas, el runtime establece una **cadena formal de custodia de autorización**:
 
@@ -64,7 +66,8 @@ $$\text{LLM Proposal} \to \text{Evidence Grounding} \to \text{Risk Assessment} \
    - Exfiltración de red y evasión de políticas de egress.
    - Fuga de secretos y sanitización de credenciales.
    - Inyección indirecta de prompts en observaciones y respuestas de herramientas.
-   - Aislamiento de límites de seguridad en el servidor y cliente MCP.
+   - Aislamiento de límites de seguridad en el servidor MCP de PRAXEON.
+   - Cliente MCP (`tests/test_mcp_client.py`, `test_mcp_runtime.py`, `test_mcp_remote.py`, `test_mcp_api.py`): aprobación por huella, retirada de herramientas que cambian, entorno aislado, secretos fuera de la API y de los errores, endpoint SSE de otro origen, y herramientas con efectos que esperan al operador incluso en Full Access autónomo.
    - Autenticación Web API y WebSocket en perfiles de producción.
 8. **Modos de Ejecución Formales y Límites de Full Access (PRAXEON 1.0):**
    PRAXEON define tres modos explícitos de ejecución (`ExecutionMode`):
@@ -84,6 +87,7 @@ $$\text{LLM Proposal} \to \text{Evidence Grounding} \to \text{Risk Assessment} \
    > - **Firma criptográfica vinculante:** El `execution_mode` forma parte del material firmado por HMAC del `CapabilityPayload`. Cualquier intento de ejecutar un capability firmado para sandbox en host (o viceversa) es rechazado como violación de política.
    > - **Invarianza de BLOCK y REPLAN:** Un veredicto `BLOCK` o `REPLAN` emitido por política permanece absolutamente vinculante en `FULL_ACCESS`; jamás se transforma en `ALLOW`.
    > - **Sin confirmación por paso, con doble confirmación al activar:** una sesión `FULL_ACCESS` autorizada por el operador (selección del modo + aceptación del aviso) no solicita confirmación por acción; el riesgo `CRITICAL`, `BLOCK` y `REPLAN` siguen siendo vinculantes y cada autorización automática queda auditada (`FULL_ACCESS_OPERATOR_PREAUTHORIZED`). `require_step_confirmation` permite volver a exigirla (opt-in).
+   > - **Excepción: herramientas externas con efectos (MCP).** La preautorización de `FULL_ACCESS` solo omite la confirmación de acciones cuya herramienta lo permite (`ToolSpec.auto_confirm`). Una herramienta de un servidor MCP con efectos nunca se auto-aprueba, ni en la política del pipeline de decisiones ni en el bucle del agente: espera siempre al operador (ver `docs/FULL_ACCESS_POLICY.md` §3.4).
    > - **Advertencia operacional:** `FULL_ACCESS` opera directamente sobre el host sin aislamiento de sistema operativo. Debe ser explícitamente habilitado, auditado y registrado.
 
 9. **Precedencia de Seguridad Determinista y Detección de Evasión (Rule 0):**
@@ -102,6 +106,8 @@ $$\text{LLM Proposal} \to \text{Evidence Grounding} \to \text{Risk Assessment} \
 10. **Seguridad de la Web API y Streaming WebSocket:**
    - **Perfiles de Seguridad (`development`, `secure`, `production`):** En `production` y `secure`, el acceso a la API REST (`/api/v1/sessions`, `/decide`, `/events`) exige autenticación obligatoria mediante clave API (`X-API-Key` o `Authorization: Bearer <key>`), configurada a través de `PRAXEON_API_KEY`.
    - **Autenticación WebSocket:** Los sockets en `/ws/events` y `/ws/{session_id}` exigen validación de token (parámetro query `?token=` o cabecera). Los intentos de conexión sin autenticación válida son rechazados inmediatamente con código de cierre WS 1008 (Policy Violation).
+   - **Aplicación de escritorio (`praxeon app`):** el servidor escucha solo en `127.0.0.1`, con un token aleatorio por ejecución que únicamente conoce la ventana; `validate_network_binding` rechaza cualquier otra interfaz si no hay autenticación configurada. Las rutas de administración (`/v1/mcp`, que pueden lanzar programas) exigen el permiso `ADMIN_SETTINGS`.
+   - **Datos locales de la interfaz:** el último modelo y configuración usados, los modelos añadidos y el historial de chat de cada sesión se guardan **sin cifrar** en la caché local (`.praxeon_cache/webview`). Nunca se guardan la API key ni la confirmación de Full Access (lista blanca de campos). Protege esa carpeta como protegerías tu historial de trabajo.
 
 11. **El Caché de Contexto como Capa de Optimización No Vinculante (praxeon.context):**
    El subsistema de Context Caching y Context Management optimiza el volumen y latencia de los datos presentados al razonador antes de la inferencia:
@@ -110,6 +116,24 @@ $$\text{LLM Proposal} \to \text{Evidence Grounding} \to \text{Risk Assessment} \
      Un *cache hit* nunca equivale a un permiso, nunca emite capabilities HMAC y nunca ejecuta herramientas en el host. Los caminos con y sin caché convergen en exactamente las mismas compuertas de autorización determinista.
    - **Almacenamiento Efímero y Reconstruible:** El almacenamiento de fragmentos (L1) y snapshots (L2) es process-local y en memoria. Puede desaparecer tras el reinicio del proceso sin comprometer la seguridad ni el estado canónico; el almacenamiento durable (`SessionState`, `EventStore`, `Evidence`) es la única fuente de verdad y basta para reconstruir cualquier contexto bajo demanda. Un *cache miss* es un evento operacional normal, nunca un fallo de seguridad.
    - **Invalidación Estricta:** Cualquier mutación, revocación o descalificación de una evidencia empírica invalida quirúrgicamente los snapshots dependientes; el *rollback* del DAG en la sesión descarta de inmediato cualquier contexto del linaje podado.
+
+12. **Cliente MCP: herramientas externas bajo la misma custodia (`praxeon.integrations.mcp_client`):**
+    Una herramienta de un servidor MCP no es una herramienta nativa «de confianza»: se registra como `ToolSpec` con un manejador del `SecureExecutor` y recorre **el mismo circuito** (política → capability HMAC → ejecución → redacción de secretos).
+    - **Alta en tres pasos y sin exposición previa.** Un servidor nace desactivado y no expone nada hasta que el operador revisa sus herramientas y las aprueba por **huella** (hash de nombre, descripción, esquema y pistas). Si el servidor cambia sus herramientas después, se retiran hasta reaprobar (defensa frente a *rug pull*); cambiar lo que se ejecuta o a qué se conecta (comando, argumentos, entorno, carpeta, URL, cabeceras, transporte) anula la aprobación y desactiva el servidor.
+    - **Confirmación por defecto.** Toda herramienta MCP exige confirmación humana. Las pistas que anuncia el servidor (`readOnlyHint`…) no se creen salvo `trust_hints` explícito del operador, y los ajustes por herramienta (riesgo, solo lectura, confirmación, desactivar) prevalecen. Una herramienta que el clasificador no reconoce solo se trata como de solo lectura si su `ToolSpec` lo declara; cualquier veto del clasificador (destructivo, privilegios) se respeta.
+    - **Nunca se auto-aprueban las herramientas con efectos**, tampoco en `FULL_ACCESS` autónomo (§2.8).
+    - **Entorno mínimo (servidores locales).** El proceso solo recibe `PATH`, las carpetas del usuario y lo que se declare; no hereda claves de API ni otros secretos de PRAXEON. `${VARIABLE}` resuelve valores del entorno o del `.env` en el momento de lanzar.
+    - **Secretos en servidores remotos.** El token puede ir en la URL o en cabeceras como `${VARIABLE}`, de modo que `mcp.json` no guarde el secreto. La API, la interfaz, los errores y los registros nunca muestran la URL completa ni valores de cabeceras o de entorno (se ocultan los valores de la query, los tramos largos de la ruta y se filtran los secretos conocidos de los mensajes). Un valor secreto escrito literalmente en `mcp.json` queda en texto plano en disco: la interfaz lo avisa.
+    - **Seguridad del transporte.** Solo `http://` y `https://`; se avisa de `http` hacia hosts no locales (el token viaja sin cifrar). En SSE, el endpoint de envío que anuncia el servidor debe ser del **mismo origen** que la URL configurada; si no, se rechaza para que un servidor no redirija los mensajes del agente a otro destino.
+    - **Resultados y argumentos.** Lo que devuelve una herramienta llega marcado como dato externo no confiable (no como instrucciones); es una mitigación, **no una garantía**: la barrera real es la confirmación humana y la política. Los argumentos se validan contra el JSON Schema de la herramienta antes de enviarlos.
+    - **Permisos por agente.** `allowed_tools` / `forbidden_tools` de cada agente se aplican también a las herramientas MCP (`mcp__<servidor>__<herramienta>`); el valor `*` (por defecto) las permite todas, así que para limitar un agente hay que enumerar sus herramientas.
+    - **Límites conocidos:** el servidor MCP **no se ejecuta en sandbox** (un servidor local es un proceso con los permisos del usuario; uno remoto es un servicio ajeno): PRAXEON supervisa la llamada y sus argumentos, no lo que el servidor hace por dentro. Aprueba únicamente servidores en los que confíes. No hay OAuth y los resultados MCP no cuentan como evidencia para el supervisor.
+
+13. **Proveedores LLM, credenciales y gasto:**
+    - **Los proveedores que facturan o consumen cupo no se eligen solos.** El modo `auto` nunca selecciona Claude API ni Claude CLI, aunque exista `ANTHROPIC_API_KEY`; hay que pedirlos explícitamente.
+    - **Claude CLI no usa claves de API.** El proceso `claude` se lanza sin herramientas y sin `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN` en su entorno, de modo que usa la sesión de la suscripción y no factura por tokens. Cada conversación usa su propio proceso, que se cierra al terminar el nodo o la misión.
+    - **Endpoint personalizado.** Con un `base_url` personalizado para Anthropic, la clave del entorno no se hereda: debe darse explícitamente, para no enviar credenciales del servidor a un destino arbitrario.
+    - **Claves en la interfaz.** El campo de API key del chat no se persiste; los errores de los proveedores indican qué variable falta sin mostrar su valor.
 
 ---
 
@@ -121,7 +145,7 @@ Agradecemos y valoramos el trabajo de los investigadores de seguridad. Si descub
 2. Envía un reporte detallado con los pasos para reproducir la vulnerabilidad a través de la pestaña **Security Advisories** de GitHub:
    [https://github.com/AndreuVM/praxeon/security/advisories/new](https://github.com/AndreuVM/praxeon/security/advisories/new)
 3. Proporciona:
-   - Descripción del vector de ataque y componente afectado (`SecureExecutor`, `PolicyEngine`, `SandboxAdapter`, `MCP`, etc.).
+   - Descripción del vector de ataque y componente afectado (`SecureExecutor`, `PolicyEngine`, `SandboxAdapter`, servidor `MCP`, cliente MCP, proveedor LLM, etc.).
    - Prueba de concepto (PoC) ejecutable o traza reproducible.
    - Impacto estimado y posibles mitigaciones.
 

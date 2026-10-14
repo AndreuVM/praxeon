@@ -45,6 +45,12 @@ Aun cuando una sesión se configure en `execution_mode="full_access"`, las front
 - Sin esa autorización, o fuera de `full_access`, la acción queda retenida en `REVIEW`.
 - **No cambia:** `BLOCK`, `REPLAN` y el riesgo `CRITICAL` siguen siendo vinculantes y nunca se transforman en `ALLOW`.
 
+### 3.4. Excepción: herramientas externas con efectos (MCP)
+- La preautorización del apartado 3.3 solo se aplica a herramientas cuyo `ToolSpec` lo permite (`auto_confirm=True`).
+- Las herramientas de servidores MCP se registran con `auto_confirm=False` salvo que estén marcadas como de solo lectura. Una herramienta MCP **con efectos** permanece en `REVIEW` aunque la sesión sea `full_access` y esté autorizada por el operador: espera la decisión humana (que se ve en la cola de aprobaciones) y, si se rechaza, no se ejecuta.
+- Motivo: el operador autorizó a PRAXEON a actuar sobre su host, no a delegar en un servicio de terceros acciones cuyo alcance PRAXEON no puede acotar (el servidor MCP no se ejecuta en sandbox y puede actuar fuera de esta máquina).
+- Las herramientas MCP de solo lectura (declaradas así por el operador o aceptadas mediante `trust_hints`) se comportan como cualquier otra acción de bajo riesgo.
+
 ---
 
 ## 4. Cadena de Custodia Criptográfica y Anti-Replay

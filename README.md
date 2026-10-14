@@ -4,12 +4,13 @@
 
 > **The model proposes. The runtime decides what gets executed.**
 
-[![Tests](https://img.shields.io/badge/tests-839%20passed-brightgreen.svg)](https://github.com/AndreuVM/praxeon)
+[![Tests](https://img.shields.io/badge/tests-1117%20passed-brightgreen.svg)](https://github.com/AndreuVM/praxeon)
 [![Version](https://img.shields.io/badge/version-v1.1.0-blue.svg)](https://github.com/AndreuVM/praxeon)
 [![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](https://github.com/AndreuVM/praxeon)
 [![Context Caching](https://img.shields.io/badge/context%20caching-L1%20%2F%20L2%20Prefix%20Cache-blueviolet.svg)](https://github.com/AndreuVM/praxeon)
 [![Security](https://img.shields.io/badge/security-sandbox%20%26%20container%20hardened-green.svg)](https://github.com/AndreuVM/praxeon/blob/main/SECURITY.md)
 [![Providers](https://img.shields.io/badge/providers-TypeSafe%20%7C%20LAYA%20%7C%20CascadeRouter-purple.svg)](https://github.com/AndreuVM/praxeon)
+[![MCP](https://img.shields.io/badge/MCP-server%20%2B%20client-orange.svg)](docs/MCP_CLIENT.md)
 
 `PRAXEON` es un middleware de supervisión formal y runtime de seguridad desacoplado para agentes autónomos basados en Modelos de Lenguaje (*ReAct*, *Tool-use*, *Tree-of-Thought*).
 
@@ -43,11 +44,32 @@ pip install -e ".[desktop]"     # añade pywebview (usa WebView2 en Windows)
 praxeon app                     # o doble clic en praxeon-app.bat
 ```
 
-`praxeon app` arranca un servidor **solo en `127.0.0.1`** (puerto libre) protegido con un **token aleatorio por ejecución**
-que únicamente conoce la ventana, y abre la interfaz en una ventana nativa: sin login, sin puerto expuesto a la red y sin
-credenciales en el navegador. Si no tienes pywebview, `praxeon app --browser` abre el navegador por defecto con el mismo
-mecanismo. La interfaz compilada se genera con `cd web && npm ci && npm run build`. El modo servidor
-(`praxeon-web`) sigue disponible para despliegues remotos, con autenticación completa.
+`praxeon app` arranca un servidor **solo en `127.0.0.1`** protegido con un **token aleatorio por ejecución** que únicamente
+conoce la ventana, y abre la interfaz en una ventana nativa: sin login, sin puerto expuesto a la red y sin credenciales en el
+navegador. El puerto se conserva entre arranques y los datos de la ventana (último modelo usado, modelos añadidos, historial de
+chat de cada sesión) se guardan en la caché local de PRAXEON (`.praxeon_cache/`), así que sobreviven al cerrar la aplicación. Si no
+tienes pywebview, `praxeon app --browser` abre el navegador por defecto con el mismo mecanismo. La interfaz compilada se genera
+con `cd web && npm ci && npm run build`. El modo servidor (`praxeon-web`) sigue disponible para despliegues remotos, con
+autenticación completa.
+
+### 🧭 La interfaz: misiones, agentes y workflows
+
+La interfaz web (React) tiene nueve vistas: *Live Canvas*, *Sessions*, *Decisions*, *Agents*, *Workflows*, *Providers*,
+*Tools (MCP)*, *Security* y *Settings*. Lo esencial para trabajar con ella:
+
+- **Workspace siempre visible.** La carpeta del proyecto se elige desde la cabecera (selector nativo de carpetas, recientes) y se
+  recuerda. Orden de resolución: carpeta elegida → `PRAXEON_DEFAULT_WORKSPACE_ROOT` / `PRAXEON_WORKSPACE_ROOT` → autodetección.
+- **Chat de misión.** Se elige el proveedor y, en los ajustes del chat, el modelo exacto (una lista por proveedor que puedes ampliar),
+  el supervisor, el modo de ejecución (`container`, `local_restricted`, `full_access`) y, opcionalmente, un workflow. La última
+  configuración y el historial de cada sesión se conservan.
+- **Workflows que mandan de verdad.** Con un workflow activo el grafo gobierna la tarea: cada nodo `AGENT` / `DELEGATE` / `TASK`
+  se ejecuta como una mini-misión del agente que lo posee, con su propio prompt, sus herramientas permitidas y el contexto que le
+  entregan los nodos anteriores. Un nodo no concluye hasta entregar los campos que el grafo necesita (por ejemplo el veredicto
+  `approved` de un bucle `WHILE`). En modo autónomo un nodo fallido se reintenta dos veces antes de pedir decisión humana.
+- **Pasos ilimitados.** `max_steps = 0` quita el tope de pasos; lo frenan el `finish`, los cortacircuitos del supervisor o el operador.
+- **Canvas por bloques.** Con un workflow, cada agente tiene un bloque que agrupa sus pasos; al abrirlo se ve el árbol de pasos con
+  animación en tiempo real.
+- **Herramientas externas (MCP).** La pestaña *Tools (MCP)* gestiona los servidores MCP que PRAXEON consume (ver §5.C).
 
 ---
 
@@ -55,7 +77,7 @@ mecanismo. La interfaz compilada se genera con `cd web && npm ci && npm run buil
 
 En PRAXEON, el **Agente Autónomo** (que genera propuestas de razonamiento y acciones) está completamente desacoplado del **Supervisor Cognitivo de Runtime** (`LAYA` / `TypeSafe`).
 
-Para evitar cuotas y rate-limits estrictos (como los límites gratuitos de Google Gemini), PRAXEON soporta de forma nativa e integrada cualquier endpoint compatible con OpenAI, tanto en local como en la nube:
+Para evitar cuotas y rate-limits estrictos (como los límites gratuitos de Google Gemini), PRAXEON soporta de forma nativa e integrada cualquier endpoint compatible con OpenAI, tanto en local como en la nube, además de Claude por API o por la CLI instalada:
 
 | Proveedor | Tipo | Cuota / Coste | Velocidad | Comando de Inicio |
 | :--- | :---: | :---: | :---: | :--- |
@@ -64,6 +86,9 @@ Para evitar cuotas y rate-limits estrictos (como los límites gratuitos de Googl
 | **OpenRouter** | Nube multimodelo | Modelos `:free` disponibles | Variable | `praxeon live --provider openrouter` |
 | **LM Studio** | Local | **Ilimitado / 0€** | Según GPU/CPU | `praxeon live --provider lmstudio` |
 | **Google Gemini** | Nube | Cuota Free Tier estándar | Estándar | `praxeon live --provider gemini` |
+| **OpenAI** | Nube | De pago, por tokens | Estándar | `praxeon live --provider openai` |
+| **Claude (API)** | Nube | De pago, por tokens (aparte de la suscripción de claude.ai) | Estándar | `praxeon live --provider anthropic` |
+| **Claude CLI** | Local (CLI instalada) | Usa tu suscripción de claude.ai, sin clave de API | Según el plan | `praxeon live --provider claude_cli` |
 | **Simulador Offline** | Determinista | **Ilimitado / 0€** | Inmediato | `praxeon live --provider simulated` |
 
 ### 1. Usar Ollama en Local (Sin conexión a internet ni claves API)
@@ -94,7 +119,22 @@ Para evitar cuotas y rate-limits estrictos (como los límites gratuitos de Googl
    praxeon-dash --live --provider groq
    ```
 
-### 3. Recuperación Interactiva en Caliente (*Self-Healing / Fallback*)
+> **Ollama** se usa por su API nativa con un contexto fijo (`PRAXEON_OLLAMA_NUM_CTX`, 8192 por defecto): el endpoint compatible con
+> OpenAI ignora `num_ctx` y Ollama truncaría por el principio los prompts largos (justo donde van las instrucciones).
+> **Claude API** y **Claude CLI** nunca se eligen en el modo `auto` (aunque exista `ANTHROPIC_API_KEY`): hay que seleccionarlos, para que no se
+> gaste saldo sin pedirlo. El modo `auto` prueba, por este orden: Groq, Ollama local, OpenRouter, Gemini y OpenAI, según las claves o servicios disponibles.
+
+### 3. Usar Claude (API o CLI)
+- **Por API** (`--provider anthropic`): define `ANTHROPIC_API_KEY` en tu `.env` o pégala en los ajustes del chat (ese campo no se
+  guarda). Se factura por tokens, aparte de la suscripción de claude.ai. Con un `base_url` personalizado la clave del entorno no se
+  hereda: hay que darla explícitamente. Pide caching automático de prompt a la API oficial.
+- **Por la CLI** (`--provider claude_cli`): requiere tener `claude` instalado y haber iniciado sesión una vez. PRAXEON lanza
+  `claude -p` sin herramientas, quita `ANTHROPIC_API_KEY` del entorno del proceso para que use tu suscripción y no facture por tokens,
+  y mantiene **un proceso abierto por nodo de workflow** (se cierra al terminar el nodo o la misión) en lugar de uno por turno.
+  Su uso se descuenta de tu plan de claude.ai según las condiciones de este (consúltalas): un workflow largo con varios agentes
+  puede consumir más cupo que una conversación normal.
+
+### 4. Recuperación Interactiva en Caliente (*Self-Healing / Fallback*)
 Si un proveedor experimenta un fallo de cuota (error HTTP 429), pérdida de conexión o clave inválida durante una sesión en vivo, PRAXEON no detiene el proceso abruptamente: despliega un menú interactivo en terminal que permite alternar a otro proveedor (ej. de Gemini a Groq o a Ollama local) e introducir una clave al vuelo sin perder la memoria acumulada de la sesión.
 
 ---
@@ -204,22 +244,31 @@ praxeon/
 │   │   ├── sandbox.py            # LocalProcessSandbox (env scrubbing, realpath jail) y ContainerSandbox
 │   │   ├── executor.py           # SecureExecutor con HMAC capability verification y no-replay
 │   │   └── navigator.py          # Navigator (orquestador del pipeline completo)
+│   ├── agents/                   # AgentRegistry, definiciones versionadas, plantillas y gobernanza de agentes
+│   ├── workflows/                # Motor de workflows multiagente (nodos, condiciones, bucles) y WorkflowMissionDriver
 │   ├── integrations/             # Protocolos de interoperabilidad externa
-│   │   └── mcp/                  # Servidor Model Context Protocol nativo (stdio)
-│   ├── server/                   # Servidor FastAPI REST, WebSocket streaming y auth
+│   │   ├── mcp/                  # Servidor MCP nativo (stdio): expone la supervisión de PRAXEON a otros agentes
+│   │   └── mcp_client/           # Cliente MCP: consume herramientas de servidores externos (stdio, SSE, HTTP streamable)
+│   ├── desktop/                  # Aplicación de escritorio (pywebview) con servidor local autenticado
+│   ├── server/                   # Servidor FastAPI REST, WebSocket streaming, auth y rutas (sessions, agents, workflows, workspace, mcp…)
 │   ├── evaluation/               # Framework de benchmarking y métricas de seguridad
 │   │   ├── scenarios.py          # ScenarioCatalog y generador procedural con ground truth
 │   │   ├── metrics.py            # Métricas decisionales, de ejecución física y económicas
 │   │   ├── reports.py            # Generador formal de informes de benchmark
 │   │   └── runner.py             # BenchmarkRunner con verificación física y ablaciones
+│   ├── agent_llm.py              # Clientes LLM del agente (Ollama, Groq, OpenRouter, OpenAI, Gemini, Claude API, Claude CLI)
+│   ├── workspace_store.py        # Workspace del proyecto: elegir, recordar y explorar carpetas
 │   ├── cli.py                    # Consola interactiva CLI enriquecida con Rich
-│   ├── live_agent.py             # Agente autónomo con Gemini supervisado en tiempo real
+│   ├── live_agent/               # Agente autónomo en vivo (multiproveedor) supervisado en tiempo real
 │   └── dashboard.py              # Monitor visual interactivo TUI en tiempo real
+├── web/                          # Interfaz React (Vite); se compila a praxeon/server/static
 ├── docs/
-│   └── DAM_PROJECT_MEMO.md       # Memoria técnica formal para el ciclo DAM
-├── tests/                        # 527 pruebas automatizadas (unitarias, integración, seguridad, OOD, contexto)
+│   ├── DAM_PROJECT_MEMO.md       # Memoria técnica formal para el ciclo DAM
+│   ├── FULL_ACCESS_POLICY.md     # Política de gobernanza del modo Full Access
+│   └── MCP_CLIENT.md             # PRAXEON como cliente MCP: alta, aprobación, seguridad
+├── tests/                        # 1.118 pruebas automatizadas (unitarias, integración, seguridad, MCP, OOD, contexto)
 ├── SECURITY.md                   # Política de seguridad y modelo de amenazas formal auditado
-├── pyproject.toml                # Metadatos del proyecto y dependencias (v1.0.0)
+├── pyproject.toml                # Metadatos del proyecto y dependencias (v1.1.0)
 └── README.md
 ```
 
@@ -307,7 +356,7 @@ navigator = Navigator(provider=cascade_router)
 
 ---
 
-## 5. Interfaces de Integración: CLI y Servidor MCP
+## 5. Interfaces de Integración: CLI, Servidor MCP y Cliente MCP
 
 ### A. Consola de Línea de Comandos (`praxeon`)
 ```bash
@@ -333,7 +382,7 @@ praxeon dashboard
 praxeon live "Refactorizar función en parser.py" --model gemini-2.5-flash --once
 ```
 
-### B. Servidor MCP (Model Context Protocol)
+### B. Servidor MCP (Model Context Protocol): PRAXEON dentro de otros agentes
 Compatible con **Antigravity IDE**, **Claude Desktop** y **Cursor**:
 
 ```json
@@ -355,6 +404,22 @@ Compatible con **Antigravity IDE**, **Claude Desktop** y **Cursor**:
 - `jev_v2_rollback(checkpoint_id, culprit_tool, reason)`: Restaura el estado e invalida la herramienta reincidente.
 - `jev_v2_get_session_state()`: Devuelve el snapshot serializado del estado y su SHA-256 canónico.
 - `jev_v2_confirm_action(action_id)`: Registra la confirmación humana explícita para acciones con `requires_confirmation=True`.
+
+### C. Cliente MCP: herramientas externas dentro de PRAXEON
+PRAXEON también puede **consumir** servidores MCP: sus herramientas aparecen a los agentes como `mcp__<servidor>__<herramienta>` y
+pasan por exactamente el mismo circuito que las nativas (política → capability HMAC → ejecución → redacción de secretos). Se
+gestionan desde la pestaña *Tools (MCP)* o por la API `/v1/mcp` (permisos de administración).
+
+- **Servidores locales** (stdio, `command` + `args`) y **remotos** (`url`, con SSE clásico o HTTP streamable).
+- **Nace desactivado y sin exponer nada.** Al activarlo ves sus herramientas; solo se exponen al aprobarlas (por huella). Si el
+  servidor las cambia después, dejan de exponerse hasta reaprobar; cambiar el comando o la URL anula la aprobación.
+- **Confirmación por defecto.** Toda herramienta MCP pide confirmación humana salvo que habilites `trust_hints` (fiarte de lo que
+  anuncia el servidor) o ajustes su riesgo. Las herramientas con efectos **nunca se auto-aprueban**, ni siquiera en Full Access autónomo.
+- **Secretos.** Un servidor local solo recibe un entorno mínimo más lo que declares; los tokens van como `${VARIABLE}` (valor del
+  entorno o del `.env`). La API y la interfaz nunca devuelven las URLs completas ni los valores de entorno o cabeceras.
+- **Resultados no confiables** y argumentos validados contra el JSON Schema de cada herramienta.
+
+Guía completa en [`docs/MCP_CLIENT.md`](docs/MCP_CLIENT.md). Los servidores MCP **no se ejecutan en sandbox** (ver *Limitaciones*).
 
 ---
 
@@ -455,6 +520,21 @@ Evaluación formal bajo contención severa de caché (10 sesiones concurrentes, 
   python scripts/benchmark_cache_pressure.py --seed 42 --output benchmark_results/context_cache_pressure_evaluation.json
   ```
 
+### D. Optimización de las llamadas al modelo del agente
+Las APIs de chat son sin estado: cada llamada reenvía la conversación. Para que no se dispare el coste y la latencia:
+
+- **Compresión por lotes.** El resumen de los pasos antiguos solo se rehace cada 6 pasos y entre medias la conversación solo crece
+  por el final, de modo que el prefijo se mantiene idéntico entre turnos y los cachés de prompt de los proveedores (y la sesión
+  abierta de Claude CLI) pueden reutilizarlo. Los últimos 4 pasos siempre se conservan completos.
+- **Caching de prompt donde el proveedor lo pide.** Claude API recibe el caching automático; OpenAI y Gemini lo aplican solos
+  (Gemini con un mínimo de tokens del prefijo); Ollama reutiliza el prefijo por sí mismo. Groq solo lo ofrece con modelos GPT-OSS.
+- **Uso real de tokens.** Cada cliente lee el uso que informa el proveedor (prompt, salida y tokens servidos desde caché) y el
+  runtime lo registra en las métricas de contexto (`actual_prompt_tokens`, `actual_cached_tokens`, `cache_hit_status`).
+- **Sesión persistente con Claude CLI** y contexto fijo con Ollama (ver §Proveedores).
+
+> El caching del proveedor y el `ContextManager` de esta sección son optimizaciones independientes: ninguno concede autoridad de
+> ejecución.
+
 
 ---
 
@@ -550,16 +630,23 @@ De acuerdo con las mejores prácticas de rigor científico y divulgación técni
    - Los umbrales de confianza del `ConfidenceAwareRouter` ($\tau=0.70-0.75$) han sido calibrados contra el catálogo procedural de agentes de desarrollo de software y administración de sistemas. Para dominios altamente especializados (finanzas, medicina o interacción con APIs propietarias opacas), se recomienda ejecutar `scripts/run_benchmarks.py` sobre un conjunto representativo para reajustar los umbrales de riesgo selectivo.
 5. **Estado Experimental de Pesos Neuronales Locales:**
    - El modo de red neuronal real local (`LayaProvider(backend="local")`) requiere dependencias adicionales opcionales (`pip install "praxeon[laya]"`), descarga aproximadamente 800 MB de pesos en el primer arranque y requiere hardware con suficiente memoria RAM o VRAM (mínimo 4 GB). El motor heurístico calibrado (`backend="auto"` / `simulated`) se mantiene como la opción recomendada para CI/CD y despliegues con recursos limitados.
+6. **Servidores MCP externos sin sandbox:**
+   - Un servidor MCP es un proceso con los permisos del usuario (o un servicio remoto): PRAXEON supervisa **qué herramienta se llama y con qué argumentos**, no lo que el servidor hace por dentro. Aprueba solo servidores en los que confíes.
+   - Los servidores remotos por `http://` hacia hosts no locales viajan sin cifrar (la interfaz lo avisa). No hay OAuth: la autenticación remota es por token en la URL o en cabeceras. Solo se usan herramientas MCP (no recursos ni prompts), y sus resultados no cuentan como evidencia para el supervisor.
+7. **Claude CLI como proveedor:**
+   - Cada nodo usa un proceso `claude` propio y consume cupo de tu plan según sus condiciones; depende de que la CLI esté instalada y con sesión iniciada. Con historial reescrito (reintentos) el proceso se reinicia y se reenvía el contexto.
+8. **Medición de caché de prompt:**
+   - Las métricas `actual_cached_tokens` solo reflejan lo que cada proveedor informa; si un proveedor no informa uso, aparece a cero. Los benchmarks de las secciones 7 a 12 son mediciones de versiones anteriores y no se han repetido con los proveedores nuevos.
 
 ---
 
 ## Verificación de la Suite de Pruebas e Invariantes
 
-La arquitectura de PRAXEON v1.0.0, los contratos de proveedores (`LayaProvider`, `TypeSafeAdapter`, `ReplayProvider`, `ConfidenceAwareRouter`), el subsistema de Context Caching determinista (`praxeon.context`), el desacoplamiento de semántica de operaciones (`CommandClassifier`), el Benchmark de Sobre-restricción, la detección de evasión Rule 0, la suite de concurrencia anti-replay (hasta 100 workers concurrentes), la autenticación de Web API / WebSocket, las barreras de enforcement HMAC, el servidor FastAPI, la suite E2E y los benchmarks comparativos están respaldados por **539 pruebas automatizadas pasando al 100%**:
+La arquitectura de PRAXEON (v1.1.0 y rama principal), los contratos de proveedores (`LayaProvider`, `TypeSafeAdapter`, `ReplayProvider`, `ConfidenceAwareRouter`), el subsistema de Context Caching determinista (`praxeon.context`), el desacoplamiento de semántica de operaciones (`CommandClassifier`), el Benchmark de Sobre-restricción, la detección de evasión Rule 0, la suite de concurrencia anti-replay (hasta 100 workers concurrentes), la autenticación de Web API / WebSocket, las barreras de enforcement HMAC, el servidor FastAPI, la suite E2E y los benchmarks comparativos están respaldados por **1.117 pruebas automatizadas pasando al 100%** (1.118 recogidas, 1 omitida), que incluyen las suites de la aplicación de escritorio, los workflows multiagente, los proveedores (Claude API, Claude CLI, Ollama), la optimización de llamadas y el cliente MCP (stdio, SSE y HTTP streamable, contra servidores falsos y servidores construidos con el SDK oficial):
 
 ```bash
 pytest -q
-# 539 passed, 1 skipped in ~121s
+# 1117 passed, 1 skipped
 ```
 
 ---
@@ -570,6 +657,8 @@ Para una exposición exhaustiva de los fundamentos teóricos, la arquitectura t�
 
 - 📄 **[Memoria Técnica Oficial del Proyecto (DAM_PROJECT_MEMO.md)](docs/DAM_PROJECT_MEMO.md)**
 - 🛡️ **[Política de Seguridad y Modelo de Amenazas (SECURITY.md)](SECURITY.md)**
+- 🔓 **[Gobernanza de Full Access (docs/FULL_ACCESS_POLICY.md)](docs/FULL_ACCESS_POLICY.md)**
+- 🔌 **[PRAXEON como cliente MCP (docs/MCP_CLIENT.md)](docs/MCP_CLIENT.md)**
 - 📊 **[Informe Comparativo Multidimensional (COMPARATIVE_REPORT.md)](benchmark_results/COMPARATIVE_REPORT.md)**
 - 🧠 **[Informe de Inferencia con LLM Real (LIVE_LLM_REPORT.md)](benchmark_results/LIVE_LLM_REPORT.md)**
 - 📈 **[Resumen Ejecutivo de Benchmarks](benchmark_results/SUMMARY.md)**
