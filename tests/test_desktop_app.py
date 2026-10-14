@@ -74,3 +74,36 @@ def test_stop_restores_environment(monkeypatch):
     server.stop()
     assert "PRAXEON_API_KEY" not in os.environ
     assert os.environ["PRAXEON_SECRET_KEY"] == "previo"
+
+
+def test_stable_port_is_reused_between_launches_so_ui_preferences_survive(tmp_path, monkeypatch):
+    """localStorage es por origen: con un puerto nuevo en cada arranque se perdían modelos, configuración y chats."""
+    from praxeon.desktop.app import stable_port
+
+    monkeypatch.setenv("PRAXEON_CACHE_DIR", str(tmp_path))
+    first = stable_port()
+    assert stable_port() == first                      # segundo arranque: el mismo puerto
+    assert (tmp_path / "desktop.json").is_file()
+
+
+def test_stable_port_falls_back_when_the_saved_one_is_taken(tmp_path, monkeypatch):
+    import socket
+
+    from praxeon.desktop.app import stable_port
+
+    monkeypatch.setenv("PRAXEON_CACHE_DIR", str(tmp_path))
+    first = stable_port()
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as blocker:
+        blocker.bind(("127.0.0.1", first))             # otro proceso ocupa el puerto guardado
+        second = stable_port()
+    assert second != first
+    assert stable_port() == second                     # y el nuevo queda recordado
+
+
+def test_window_storage_is_persistent_not_private():
+    import inspect
+
+    from praxeon.desktop import app
+
+    src = inspect.getsource(app.run_window)
+    assert "private_mode=False" in src and "storage_path=" in src

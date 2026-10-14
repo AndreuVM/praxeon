@@ -103,14 +103,14 @@ function edgeColors(node) {
   return { strokeColor, particleColor };
 }
 
-function Edges({ nodes, nodeMap, hidden, compact }) {
+function Edges({ nodes, nodeMap, hidden, compact, cardWidth }) {
   return nodes.map((node) => {
     if (hidden.has(node.id) || !node.parentId || !nodeMap[node.parentId] || hidden.has(node.parentId)) return null;
     const parent = nodeMap[node.parentId];
 
-    const startX = parent.x + (parent.type === 'start' ? 40 : 100);
+    const startX = parent.x + (parent.type === 'start' ? 40 : cardWidth / 2);
     const startY = parent.y + (parent.type === 'start' ? 28 : cardHeight(parent, compact) - 2);
-    const endX = node.x + (node.type === 'start' ? 40 : 100);
+    const endX = node.x + (node.type === 'start' ? 40 : cardWidth / 2);
     const endY = node.y;
     const midY = (startY + endY) / 2;
     const pathData = `M ${startX} ${startY} C ${startX} ${midY}, ${endX} ${midY}, ${endX} ${endY}`;
@@ -157,7 +157,7 @@ function Edges({ nodes, nodeMap, hidden, compact }) {
   });
 }
 
-function NodeCard({ node, isSelected, isLatest, onSelectNode, compact }) {
+function NodeCard({ node, isSelected, isLatest, onSelectNode, compact, cardWidth }) {
   const visuals = getNodeVisuals(node, isSelected);
   const Icon = visuals.icon;
   const isExecuting = node.status === 'EXECUTING';
@@ -209,7 +209,7 @@ function NodeCard({ node, isSelected, isLatest, onSelectNode, compact }) {
         position: 'absolute',
         left: `${node.x}px`,
         top: `${node.y}px`,
-        width: '205px',
+        width: `${cardWidth}px`,
         height: `${cardHeight(node, compact)}px`,
         borderRadius: '8px',
         backgroundColor: visuals.bg,
@@ -275,7 +275,7 @@ function NodeCard({ node, isSelected, isLatest, onSelectNode, compact }) {
  *  - latestId:  nodo más reciente (se resalta con pulso); por defecto, el último de la lista
  *  - compact:   tarjetas sin la línea del agente (dentro de un bloque el agente ya está en la cabecera)
  */
-export default function TreeCanvas({ nodes, selectedNodeId, onSelectNode, hiddenIds = [], latestId, compact = false }) {
+export default function TreeCanvas({ nodes, selectedNodeId, onSelectNode, hiddenIds = [], latestId, compact = false, cardWidth = 205 }) {
   const hidden = React.useMemo(() => new Set(hiddenIds), [hiddenIds]);
   const nodeMap = React.useMemo(() => Object.fromEntries(nodes.map((n) => [n.id, n])), [nodes]);
   const latest = latestId ?? [...nodes].reverse().find((n) => n.type !== 'start')?.id;
@@ -283,7 +283,7 @@ export default function TreeCanvas({ nodes, selectedNodeId, onSelectNode, hidden
   return (
     <>
       <svg style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
-        <Edges nodes={nodes} nodeMap={nodeMap} hidden={hidden} compact={compact} />
+        <Edges nodes={nodes} nodeMap={nodeMap} hidden={hidden} compact={compact} cardWidth={cardWidth} />
       </svg>
       {nodes
         .filter((n) => !hidden.has(n.id))
@@ -295,6 +295,7 @@ export default function TreeCanvas({ nodes, selectedNodeId, onSelectNode, hidden
             isLatest={node.id === latest && node.type !== 'start'}
             onSelectNode={onSelectNode}
             compact={compact}
+            cardWidth={cardWidth}
           />
         ))}
     </>

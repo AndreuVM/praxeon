@@ -4,14 +4,14 @@
  * providing clean horizontal branching (bifurcations) and backtracks.
  */
 
-export function computeTreeLayout(nodes) {
+export function computeTreeLayout(nodes, opts = {}) {
   if (!nodes || nodes.length === 0) return [];
 
-  const NODE_WIDTH = 205;
+  const NODE_WIDTH = opts.nodeWidth || 205;
   const _NODE_HEIGHT = 44;
   const START_WIDTH = 80;
-  const HORIZONTAL_GAP = 35; // Gap between sibling branch cards
-  const VERTICAL_STEP = 80;  // Vertical distance between tree levels
+  const HORIZONTAL_GAP = opts.horizontalGap ?? 35; // Gap between sibling branch cards
+  const VERTICAL_STEP = opts.verticalStep || 80;  // Vertical distance between tree levels
   const ROOT_CENTER_X = 420; // Default center coordinate
 
   // 1. Build lookup maps
@@ -59,11 +59,29 @@ export function computeTreeLayout(nodes) {
   }
   assignDepths(rootId, 0);
 
+  // Una «bifurcación con cadena»: un hijo que continúa (la cadena principal) y el resto son hojas (intentos vetados
+  // o alternativas sin continuación). La cadena sigue en vertical bajo el padre y las hojas se reparten a los lados:
+  // así los reintentos no empujan el árbol en diagonal hacia la derecha.
+  const UNIT = NODE_WIDTH + HORIZONTAL_GAP;
+  function forkOf(id) {
+    const children = childrenMap[id] || [];
+    if (children.length < 2) return null;
+    const leaves = children.filter((c) => (childrenMap[c] || []).length === 0);
+    const spine = children.filter((c) => !leaves.includes(c));
+    return spine.length === 1 ? { spine: spine[0], leaves } : null;
+  }
+
   // 4. Measure required subtree width (in pixels)
   function getSubtreeWidth(id) {
     const children = childrenMap[id] || [];
     if (children.length === 0) {
       return id === 'start' ? START_WIDTH : NODE_WIDTH;
+    }
+
+    const fork = forkOf(id);
+    if (fork) {
+      const perSide = Math.ceil(fork.leaves.length / 2);
+      return Math.max(NODE_WIDTH + 2 * perSide * UNIT, getSubtreeWidth(fork.spine));
     }
 
     if (children.length === 1) {
@@ -95,6 +113,17 @@ export function computeTreeLayout(nodes) {
     if (children.length === 1) {
       // Single child: directly inherit vertical column alignment
       positionSubtree(children[0], leftX, availableWidth);
+      return;
+    }
+
+    const fork = forkOf(id);
+    if (fork) {
+      positionSubtree(fork.spine, leftX, availableWidth); // la cadena continúa justo debajo
+      fork.leaves.forEach((leaf, i) => {
+        const side = i % 2 === 0 ? -1 : 1; // alternando izquierda / derecha
+        const step = Math.floor(i / 2) + 1;
+        positionSubtree(leaf, nodeCenterX + side * step * UNIT - NODE_WIDTH / 2, NODE_WIDTH);
+      });
       return;
     }
 

@@ -29,11 +29,23 @@ export default function DecisionTree({
 
   // Zoom controls
   const handleZoomIn = () => setZoom((z) => Math.min(z + 0.15, 1.8));
-  const handleZoomOut = () => setZoom((z) => Math.max(z - 0.15, 0.55));
-  const handleResetZoom = () => {
-    setZoom(1);
-    setPan({ x: 30, y: 10 });
-  };
+  const handleZoomOut = () => setZoom((z) => Math.max(z - 0.15, 0.25));
+
+  // Ajustar: encuadra el árbol completo en el visor
+  const fitView = React.useCallback(() => {
+    const real = nodes.filter((n) => typeof n.x === 'number');
+    if (real.length === 0) return;
+    const minX = Math.min(...real.map((n) => n.x));
+    const maxX = Math.max(...real.map((n) => n.x + 205));
+    const minY = Math.min(...real.map((n) => n.y));
+    const maxY = Math.max(...real.map((n) => n.y + 58));
+    const vw = canvasRef.current?.clientWidth || 800;
+    const vh = canvasRef.current?.clientHeight || 500;
+    const z = Math.max(0.25, Math.min(1, (vw - 60) / (maxX - minX), (vh - 40) / (maxY - minY)));
+    setZoom(z);
+    setPan({ x: (vw - (maxX - minX) * z) / 2 - minX * z, y: 20 - minY * z });
+  }, [nodes]);
+  const handleResetZoom = fitView;
 
   // Pan controls
   const handleMouseDown = (e) => {
@@ -53,16 +65,24 @@ export default function DecisionTree({
 
   const handleMouseUp = () => setIsDragging(false);
 
-  // Auto-scroll suave para centrar el nuevo nodo en el viewport
+  // Seguimiento automático: centra el nodo nuevo (teniendo en cuenta el zoom); al cargar un árbol entero, lo encuadra
+  const prevCountRef = useRef(0);
   useEffect(() => {
-    if (!autoLayout || nodes.length <= 1) return;
+    const previous = prevCountRef.current;
+    prevCountRef.current = nodes.length;
+    if (!autoLayout || hasWorkflow || nodes.length <= 1) return;
+    if (nodes.length - previous > 3) {
+      fitView();
+      return;
+    }
     const latestNode = nodes[nodes.length - 1];
     if (latestNode && typeof latestNode.y === 'number') {
-      const viewportHeight = canvasRef.current?.clientHeight || 500;
-      const targetY = Math.min(20, Math.max(-1200, (viewportHeight * 0.35) - latestNode.y));
-      setPan((p) => ({ ...p, y: targetY }));
+      const vw = canvasRef.current?.clientWidth || 800;
+      const vh = canvasRef.current?.clientHeight || 500;
+      setPan({ x: vw / 2 - (latestNode.x + 102) * zoom, y: vh * 0.6 - latestNode.y * zoom });
     }
-  }, [nodes, autoLayout]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nodes, autoLayout, hasWorkflow]);
 
   const canvasSize = React.useMemo(() => {
     let maxX = 0;
@@ -263,9 +283,9 @@ export default function DecisionTree({
             fontSize: '10px',
             fontWeight: '600',
           }}
-          title="Ajustar"
+          title="Ajustar a la vista"
         >
-          1:1
+          Ajustar
         </button>
       </div>
 

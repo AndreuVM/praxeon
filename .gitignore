@@ -35,6 +35,7 @@ ENV/
 .coverage
 htmlcov/
 .jev_cache/
+.praxeon_cache/
 
 # Scratch & temporary test artifacts
 scratch/

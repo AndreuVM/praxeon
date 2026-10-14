@@ -1187,6 +1187,41 @@ export default function App() {
         const history = await api.fetchAllEvents(sid);
         if (sidRef.current === sid) {
           setEvents([...history].reverse());
+
+          // El snapshot del árbol no trae qué agente y nodo de workflow hizo cada paso: se recupera de los eventos
+          const wfByAction = {};
+          const doneBlocks = new Set();
+          const lastIteration = {};
+          history.forEach((ev) => {
+            const w = ev.payload?.workflow_node;
+            if (ev.type === 'action.proposed' && w) {
+              wfByAction[ev.node_id] = w;
+              lastIteration[w.node_id] = Math.max(lastIteration[w.node_id] || 0, w.iteration || 1);
+            } else if (ev.type === 'workflow.node_completed') {
+              doneBlocks.add(`${ev.payload?.node_id}#${ev.payload?.iteration}`);
+            }
+          });
+          if (Object.keys(wfByAction).length > 0) {
+            setNodes((prevNodes) =>
+              computeTreeLayout(
+                prevNodes.map((n) => {
+                  const w = wfByAction[n.id];
+                  if (!w) return n;
+                  const done = doneBlocks.has(`${w.node_id}#${w.iteration}`);
+                  return {
+                    ...n,
+                    agentName: w.agent_name,
+                    agentRole: w.agent_role,
+                    wfNodeId: w.node_id,
+                    wfNodeName: w.node_name,
+                    wfIteration: w.iteration,
+                    blockDone: done,
+                    blockFailed: !done && (w.iteration || 1) < lastIteration[w.node_id],
+                  };
+                })
+              )
+            );
+          }
           if (!cachedChat) {
             const rebuilt = rebuildChatFromSession({ goal: d.goal, events: history, createdAt: d.created_at });
             if (rebuilt.length > 0) {

@@ -11,6 +11,7 @@ token, de modo que ningún otro proceso o navegador puede usar la API aunque enc
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import secrets
 import socket
@@ -67,10 +68,53 @@ def find_free_port(host: str = LOOPBACK) -> int:
         return sock.getsockname()[1]
 
 
+def _port_is_free(port: int, host: str = LOOPBACK) -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        try:
+            sock.bind((host, port))
+        except OSError:
+            return False
+    return True
+
+
+def stable_port(cache_dir: Optional[str] = None) -> int:
+    """Puerto local que se conserva entre arranques.
+
+    La interfaz guarda sus preferencias (modelos, configuración, chats) en el almacenamiento del navegador, que es
+    por origen (incluye el puerto): con un puerto distinto en cada arranque, todo se perdía al reabrir la aplicación.
+    Se reutiliza el último puerto si sigue libre; si no, se elige uno nuevo y se recuerda.
+    """
+    from praxeon.config import resolve_cache_dir
+
+    path = Path(resolve_cache_dir(cache_dir)) / "desktop.json"
+    try:
+        saved = int(json.loads(path.read_text(encoding="utf-8")).get("port", 0))
+    except (OSError, ValueError, TypeError, AttributeError):
+        saved = 0
+    if saved and _port_is_free(saved):
+        return saved
+    chosen = find_free_port()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"port": chosen}), encoding="utf-8")
+    except OSError:
+        pass  # sin escritura en la caché: se usa el puerto de este arranque
+    return chosen
+
+
+def webview_storage_dir() -> str:
+    """Carpeta donde la ventana guarda sus datos (localStorage, etc.) para que sobrevivan al cierre."""
+    from praxeon.config import resolve_cache_dir
+
+    path = Path(resolve_cache_dir()) / "webview"
+    path.mkdir(parents=True, exist_ok=True)
+    return str(path)
+
+
 def start_local_server(port: Optional[int] = None, startup_timeout: float = 20.0) -> LocalServer:
     """Arranca el servidor local autenticado con un token efímero y espera a que esté listo."""
     token = secrets.token_urlsafe(32)
-    chosen = port or find_free_port()
+    chosen = port or stable_port()
     overrides = {
         # La autenticación queda activa (PRAXEON_API_KEY presente) y los JWT se firman con un secreto efímero.
         "PRAXEON_API_KEY": token,
@@ -177,7 +221,9 @@ def run_window(local: LocalServer, debug: bool = False, notifications: bool = Tr
     )
     approval_notifier = attach_notifications(lambda: window) if notifications else None
     try:
-        webview.start(debug=debug)
+        # private_mode=False + storage_path: las preferencias de la interfaz (modelos, configuración, chats)
+        # sobreviven al cierre; por defecto pywebview usa una sesión privada que se descarta al salir
+        webview.start(debug=debug, private_mode=False, storage_path=webview_storage_dir())
     finally:
         if approval_notifier:
             approval_notifier.detach()

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { agentColor } from '../utils/agentColor';
 import { computeTreeLayout } from '../utils/treeLayout';
@@ -46,15 +46,50 @@ export function buildBlocks(nodes) {
 const STATE_LABEL = { running: 'Trabajando', done: 'Completado', failed: 'Interrumpido' };
 const STATE_COLOR = { running: '#38bdf8', done: '#34d399', failed: '#f87171' };
 
-const PAD = 12;
+const PAD = 10;
+const CARD_W = 184; // tarjetas compactas: caben varias ramas por bloque
+const V_STEP = 64;
+
+/**
+ * Los pasos de un bloque forman un único árbol conectado. Cuando el supervisor retrocede al inicio del nodo
+ * (circuit breaker), el backend engancha el paso siguiente fuera del bloque: aquí se muestra a continuación del
+ * último paso correcto en lugar de como un segundo árbol suelto.
+ */
+export function attachOrphans(steps) {
+  const ids = new Set(steps.map((st) => st.id));
+  const resolved = [];
+  let lastGood = null;
+  steps.forEach((st, i) => {
+    let parentId = st.parentId;
+    if (!ids.has(parentId)) {
+      parentId = i === 0 ? null : lastGood || steps[i - 1].id;
+    }
+    resolved.push({ ...st, parentId });
+    if (st.status === 'ALLOW') lastGood = st.id;
+  });
+  return resolved;
+}
 
 // Árbol de pasos de un bloque: mismo aspecto, uniones y animaciones que el árbol clásico, con una raíz virtual oculta
 function BlockTree({ steps, selectedNodeId, onSelectNode, latestId }) {
+  const wrapRef = useRef(null);
+  const [avail, setAvail] = useState(0);
+
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return undefined;
+    const update = () => setAvail(el.clientWidth);
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   const layout = React.useMemo(() => {
-    const ids = new Set(steps.map((st) => st.id));
+    const connected = attachOrphans(steps);
     const root = { id: 'start', type: 'start', label: '', status: 'SYSTEM', parentId: null, x: 0, y: 0 };
-    const local = [root, ...steps.map((st) => ({ ...st, parentId: ids.has(st.parentId) ? st.parentId : 'start' }))];
-    const laid = computeTreeLayout(local);
+    const local = [root, ...connected.map((st) => ({ ...st, parentId: st.parentId || 'start' }))];
+    const laid = computeTreeLayout(local, { nodeWidth: CARD_W, horizontalGap: 16, verticalStep: V_STEP });
     const real = laid.filter((n) => n.id !== 'start');
     const minX = Math.min(...real.map((n) => n.x));
     const maxX = Math.max(...real.map((n) => n.x));
@@ -62,22 +97,28 @@ function BlockTree({ steps, selectedNodeId, onSelectNode, latestId }) {
     const maxY = Math.max(...real.map((n) => n.y));
     return {
       nodes: laid.map((n) => ({ ...n, x: n.x - minX + PAD, y: n.y - minY + PAD })),
-      width: maxX - minX + 205 + PAD * 2,
+      width: maxX - minX + CARD_W + PAD * 2,
       height: maxY - minY + 44 + PAD * 2,
     };
   }, [steps]);
 
+  // Si el árbol es más ancho que el bloque, se escala para que quepa entero (sin scroll lateral)
+  const scale = avail > 0 && layout.width > avail ? Math.max(0.5, avail / layout.width) : 1;
+
   return (
-    <div style={{ overflowX: 'auto', paddingTop: 6 }}>
-      <div style={{ position: 'relative', width: layout.width, height: layout.height, margin: '0 auto' }}>
-        <TreeCanvas
-          nodes={layout.nodes}
-          hiddenIds={['start']}
-          latestId={latestId}
-          compact
-          selectedNodeId={selectedNodeId}
-          onSelectNode={onSelectNode}
-        />
+    <div ref={wrapRef} style={{ paddingTop: 6, overflowX: scale < 1 ? 'hidden' : 'auto' }}>
+      <div style={{ width: layout.width * scale, height: layout.height * scale, margin: '0 auto' }}>
+        <div style={{ position: 'relative', width: layout.width, height: layout.height, transform: `scale(${scale})`, transformOrigin: '0 0' }}>
+          <TreeCanvas
+            nodes={layout.nodes}
+            hiddenIds={['start']}
+            latestId={latestId}
+            compact
+            cardWidth={CARD_W}
+            selectedNodeId={selectedNodeId}
+            onSelectNode={onSelectNode}
+          />
+        </div>
       </div>
     </div>
   );
@@ -96,7 +137,7 @@ export default function WorkflowBlocks({ blocks, isOpen, onToggle, selectedNodeI
 
   return (
     <div ref={scrollRef} style={{ position: 'absolute', inset: 0, overflowY: 'auto', overflowX: 'hidden', padding: '16px 16px 40px 72px' }}>
-      <div style={{ zoom, maxWidth: '640px', margin: '0 auto' }}>
+      <div style={{ zoom, maxWidth: '860px', margin: '0 auto' }}>
         {blocks.map((b, i) => {
           const color = agentColor(b.agentName);
           const open = isOpen(b);
