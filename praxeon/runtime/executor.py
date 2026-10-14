@@ -101,6 +101,9 @@ class SecureExecutor(Executor):
         """Permite inyectar controladores personalizados o mocks para herramientas."""
         self._custom_handlers[tool_name] = handler
 
+    def unregister_handler(self, tool_name: str) -> None:
+        self._custom_handlers.pop(tool_name, None)
+
     def execute(
         self,
         action: ActionCandidate,

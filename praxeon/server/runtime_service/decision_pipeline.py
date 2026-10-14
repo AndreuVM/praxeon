@@ -14,6 +14,7 @@ import uuid
 
 logger = logging.getLogger("praxeon.server.dependencies")
 
+from praxeon.domain.assessment import CommandCategory
 from praxeon.domain.decision import (
     DecisionReceipt,
     DecisionStatus,
@@ -64,6 +65,33 @@ class DecisionPipelineMixin:
     # =========================================================================
     # PIPELINE DE DECISIÓN FORMAL (Proposal -> Evidence -> Risk -> Policy -> Capability)
     # =========================================================================
+
+    def _may_auto_confirm(self, tool: Optional[str]) -> bool:
+        """Full Access autorizado aprueba solo lo que pide confirmación; las herramientas externas con efectos (MCP) no."""
+        registry = getattr(self, "registry", None)
+        spec = registry.get_tool(tool) if registry is not None and tool else None
+        return spec is None or spec.auto_confirm
+
+    def _adopt_external_tool_profile(self, tool: Optional[str], assessment: Any) -> Any:
+        """Una herramienta externa registrada (MCP) que el clasificador no reconoce (UNKNOWN) se clasifica según su ToolSpec.
+
+        Solo se rebaja a «inspección» lo que el registro marca como solo lectura (por decisión del operador); cualquier
+        veto del clasificador (destructivo, privilegios…) se respeta, y lo demás sigue pidiendo confirmación.
+        """
+        spec = self.registry.get_tool(tool) if tool else None
+        if spec is None or not (spec.source or "").startswith("mcp:") or assessment.category != CommandCategory.UNKNOWN:
+            return assessment
+        if not spec.read_only:
+            return assessment.model_copy(update={"reasons": [*assessment.reasons, f"Herramienta externa ({spec.source}) con efectos: requiere confirmación."]})
+        return assessment.model_copy(update={
+            "category": CommandCategory.INSPECTION,
+            "risk_level": spec.risk_level,
+            "read_only": True,
+            "reversible": True,
+            "external_side_effect": False,
+            "reasons": [f"Herramienta externa ({spec.source}) de solo lectura según su registro."],
+            "matched_rules": [*assessment.matched_rules, "EXTERNAL_TOOL_READ_ONLY"],
+        })
 
     def propose_action(
         self,
@@ -176,6 +204,7 @@ class DecisionPipelineMixin:
             arguments=proposal.arguments,
             context={"goal": state.goal.objective, "session_id": session_id},
         )
+        op_assessment = self._adopt_external_tool_profile(proposal.tool, op_assessment)
         self.event_bus.emit(
             session_id=session_id,
             event_type=EventType.OPERATION_CLASSIFIED,
@@ -424,7 +453,8 @@ class DecisionPipelineMixin:
             requires_conf = False
         elif requires_conf:
             step_confirmation = bool(session_meta.get("require_step_confirmation"))
-            if mode_val == "full_access" and full_access_authorized and not step_confirmation:
+            tool_for_policy = action.tool_call.tool_name if action.tool_call else None
+            if mode_val == "full_access" and full_access_authorized and not step_confirmation and self._may_auto_confirm(tool_for_policy):
                 # FULL_ACCESS autorizado por el operador (doble confirmación al activarlo): no se pide confirmación por
                 # paso. BLOCK, REPLAN y riesgo CRÍTICO se resolvieron antes y siguen siendo innegociables.
                 requires_conf = False

@@ -477,6 +477,16 @@ class MissionRuntimeMixin:
             )
             if trace is not None:
                 system_prompt = role_preamble + build_node_system_prompt(ws_root, env_info, goal)
+            mcp = getattr(self, "mcp", None)
+            if mcp is not None:
+                try:
+                    mcp.ensure_started()
+                    mcp_section = mcp.prompt_section(tool_filter)
+                except Exception as mcp_err:   # un servidor MCP roto nunca debe impedir la misión
+                    logger.warning("No se pudieron preparar las herramientas MCP: %s", mcp_err)
+                    mcp_section = ""
+                if mcp_section:
+                    system_prompt = system_prompt + "\n\n" + mcp_section
 
         step_records: List[Dict[str, Any]] = []
         forced_termination = False
@@ -820,7 +830,7 @@ class MissionRuntimeMixin:
                         mission.get("full_access_authorized_by_operator")
                         or mission.get("operator_authorized")
                     )
-                    if session_mode == "full_access" and full_access_authorized and not mission.get("require_step_confirmation"):
+                    if session_mode == "full_access" and full_access_authorized and not mission.get("require_step_confirmation") and self._may_auto_confirm(tool):
                         # Auto-confirmación sólo si explícitamente se configuró allow_unattended_execution / autonomous
                         logger.warning(
                             "[SECURITY AUDIT] Auto-confirmando decisión %s en modo FULL_ACCESS_AUTONOMOUS...",

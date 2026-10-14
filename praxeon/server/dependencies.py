@@ -26,6 +26,7 @@ from praxeon.domain.models import (
     Goal,
 )
 from praxeon.policy.engine import PolicyEngine
+from praxeon.integrations.mcp_client import McpConfigStore, McpManager
 from praxeon.policy.registry import ToolRegistry
 from praxeon.providers.base import BaseReasoningProvider
 from praxeon.providers.laya import LayaProvider
@@ -123,13 +124,16 @@ class RuntimeApplicationService(DecisionPipelineMixin, MissionRuntimeMixin):
         else:
             effective_secret = secret_env or secrets.token_hex(32)
 
-        self.policy_engine = PolicyEngine(secret_key=effective_secret)
+        # El motor de políticas comparte el registro con el ejecutor: lo que se registra (herramientas MCP) lo conocen ambos
+        self.policy_engine = PolicyEngine(secret_key=effective_secret, registry=self.registry)
         self.executor = SecureExecutor(
             registry=self.registry,
             secret_key=self.policy_engine.secret_key,
             nonce_store=self.nonce_store,
             allow_full_access=True,
         )
+        # Herramientas de servidores MCP: se registran en el mismo ToolRegistry/Executor que las nativas
+        self.mcp = McpManager(McpConfigStore(), self.registry, self.executor)
         self.risk_engine = RiskEngine()
         self.command_classifier = CommandClassifier()
         self.evidence_engine = EvidenceEngine()

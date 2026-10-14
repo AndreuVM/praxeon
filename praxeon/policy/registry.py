@@ -25,6 +25,9 @@ class ToolSpec(BaseModel):
     destructive: bool = False
     requires_confirmation: bool = False
     description: Optional[str] = None
+    # Origen externo (p. ej. «mcp:github»). Las herramientas externas con efectos no se auto-confirman en Full Access
+    source: Optional[str] = None
+    auto_confirm: bool = True
 
 
 class ToolRegistry:
@@ -81,6 +84,10 @@ class ToolRegistry:
     def register_tool(self, spec: ToolSpec) -> None:
         """Registra o actualiza la especificación de una herramienta."""
         self._tools[spec.name] = spec
+
+    def unregister_tool(self, name: str) -> None:
+        """Quita una herramienta registrada (las de servidores MCP que se detienen o cambian)."""
+        self._tools.pop(name, None)
 
     def register(self, spec: ToolSpec) -> None:
         """Alias conveniente para register_tool."""
