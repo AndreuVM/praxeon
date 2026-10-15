@@ -3,7 +3,7 @@ import React from 'react';
 // Renderizador de Markdown mínimo y seguro: construye elementos React (nunca HTML en crudo) y solo enlaza http(s)/mailto.
 // Cubre lo que producen los modelos: títulos, párrafos, listas, citas, código, tablas, negrita, cursiva y enlaces.
 
-const INLINE = /(`[^`\n]+`|\*\*[^*\n]+\*\*|__[^_\n]+__|\[[^\]\n]+\]\([^)\s]+\)|\*[^*\s][^*\n]*\*|_[^_\s][^_\n]*_)/g;
+const INLINE = /(`[^`\n]+`|\*\*[^*\n]+\*\*|(?<!\w)__[^_\n]+__(?!\w)|\[[^\]\n]+\]\([^)\s]+\)|\*[^*\s][^*\n]*\*|(?<!\w)_[^_\s][^_\n]*_(?!\w))/g;
 
 const codeStyle = {
   fontFamily: 'var(--font-mono)',

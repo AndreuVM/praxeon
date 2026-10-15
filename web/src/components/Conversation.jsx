@@ -4,6 +4,7 @@ import { fetchWorkflows } from '../services/api';
 import ModelPicker from './ModelPicker';
 import ApprovalPopup from './ApprovalPopup';
 import Markdown from './Markdown';
+import { presentAnswer } from '../utils/answerText';
 import { deriveChatState } from '../utils/chatFromEvents';
 import { PROVIDERS, saveChoice, savedChoice } from '../utils/modelCatalog';
 import { Maximize2, Minimize2, Play, Pause, Square, Settings, AlertTriangle, Copy, Check } from 'lucide-react';
@@ -457,7 +458,7 @@ export default function Conversation({
                   </span>
                 </summary>
                 <div style={{ marginTop: '8px', fontSize: 'var(--fs-secondary)', color: 'var(--muted)', lineHeight: 1.5, maxHeight: '220px', overflowY: 'auto' }}>
-                  <Markdown text={m.summary} compact />
+                  <Markdown text={presentAnswer(m.summary).text} compact />
                 </div>
               </details>
             ))}
@@ -511,7 +512,7 @@ export default function Conversation({
               <span>Respuesta de la misión</span>
               <button
                 type="button"
-                onClick={() => handleCopyAnswer(msg.finalAnswer)}
+                onClick={() => handleCopyAnswer(presentAnswer(msg.finalAnswer).text)}
                 style={{ background: 'none', border: 0, color: 'var(--muted)', display: 'inline-flex', alignItems: 'center', gap: '4px', textTransform: 'none', letterSpacing: 0, fontSize: 'var(--fs-secondary)' }}
                 title="Copiar la respuesta"
               >
@@ -519,7 +520,20 @@ export default function Conversation({
                 <span>{copied ? 'Copiado' : 'Copiar'}</span>
               </button>
             </div>
-            <div style={{ fontSize: 'var(--fs-chat)', lineHeight: 1.65 }}><Markdown text={msg.finalAnswer} /></div>
+            {(() => {
+              const { text, verdict } = presentAnswer(msg.finalAnswer);
+              return (
+                <>
+                  {verdict && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: 'var(--fs-secondary)', color: verdict === 'approved' ? 'var(--ok)' : 'var(--bad)' }}>
+                      <span className={verdict === 'approved' ? 'dot' : 'dot bad'} />
+                      <span>{verdict === 'approved' ? 'Veredicto: aprobado' : 'Veredicto: rechazado'}</span>
+                    </div>
+                  )}
+                  <div style={{ fontSize: 'var(--fs-chat)', lineHeight: 1.65 }}><Markdown text={text} /></div>
+                </>
+              );
+            })()}
           </div>
         )}
 
