@@ -264,8 +264,16 @@ class LayaProvider(BaseReasoningProvider):
             is_loop = max(is_loop, 0.85)
 
         # Detección de estancamiento tras fallos consecutivos
-        recent_obs = [str(h.get("observation", "")).lower() for h in ctx.history_window[-3:] if isinstance(h, dict)]
-        recent_failures = [obs for obs in recent_obs if any(err in obs for err in ("no existe", "error", "failed", "fail", "not found"))]
+        # Los mensajes de fallo de las herramientas son cortos o empiezan por «error»; el contenido de un archivo largo
+        # puede contener «error» o «failed» (código, tests, logs) sin que la lectura haya fallado.
+        def _is_failure(obs: str) -> bool:
+            obs = obs.strip().lower()
+            if not any(err in obs for err in ("no existe", "error", "failed", "fail", "not found")):
+                return False
+            return len(obs) <= 300 or obs.startswith(("error", "fallo", "traceback"))
+
+        recent_obs = [str(h.get("observation", "")) for h in ctx.history_window[-3:] if isinstance(h, dict)]
+        recent_failures = [obs for obs in recent_obs if _is_failure(obs)]
         if len(recent_failures) >= 2:
             is_loop = max(is_loop, 0.85)
 

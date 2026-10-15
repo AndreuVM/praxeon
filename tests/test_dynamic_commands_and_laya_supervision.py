@@ -260,3 +260,22 @@ def test_chg_01_unknown_innocuous_tool_requires_confirmation_review_and_executes
     assert conf_resp.capability is not None
 
 
+
+
+def test_reading_files_that_mention_errors_is_not_a_loop():
+    """El contenido de un archivo leído puede decir «error» o «failed» sin que la lectura haya fallado: no es un bucle."""
+    laya = LayaProvider(backend="simulated")
+    code = "def handle(): raise ValueError('error')  # test failed? not found?\n" * 40
+    ctx = ProviderContext(
+        session_id="sess_no_false_loop",
+        goal="Revisar la implementación",
+        history_window=[
+            {"id": "s1", "tool": "read_file", "arguments": {"path": "a.js"}, "observation": code},
+            {"id": "s2", "tool": "read_file", "arguments": {"path": "b.js"}, "observation": code},
+            {"id": "s3", "tool": "read_file", "arguments": {"path": "c.js"}, "observation": code},
+        ],
+        active_evidence=[],
+        candidate_action={"id": "next", "tool_name": "read_file", "arguments": {"path": "d.js"}, "description": "Leo d.js"},
+    )
+    primitives = laya._infer_primitives_calibrated(ctx)
+    assert primitives.noul["is_loop"] < 0.5
