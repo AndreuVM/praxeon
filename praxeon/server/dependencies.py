@@ -134,7 +134,7 @@ class RuntimeApplicationService(DecisionPipelineMixin, MissionRuntimeMixin):
         )
         # Herramientas de servidores MCP: se registran en el mismo ToolRegistry/Executor que las nativas
         self.mcp = McpManager(McpConfigStore(), self.registry, self.executor)
-        self.risk_engine = RiskEngine()
+        self.risk_engine = RiskEngine(registry=self.registry)
         self.command_classifier = CommandClassifier()
         self.evidence_engine = EvidenceEngine()
 

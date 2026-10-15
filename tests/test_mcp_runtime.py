@@ -164,3 +164,17 @@ def test_per_agent_tool_permissions_hide_mcp_tools_from_the_prompt():
             assert "mcp__fake__echo" in section and "write_note" not in section and "env_has" not in section
         finally:
             mgr.close_all()
+
+
+def test_a_tool_the_operator_marked_as_no_confirmation_runs_without_asking(runtime, tmp_path):
+    from praxeon.integrations.mcp_client import ToolOverride
+    enable_fake(runtime, tools={"write_note": ToolOverride(confirm=False)})   # sin trust_hints, pero el operador desactivó la confirmación
+    llm = ScriptedLLM([
+        'Thought: guardo una nota\nAction: mcp__fake__write_note({"text": "sin preguntar"})',
+        finish("Resultado entregado tras usar la herramienta externa."),
+    ])
+    sid = start(runtime, llm, "mcp-m4", tmp_path)
+    assert wait(lambda: finished(runtime, sid), 90)
+    assert runtime.notes.read_text(encoding="utf-8").strip() == "sin preguntar"
+    with runtime._lock:
+        assert not [d for d, r in runtime._decisions.items() if r.get("session_id") == sid and r.get("status") == "REVIEW"]

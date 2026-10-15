@@ -14,7 +14,7 @@ import DecisionTree from './components/DecisionTree';
 import ProposeActionModal from './components/ProposeActionModal';
 import SessionsModal from './components/SessionsModal';
 import UnauthorizedModal from './components/UnauthorizedModal';
-import DialogsHost from './components/Dialogs';
+import DialogsHost, { notify } from './components/Dialogs';
 import WorkspacePicker from './components/workspace/WorkspacePicker';
 import WorkspaceFlyout from './components/workspace/WorkspaceFlyout';
 import useWorkspace from './components/workspace/useWorkspace';
@@ -1361,7 +1361,10 @@ export default function App() {
     try {
       await api.confirmDecision(decisionId, true, 'Authorized from Decision Inspector', 'operator_admin', 'operator');
     } catch (e) {
+      // Si el servidor no registró la aprobación, la misión sigue esperando: no se muestra como aprobada
       console.warn('Backend approval call error:', e);
+      notify(`No se pudo registrar la aprobación: ${e?.message || e}`);
+      return;
     }
 
     // Actualizar visualmente de inmediato

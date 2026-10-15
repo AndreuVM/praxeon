@@ -81,6 +81,18 @@ class DecisionPipelineMixin:
         spec = self.registry.get_tool(tool) if tool else None
         if spec is None or not (spec.source or "").startswith("mcp:") or assessment.category != CommandCategory.UNKNOWN:
             return assessment
+        if not spec.read_only and not spec.requires_confirmation:
+            # El operador desactivó expresamente la confirmación de esta herramienta: sigue bajo el supervisor y la
+            # política (riesgos HIGH/CRITICAL fuerzan la confirmación al registrarla), pero no se detiene a pedirla.
+            return assessment.model_copy(update={
+                "category": CommandCategory.LOCAL_MUTATION,
+                "risk_level": spec.risk_level,
+                "read_only": False,
+                "reversible": False,
+                "external_side_effect": True,
+                "reasons": [f"Herramienta externa ({spec.source}) sin confirmación por decisión del operador."],
+                "matched_rules": [*assessment.matched_rules, "EXTERNAL_TOOL_OPERATOR_TRUSTED"],
+            })
         if not spec.read_only:
             return assessment.model_copy(update={"reasons": [*assessment.reasons, f"Herramienta externa ({spec.source}) con efectos: requiere confirmación."]})
         return assessment.model_copy(update={
