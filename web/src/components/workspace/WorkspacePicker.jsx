@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowUp, Check, Folder, FolderOpen, History, X, Eye, EyeOff } from 'lucide-react';
 import * as api from '../../services/api';
 
-const box = { backgroundColor: '#0a0e16', border: '1px solid #1e293b', borderRadius: '8px' };
+const box = { backgroundColor: 'var(--bg)', border: '1px solid var(--line)', borderRadius: '9px' };
 const mono = { fontFamily: 'var(--font-mono)' };
 
 function hintLabel(hints = []) {
@@ -10,7 +10,7 @@ function hintLabel(hints = []) {
   return (
     <span
       title={`Contiene: ${hints.join(', ')}`}
-      style={{ fontSize: '9.5px', color: '#34d399', border: '1px solid rgba(52,211,153,0.35)', borderRadius: '4px', padding: '0 4px' }}
+      style={{ fontSize: '11px', color: 'var(--ok)', border: '1px solid color-mix(in srgb, var(--ok) 35%, transparent)', borderRadius: '6px', padding: '0 4px' }}
     >
       proyecto
     </span>
@@ -96,21 +96,21 @@ export default function WorkspacePicker({ open, title = 'Elegir workspace', init
   return (
     <div
       onClick={onClose}
-      style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 120 }}
+      style={{ position: 'fixed', inset: 0, backgroundColor: 'var(--scrim)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 120 }}
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        style={{ width: 'min(680px, 94vw)', maxHeight: '88vh', display: 'flex', flexDirection: 'column', gap: '12px', backgroundColor: '#121824', border: '1px solid #233146', borderRadius: '10px', padding: '18px', boxShadow: 'var(--shadow-lg)' }}
+        style={{ width: 'min(680px, 94vw)', maxHeight: '88vh', display: 'flex', flexDirection: 'column', gap: '12px', backgroundColor: 'var(--surface)', border: '1px solid var(--line)', borderRadius: '9px', padding: '18px', boxShadow: 'var(--shadow-overlay)' }}
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <h2 style={{ fontSize: '15px', fontWeight: 700, color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <FolderOpen size={16} style={{ color: '#58a6ff' }} /> {title}
+          <h2 style={{ fontSize: 'var(--fs-chat)', fontWeight: 600, color: 'var(--text)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <FolderOpen size={16} style={{ color: 'var(--muted)' }} /> {title}
           </h2>
-          <button type="button" onClick={onClose} aria-label="Cerrar" style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer' }}>
+          <button type="button" onClick={onClose} aria-label="Cerrar" style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer' }}>
             <X size={16} />
           </button>
         </div>
-        <p style={{ fontSize: '11.5px', color: '#8b949e', lineHeight: 1.4 }}>
+        <p style={{ fontSize: '12.5px', color: 'var(--muted)', lineHeight: 1.4 }}>
           Es la carpeta del proyecto sobre la que trabaja el agente: las rutas relativas parten de aquí y no puede salir de ella.
         </p>
 
@@ -125,19 +125,19 @@ export default function WorkspacePicker({ open, title = 'Elegir workspace', init
                 if (e.key === 'Enter' && valid) choose(validation.path);
               }}
               placeholder="Pega o escribe la ruta de la carpeta"
-              style={{ ...mono, flex: 1, padding: '8px 10px', fontSize: '12px', color: '#f8fafc', outline: 'none', ...box }}
+              style={{ ...mono, flex: 1, padding: '8px 10px', fontSize: '12.5px', color: 'var(--text)', outline: 'none', ...box }}
             />
             <button
               type="button"
               disabled={!valid || busy}
               onClick={() => choose(validation.path)}
-              style={{ padding: '0 14px', borderRadius: '6px', border: 'none', fontSize: '12px', fontWeight: 600, cursor: valid ? 'pointer' : 'not-allowed', backgroundColor: valid ? '#2563eb' : '#1e293b', color: valid ? '#fff' : '#64748b' }}
+              style={{ padding: '0 14px', borderRadius: '9px', border: 'none', fontSize: '12.5px', fontWeight: 600, cursor: valid ? 'pointer' : 'not-allowed', backgroundColor: valid ? 'var(--accent)' : 'var(--line)', color: valid ? 'var(--on-accent)' : 'var(--muted)' }}
             >
               Usar
             </button>
           </div>
           {validation && (
-            <div style={{ fontSize: '11px', marginTop: '4px', color: valid ? '#34d399' : '#f87171', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <div style={{ fontSize: '11px', marginTop: '4px', color: valid ? 'var(--ok)' : 'var(--bad)', display: 'flex', alignItems: 'center', gap: '6px' }}>
               {valid ? <Check size={12} /> : <X size={12} />}
               {valid ? 'Carpeta válida' : validation.reason}
               {valid && hintLabel(validation.hints)}
@@ -150,7 +150,8 @@ export default function WorkspacePicker({ open, title = 'Elegir workspace', init
             type="button"
             onClick={pickNative}
             disabled={busy}
-            style={{ alignSelf: 'flex-start', display: 'flex', alignItems: 'center', gap: '6px', padding: '7px 12px', borderRadius: '6px', border: '1px solid #2b6cb0', backgroundColor: 'rgba(56,139,253,0.12)', color: '#58a6ff', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}
+            className="btn btn-secondary"
+          style={{ alignSelf: 'flex-start' }}
           >
             <FolderOpen size={14} /> Elegir con el explorador del sistema…
           </button>
@@ -158,7 +159,7 @@ export default function WorkspacePicker({ open, title = 'Elegir workspace', init
 
         {recent.length > 0 && (
           <div>
-            <div style={{ fontSize: '10.5px', color: '#8b949e', display: 'flex', alignItems: 'center', gap: '5px', marginBottom: '4px' }}>
+            <div style={{ fontSize: '11px', color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: '5px', marginBottom: '4px' }}>
               <History size={11} /> Usados recientemente
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', maxHeight: '120px', overflowY: 'auto' }}>
@@ -169,13 +170,13 @@ export default function WorkspacePicker({ open, title = 'Elegir workspace', init
                     disabled={!r.exists || busy}
                     onClick={() => choose(r.path)}
                     title={r.exists ? r.path : `${r.path} (ya no existe)`}
-                    style={{ flex: 1, minWidth: 0, textAlign: 'left', background: 'none', border: 'none', cursor: r.exists ? 'pointer' : 'not-allowed', color: '#c9d1d9', fontSize: '12px' }}
+                    style={{ flex: 1, minWidth: 0, textAlign: 'left', background: 'none', border: 'none', cursor: r.exists ? 'pointer' : 'not-allowed', color: 'var(--text)', fontSize: '12.5px' }}
                   >
-                    <strong style={{ color: '#f0f6fc' }}>{r.name}</strong>
-                    <span style={{ ...mono, color: '#64748b', fontSize: '10.5px', marginLeft: '8px', overflowWrap: 'anywhere' }}>{r.path}</span>
+                    <strong style={{ color: 'var(--text)' }}>{r.name}</strong>
+                    <span style={{ ...mono, color: 'var(--muted)', fontSize: '11px', marginLeft: '8px', overflowWrap: 'anywhere' }}>{r.path}</span>
                   </button>
                   {onForget && (
-                    <button type="button" onClick={() => onForget(r.path)} title="Quitar de la lista" aria-label="Quitar de la lista" style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer' }}>
+                    <button type="button" onClick={() => onForget(r.path)} title="Quitar de la lista" aria-label="Quitar de la lista" style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer' }}>
                       <X size={12} />
                     </button>
                   )}
@@ -187,62 +188,62 @@ export default function WorkspacePicker({ open, title = 'Elegir workspace', init
 
         {/* Explorador de carpetas */}
         <div style={{ ...box, display: 'flex', flexDirection: 'column', minHeight: 0, flex: 1 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 8px', borderBottom: '1px solid #1e293b' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 8px', borderBottom: '1px solid var(--line)' }}>
             <button
               type="button"
               disabled={!browse?.parent}
               onClick={() => load(browse.parent, showHidden)}
               title="Subir a la carpeta superior"
-              style={{ background: 'none', border: '1px solid #243044', borderRadius: '4px', color: '#c9d1d9', cursor: browse?.parent ? 'pointer' : 'not-allowed', padding: '2px 5px', opacity: browse?.parent ? 1 : 0.4 }}
+              style={{ background: 'none', border: '1px solid var(--line)', borderRadius: '6px', color: 'var(--text)', cursor: browse?.parent ? 'pointer' : 'not-allowed', padding: '2px 5px', opacity: browse?.parent ? 1 : 0.4 }}
             >
               <ArrowUp size={13} />
             </button>
             <select
               value=""
               onChange={(e) => e.target.value && load(e.target.value, showHidden)}
-              style={{ backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', color: '#c9d1d9', fontSize: '11px', padding: '2px 4px' }}
+              style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--line)', borderRadius: '6px', color: 'var(--text)', fontSize: '11px', padding: '2px 4px' }}
             >
               <option value="">Ir a…</option>
               {(browse?.roots || []).map((r) => (
                 <option key={r.path} value={r.path}>{r.name}</option>
               ))}
             </select>
-            <span style={{ ...mono, fontSize: '11px', color: '#94a3b8', flex: 1, minWidth: 0, overflowWrap: 'anywhere' }}>{browse?.path || '…'}</span>
-            <button type="button" onClick={toggleHidden} title={showHidden ? 'Ocultar carpetas ocultas' : 'Mostrar carpetas ocultas'} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer' }}>
+            <span style={{ ...mono, fontSize: '11px', color: 'var(--text)', flex: 1, minWidth: 0, overflowWrap: 'anywhere' }}>{browse?.path || '…'}</span>
+            <button type="button" onClick={toggleHidden} title={showHidden ? 'Ocultar carpetas ocultas' : 'Mostrar carpetas ocultas'} style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer' }}>
               {showHidden ? <EyeOff size={13} /> : <Eye size={13} />}
             </button>
             <button
               type="button"
               disabled={!browse || busy}
               onClick={() => choose(browse.path)}
-              style={{ padding: '4px 10px', borderRadius: '5px', border: 'none', fontSize: '11px', fontWeight: 600, cursor: 'pointer', backgroundColor: '#2563eb', color: '#fff' }}
+              style={{ padding: '4px 10px', borderRadius: '6px', border: 'none', fontSize: '11px', fontWeight: 600, cursor: 'pointer', backgroundColor: 'var(--accent)', color: 'var(--on-accent)' }}
             >
               Usar esta carpeta
             </button>
           </div>
           <div style={{ overflowY: 'auto', maxHeight: '240px', padding: '4px' }}>
             {(browse?.entries || []).length === 0 && !error && (
-              <div style={{ fontSize: '11.5px', color: '#64748b', padding: '10px' }}>Esta carpeta no tiene subcarpetas.</div>
+              <div style={{ fontSize: '12.5px', color: 'var(--muted)', padding: '10px' }}>Esta carpeta no tiene subcarpetas.</div>
             )}
             {(browse?.entries || []).map((e) => (
               <button
                 key={e.path}
                 type="button"
                 onClick={() => load(e.path, showHidden)}
-                style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '8px', textAlign: 'left', padding: '5px 8px', background: 'none', border: 'none', borderRadius: '4px', color: '#c9d1d9', fontSize: '12px', cursor: 'pointer' }}
-                onMouseEnter={(ev) => (ev.currentTarget.style.backgroundColor = '#161c28')}
+                style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '8px', textAlign: 'left', padding: '5px 8px', background: 'none', border: 'none', borderRadius: '6px', color: 'var(--text)', fontSize: '12.5px', cursor: 'pointer' }}
+                onMouseEnter={(ev) => (ev.currentTarget.style.backgroundColor = 'var(--surface)')}
                 onMouseLeave={(ev) => (ev.currentTarget.style.backgroundColor = 'transparent')}
               >
-                <Folder size={13} style={{ color: '#58a6ff', flexShrink: 0 }} />
+                <Folder size={13} style={{ color: 'var(--muted)', flexShrink: 0 }} />
                 <span style={{ flex: 1 }}>{e.name}</span>
                 {hintLabel(e.hints)}
               </button>
             ))}
-            {browse?.truncated && <div style={{ fontSize: '10.5px', color: '#eab308', padding: '6px 8px' }}>Lista recortada: hay más carpetas de las mostradas.</div>}
+            {browse?.truncated && <div style={{ fontSize: '11px', color: 'var(--accent)', padding: '6px 8px' }}>Lista recortada: hay más carpetas de las mostradas.</div>}
           </div>
         </div>
 
-        {error && <div style={{ fontSize: '11.5px', color: '#f87171' }}>{error}</div>}
+        {error && <div style={{ fontSize: '12.5px', color: 'var(--bad)' }}>{error}</div>}
       </div>
     </div>
   );

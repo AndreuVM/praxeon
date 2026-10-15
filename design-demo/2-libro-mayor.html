@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Praxeon · Libro mayor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="shared.css">
+<style>
+/* Libro mayor: claro, de documento. Lista de pasos, árbol de apoyo y detalle */
+:root{--b:#fbfbfa;--s:#ffffff;--l:#e3e4e2;--t:#1b1d1f;--m:#72767a;--a:#2456d6;--ab:#fff;--ok:#2a7d4f;--bad:#c2412d;--f:'IBM Plex Sans',system-ui,sans-serif;--fm:'IBM Plex Mono',ui-monospace,monospace;--r:3px}
+#app{display:flex;flex-direction:column;height:100%}
+.top{height:50px;border-bottom:1px solid var(--l);background:var(--s);display:flex;align-items:center;gap:30px;padding:0 24px;flex:none}
+.top b{font-weight:600;letter-spacing:.16em;font-size:12px}
+.top nav{display:flex;gap:24px;align-self:stretch}
+.top nav button{color:var(--m);position:relative;display:flex;align-items:center;gap:4px}
+.top nav button:hover{color:var(--t)}
+.top nav button.on{color:var(--t);box-shadow:inset 0 -2px 0 var(--t)}
+.more{position:relative;display:flex}
+.menu{position:absolute;top:46px;left:-12px;min-width:200px;background:var(--s);border:1px solid var(--l);box-shadow:0 8px 24px rgba(20,20,20,.08);padding:4px;z-index:30}
+.menu button{display:block;width:100%;text-align:left;padding:8px 12px;color:var(--t)}
+.menu button:hover{background:#f1f2f1}
+.menu button.on{font-weight:600}
+.body{flex:1;min-height:0;display:flex}
+#live{flex:1;display:grid;grid-template-columns:310px 1fr 290px;min-width:0}
+.list{border-right:1px solid var(--l);background:var(--s);overflow:auto}
+.list .h{padding:14px 18px;border-bottom:1px solid var(--l);display:flex;justify-content:space-between;color:var(--m);font-size:11px;letter-spacing:.07em;text-transform:uppercase}
+.row{display:grid;grid-template-columns:14px 1fr auto;gap:10px;padding:11px 18px;border-bottom:1px solid var(--l);align-items:center;width:100%;text-align:left}
+.row:hover{background:#f6f7f6}
+.row.sel{background:#eef2fc}
+.row .t2{color:var(--m);font-size:11px;font-family:var(--fm)}
+.mid{display:flex;flex-direction:column;min-width:0}
+.mid .tree{flex:1;padding:10px 14px}
+.ask{margin:0 20px 20px;border:1px solid var(--l);background:var(--s);display:flex;align-items:center;gap:8px;padding:7px 7px 7px 14px;border-radius:var(--r)}
+.ask:focus-within{border-color:var(--t)}
+.ask input{flex:1;min-width:0}
+.ask input::placeholder{color:var(--m)}
+.det{border-left:1px solid var(--l);background:var(--s);padding:18px 20px 46px;overflow:auto;display:flex;flex-direction:column;gap:12px}
+.det h3{font-size:11px;font-weight:500;letter-spacing:.07em;text-transform:uppercase;color:var(--m)}
+.det .code{background:#f6f7f6}
+.det .verdict{font-size:22px;letter-spacing:-.01em}
+.other{flex:1;overflow:auto;padding:36px clamp(20px,6vw,80px);background:var(--b)}
+.other .view{max-width:980px}
+.tree .n rect{fill:#fff}
+.tree .n.sel rect{fill:#f3f6fd}
+@media (max-width:1100px){#live{grid-template-columns:260px 1fr}.det{display:none}}
+</style>
+</head>
+<body>
+<div id="app">
+  <header class="top">
+    <b>PRAXEON</b>
+    <nav id="nav"></nav>
+    <span class="sp"></span>
+    <span class="dim">Local restringido</span><span class="chip" id="chip"><span class="dot"></span>Activa</span>
+  </header>
+  <div class="body">
+    <div id="live">
+      <div class="list"><div class="h"><span>Pasos</span><span class="mono" id="count"></span></div><div id="rows"></div></div>
+      <div class="mid">
+        <div id="tree"></div>
+        <form class="ask" id="form"><input id="q" placeholder="Siguiente instrucción" aria-label="Instrucción"><button class="btn" type="submit">Enviar</button></form>
+      </div>
+      <aside class="det">
+        <h3 id="dh"></h3>
+        <div id="detail"></div>
+        <div class="tabs" id="tabs" style="gap:14px;margin-top:auto">
+          <button data-tab="decision" class="on">Resumen</button><button data-tab="evidence">Evidencia</button><button data-tab="policy">Política</button><button data-tab="receipt">Recibo</button>
+        </div>
+      </aside>
+    </div>
+    <div class="other" id="other" hidden></div>
+  </div>
+</div>
+<script src="shared.js"></script>
+<script>
+(function(){
+  var M=PX.M, view='live', tab='decision', menuOpen=false;
+  var MAIN=[['live','Misión'],['sessions','Historial'],['agents','Agentes'],['workflows','Flujos']];
+  var MORE=['decisions','providers','mcp','security','settings'];
+  var nav=document.getElementById('nav');
+  function paintNav(){
+    var inMore=MORE.indexOf(view)>-1;
+    nav.innerHTML=MAIN.map(function(m){return '<button data-view="'+m[0]+'" class="'+(view===m[0]?'on':'')+'">'+m[1]+'</button>'}).join('')+
+      '<div class="more"><button data-more class="'+(inMore?'on':'')+'">'+(inMore?PX.viewLabel(view):'Más')+' ▾</button>'+
+      (menuOpen?'<div class="menu">'+MORE.map(function(id){return '<button data-view="'+id+'" class="'+(view===id?'on':'')+'">'+PX.viewLabel(id)+'</button>'}).join('')+'</div>':'')+'</div>';
+  }
+  nav.addEventListener('click',function(e){
+    if(e.target.closest('[data-more]')){menuOpen=!menuOpen;paintNav();e.stopPropagation();return}
+    var b=e.target.closest('[data-view]');if(b)go(b.dataset.view);
+  });
+  document.addEventListener('click',function(){if(menuOpen){menuOpen=false;paintNav()}});
+  document.addEventListener('keydown',function(e){if(e.key==='Escape'&&menuOpen){menuOpen=false;paintNav()}});
+  function go(v){
+    view=v;menuOpen=false;paintNav();
+    document.getElementById('live').hidden=v!=='live';
+    var o=document.getElementById('other');o.hidden=v==='live';
+    if(v!=='live')o.innerHTML=PX.viewHTML(v);
+  }
+  paintNav();
+  PX.tree(document.getElementById('tree'));
+  document.getElementById('tabs').addEventListener('click',function(e){
+    var b=e.target.closest('[data-tab]');if(!b)return;tab=b.dataset.tab;
+    this.querySelectorAll('button').forEach(function(x){x.classList.toggle('on',x===b)});paint();
+  });
+  document.getElementById('rows').addEventListener('click',function(e){var r=e.target.closest('[data-id]');if(r)M.select(+r.dataset.id)});
+  function paint(){
+    var s=M.step(M.selected);
+    document.getElementById('dh').textContent=s.start?'Misión':'Paso '+s.n+' · decisión';
+    document.getElementById('detail').innerHTML=PX.detailHTML(s,tab);
+  }
+  M.on(function(){
+    var steps=M.steps.filter(function(s){return !s.start});
+    document.getElementById('count').textContent=steps.length;
+    document.getElementById('rows').innerHTML=steps.map(function(s){
+      var st=M.status(s);
+      return '<button class="row'+(M.selected===s.id?' sel':'')+'" data-id="'+s.id+'"><span class="dot '+(st==='ok'?'':st)+'"></span><div>'+s.label+'<div class="t2">'+s.tool+'</div></div><span class="'+(st==='ok'?'dim':st)+'">'+(st==='run'?'En curso':st==='bad'?'Bloq.':s.risk)+'</span></button>';
+    }).join('');
+    document.getElementById('chip').innerHTML='<span class="dot'+(M.running?' run':'')+'"></span>'+(M.running?'En curso':'Completada');
+    paint();
+    if(view==='decisions')document.getElementById('other').innerHTML=PX.viewHTML(view);
+  });
+  document.getElementById('form').addEventListener('submit',function(e){e.preventDefault();document.getElementById('q').value='';M.run()});
+})();
+</script>
+</body>
+</html>

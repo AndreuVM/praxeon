@@ -7,7 +7,7 @@ export const INITIAL_SESSION = {
   sessionId: "7f3a2c",
   status: "Active",
   agent: "CodingAgent",
-  goal: "Fix authentication bug in the API",
+  goal: "Corregir el fallo de autenticación en la API",
   metrics: {
     totalDecisions: 12,
     allowed: 8,
@@ -26,7 +26,7 @@ export const INITIAL_NODES = [
   // Inicio
   {
     id: "start",
-    label: "Start",
+    label: "Inicio",
     type: "start",
     status: "SYSTEM",
     x: 420,
@@ -36,7 +36,7 @@ export const INITIAL_NODES = [
   // Secuencia inicial
   {
     id: "node-1",
-    label: "1. Analyze issue",
+    label: "1. Analizar el problema",
     subtitle: "14:32:01 · LLM (JEV)",
     type: "step",
     status: "ALLOW",
@@ -47,7 +47,7 @@ export const INITIAL_NODES = [
   },
   {
     id: "node-2",
-    label: "2. Plan solution",
+    label: "2. Planificar la solución",
     subtitle: "14:32:05 · LLM (JEV)",
     type: "step",
     status: "ALLOW",
@@ -58,7 +58,7 @@ export const INITIAL_NODES = [
   },
   {
     id: "node-3",
-    label: "3. Select tools",
+    label: "3. Elegir herramientas",
     subtitle: "14:32:08 · LLM (JEV)",
     type: "step",
     status: "ALLOW",
@@ -69,8 +69,8 @@ export const INITIAL_NODES = [
   },
   {
     id: "node-4",
-    label: "4. Read file",
-    subtitle: "14:32:12 · Tool (Filesystem)",
+    label: "4. Leer archivo",
+    subtitle: "14:32:12 · Herramienta (sistema de archivos)",
     type: "step",
     status: "ALLOW",
     action: "read_file: auth/middleware.py",
@@ -80,7 +80,7 @@ export const INITIAL_NODES = [
   },
   {
     id: "node-5",
-    label: "5. Propose changes",
+    label: "5. Proponer cambios",
     subtitle: "14:32:18 · LLM (LAYA)",
     type: "hub",
     status: "PROPOSE",
@@ -93,8 +93,8 @@ export const INITIAL_NODES = [
   // Rama Izquierda (Branch A - Tests & Edit)
   {
     id: "node-6",
-    label: "Read docs",
-    subtitle: "14:32:20 · Tool (Docs)",
+    label: "Leer documentación",
+    subtitle: "14:32:20 · Herramienta (documentación)",
     type: "step",
     status: "ALLOW",
     action: "read_docs: security_oauth2.md",
@@ -104,8 +104,8 @@ export const INITIAL_NODES = [
   },
   {
     id: "node-7",
-    label: "Edit file",
-    subtitle: "14:32:27 · Tool (Filesystem)",
+    label: "Editar archivo",
+    subtitle: "14:32:27 · Herramienta (sistema de archivos)",
     type: "step",
     status: "ALLOW",
     action: "edit_file: auth/middleware.py",
@@ -115,8 +115,8 @@ export const INITIAL_NODES = [
   },
   {
     id: "node-8",
-    label: "Run tests",
-    subtitle: "14:32:31 · Tool (Terminal)",
+    label: "Ejecutar pruebas",
+    subtitle: "14:32:31 · Herramienta (terminal)",
     type: "step",
     status: "BLOCK",
     action: "pytest tests/test_auth.py",
@@ -126,7 +126,7 @@ export const INITIAL_NODES = [
   },
   {
     id: "node-9",
-    label: "Tests passed",
+    label: "Pruebas superadas",
     subtitle: "14:32:36 · 6/6",
     type: "leaf",
     status: "ALLOW",
@@ -137,7 +137,7 @@ export const INITIAL_NODES = [
   },
   {
     id: "node-10",
-    label: "Tests failed",
+    label: "Pruebas fallidas",
     subtitle: "14:32:41 · 2/6",
     type: "leaf",
     status: "BLOCK",
@@ -150,8 +150,8 @@ export const INITIAL_NODES = [
   // Rama Central (Branch B - Web & Approval)
   {
     id: "node-11",
-    label: "Search web",
-    subtitle: "14:32:22 · Tool (Web)",
+    label: "Buscar en la web",
+    subtitle: "14:32:22 · Herramienta (web)",
     type: "step",
     status: "REVIEW",
     action: "search_web: oauth2 invalid token response RFC",
@@ -161,8 +161,8 @@ export const INITIAL_NODES = [
   },
   {
     id: "node-12",
-    label: "Ask for confirmation",
-    subtitle: "14:32:24 · Policy",
+    label: "Pedir confirmación",
+    subtitle: "14:32:24 · Política",
     type: "step",
     status: "REVIEW",
     action: "policy_human_intervention_request",
@@ -172,7 +172,7 @@ export const INITIAL_NODES = [
   },
   {
     id: "node-13",
-    label: "Waiting for approval",
+    label: "Esperando aprobación",
     subtitle: "14:32:24",
     type: "leaf",
     status: "PENDING",
@@ -185,8 +185,8 @@ export const INITIAL_NODES = [
   // Rama Derecha (Branch C - Config & Block)
   {
     id: "node-14",
-    label: "Modify config",
-    subtitle: "14:32:26 · Tool (Env)",
+    label: "Modificar la configuración",
+    subtitle: "14:32:26 · Herramienta (entorno)",
     type: "step",
     status: "REVIEW",
     action: "write_env: .env.production",
@@ -196,8 +196,8 @@ export const INITIAL_NODES = [
   },
   {
     id: "node-15",
-    label: "Blocked",
-    subtitle: "14:32:28 · Policy",
+    label: "Bloqueado",
+    subtitle: "14:32:28 · Política",
     type: "leaf",
     status: "BLOCK",
     action: "policy_prevented_production_edit",
@@ -227,22 +227,22 @@ export const INITIAL_DECISIONS_MAP = {
       requiresConfirmation: true,
       rulesActivated: ["EgressPolicy", "PathContainment", "DoubleVerification"],
       reasonCodes: ["REQUIRE_HUMAN_CONFIRMATION", "EGRESS_MUTATION_RISK"],
-      precedence: "Deterministic Safety Precedence (Hard Block > Human Gate > Auto Allow)",
+      precedence: "Seguridad determinista (bloqueo duro > compuerta humana > permiso automático)",
     },
     capability: {
       issued: false,
-      statusText: "Not issued",
+      statusText: "No emitida",
       token: null,
       expiresAt: null,
     },
-    reason: "High risk action (git push) requires human confirmation according to policy rules.",
+    reason: "Una acción de riesgo alto (git push) requiere confirmación humana según las reglas de política.",
     evidenceTab: {
       groundingScore: 0.72,
       claimCount: 3,
       claims: [
-        "Local commits are ahead of origin/main by 1 commit.",
-        "Branch protection rules mandate verified sign-off.",
-        "Remote repository is https://github.com/AndreuVM/praxeon.git"
+        "Hay 1 commit local por delante de origin/main.",
+        "Las reglas de protección de la rama exigen una aprobación verificada.",
+        "El repositorio remoto es https://github.com/AndreuVM/praxeon.git"
       ],
       observationsUsed: ["obs_git_status", "obs_git_diff", "obs_origin_url"],
       freshness: "live (14:32:18 UTC)",
@@ -282,21 +282,21 @@ export const INITIAL_DECISIONS_MAP = {
       requiresConfirmation: false,
       rulesActivated: ["RegressionAssertionPolicy"],
       reasonCodes: ["TEST_SUITE_REGRESSION"],
-      precedence: "Deterministic Safety Precedence",
+      precedence: "Seguridad determinista",
     },
     capability: {
       issued: false,
-      statusText: "Revoked upon failure",
+      statusText: "Revocada por el fallo",
       token: null,
       expiresAt: null,
     },
-    reason: "2 out of 6 test assertions failed in test_auth.py during validation run.",
+    reason: "Fallaron 2 de 6 aserciones de test_auth.py durante la validación.",
     evidenceTab: {
       groundingScore: 0.94,
       claimCount: 2,
       claims: [
-        "Test output contains assertion failure at line 42.",
-        "Token expiration returns HTTP 500 instead of HTTP 401."
+        "La salida de las pruebas contiene un fallo de aserción en la línea 42.",
+        "La expiración del token devuelve HTTP 500 en vez de HTTP 401."
       ],
       observationsUsed: ["pytest_stdout_trace"],
       freshness: "live (14:32:31 UTC)",
@@ -344,11 +344,11 @@ export const INITIAL_DECISIONS_MAP = {
       token: null,
       expiresAt: null,
     },
-    reason: "External RFC query requires operational confirmation for internet egress.",
+    reason: "La consulta externa a RFC requiere confirmación operativa para la salida a internet.",
     evidenceTab: {
       groundingScore: 0.65,
       claimCount: 1,
-      claims: ["Agent requested outbound network query to RFC catalog."],
+      claims: ["El agente solicitó una consulta de red saliente al catálogo de RFC."],
       observationsUsed: ["network_egress_intent"],
       freshness: "live (14:32:24 UTC)",
     },
@@ -370,23 +370,23 @@ export const INITIAL_DECISIONS_MAP = {
 };
 
 export const INITIAL_LOGS = [
-  { time: "14:32:01", level: "INFO", message: "Starting session 7f3a2c...." },
-  { time: "14:32:01", level: "INFO", message: "Agent: CodingAgent | Goal: Fix authentication bug in the API" },
-  { time: "14:32:18", level: "INFO", message: "Proposing action: git push origin main" },
-  { time: "14:32:28", level: "INFO", message: "Evaluating with LAYA (praxLaya)... 0.81 ALLOW", highlight: "ALLOW" },
-  { time: "14:32:41", level: "INFO", message: "Evaluating with TypeSafe (secondary)... 0.64 REVIEW", highlight: "REVIEW" },
-  { time: "14:32:44", level: "WARN", message: "Policy requires human confirmation for this action", highlight: "WARN" },
+  { time: "14:32:01", level: "INFO", message: "Iniciando la sesión 7f3a2c…" },
+  { time: "14:32:01", level: "INFO", message: "Agent: CodingAgent | Goal: Corregir el fallo de autenticación en la API" },
+  { time: "14:32:18", level: "INFO", message: "Propone la acción: git push origin main" },
+  { time: "14:32:28", level: "INFO", message: "Evaluando con LAYA (praxLaya)… 0.81 ALLOW", highlight: "ALLOW" },
+  { time: "14:32:41", level: "INFO", message: "Evaluando con TypeSafe (secundario)… 0.64 REVIEW", highlight: "REVIEW" },
+  { time: "14:32:44", level: "WARN", message: "La política requiere confirmación humana para esta acción", highlight: "WARN" },
 ];
 
 export const INITIAL_EVENTS = [
-  { seq: 1, type: "session.started", time: "14:32:01", detail: "Session 7f3a2c initialized with goal: Fix authentication bug in the API" },
-  { seq: 2, type: "action.proposed", time: "14:32:01", detail: "Action 1: Analyze issue [LLM]" },
-  { seq: 3, type: "policy.decided", time: "14:32:01", detail: "Policy: ALLOW (StandardPolicy)" },
-  { seq: 4, type: "action.proposed", time: "14:32:12", detail: "Action 4: Read file: auth/middleware.py [Tool]" },
-  { seq: 5, type: "capability.issued", time: "14:32:12", detail: "Capability cap_4102ba issued for read_file" },
-  { seq: 6, type: "action.proposed", time: "14:32:18", detail: "Action 5: git push origin main [Branching Hub]" },
-  { seq: 7, type: "evidence.evaluated", time: "14:32:20", detail: "Evidence count: 3, Grounding score: 0.72" },
-  { seq: 8, type: "risk.assessed", time: "14:32:22", detail: "Risk Level: HIGH, Reason: Egress push to remote repository" },
-  { seq: 9, type: "policy.decided", time: "14:32:28", detail: "Policy verdict: REQUIRE_HUMAN_CONFIRMATION" },
-  { seq: 10, type: "approval.requested", time: "14:32:44", detail: "Operator sign-off requested for Action 5" },
+  { seq: 1, type: "session.started", time: "14:32:01", detail: "Sesión 7f3a2c iniciada con el objetivo: Corregir el fallo de autenticación en la API" },
+  { seq: 2, type: "action.proposed", time: "14:32:01", detail: "Acción 1: Analizar el problema [LLM]" },
+  { seq: 3, type: "policy.decided", time: "14:32:01", detail: "Política: ALLOW (StandardPolicy)" },
+  { seq: 4, type: "action.proposed", time: "14:32:12", detail: "Acción 4: Leer archivo: auth/middleware.py [herramienta]" },
+  { seq: 5, type: "capability.issued", time: "14:32:12", detail: "Capacidad cap_4102ba emitida para read_file" },
+  { seq: 6, type: "action.proposed", time: "14:32:18", detail: "Acción 5: git push origin main [nodo de ramificación]" },
+  { seq: 7, type: "evidence.evaluated", time: "14:32:20", detail: "Afirmaciones: 3, fundamentación: 0.72" },
+  { seq: 8, type: "risk.assessed", time: "14:32:22", detail: "Nivel de riesgo: HIGH, motivo: envío a un repositorio remoto" },
+  { seq: 9, type: "policy.decided", time: "14:32:28", detail: "Veredicto de política: REQUIRE_HUMAN_CONFIRMATION" },
+  { seq: 10, type: "approval.requested", time: "14:32:44", detail: "Visto bueno del operador solicitado para la acción 5" },
 ];

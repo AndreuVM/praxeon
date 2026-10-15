@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Praxeon · Conversación</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="shared.css">
+<style>
+/* Conversación: la misión como hilo vertical; el árbol queda como minimapa */
+:root{--b:#17171a;--s:#1e1e22;--l:#2c2c31;--t:#e9e8e4;--m:#908f8b;--a:#e9e8e4;--ab:#17171a;--ok:#86c49a;--bad:#e58d84;--f:'Hanken Grotesk',system-ui,sans-serif;--fm:'JetBrains Mono',ui-monospace,monospace;--r:8px}
+body{font-size:14px}
+#app{display:flex;height:100%}
+.feed{flex:1;display:flex;flex-direction:column;min-width:0}
+.top{height:50px;display:flex;align-items:center;gap:12px;padding:0 20px;color:var(--m);flex:none;position:relative}
+.vbtn{display:flex;align-items:center;gap:8px;color:var(--t);padding:6px 10px;border-radius:8px}
+.vbtn:hover{background:var(--s)}
+.menu{position:absolute;top:46px;left:12px;min-width:220px;background:var(--s);border:1px solid var(--l);border-radius:12px;padding:5px;z-index:30;box-shadow:0 14px 36px rgba(0,0,0,.45)}
+.menu button{display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:8px 10px;border-radius:8px;color:var(--m)}
+.menu button:hover,.menu button.on{background:var(--l);color:var(--t)}
+.scroll{flex:1;overflow:auto;display:flex;justify-content:center}
+.inner{width:min(600px,100%);padding:10px 22px 24px;display:flex;flex-direction:column;gap:20px}
+.wide{width:min(900px,100%)}
+.goal{font-family:'Source Serif 4',Georgia,serif;font-size:26px;line-height:1.25;font-weight:400;letter-spacing:-.01em;text-wrap:balance}
+.meta{color:var(--m);font-size:12.5px;margin-top:-10px}
+.step{border-top:1px solid var(--l);padding:12px 0}
+.sh{display:grid;grid-template-columns:14px 1fr auto 14px;gap:12px;align-items:center;width:100%;text-align:left}
+.sh .tt{color:var(--t)}
+.sh.sel .tt{font-weight:600}
+.sh .ch{color:var(--m);transition:transform .15s}
+.step.open .ch{transform:rotate(180deg)}
+.open-body{background:var(--s);border:1px solid var(--l);border-radius:12px;padding:14px 16px;margin:12px 0 0 26px;display:flex;flex-direction:column;gap:10px}
+.open-body .tabs{gap:14px;font-size:12.5px}
+.open-body .tabs button{padding:2px 0 6px}
+.comp{width:min(600px,calc(100% - 44px));margin:0 auto 20px;border:1px solid var(--l);background:var(--s);border-radius:16px;padding:10px 10px 10px 16px;display:flex;gap:10px;align-items:center;flex:none}
+.comp:focus-within{border-color:var(--m)}
+.comp input{flex:1;min-width:0}
+.comp input::placeholder{color:var(--m)}
+.btn{border-radius:10px}
+.mini{width:230px;border-left:1px solid var(--l);display:flex;flex-direction:column;padding:16px;gap:12px;flex:none}
+.mini h4{font-size:11px;font-weight:500;letter-spacing:.07em;text-transform:uppercase;color:var(--m)}
+.mini .tree{height:220px;flex:none}
+.mini .foot{margin-top:auto;color:var(--m);line-height:1.8;font-size:12.5px}
+.back-l{color:var(--m);align-self:flex-start}
+.back-l:hover{color:var(--t)}
+.view{gap:20px}
+@media (max-width:860px){.mini{display:none}}
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="feed">
+    <div class="top">
+      <button class="vbtn" id="vbtn"><span id="vlabel">Vistas</span></button>
+      <span class="mono" style="font-size:12px">7f3a2c</span><span class="sp"></span>
+      <span class="chip" id="chip"><span class="dot run"></span>En ejecución</span>
+      <div class="menu" id="menu" hidden></div>
+    </div>
+    <div class="scroll" id="scroll"><div class="inner" id="inner"></div></div>
+    <form class="comp" id="form" hidden><input id="q" placeholder="Responder o dar una nueva misión…" aria-label="Misión"><button class="btn" type="submit">Enviar</button></form>
+  </div>
+  <aside class="mini" id="mini">
+    <h4>Mapa</h4>
+    <div id="tree"></div>
+    <div class="foot">Simulado<br>LAYA<br>Local restringido<br><span class="mono" id="cnt"></span></div>
+  </aside>
+</div>
+<script src="shared.js"></script>
+<script>
+(function(){
+  var M=PX.M, view='live', tab='decision', openId=null, menuOpen=false;
+  document.getElementById('vbtn').innerHTML=PX.icon('menu')+'<span id="vlabel">Vistas</span>';
+  PX.tree(document.getElementById('tree'),{small:true,onSelect:function(id){openId=id;paintFeed();scrollTo(id)}});
+  var menu=document.getElementById('menu');
+  menu.innerHTML=PX.VIEWS.map(function(v){return '<button data-view="'+v.id+'">'+PX.icon(v.id)+'<span>'+(v.id==='live'?'Misión':v.label)+'</span></button>'}).join('');
+  document.getElementById('vbtn').addEventListener('click',function(e){e.stopPropagation();menuOpen=!menuOpen;menu.hidden=!menuOpen});
+  document.addEventListener('click',function(){menuOpen=false;menu.hidden=true});
+  menu.addEventListener('click',function(e){var b=e.target.closest('[data-view]');if(b){go(b.dataset.view)}});
+  function go(v){
+    view=v;menuOpen=false;menu.hidden=true;
+    menu.querySelectorAll('button').forEach(function(b){b.classList.toggle('on',b.dataset.view===v)});
+    document.getElementById('vlabel').textContent=v==='live'?'Vistas':PX.viewLabel(v);
+    document.getElementById('form').hidden=v!=='live';
+    document.getElementById('mini').hidden=v!=='live';
+    paintFeed();
+  }
+  var inner=document.getElementById('inner');
+  inner.addEventListener('click',function(e){
+    var t=e.target.closest('[data-tab]');if(t){tab=t.dataset.tab;paintFeed();return}
+    var h=e.target.closest('[data-toggle]');
+    if(h){var id=+h.dataset.toggle;openId=(openId===id)?null:id;M.selected=id;M.emit()}
+    if(e.target.closest('[data-back]'))go('live');
+  });
+  function scrollTo(id){var el=document.getElementById('s'+id);if(el)el.scrollIntoView({block:'nearest',behavior:'smooth'})}
+  function paintFeed(){
+    inner.classList.toggle('wide',view!=='live');
+    if(view!=='live'){inner.innerHTML='<button class="back-l" data-back>← Volver a la misión</button>'+PX.viewHTML(view);return}
+    var steps=M.steps.filter(function(s){return !s.start});
+    var h='<h1 class="goal">'+PX.GOAL+'.</h1><div class="meta">'+steps.length+' de '+(PX.STEPS.length-1)+' pasos · '+(M.running?'en curso':'completada')+'</div><div>';
+    steps.forEach(function(s){
+      var st=M.status(s),open=openId===s.id;
+      h+='<div class="step'+(open?' open':'')+'" id="s'+s.id+'"><button class="sh'+(M.selected===s.id?' sel':'')+'" data-toggle="'+s.id+'"><span class="dot '+(st==='ok'?'':st)+'"></span><span class="tt">'+s.label+(st==='bad'?' <span class="dim">· podado por riesgo alto</span>':st==='run'?' <span class="dim">· en curso</span>':'')+'</span><span class="dim mono" style="font-size:12px">'+s.tool+'</span><span class="ch">'+PX.icon('chevron')+'</span></button>';
+      if(open){
+        h+='<div class="open-body">'+PX.detailHTML(s,tab)+'<div class="tabs">'+[['decision','Decisión'],['evidence','Evidencia'],['policy','Política'],['receipt','Recibo']].map(function(t){return '<button data-tab="'+t[0]+'" class="'+(tab===t[0]?'on':'')+'">'+t[1]+'</button>'}).join('')+'</div></div>';
+      }
+      h+='</div>';
+    });
+    inner.innerHTML=h+'</div>';
+  }
+  var lastVisible=0;
+  M.on(function(){
+    document.getElementById('chip').innerHTML='<span class="dot'+(M.running?' run':'')+'"></span>'+(M.running?'En ejecución':'Completada');
+    document.getElementById('cnt').textContent=M.events.length+' eventos ▸';
+    if(M.visible>lastVisible&&M.running&&M.selected>0&&view==='live')openId=M.selected;
+    if(M.visible<lastVisible)openId=null;
+    lastVisible=M.visible;
+    var sc=document.getElementById('scroll'),top=sc.scrollTop;
+    paintFeed();sc.scrollTop=top;
+    if(view==='live'&&M.running)scrollTo(M.selected);
+  });
+  document.getElementById('form').addEventListener('submit',function(e){e.preventDefault();document.getElementById('q').value='';openId=null;M.run()});
+  go('live');
+})();
+</script>
+</body>
+</html>

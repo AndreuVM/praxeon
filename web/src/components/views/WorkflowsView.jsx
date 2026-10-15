@@ -62,6 +62,7 @@ import {
   instantiateCanonicalTemplate,
   fetchAgents,
 } from '../../services/api';
+import { notify, confirmDialog } from '../Dialogs';
 
 export default function WorkflowsView({ session: _session = {}, events: _events = [], followExecution = null }) {
   const [workflows, setWorkflows] = useState([]);
@@ -165,7 +166,7 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
         setActiveWorkflowId(res.data.workflow_id);
       }
     } catch (err) {
-      alert(`Error al instanciar plantilla: ${err.message}`);
+      notify(`Error al instanciar plantilla: ${err.message}`);
       addLog('ERROR', `Fallo al instanciar plantilla: ${err.message}`);
     }
   };
@@ -358,7 +359,7 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
         setActiveWorkflowId(res.data.workflow_id);
       }
     } catch (err) {
-      alert(`Error al crear flujo: ${err.message}`);
+      notify(`Error al crear flujo: ${err.message}`);
     }
   };
 
@@ -366,11 +367,11 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
   const handleAddNode = async (e) => {
     e.preventDefault();
     if (!activeWorkflowId) {
-      alert('No hay un workflow seleccionado. Selecciona o crea un workflow primero, y comprueba que el backend esté ejecutándose.');
+      notify('No hay un workflow seleccionado. Selecciona o crea un workflow primero, y comprueba que el backend esté ejecutándose.');
       return;
     }
     if (!createNodeForm.name.trim()) {
-      alert('Introduce un nombre para el nuevo nodo.');
+      notify('Introduce un nombre para el nuevo nodo.');
       return;
     }
     try {
@@ -391,7 +392,7 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
         setSelectedNodeId(res.data.node_id);
       }
     } catch (err) {
-      alert(`Error al añadir nodo: ${err.message}`);
+      notify(`Error al añadir nodo: ${err.message}`);
       addLog('ERROR', `Fallo al añadir nodo: ${err.message}`);
     }
   };
@@ -399,7 +400,7 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
   // Crear nodo rápido desde la paleta de componentes
   const handleQuickAddNode = (type, defaultName) => {
     if (!activeWorkflowId) {
-      alert('No hay ningún workflow seleccionado o activo. Comprueba que el servidor backend (puerto 8000) esté en ejecución y crea o selecciona un workflow.');
+      notify('No hay ningún workflow seleccionado o activo. Comprueba que el servidor backend (puerto 8000) esté en ejecución y crea o selecciona un workflow.');
       return;
     }
     setCreateNodeForm({
@@ -420,7 +421,7 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
     try {
       const update = formToNodeUpdate(nodeEditForm);
       if (['WHILE', 'IF', 'DECISION'].includes(nodeEditForm.node_type) && !formToCondition(nodeEditForm.cond)) {
-        alert('Indica qué dato del resultado se debe comprobar en la condición.');
+        notify('Indica qué dato del resultado se debe comprobar en la condición.');
         return;
       }
       await updateWorkflowNode(activeWorkflowId, nodeEditForm.node_id, update);
@@ -428,7 +429,7 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
       addLog('NODE', `Propiedades de nodo '${nodeEditForm.name}' actualizadas.`);
       await loadActiveWorkflow(activeWorkflowId);
     } catch (err) {
-      alert(`Error al actualizar nodo: ${err.message}`);
+      notify(`Error al actualizar nodo: ${err.message}`);
     }
   };
 
@@ -441,7 +442,7 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
       if (edgeEditForm.has_condition) {
         condition = formToCondition(edgeEditForm.cond);
         if (!condition) {
-          alert('Indica qué dato del resultado se debe comprobar en la condición.');
+          notify('Indica qué dato del resultado se debe comprobar en la condición.');
           return;
         }
       }
@@ -454,7 +455,7 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
       addLog('EDGE', `Conexión '${edgeEditForm.edge_id}' actualizada (${condition ? 'con condición' : 'sin condición'}).`);
       await loadActiveWorkflow(activeWorkflowId);
     } catch (err) {
-      alert(`Error al actualizar unión: ${err.message}`);
+      notify(`Error al actualizar unión: ${err.message}`);
     }
   };
 
@@ -463,7 +464,7 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
     if (!activeWorkflowId) return;
     const targetNode = nodesArray.find((n) => (n.node_id || n.id) === nodeId);
     const nodeName = targetNode?.name || nodeId;
-    if (!window.confirm(`¿Confirmas eliminar el nodo '${nodeName}' y todas sus conexiones?`)) return;
+    if (!(await confirmDialog(`¿Eliminar el nodo «${nodeName}» y todas sus conexiones?`, { confirmLabel: 'Eliminar', danger: true }))) return;
     try {
       await deleteWorkflowNode(activeWorkflowId, nodeId);
       if (selectedNodeId === nodeId) setSelectedNodeId(null);
@@ -471,20 +472,20 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
       addLog('NODE', `Nodo '${nodeName}' eliminado.`);
       await loadActiveWorkflow(activeWorkflowId);
     } catch (err) {
-      alert(`Error al eliminar nodo: ${err.message}`);
+      notify(`Error al eliminar nodo: ${err.message}`);
     }
   };
 
   // Eliminar arista seleccionada
   const handleDeleteEdge = async (edgeId) => {
-    if (!activeWorkflowId || !window.confirm(`¿Eliminar esta conexión?`)) return;
+    if (!activeWorkflowId || !(await confirmDialog('¿Eliminar esta conexión?', { confirmLabel: 'Eliminar', danger: true }))) return;
     try {
       await deleteWorkflowEdge(activeWorkflowId, edgeId);
       if (selectedEdgeId === edgeId) setSelectedEdgeId(null);
       addLog('EDGE', `Conexión '${edgeId}' eliminada.`);
       await loadActiveWorkflow(activeWorkflowId);
     } catch (err) {
-      alert(`Error al eliminar arista: ${err.message}`);
+      notify(`Error al eliminar arista: ${err.message}`);
     }
   };
 
@@ -529,7 +530,7 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
         setSelectedEdgeId(res.data.edge_id);
       }
     } catch (err) {
-      alert(`Error al conectar nodos: ${err.message}`);
+      notify(`Error al conectar nodos: ${err.message}`);
       setWiringSourceId(null);
     }
   };
@@ -582,7 +583,7 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
         setSelectedEdgeId(res.data.edge_id);
       }
     } catch (err) {
-      alert(`Error al conectar nodos: ${err.message}`);
+      notify(`Error al conectar nodos: ${err.message}`);
     }
   };
 
@@ -612,7 +613,7 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
       addLog('COMPLETE', `Workflow completado con estado: ${res.data?.status || 'COMPLETED'}`);
       await loadActiveWorkflow(activeWorkflowId);
     } catch (err) {
-      alert(`Error en ejecución: ${err.message}`);
+      notify(`Error en ejecución: ${err.message}`);
       addLog('ERROR', `Fallo en ejecución: ${err.message}`);
     } finally {
       setExecuting(false);
@@ -626,7 +627,7 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
       addLog('STEP', `Paso ejecutado. Nodo: '${res.data?.executed_node_id || 'Ninguno'}' | Estado: ${res.data?.status}`);
       await loadActiveWorkflow(activeWorkflowId);
     } catch (err) {
-      alert(`Error al avanzar paso: ${err.message}`);
+      notify(`Error al avanzar paso: ${err.message}`);
       addLog('ERROR', `Error en step: ${err.message}`);
     }
   };
@@ -638,7 +639,7 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
       addLog('BACKTRACK', `Retroceso determinista al nodo '${targetNodeId}'. Éxito: ${res.data?.success}`);
       await loadActiveWorkflow(activeWorkflowId);
     } catch (err) {
-      alert(`Error en retroceso determinista: ${err.message}`);
+      notify(`Error en retroceso determinista: ${err.message}`);
       addLog('ERROR', `Error en backtrack: ${err.message}`);
     }
   };
@@ -650,7 +651,7 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
       addLog('RESET', 'Workflow reiniciado a estado IDLE.');
       await loadActiveWorkflow(activeWorkflowId);
     } catch (err) {
-      alert(`Error al reiniciar workflow: ${err.message}`);
+      notify(`Error al reiniciar workflow: ${err.message}`);
     }
   };
 
@@ -666,7 +667,7 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
       addLog('APPROVAL', `Nodo '${nodeId}' ${approved ? 'APROBADO' : 'RECHAZADO'}.`);
       await loadActiveWorkflow(activeWorkflowId);
     } catch (err) {
-      alert(`Error al procesar aprobación: ${err.message}`);
+      notify(`Error al procesar aprobación: ${err.message}`);
       addLog('ERROR', `Fallo al aprobar nodo: ${err.message}`);
     }
   };
@@ -799,53 +800,55 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
 
   // Estilo e icono según tipo de nodo
   const getNodeTypeMeta = (type) => {
+    const base = { color: 'var(--muted)', bg: 'transparent', border: 'var(--line)' };
     switch (type) {
-      case 'AGENT':
-        return { color: '#10b981', bg: 'rgba(16, 185, 129, 0.12)', border: '#10b981', icon: <Bot size={13} />, label: 'Agente IA' };
-      case 'TASK':
-        return { color: '#38bdf8', bg: 'rgba(56, 189, 248, 0.12)', border: '#38bdf8', icon: <Terminal size={13} />, label: 'Tarea / Tool' };
+      case 'AGENT': return { ...base, icon: <Bot size={13} />, label: 'Agente' };
+      case 'TASK': return { ...base, icon: <Terminal size={13} />, label: 'Tarea o herramienta' };
       case 'DECISION':
-      case 'IF':
-        return { color: '#f59e0b', bg: 'rgba(245, 158, 11, 0.12)', border: '#f59e0b', icon: <GitBranch size={13} />, label: 'Decisión / IF' };
-      case 'WHILE':
-        return { color: '#06b6d4', bg: 'rgba(6, 182, 212, 0.12)', border: '#06b6d4', icon: <RotateCcw size={13} />, label: 'Bucle WHILE' };
-      case 'DELEGATE':
-        return { color: '#a855f7', bg: 'rgba(168, 85, 247, 0.12)', border: '#a855f7', icon: <Bot size={13} />, label: 'Delegar / Router' };
-      case 'HUMAN_APPROVAL':
-        return { color: '#ec4899', bg: 'rgba(236, 72, 153, 0.12)', border: '#ec4899', icon: <ShieldCheck size={13} />, label: 'Aprobación Humana' };
-      case 'PARALLEL_FORK':
-        return { color: '#c084fc', bg: 'rgba(192, 132, 252, 0.12)', border: '#c084fc', icon: <GitFork size={13} />, label: 'Fork Paralelo' };
-      case 'PARALLEL_JOIN':
-        return { color: '#818cf8', bg: 'rgba(129, 140, 248, 0.12)', border: '#818cf8', icon: <GitMerge size={13} />, label: 'Join / Unión' };
-      case 'START':
-        return { color: '#2dd4bf', bg: 'rgba(45, 212, 191, 0.12)', border: '#2dd4bf', icon: <Play size={13} />, label: 'Inicio' };
-      case 'END':
-        return { color: '#f43f5e', bg: 'rgba(244, 63, 94, 0.12)', border: '#f43f5e', icon: <Flag size={13} />, label: 'Fin' };
-      default:
-        return { color: '#94a3b8', bg: 'rgba(148, 163, 184, 0.12)', border: '#475569', icon: <Cpu size={13} />, label: type };
+      case 'IF': return { ...base, icon: <GitBranch size={13} />, label: 'Decisión (IF)' };
+      case 'WHILE': return { ...base, icon: <RotateCcw size={13} />, label: 'Bucle WHILE' };
+      case 'DELEGATE': return { ...base, icon: <Bot size={13} />, label: 'Router (delegación)' };
+      case 'HUMAN_APPROVAL': return { ...base, icon: <ShieldCheck size={13} />, label: 'Aprobación humana' };
+      case 'PARALLEL_FORK': return { ...base, icon: <GitFork size={13} />, label: 'Bifurcación paralela' };
+      case 'PARALLEL_JOIN': return { ...base, icon: <GitMerge size={13} />, label: 'Unión (sincronización)' };
+      case 'START': return { ...base, icon: <Play size={13} />, label: 'Inicio' };
+      case 'END': return { ...base, icon: <Flag size={13} />, label: 'Fin' };
+      default: return { ...base, icon: <Cpu size={13} />, label: type };
     }
+  };
+
+  const NODE_STATUS_LABEL = {
+    PENDING: 'Pendiente',
+    READY: 'Listo',
+    RUNNING: 'En curso',
+    COMPLETED: 'Completado',
+    FAILED: 'Fallido',
+    SKIPPED: 'Omitido',
+    WAITING_APPROVAL: 'Esperando aprobación',
+    WAITING_RESULT: 'Esperando resultado',
+    RETRYING: 'Reintentando',
   };
 
   const getNodeStatusBadge = (status) => {
     switch (status) {
       case 'COMPLETED':
-        return { color: '#3fb950', bg: 'rgba(63, 185, 80, 0.2)' };
+        return { color: 'var(--ok)', bg: 'color-mix(in srgb, var(--ok) 20%, transparent)' };
       case 'RUNNING':
-        return { color: '#38bdf8', bg: 'rgba(56, 189, 248, 0.2)' };
+        return { color: 'var(--accent)', bg: 'color-mix(in srgb, var(--accent) 20%, transparent)' };
       case 'FAILED':
-        return { color: '#f85149', bg: 'rgba(248, 81, 73, 0.2)' };
+        return { color: 'var(--bad)', bg: 'color-mix(in srgb, var(--bad) 20%, transparent)' };
       case 'SKIPPED':
-        return { color: '#8b949e', bg: 'rgba(139, 148, 158, 0.2)' };
+        return { color: 'var(--muted)', bg: 'color-mix(in srgb, var(--muted) 20%, transparent)' };
       case 'READY':
-        return { color: '#e3b341', bg: 'rgba(227, 179, 65, 0.2)' };
+        return { color: 'var(--accent)', bg: 'color-mix(in srgb, var(--accent) 20%, transparent)' };
       case 'WAITING_APPROVAL':
-        return { color: '#ec4899', bg: 'rgba(236, 72, 153, 0.2)' };
+        return { color: 'var(--muted)', bg: 'color-mix(in srgb, var(--muted) 20%, transparent)' };
       case 'WAITING_RESULT':
-        return { color: '#a855f7', bg: 'rgba(168, 85, 247, 0.2)' };
+        return { color: 'var(--muted)', bg: 'color-mix(in srgb, var(--muted) 20%, transparent)' };
       case 'RETRYING':
-        return { color: '#f59e0b', bg: 'rgba(245, 158, 11, 0.2)' };
+        return { color: 'var(--accent)', bg: 'color-mix(in srgb, var(--accent) 20%, transparent)' };
       default:
-        return { color: '#64748b', bg: 'rgba(100, 116, 139, 0.2)' };
+        return { color: 'var(--muted)', bg: 'color-mix(in srgb, var(--muted) 20%, transparent)' };
     }
   };
 
@@ -858,8 +861,8 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
         flexDirection: 'column',
         flex: 1,
         height: '100%',
-        backgroundColor: '#080c14',
-        color: '#f8fafc',
+        backgroundColor: 'var(--bg)',
+        color: 'var(--text)',
         overflow: 'hidden',
         position: 'relative',
       }}
@@ -871,13 +874,13 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
             alignItems: 'center',
             gap: '10px',
             padding: '6px 14px',
-            backgroundColor: pendingFailure ? 'rgba(248, 81, 73, 0.12)' : 'rgba(56, 189, 248, 0.10)',
-            borderBottom: `1px solid ${pendingFailure ? 'rgba(248, 81, 73, 0.4)' : 'rgba(56, 189, 248, 0.3)'}`,
-            fontSize: '11.5px',
-            color: pendingFailure ? '#fca5a5' : '#7dd3fc',
+            backgroundColor: pendingFailure ? 'color-mix(in srgb, var(--bad) 12%, transparent)' : 'color-mix(in srgb, var(--accent) 10%, transparent)',
+            borderBottom: `1px solid ${pendingFailure ? 'color-mix(in srgb, var(--bad) 40%, transparent)' : 'color-mix(in srgb, var(--accent) 30%, transparent)'}`,
+            fontSize: '12.5px',
+            color: pendingFailure ? 'var(--bad)' : 'var(--accent)',
           }}
         >
-          <span style={{ fontWeight: 700 }}>Misión en curso con este workflow · {liveExecution.status}</span>
+          <span style={{ fontWeight: 700 }}>Misión en curso con este flujo · {liveExecution.status}</span>
           {pendingFailure && (
             <>
               <span style={{ flex: 1 }}>
@@ -889,10 +892,10 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
                   onClick={() => handleResolveFailure(action)}
                   style={{
                     padding: '3px 10px',
-                    borderRadius: '5px',
-                    border: '1px solid #475569',
-                    backgroundColor: action === 'abort' ? '#3b1c1c' : '#1e293b',
-                    color: '#f8fafc',
+                    borderRadius: '6px',
+                    border: '1px solid var(--line)',
+                    backgroundColor: action === 'abort' ? 'var(--line)' : 'var(--line)',
+                    color: 'var(--text)',
                     fontSize: '11px',
                     cursor: 'pointer',
                   }}
@@ -905,74 +908,24 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
         </div>
       )}
 
-      {/* Barra de Herramientas Superior */}
+      {/* Barra superior: flujo activo y controles de ejecución */}
       <div
         style={{
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          padding: '8px 16px',
-          backgroundColor: '#0c1017',
-          borderBottom: '1px solid #1e293b',
+          padding: '10px 18px',
+          borderBottom: '1px solid var(--line)',
           flexShrink: 0,
           gap: '12px',
           flexWrap: 'wrap',
           zIndex: 40,
         }}
       >
-        {/* Izquierda: Selector de Flujo y Estado */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              width: '28px',
-              height: '28px',
-              borderRadius: '6px',
-              background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.25), rgba(129, 140, 248, 0.25))',
-              border: '1px solid rgba(56, 189, 248, 0.4)',
-              color: '#38bdf8',
-            }}
-          >
-            <Workflow size={16} />
-          </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+          <h1 style={{ fontSize: 'var(--fs-title)', fontWeight: 600, letterSpacing: '-0.01em', marginRight: '6px' }}>Flujos</h1>
 
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ fontSize: '13px', fontWeight: '700', letterSpacing: '-0.01em', color: '#f8fafc' }}>
-                PRAXEON Workflows
-              </span>
-              <span
-                style={{
-                  fontSize: '9.5px',
-                  fontWeight: '700',
-                  padding: '1px 6px',
-                  borderRadius: '10px',
-                  backgroundColor: 'rgba(56, 189, 248, 0.15)',
-                  color: '#38bdf8',
-                  border: '1px solid rgba(56, 189, 248, 0.3)',
-                }}
-              >
-                Visual DAG Orchestrator
-              </span>
-            </div>
-          </div>
-
-          {/* Selector de flujos */}
-          <select
-            value={activeWorkflowId || ''}
-            onChange={(e) => setActiveWorkflowId(e.target.value)}
-            style={{
-              backgroundColor: '#161c28',
-              border: '1px solid #243044',
-              borderRadius: '6px',
-              padding: '4px 8px',
-              fontSize: '11.5px',
-              color: '#f8fafc',
-              cursor: 'pointer',
-            }}
-          >
+          <select aria-label="Flujo" value={activeWorkflowId || ''} onChange={(e) => setActiveWorkflowId(e.target.value)} style={{ maxWidth: '280px' }}>
             {workflows.map((wf) => (
               <option key={wf.workflow_id} value={wf.workflow_id}>
                 {wf.active ? '● ' : ''}
@@ -986,6 +939,7 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
             const isActive = Boolean(current?.active);
             return (
               <button
+                className={`chip${isActive ? '' : ''}`}
                 onClick={async () => {
                   try {
                     await setWorkflowActive(activeWorkflowId, !isActive);
@@ -995,20 +949,9 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
                     addLog('ERROR', `No se pudo cambiar el estado del workflow: ${err.message}`);
                   }
                 }}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '4px',
-                  padding: '4px 8px',
-                  borderRadius: '5px',
-                  backgroundColor: isActive ? '#10261c' : '#1c2230',
-                  border: `1px solid ${isActive ? '#1f6f4a' : '#2f3a50'}`,
-                  color: isActive ? '#4ade80' : '#94a3b8',
-                  fontSize: '11px',
-                  cursor: 'pointer',
-                  fontWeight: '500',
-                }}
-                title={isActive ? 'Activo: aparece en el lanzador de misiones. Clic para desactivar' : 'Inactivo: no se ofrece para tareas. Clic para activar'}
+                style={{ color: isActive ? 'var(--ok)' : 'var(--muted)', borderColor: isActive ? 'color-mix(in srgb, var(--ok) 45%, transparent)' : 'var(--line)', padding: '4px 11px' }}
+                title={isActive ? 'Activo: aparece en el selector de la conversación. Pulsa para desactivar' : 'Inactivo: no se ofrece para las tareas. Pulsa para activar'}
+                aria-pressed={isActive}
               >
                 <Check size={12} />
                 <span>{isActive ? 'Activo' : 'Inactivo'}</span>
@@ -1016,196 +959,83 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
             );
           })()}
 
-          <button
-            onClick={() => setShowCreateWfModal(true)}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px',
-              padding: '4px 8px',
-              borderRadius: '5px',
-              backgroundColor: '#162234',
-              border: '1px solid #2a3c5a',
-              color: '#38bdf8',
-              fontSize: '11px',
-              cursor: 'pointer',
-              fontWeight: '500',
-            }}
-            title="Crear un nuevo flujo de trabajo"
-          >
-            <Plus size={12} />
-            <span>Nuevo Flujo</span>
+          <button className="btn btn-secondary" onClick={() => setShowCreateWfModal(true)} title="Crear un nuevo flujo de trabajo">
+            <Plus size={13} />
+            <span>Nuevo flujo</span>
           </button>
-
           <button
+            className="btn btn-secondary"
             onClick={() => {
               loadTemplates();
               setShowTemplatesModal(true);
             }}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px',
-              padding: '4px 8px',
-              borderRadius: '5px',
-              backgroundColor: '#1b1b3a',
-              border: '1px solid #4338ca',
-              color: '#a5b4fc',
-              fontSize: '11px',
-              cursor: 'pointer',
-              fontWeight: '500',
-            }}
-            title="Cargar flujos estructurados canónicos (Code Review, Writer-Reviewer, Triage Router)"
+            title="Cargar flujos canónicos (revisión de código, redactor y revisor, enrutador de triaje)"
           >
-            <LayoutTemplate size={12} />
-            <span>Plantillas Canónicas</span>
+            <LayoutTemplate size={13} />
+            <span>Plantillas canónicas</span>
           </button>
         </div>
 
-        {/* Centro: Controles de Ejecución */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <button
-            onClick={handleValidate}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px',
-              padding: '4px 9px',
-              borderRadius: '5px',
-              backgroundColor: '#161c28',
-              border: '1px solid #243044',
-              color: '#cbd5e1',
-              fontSize: '11px',
-              cursor: 'pointer',
-            }}
-            title="Validar causalidad y ausencia de ciclos"
-          >
-            <ShieldCheck size={12} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+          <button className="btn btn-secondary" onClick={handleValidate} title="Validar la causalidad y la ausencia de ciclos">
+            <ShieldCheck size={13} />
             <span>Validar DAG</span>
           </button>
-
-          <button
-            onClick={handleStep}
-            disabled={executing}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px',
-              padding: '4px 9px',
-              borderRadius: '5px',
-              backgroundColor: '#162234',
-              border: '1px solid #2a3c5a',
-              color: '#38bdf8',
-              fontSize: '11px',
-              cursor: 'pointer',
-            }}
-            title="Avanzar un nodo paso a paso"
-          >
-            <SkipForward size={12} />
-            <span>Step</span>
+          <button className="btn btn-secondary" onClick={handleStep} disabled={executing} title="Avanzar un nodo paso a paso">
+            <SkipForward size={13} />
+            <span>Paso a paso</span>
           </button>
-
-          <button
-            onClick={handleExecute}
-            disabled={executing}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px',
-              padding: '4px 11px',
-              borderRadius: '5px',
-              backgroundColor: '#238636',
-              border: 'none',
-              color: '#ffffff',
-              fontSize: '11px',
-              fontWeight: '600',
-              cursor: 'pointer',
-            }}
-            title="Ejecutar flujo completo supervisado"
-          >
-            <Play size={12} className={executing ? 'animate-pulse' : ''} />
-            <span>{executing ? 'Ejecutando...' : 'Run Flow'}</span>
+          <button className="btn btn-secondary" onClick={handleReset} title="Reiniciar la ejecución del flujo">
+            <RotateCcw size={13} />
+            <span>Reiniciar</span>
           </button>
-
-          <button
-            onClick={handleReset}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px',
-              padding: '4px 9px',
-              borderRadius: '5px',
-              backgroundColor: '#161c28',
-              border: '1px solid #243044',
-              color: '#94a3b8',
-              fontSize: '11px',
-              cursor: 'pointer',
-            }}
-            title="Reiniciar ejecución del flujo"
-          >
-            <RotateCcw size={12} />
-            <span>Reset</span>
-          </button>
-
-          <button
-            onClick={handleCenterView}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px',
-              padding: '4px 9px',
-              borderRadius: '5px',
-              backgroundColor: '#161c28',
-              border: '1px solid #243044',
-              color: '#94a3b8',
-              fontSize: '11px',
-              cursor: 'pointer',
-            }}
-            title="Centrar vista sobre los nodos del workflow"
-          >
-            <Focus size={12} />
+          <button className="btn btn-secondary" onClick={handleCenterView} title="Centrar la vista sobre los nodos del flujo">
+            <Focus size={13} />
             <span>Centrar</span>
           </button>
+          <button className="btn btn-primary" onClick={handleExecute} disabled={executing} title="Ejecutar el flujo completo bajo supervisión">
+            <Play size={13} className={executing ? 'animate-pulse' : ''} />
+            <span>{executing ? 'Ejecutando…' : 'Ejecutar flujo'}</span>
+          </button>
         </div>
-
       </div>
 
       {/* Banner de Desconexión de Backend */}
       {connectionError && (
         <div
           style={{
-            backgroundColor: 'rgba(239, 68, 68, 0.15)',
-            borderBottom: '1px solid rgba(239, 68, 68, 0.4)',
+            backgroundColor: 'color-mix(in srgb, var(--bad) 15%, transparent)',
+            borderBottom: '1px solid color-mix(in srgb, var(--bad) 40%, transparent)',
             padding: '8px 16px',
-            fontSize: '11.5px',
+            fontSize: '12.5px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            color: '#fca5a5',
+            color: 'var(--bad)',
             flexShrink: 0,
             zIndex: 35,
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <AlertTriangle size={14} color="#ef4444" />
+            <AlertTriangle size={14} color="var(--bad)" />
             <span>
-              <strong>Backend Desconectado ({connectionError}):</strong> Asegúrate de que el servidor PRAXEON esté ejecutándose en el puerto 8000 (<code>uv run praxeon-server --port 8000</code>).
+              <strong>Servidor desconectado ({connectionError}):</strong> Comprueba que el servidor PRAXEON se está ejecutando en el puerto 8000 (<code>uv run praxeon-server --port 8000</code>).
             </span>
           </div>
           <button
             onClick={() => loadWorkflows()}
             style={{
               padding: '3px 8px',
-              borderRadius: '4px',
-              backgroundColor: '#b91c1c',
-              border: '1px solid #ef4444',
-              color: '#ffffff',
-              fontSize: '10.5px',
+              borderRadius: '6px',
+              backgroundColor: 'var(--bad)',
+              border: '1px solid var(--bad)',
+              color: 'var(--on-accent)',
+              fontSize: '11px',
               cursor: 'pointer',
               fontWeight: '600',
             }}
           >
-            Reintentar Conexión
+            Reintentar la conexión
           </button>
         </div>
       )}
@@ -1214,14 +1044,14 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
       {validationResult && (
         <div
           style={{
-            backgroundColor: validationResult.is_valid ? 'rgba(63, 185, 80, 0.12)' : 'rgba(248, 81, 73, 0.12)',
-            borderBottom: `1px solid ${validationResult.is_valid ? 'rgba(63, 185, 80, 0.35)' : 'rgba(248, 81, 73, 0.35)'}`,
+            backgroundColor: validationResult.is_valid ? 'color-mix(in srgb, var(--ok) 12%, transparent)' : 'color-mix(in srgb, var(--bad) 12%, transparent)',
+            borderBottom: `1px solid ${validationResult.is_valid ? 'color-mix(in srgb, var(--ok) 35%, transparent)' : 'color-mix(in srgb, var(--bad) 35%, transparent)'}`,
             padding: '6px 16px',
             fontSize: '11px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            color: validationResult.is_valid ? '#3fb950' : '#f85149',
+            color: validationResult.is_valid ? 'var(--ok)' : 'var(--bad)',
             flexShrink: 0,
           }}
         >
@@ -1229,7 +1059,7 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
             {validationResult.is_valid ? <CheckCircle2 size={13} /> : <AlertTriangle size={13} />}
             <span>
               {validationResult.is_valid
-                ? `Grafo DAG Válido sin ciclos. Orden topológico: [${(validationResult.topological_order || []).join(' → ')}]`
+                ? `El grafo es un DAG válido, sin ciclos. Orden topológico: [${(validationResult.topological_order || []).join(' → ')}]`
                 : `Errores en el grafo: ${(validationResult.errors || []).join('; ')}`}
             </span>
           </div>
@@ -1246,36 +1076,36 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
       {wiringSourceId && (
         <div
           style={{
-            backgroundColor: 'rgba(56, 189, 248, 0.15)',
-            borderBottom: '1px solid rgba(56, 189, 248, 0.4)',
+            backgroundColor: 'color-mix(in srgb, var(--accent) 15%, transparent)',
+            borderBottom: '1px solid color-mix(in srgb, var(--accent) 40%, transparent)',
             padding: '6px 16px',
-            fontSize: '11.5px',
+            fontSize: '12.5px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            color: '#38bdf8',
+            color: 'var(--accent)',
             flexShrink: 0,
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <ArrowRight size={14} className="animate-pulse" />
             <span>
-              <strong>Modo Cableado:</strong> Origen fijado en nodo <strong>{wiringSourceId}</strong>. Haz clic en el puerto de entrada (izquierda) de otro nodo para crear la unión.
+              <strong>Modo de cableado:</strong> origen fijado en el nodo <strong>{wiringSourceId}</strong>. Haz clic en el puerto de entrada (izquierda) de otro nodo para crear la unión.
             </span>
           </div>
           <button
             onClick={() => setWiringSourceId(null)}
             style={{
-              backgroundColor: '#1e293b',
-              border: '1px solid #334155',
-              color: '#f8fafc',
+              backgroundColor: 'var(--line)',
+              border: '1px solid var(--line)',
+              color: 'var(--text)',
               padding: '2px 8px',
-              borderRadius: '4px',
-              fontSize: '10.5px',
+              borderRadius: '6px',
+              fontSize: '11px',
               cursor: 'pointer',
             }}
           >
-            Cancelar Cableado
+            Cancelar el cableado
           </button>
         </div>
       )}
@@ -1286,8 +1116,8 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
         <div
           style={{
             width: '175px',
-            backgroundColor: '#0c1017',
-            borderRight: '1px solid #1e293b',
+            backgroundColor: 'var(--bg)',
+            borderRight: '1px solid var(--line)',
             display: 'flex',
             flexDirection: 'column',
             padding: '12px 10px',
@@ -1297,111 +1127,111 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
             overflowY: 'auto',
           }}
         >
-          <div style={{ fontSize: '10px', fontWeight: '700', textTransform: 'uppercase', color: '#64748b', letterSpacing: '0.05em' }}>
-            Paleta de Nodos
+          <div style={{ fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', color: 'var(--muted)', letterSpacing: '0.05em' }}>
+            Paleta de nodos
           </div>
 
           <button
-            onClick={() => handleQuickAddNode('AGENT', 'Agent Worker')}
+            onClick={() => handleQuickAddNode('AGENT', 'Agente')}
             style={{
               display: 'flex',
               alignItems: 'center',
               gap: '8px',
               padding: '7px 8px',
-              backgroundColor: '#121824',
-              border: '1px solid #233147',
-              borderRadius: '6px',
-              color: '#f8fafc',
+              backgroundColor: 'var(--surface)',
+              border: '1px solid var(--line)',
+              borderRadius: '9px',
+              color: 'var(--text)',
               fontSize: '11px',
               cursor: 'pointer',
               textAlign: 'left',
             }}
             title="Añadir nodo de agente autónomo"
           >
-            <div style={{ width: '20px', height: '20px', borderRadius: '4px', backgroundColor: 'rgba(16, 185, 129, 0.2)', color: '#10b981', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div style={{ width: '20px', height: '20px', borderRadius: '6px', backgroundColor: 'transparent', color: 'var(--muted)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Bot size={12} />
             </div>
             <div>
               <div style={{ fontWeight: '600' }}>Agente</div>
-              <div style={{ fontSize: '9px', color: '#64748b' }}>IA delegada</div>
+              <div style={{ fontSize: 'var(--fs-label)', color: 'var(--muted)' }}>IA delegada</div>
             </div>
           </button>
 
           <button
-            onClick={() => handleQuickAddNode('TASK', 'Task Worker')}
+            onClick={() => handleQuickAddNode('TASK', 'Tarea')}
             style={{
               display: 'flex',
               alignItems: 'center',
               gap: '8px',
               padding: '7px 8px',
-              backgroundColor: '#121824',
-              border: '1px solid #233147',
-              borderRadius: '6px',
-              color: '#f8fafc',
+              backgroundColor: 'var(--surface)',
+              border: '1px solid var(--line)',
+              borderRadius: '9px',
+              color: 'var(--text)',
               fontSize: '11px',
               cursor: 'pointer',
               textAlign: 'left',
             }}
             title="Añadir tarea o herramienta de ejecución"
           >
-            <div style={{ width: '20px', height: '20px', borderRadius: '4px', backgroundColor: 'rgba(56, 189, 248, 0.2)', color: '#38bdf8', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div style={{ width: '20px', height: '20px', borderRadius: '6px', backgroundColor: 'transparent', color: 'var(--muted)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Terminal size={12} />
             </div>
             <div>
               <div style={{ fontWeight: '600' }}>Tarea</div>
-              <div style={{ fontSize: '9px', color: '#64748b' }}>Tool / Comando</div>
+              <div style={{ fontSize: '11px', color: 'var(--muted)' }}>Herramienta o comando</div>
             </div>
           </button>
 
           <button
-            onClick={() => handleQuickAddNode('DECISION', 'Decision Gate')}
+            onClick={() => handleQuickAddNode('DECISION', 'Decisión')}
             style={{
               display: 'flex',
               alignItems: 'center',
               gap: '8px',
               padding: '7px 8px',
-              backgroundColor: '#121824',
-              border: '1px solid #233147',
-              borderRadius: '6px',
-              color: '#f8fafc',
+              backgroundColor: 'var(--surface)',
+              border: '1px solid var(--line)',
+              borderRadius: '9px',
+              color: 'var(--text)',
               fontSize: '11px',
               cursor: 'pointer',
               textAlign: 'left',
             }}
             title="Añadir compuerta de decisión condicional"
           >
-            <div style={{ width: '20px', height: '20px', borderRadius: '4px', backgroundColor: 'rgba(245, 158, 11, 0.2)', color: '#f59e0b', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div style={{ width: '20px', height: '20px', borderRadius: '6px', backgroundColor: 'transparent', color: 'var(--muted)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <GitBranch size={12} />
             </div>
             <div>
               <div style={{ fontWeight: '600' }}>Decisión / IF</div>
-              <div style={{ fontSize: '9px', color: '#64748b' }}>Bifurcación</div>
+              <div style={{ fontSize: '11px', color: 'var(--muted)' }}>Bifurcación</div>
             </div>
           </button>
 
           <button
-            onClick={() => handleQuickAddNode('WHILE', 'Control Bucle')}
+            onClick={() => handleQuickAddNode('WHILE', 'Bucle de control')}
             style={{
               display: 'flex',
               alignItems: 'center',
               gap: '8px',
               padding: '7px 8px',
-              backgroundColor: '#121824',
-              border: '1px solid #233147',
-              borderRadius: '6px',
-              color: '#f8fafc',
+              backgroundColor: 'var(--surface)',
+              border: '1px solid var(--line)',
+              borderRadius: '9px',
+              color: 'var(--text)',
               fontSize: '11px',
               cursor: 'pointer',
               textAlign: 'left',
             }}
             title="Añadir bucle WHILE estructurado con límite de iteraciones"
           >
-            <div style={{ width: '20px', height: '20px', borderRadius: '4px', backgroundColor: 'rgba(6, 182, 212, 0.2)', color: '#06b6d4', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div style={{ width: '20px', height: '20px', borderRadius: '6px', backgroundColor: 'transparent', color: 'var(--muted)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <RotateCcw size={12} />
             </div>
             <div>
               <div style={{ fontWeight: '600' }}>Bucle WHILE</div>
-              <div style={{ fontSize: '9px', color: '#64748b' }}>Iteración acotada</div>
+              <div style={{ fontSize: '11px', color: 'var(--muted)' }}>Iteración acotada</div>
             </div>
           </button>
 
@@ -1412,131 +1242,131 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
               alignItems: 'center',
               gap: '8px',
               padding: '7px 8px',
-              backgroundColor: '#121824',
-              border: '1px solid #233147',
-              borderRadius: '6px',
-              color: '#f8fafc',
+              backgroundColor: 'var(--surface)',
+              border: '1px solid var(--line)',
+              borderRadius: '9px',
+              color: 'var(--text)',
               fontSize: '11px',
               cursor: 'pointer',
               textAlign: 'left',
             }}
             title="Añadir router de delegación dinámica a agentes"
           >
-            <div style={{ width: '20px', height: '20px', borderRadius: '4px', backgroundColor: 'rgba(168, 85, 247, 0.2)', color: '#a855f7', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div style={{ width: '20px', height: '20px', borderRadius: '6px', backgroundColor: 'transparent', color: 'var(--muted)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Bot size={12} />
             </div>
             <div>
               <div style={{ fontWeight: '600' }}>Router</div>
-              <div style={{ fontSize: '9px', color: '#64748b' }}>Delegación</div>
+              <div style={{ fontSize: '11px', color: 'var(--muted)' }}>Delegación</div>
             </div>
           </button>
 
           <button
-            onClick={() => handleQuickAddNode('HUMAN_APPROVAL', 'Aprobación Humana')}
+            onClick={() => handleQuickAddNode('HUMAN_APPROVAL', 'Aprobación humana')}
             style={{
               display: 'flex',
               alignItems: 'center',
               gap: '8px',
               padding: '7px 8px',
-              backgroundColor: '#121824',
-              border: '1px solid #233147',
-              borderRadius: '6px',
-              color: '#f8fafc',
+              backgroundColor: 'var(--surface)',
+              border: '1px solid var(--line)',
+              borderRadius: '9px',
+              color: 'var(--text)',
               fontSize: '11px',
               cursor: 'pointer',
               textAlign: 'left',
             }}
             title="Añadir pausa supervisada esperando autorización humana"
           >
-            <div style={{ width: '20px', height: '20px', borderRadius: '4px', backgroundColor: 'rgba(236, 72, 153, 0.2)', color: '#ec4899', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div style={{ width: '20px', height: '20px', borderRadius: '6px', backgroundColor: 'transparent', color: 'var(--muted)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <ShieldCheck size={12} />
             </div>
             <div>
               <div style={{ fontWeight: '600' }}>Aprobación</div>
-              <div style={{ fontSize: '9px', color: '#64748b' }}>Supervisión</div>
+              <div style={{ fontSize: '11px', color: 'var(--muted)' }}>Supervisión</div>
             </div>
           </button>
 
 
           <button
-            onClick={() => handleQuickAddNode('PARALLEL_FORK', 'Parallel Fork')}
+            onClick={() => handleQuickAddNode('PARALLEL_FORK', 'Bifurcación')}
             style={{
               display: 'flex',
               alignItems: 'center',
               gap: '8px',
               padding: '7px 8px',
-              backgroundColor: '#121824',
-              border: '1px solid #233147',
-              borderRadius: '6px',
-              color: '#f8fafc',
+              backgroundColor: 'var(--surface)',
+              border: '1px solid var(--line)',
+              borderRadius: '9px',
+              color: 'var(--text)',
               fontSize: '11px',
               cursor: 'pointer',
               textAlign: 'left',
             }}
             title="Añadir bifurcación concurrente en paralelo"
           >
-            <div style={{ width: '20px', height: '20px', borderRadius: '4px', backgroundColor: 'rgba(192, 132, 252, 0.2)', color: '#c084fc', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div style={{ width: '20px', height: '20px', borderRadius: '6px', backgroundColor: 'transparent', color: 'var(--muted)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <GitFork size={12} />
             </div>
             <div>
-              <div style={{ fontWeight: '600' }}>Fork</div>
-              <div style={{ fontSize: '9px', color: '#64748b' }}>Paralelo</div>
+              <div style={{ fontWeight: '600' }}>Bifurcación</div>
+              <div style={{ fontSize: '11px', color: 'var(--muted)' }}>Paralelo</div>
             </div>
           </button>
 
           <button
-            onClick={() => handleQuickAddNode('PARALLEL_JOIN', 'Parallel Join')}
+            onClick={() => handleQuickAddNode('PARALLEL_JOIN', 'Unión')}
             style={{
               display: 'flex',
               alignItems: 'center',
               gap: '8px',
               padding: '7px 8px',
-              backgroundColor: '#121824',
-              border: '1px solid #233147',
-              borderRadius: '6px',
-              color: '#f8fafc',
+              backgroundColor: 'var(--surface)',
+              border: '1px solid var(--line)',
+              borderRadius: '9px',
+              color: 'var(--text)',
               fontSize: '11px',
               cursor: 'pointer',
               textAlign: 'left',
             }}
             title="Añadir sincronización y unión de ramas"
           >
-            <div style={{ width: '20px', height: '20px', borderRadius: '4px', backgroundColor: 'rgba(129, 140, 248, 0.2)', color: '#818cf8', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div style={{ width: '20px', height: '20px', borderRadius: '6px', backgroundColor: 'transparent', color: 'var(--muted)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <GitMerge size={12} />
             </div>
             <div>
-              <div style={{ fontWeight: '600' }}>Join</div>
-              <div style={{ fontSize: '9px', color: '#64748b' }}>Sincronización</div>
+              <div style={{ fontWeight: '600' }}>Unión</div>
+              <div style={{ fontSize: '11px', color: 'var(--muted)' }}>Sincronización</div>
             </div>
           </button>
 
           <button
-            onClick={() => handleQuickAddNode('END', 'End State')}
+            onClick={() => handleQuickAddNode('END', 'Fin')}
             style={{
               display: 'flex',
               alignItems: 'center',
               gap: '8px',
               padding: '7px 8px',
-              backgroundColor: '#121824',
-              border: '1px solid #233147',
-              borderRadius: '6px',
-              color: '#f8fafc',
+              backgroundColor: 'var(--surface)',
+              border: '1px solid var(--line)',
+              borderRadius: '9px',
+              color: 'var(--text)',
               fontSize: '11px',
               cursor: 'pointer',
               textAlign: 'left',
             }}
             title="Añadir nodo terminal de finalización"
           >
-            <div style={{ width: '20px', height: '20px', borderRadius: '4px', backgroundColor: 'rgba(244, 63, 94, 0.2)', color: '#f43f5e', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div style={{ width: '20px', height: '20px', borderRadius: '6px', backgroundColor: 'transparent', color: 'var(--muted)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Flag size={12} />
             </div>
             <div>
               <div style={{ fontWeight: '600' }}>Fin</div>
-              <div style={{ fontSize: '9px', color: '#64748b' }}>Terminal</div>
+              <div style={{ fontSize: '11px', color: 'var(--muted)' }}>Terminal</div>
             </div>
           </button>
 
-          <div style={{ marginTop: 'auto', borderTop: '1px solid #1e293b', paddingTop: '10px' }}>
+          <div style={{ marginTop: 'auto', borderTop: '1px solid var(--line)', paddingTop: '10px' }}>
             <button
               onClick={() => setShowConnectModal(true)}
               style={{
@@ -1546,17 +1376,17 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
                 justifyContent: 'center',
                 gap: '6px',
                 padding: '6px',
-                backgroundColor: '#162234',
-                border: '1px solid #2a3c5a',
-                borderRadius: '5px',
-                color: '#38bdf8',
-                fontSize: '10.5px',
+                backgroundColor: 'var(--line)',
+                border: '1px solid var(--line)',
+                borderRadius: '6px',
+                color: 'var(--accent)',
+                fontSize: '11px',
                 fontWeight: '600',
                 cursor: 'pointer',
               }}
             >
               <ArrowRight size={12} />
-              <span>Unir Nodos</span>
+              <span>Unir nodos</span>
             </button>
           </div>
         </div>
@@ -1573,7 +1403,7 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
           style={{
             flex: 1,
             position: 'relative',
-            backgroundColor: '#080c14',
+            backgroundColor: 'var(--bg)',
             overflow: 'auto',
             userSelect: draggingNodeId ? 'none' : 'auto',
           }}
@@ -1586,7 +1416,7 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
               minHeight: `${canvasDimensions.height}px`,
               width: `${canvasDimensions.width}px`,
               height: `${canvasDimensions.height}px`,
-              backgroundImage: 'radial-gradient(circle, rgba(255, 255, 255, 0.04) 1px, transparent 1px)',
+              backgroundImage: 'radial-gradient(circle, color-mix(in srgb, var(--text) 4%, transparent) 1px, transparent 1px)',
               backgroundSize: '24px 24px',
             }}
           >
@@ -1610,7 +1440,7 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
                 markerHeight="6"
                 orient="auto-start-reverse"
               >
-                <path d="M 0 1 L 8 5 L 0 9 z" fill="#38bdf8" />
+                <path d="M 0 1 L 8 5 L 0 9 z" fill="var(--muted)" />
               </marker>
               <marker
                 id="wf-arrow-selected"
@@ -1621,7 +1451,7 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
                 markerHeight="6"
                 orient="auto-start-reverse"
               >
-                <path d="M 0 1 L 8 5 L 0 9 z" fill="#f59e0b" />
+                <path d="M 0 1 L 8 5 L 0 9 z" fill="var(--muted)" />
               </marker>
             </defs>
 
@@ -1637,7 +1467,7 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
               const dx = Math.abs(x2 - x1) * 0.5;
 
               const isSelected = selectedEdgeId === edge.edge_id;
-              const strokeColor = isSelected ? '#f59e0b' : (edge.condition ? '#a855f7' : '#38bdf8');
+              const strokeColor = isSelected ? 'var(--accent)' : 'var(--muted)';
 
               return (
                 <g
@@ -1673,8 +1503,8 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
                       y="-12"
                       width="90"
                       height="20"
-                      rx="4"
-                      fill={isSelected ? '#1f2937' : '#0f172a'}
+                      rx="6"
+                      fill={isSelected ? 'var(--line)' : 'var(--surface)'}
                       stroke={strokeColor}
                       strokeWidth="1"
                       opacity="0.9"
@@ -1682,7 +1512,7 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
                     <text
                       x="0"
                       y="2"
-                      fill={isSelected ? '#f59e0b' : '#cbd5e1'}
+                      fill={isSelected ? 'var(--accent)' : 'var(--text)'}
                       fontSize="9.5"
                       fontWeight="600"
                       textAnchor="middle"
@@ -1726,16 +1556,16 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
                   left: `${posX}px`,
                   top: `${posY}px`,
                   width: '210px',
-                  backgroundColor: '#111827',
+                  backgroundColor: 'var(--surface)',
                   border: isWiringSource
-                    ? '2px solid #38bdf8'
-                    : (isSelected ? '2px solid #f59e0b' : `1.5px solid ${meta.border}`),
-                  borderRadius: '10px',
+                    ? '2px solid var(--accent)'
+                    : (isSelected ? '2px solid var(--accent)' : `1.5px solid ${meta.border}`),
+                  borderRadius: '9px',
                   padding: '10px 12px',
                   cursor: isDragging ? 'grabbing' : 'grab',
                   boxShadow: isSelected
-                    ? '0 0 16px rgba(245, 158, 11, 0.4)'
-                    : (isWiringSource ? '0 0 16px rgba(56, 189, 248, 0.4)' : '0 4px 12px rgba(0, 0, 0, 0.5)'),
+                    ? 'none'
+                    : (isWiringSource ? 'none' : 'none'),
                   zIndex: isDragging ? 30 : (isSelected ? 20 : 5),
                   transition: isDragging ? 'none' : 'border-color 0.15s ease, box-shadow 0.15s ease',
                 }}
@@ -1753,11 +1583,11 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
                     width: '14px',
                     height: '14px',
                     borderRadius: '50%',
-                    backgroundColor: wiringSourceId ? '#38bdf8' : '#1e293b',
-                    border: '2px solid #080c14',
+                    backgroundColor: wiringSourceId ? 'var(--accent)' : 'var(--line)',
+                    border: '2px solid var(--line)',
                     cursor: 'pointer',
                     zIndex: 35,
-                    boxShadow: wiringSourceId ? '0 0 8px #38bdf8' : 'none',
+                    boxShadow: wiringSourceId ? 'none' : 'none',
                   }}
                 />
 
@@ -1774,11 +1604,11 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
                     width: '14px',
                     height: '14px',
                     borderRadius: '50%',
-                    backgroundColor: isWiringSource ? '#f59e0b' : '#38bdf8',
-                    border: '2px solid #080c14',
+                    backgroundColor: isWiringSource ? 'var(--accent)' : 'var(--muted)',
+                    border: '2px solid var(--line)',
                     cursor: 'pointer',
                     zIndex: 35,
-                    boxShadow: '0 0 8px rgba(56, 189, 248, 0.5)',
+                    boxShadow: 'none',
                   }}
                 />
 
@@ -1789,13 +1619,13 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
                       display: 'flex',
                       alignItems: 'center',
                       gap: '4px',
-                      fontSize: '9.5px',
+                      fontSize: '11px',
                       fontWeight: '700',
                       padding: '2px 6px',
-                      borderRadius: '4px',
+                      borderRadius: '6px',
                       backgroundColor: meta.bg,
                       color: meta.color,
-                      border: `1px solid ${meta.border}40`,
+                      border: '1px solid var(--line)',
                     }}
                   >
                     {meta.icon}
@@ -1804,47 +1634,47 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
 
                   <span
                     style={{
-                      fontSize: '9px',
+                      fontSize: '11px',
                       fontWeight: '700',
                       padding: '1px 5px',
-                      borderRadius: '4px',
+                      borderRadius: '6px',
                       backgroundColor: statusBadge.bg,
                       color: statusBadge.color,
                     }}
                   >
-                    {node.status || 'PENDING'}
+                    {NODE_STATUS_LABEL[node.status || 'PENDING'] || node.status}
                   </span>
                 </div>
 
                 {/* Título del Nodo */}
-                <div style={{ fontSize: '12.5px', fontWeight: '700', color: '#f8fafc', marginBottom: '4px', wordBreak: 'break-word' }}>
+                <div style={{ fontSize: '12.5px', fontWeight: '700', color: 'var(--text)', marginBottom: '4px', wordBreak: 'break-word' }}>
                   {node.name}
                 </div>
 
                 {/* Metadatos (Agente asignado o Herramienta) */}
                 {node.node_type === 'AGENT' && (
-                  <div style={{ fontSize: '10.5px', color: '#10b981', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
+                  <div style={{ fontSize: '11px', color: 'var(--ok)', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
                     <Bot size={11} />
                     <span style={{ fontFamily: 'var(--font-mono)' }}>{node.agent_id || 'Sin asignar'}</span>
                   </div>
                 )}
 
                 {node.node_type === 'TASK' && (
-                  <div style={{ fontSize: '10.5px', color: '#38bdf8', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
+                  <div style={{ fontSize: '11px', color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
                     <Terminal size={11} />
                     <span style={{ fontFamily: 'var(--font-mono)' }}>{node.tool_name || 'task'}</span>
                   </div>
                 )}
 
                 {node.node_type === 'WHILE' && (
-                  <div style={{ fontSize: '10px', color: '#06b6d4', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '3px' }}>
+                  <div style={{ fontSize: '11px', color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '3px' }}>
                     <RotateCcw size={11} />
                     <span>Iteración máx: {node.control_config?.max_iterations ?? 3} ({node.control_config?.on_limit || 'ABORT'})</span>
                   </div>
                 )}
 
                 {(node.node_type === 'IF' || node.node_type === 'DECISION') && node.control_config?.condition && (
-                  <div style={{ fontSize: '9.5px', color: '#f59e0b', fontFamily: 'var(--font-mono)', marginTop: '3px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <div style={{ fontSize: '11px', color: 'var(--accent)', fontFamily: 'var(--font-mono)', marginTop: '3px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {typeof node.control_config.condition === 'string'
                       ? node.control_config.condition
                       : `${node.control_config.condition.field || ''} ${node.control_config.condition.operator || '=='} ${node.control_config.condition.expected_value ?? ''}`}
@@ -1852,14 +1682,14 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
                 )}
 
                 {node.node_type === 'DELEGATE' && (
-                  <div style={{ fontSize: '10px', color: '#a855f7', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '3px' }}>
+                  <div style={{ fontSize: '11px', color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '3px' }}>
                     <Bot size={11} />
                     <span>Modo: {node.control_config?.routing_mode || node.control_config?.strategy || 'MANUAL'}</span>
                   </div>
                 )}
 
                 {node.node_type === 'HUMAN_APPROVAL' && node.status !== 'WAITING_APPROVAL' && (
-                  <div style={{ fontSize: '9.5px', color: '#ec4899', marginTop: '3px', fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '3px', fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {node.control_config?.prompt || 'Pausa supervisada'}
                   </div>
                 )}
@@ -1871,14 +1701,14 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
                       marginTop: '6px',
                       marginBottom: '6px',
                       padding: '6px',
-                      backgroundColor: 'rgba(236, 72, 153, 0.15)',
-                      border: '1px solid rgba(236, 72, 153, 0.4)',
-                      borderRadius: '6px',
+                      backgroundColor: 'color-mix(in srgb, var(--muted) 15%, transparent)',
+                      border: '1px solid color-mix(in srgb, var(--muted) 40%, transparent)',
+                      borderRadius: '9px',
                     }}
                     onClick={(e) => e.stopPropagation()}
                   >
-                    <div style={{ fontSize: '9.5px', color: '#f472b6', fontWeight: '600', marginBottom: '4px' }}>
-                      {node.control_config?.prompt || 'Requiere Aprobación'}
+                    <div style={{ fontSize: '11px', color: 'var(--muted)', fontWeight: '600', marginBottom: '4px' }}>
+                      {node.control_config?.prompt || 'Requiere aprobación'}
                     </div>
                     <div style={{ display: 'flex', gap: '4px' }}>
                       <button
@@ -1886,12 +1716,12 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
                         style={{
                           flex: 1,
                           padding: '3px 4px',
-                          fontSize: '9.5px',
+                          fontSize: '11px',
                           fontWeight: '700',
-                          backgroundColor: '#10b981',
-                          color: '#ffffff',
+                          backgroundColor: 'var(--ok)',
+                          color: 'var(--on-accent)',
                           border: 'none',
-                          borderRadius: '4px',
+                          borderRadius: '6px',
                           cursor: 'pointer',
                         }}
                       >
@@ -1902,12 +1732,12 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
                         style={{
                           flex: 1,
                           padding: '3px 4px',
-                          fontSize: '9.5px',
+                          fontSize: '11px',
                           fontWeight: '700',
-                          backgroundColor: '#ef4444',
-                          color: '#ffffff',
+                          backgroundColor: 'var(--bad)',
+                          color: 'var(--on-accent)',
                           border: 'none',
-                          borderRadius: '4px',
+                          borderRadius: '6px',
                           cursor: 'pointer',
                         }}
                       >
@@ -1925,7 +1755,7 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
                     justifyContent: 'space-between',
                     marginTop: '8px',
                     paddingTop: '6px',
-                    borderTop: '1px solid rgba(255, 255, 255, 0.07)',
+                    borderTop: '1px solid color-mix(in srgb, var(--text) 7%, transparent)',
                   }}
                 >
                   <button
@@ -1939,8 +1769,8 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
                       gap: '3px',
                       background: 'none',
                       border: 'none',
-                      color: '#d29922',
-                      fontSize: '10px',
+                      color: 'var(--accent)',
+                      fontSize: '11px',
                       fontWeight: '600',
                       cursor: 'pointer',
                       padding: '1px 3px',
@@ -1948,7 +1778,7 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
                     title="Rebobinar estado a este punto de restauración"
                   >
                     <RotateCcw size={10} />
-                    <span>Backtrack</span>
+                    <span>Retroceder</span>
                   </button>
 
                   <button
@@ -1959,7 +1789,7 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
                     style={{
                       background: 'none',
                       border: 'none',
-                      color: '#f85149',
+                      color: 'var(--bad)',
                       cursor: 'pointer',
                       padding: '1px 3px',
                     }}
@@ -1980,15 +1810,15 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
                 left: '50%',
                 transform: 'translate(-50%, -50%)',
                 textAlign: 'center',
-                color: '#73849c',
+                color: 'var(--muted)',
               }}
             >
               <Workflow size={36} style={{ margin: '0 auto 10px', opacity: 0.4 }} />
-              <div style={{ fontSize: '14px', fontWeight: '600', color: '#94a3b8' }}>
-                Lienzo de Workflow Vacío
+              <div style={{ fontSize: '14.5px', fontWeight: '600', color: 'var(--text)' }}>
+                El lienzo está vacío
               </div>
-              <p style={{ fontSize: '12px', marginTop: '4px' }}>
-                Selecciona un nodo de la paleta izquierda para comenzar a componer el flujo de agentes.
+              <p style={{ fontSize: '12.5px', marginTop: '4px' }}>
+                Elige un tipo de nodo en la paleta de la izquierda para empezar a componer el flujo de agentes.
               </p>
             </div>
           )}
@@ -1999,8 +1829,8 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
         <div
           style={{
             width: '310px',
-            backgroundColor: '#0c1017',
-            borderLeft: '1px solid #1e293b',
+            backgroundColor: 'var(--bg)',
+            borderLeft: '1px solid var(--line)',
             display: 'flex',
             flexDirection: 'column',
             flexShrink: 0,
@@ -2011,16 +1841,16 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
           {nodeEditForm ? (
             /* Inspector de Nodo */
             <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #1e293b', paddingBottom: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--line)', paddingBottom: '8px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <Settings2 size={15} style={{ color: '#38bdf8' }} />
-                  <h3 style={{ fontSize: '13px', fontWeight: '700', color: '#f8fafc', margin: 0 }}>
-                    Propiedades del Nodo
+                  <Settings2 size={15} style={{ color: 'var(--accent)' }} />
+                  <h3 style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text)', margin: 0 }}>
+                    Propiedades del nodo
                   </h3>
                 </div>
                 <button
                   onClick={() => setSelectedNodeId(null)}
-                  style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer' }}
+                  style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer' }}
                 >
                   <X size={14} />
                 </button>
@@ -2045,10 +1875,10 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
                       justifyContent: 'center',
                       gap: '5px',
                       padding: '6px 10px',
-                      backgroundColor: '#238636',
+                      backgroundColor: 'var(--ok)',
                       border: 'none',
-                      borderRadius: '5px',
-                      color: '#ffffff',
+                      borderRadius: '6px',
+                      color: 'var(--on-accent)',
                       fontSize: '11px',
                       fontWeight: '600',
                       cursor: 'pointer',
@@ -2063,10 +1893,10 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
                     onClick={() => handleDeleteNode(nodeEditForm.node_id)}
                     style={{
                       padding: '6px 10px',
-                      backgroundColor: 'rgba(244, 63, 94, 0.15)',
-                      border: '1px solid rgba(244, 63, 94, 0.4)',
-                      borderRadius: '5px',
-                      color: '#f43f5e',
+                      backgroundColor: 'color-mix(in srgb, var(--bad) 15%, transparent)',
+                      border: '1px solid color-mix(in srgb, var(--bad) 40%, transparent)',
+                      borderRadius: '6px',
+                      color: 'var(--bad)',
                       fontSize: '11px',
                       cursor: 'pointer',
                     }}
@@ -2080,16 +1910,16 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
           ) : edgeEditForm ? (
             /* Inspector de Arista / Función de Unión */
             <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #1e293b', paddingBottom: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--line)', paddingBottom: '8px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <GitMerge size={15} style={{ color: '#c084fc' }} />
-                  <h3 style={{ fontSize: '13px', fontWeight: '700', color: '#f8fafc', margin: 0 }}>
-                    Función de Unión / Arista
+                  <GitMerge size={15} style={{ color: 'var(--muted)' }} />
+                  <h3 style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text)', margin: 0 }}>
+                    Unión entre nodos
                   </h3>
                 </div>
                 <button
                   onClick={() => setSelectedEdgeId(null)}
-                  style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer' }}
+                  style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer' }}
                 >
                   <X size={14} />
                 </button>
@@ -2097,8 +1927,8 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
 
               <form onSubmit={handleSaveEdgeProperties} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 <div>
-                  <label style={{ fontSize: '10.5px', color: '#94a3b8', display: 'block', marginBottom: '3px' }}>Conexión</label>
-                  <div style={{ fontSize: '11.5px', color: '#38bdf8', backgroundColor: '#111827', padding: '6px 8px', borderRadius: '5px' }}>
+                  <label style={{ fontSize: 'var(--fs-secondary)', color: 'var(--muted)', display: 'block', marginBottom: '4px' }}>Conexión</label>
+                  <div style={{ fontSize: '12.5px', color: 'var(--accent)', backgroundColor: 'var(--surface)', padding: '6px 8px', borderRadius: '6px' }}>
                     {nodesArray.find((n) => (n.node_id || n.id) === edgeEditForm.from_node)?.name || edgeEditForm.from_node}
                     {' '}&rarr;{' '}
                     {nodesArray.find((n) => (n.node_id || n.id) === edgeEditForm.to_node)?.name || edgeEditForm.to_node}
@@ -2106,18 +1936,18 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
                 </div>
 
                 <div>
-                  <label style={{ fontSize: '10.5px', color: '#94a3b8', display: 'block', marginBottom: '3px' }}>Nombre del camino (opcional)</label>
+                  <label style={{ fontSize: 'var(--fs-secondary)', color: 'var(--muted)', display: 'block', marginBottom: '4px' }}>Nombre del camino (opcional)</label>
                   <input
                     type="text"
                     placeholder="p. ej. Aprobado, Necesita cambios"
                     value={edgeEditForm.label}
                     onChange={(e) => setEdgeEditForm({ ...edgeEditForm, label: e.target.value })}
-                    style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '5px', padding: '5px 8px', fontSize: '11.5px', color: '#f8fafc' }}
+                    style={{ width: '100%', backgroundColor: 'var(--surface)', border: '1px solid var(--line)', borderRadius: '6px', padding: '5px 8px', fontSize: '12.5px', color: 'var(--text)' }}
                   />
                 </div>
 
-                <div style={{ backgroundColor: '#111827', border: '1px solid #1e293b', borderRadius: '6px', padding: '10px' }}>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: '600', color: '#c084fc', cursor: 'pointer', marginBottom: '8px' }}>
+                <div style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--line)', borderRadius: '9px', padding: '10px' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: '600', color: 'var(--muted)', cursor: 'pointer', marginBottom: '8px' }}>
                     <input
                       type="checkbox"
                       checked={edgeEditForm.has_condition}
@@ -2147,17 +1977,17 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
                       justifyContent: 'center',
                       gap: '5px',
                       padding: '6px 10px',
-                      backgroundColor: '#238636',
+                      backgroundColor: 'var(--ok)',
                       border: 'none',
-                      borderRadius: '5px',
-                      color: '#ffffff',
+                      borderRadius: '6px',
+                      color: 'var(--on-accent)',
                       fontSize: '11px',
                       fontWeight: '600',
                       cursor: 'pointer',
                     }}
                   >
                     <Save size={12} />
-                    <span>Guardar Unión</span>
+                    <span>Guardar la unión</span>
                   </button>
 
                   <button
@@ -2165,10 +1995,10 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
                     onClick={() => handleDeleteEdge(edgeEditForm.edge_id)}
                     style={{
                       padding: '6px 10px',
-                      backgroundColor: 'rgba(244, 63, 94, 0.15)',
-                      border: '1px solid rgba(244, 63, 94, 0.4)',
-                      borderRadius: '5px',
-                      color: '#f43f5e',
+                      backgroundColor: 'color-mix(in srgb, var(--bad) 15%, transparent)',
+                      border: '1px solid color-mix(in srgb, var(--bad) 40%, transparent)',
+                      borderRadius: '6px',
+                      color: 'var(--bad)',
                       fontSize: '11px',
                       cursor: 'pointer',
                     }}
@@ -2182,39 +2012,39 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
           ) : (
             /* Resumen de Información del Flujo */
             <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <div style={{ borderBottom: '1px solid #1e293b', paddingBottom: '8px' }}>
-                <div style={{ fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', color: '#64748b' }}>
-                  Flujo Activo
+              <div style={{ borderBottom: '1px solid var(--line)', paddingBottom: '8px' }}>
+                <div style={{ fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', color: 'var(--muted)' }}>
+                  Flujo activo
                 </div>
-                <h3 style={{ fontSize: '13.5px', fontWeight: '700', color: '#f8fafc', margin: '4px 0' }}>
+                <h3 style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text)', margin: '4px 0' }}>
                   {workflow?.name || 'Selecciona un flujo'}
                 </h3>
-                <p style={{ fontSize: '11px', color: '#94a3b8', margin: 0 }}>
+                <p style={{ fontSize: '11px', color: 'var(--text)', margin: 0 }}>
                   {workflow?.description || 'Sin descripción'}
                 </p>
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                <div style={{ backgroundColor: '#111827', padding: '8px', borderRadius: '5px', border: '1px solid #1e293b' }}>
-                  <div style={{ fontSize: '10px', color: '#64748b' }}>Nodos</div>
-                  <div style={{ fontSize: '14px', fontWeight: '700', color: '#38bdf8' }}>{nodesArray.length}</div>
+                <div style={{ backgroundColor: 'var(--surface)', padding: '8px', borderRadius: '6px', border: '1px solid var(--line)' }}>
+                  <div style={{ fontSize: '11px', color: 'var(--muted)' }}>Nodos</div>
+                  <div style={{ fontSize: '14.5px', fontWeight: '700', color: 'var(--accent)' }}>{nodesArray.length}</div>
                 </div>
-                <div style={{ backgroundColor: '#111827', padding: '8px', borderRadius: '5px', border: '1px solid #1e293b' }}>
-                  <div style={{ fontSize: '10px', color: '#64748b' }}>Conexiones</div>
-                  <div style={{ fontSize: '14px', fontWeight: '700', color: '#c084fc' }}>{edgesArray.length}</div>
+                <div style={{ backgroundColor: 'var(--surface)', padding: '8px', borderRadius: '6px', border: '1px solid var(--line)' }}>
+                  <div style={{ fontSize: '11px', color: 'var(--muted)' }}>Conexiones</div>
+                  <div style={{ fontSize: '14.5px', fontWeight: '700', color: 'var(--muted)' }}>{edgesArray.length}</div>
                 </div>
               </div>
 
-              <div style={{ backgroundColor: '#111827', padding: '10px', borderRadius: '6px', border: '1px solid #1e293b' }}>
-                <div style={{ fontSize: '10.5px', fontWeight: '600', color: '#38bdf8', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <div style={{ backgroundColor: 'var(--surface)', padding: '10px', borderRadius: '9px', border: '1px solid var(--line)' }}>
+                <div style={{ fontSize: '11px', fontWeight: '600', color: 'var(--accent)', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
                   <Info size={12} />
-                  <span>Instrucciones Rápidas</span>
+                  <span>Instrucciones rápidas</span>
                 </div>
-                <ul style={{ fontSize: '10px', color: '#94a3b8', paddingLeft: '14px', margin: 0, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <ul style={{ fontSize: '11px', color: 'var(--text)', paddingLeft: '14px', margin: 0, display: 'flex', flexDirection: 'column', gap: '4px' }}>
                   <li><strong>Crear nodo:</strong> Haz clic en cualquier botón de la paleta izquierda.</li>
-                  <li><strong>Editar propiedades:</strong> Haz clic sobre cualquier nodo para asignarle agente, inputs y rol.</li>
+                  <li><strong>Editar propiedades:</strong> Haz clic en un nodo para asignarle agente, entradas y rol.</li>
                   <li><strong>Conectar nodos:</strong> Haz clic en el círculo derecho (salida) de un nodo y luego en el círculo izquierdo de otro.</li>
-                  <li><strong>Configurar uniones:</strong> Haz clic en cualquier cable/arista para editar su condición lógica (EdgeCondition).</li>
+                  <li><strong>Configurar uniones:</strong> Haz clic en una conexión para editar su condición lógica.</li>
                   <li><strong>Mover nodos:</strong> Arrastra y suelta libremente sobre el lienzo.</li>
                 </ul>
               </div>
@@ -2227,13 +2057,13 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
       <div
         style={{
           height: '65px',
-          backgroundColor: '#0c1017',
-          borderTop: '1px solid #1e293b',
+          backgroundColor: 'var(--bg)',
+          borderTop: '1px solid var(--line)',
           padding: '6px 14px',
           overflowY: 'auto',
-          fontSize: '10.5px',
+          fontSize: '11px',
           fontFamily: 'var(--font-mono)',
-          color: '#94a3b8',
+          color: 'var(--text)',
           display: 'flex',
           flexDirection: 'column',
           gap: '2px',
@@ -2242,8 +2072,8 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
       >
         {logs.map((log, idx) => (
           <div key={idx} style={{ display: 'flex', gap: '8px', lineHeight: 1.3 }}>
-            <span style={{ color: '#64748b' }}>[{log.time}]</span>
-            <span style={{ color: log.tag === 'ERROR' ? '#f43f5e' : (log.tag === 'VALID' ? '#10b981' : '#38bdf8'), fontWeight: '600' }}>
+            <span style={{ color: 'var(--muted)' }}>[{log.time}]</span>
+            <span style={{ color: log.tag === 'ERROR' ? 'var(--bad)' : (log.tag === 'VALID' ? 'var(--ok)' : 'var(--accent)'), fontWeight: '600' }}>
               {log.tag}:
             </span>
             <span>{log.msg}</span>
@@ -2257,7 +2087,7 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
           style={{
             position: 'fixed',
             inset: 0,
-            backgroundColor: 'rgba(0,0,0,0.75)',
+            backgroundColor: 'var(--scrim)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -2266,9 +2096,9 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
         >
           <div
             style={{
-              backgroundColor: '#121824',
-              border: '1px solid #233147',
-              borderRadius: '10px',
+              backgroundColor: 'var(--surface)',
+              border: '1px solid var(--line)',
+              borderRadius: '9px',
               padding: '20px',
               width: '400px',
               display: 'flex',
@@ -2277,41 +2107,41 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <h3 style={{ fontSize: '14.5px', fontWeight: '700', color: '#f8fafc', margin: 0 }}>
-                Nuevo Flujo de Trabajo
+              <h3 style={{ fontSize: '14.5px', fontWeight: '700', color: 'var(--text)', margin: 0 }}>
+                Nuevo flujo de trabajo
               </h3>
-              <button onClick={() => setShowCreateWfModal(false)} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer' }}>
+              <button onClick={() => setShowCreateWfModal(false)} style={{ background: 'none', border: 'none', color: 'var(--text)', cursor: 'pointer' }}>
                 <X size={16} />
               </button>
             </div>
             <form onSubmit={handleCreateWorkflow} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
               <div>
-                <label style={{ fontSize: '11px', color: '#94a3b8', display: 'block', marginBottom: '3px' }}>Nombre:</label>
+                <label style={{ fontSize: 'var(--fs-secondary)', color: 'var(--muted)', display: 'block', marginBottom: '4px' }}>Nombre:</label>
                 <input
                   type="text"
                   required
                   value={newWfName}
                   onChange={(e) => setNewWfName(e.target.value)}
-                  placeholder="ej. Pipeline de Auditoría y Fix"
-                  style={{ width: '100%', backgroundColor: '#0c1017', border: '1px solid #243044', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', color: '#f8fafc' }}
+                  placeholder="p. ej. Auditoría y corrección"
+                  style={{ width: '100%', backgroundColor: 'var(--bg)', border: '1px solid var(--line)', borderRadius: '9px', padding: '6px 10px', fontSize: '12.5px', color: 'var(--text)' }}
                 />
               </div>
               <div>
-                <label style={{ fontSize: '11px', color: '#94a3b8', display: 'block', marginBottom: '3px' }}>Descripción:</label>
+                <label style={{ fontSize: 'var(--fs-secondary)', color: 'var(--muted)', display: 'block', marginBottom: '4px' }}>Descripción:</label>
                 <input
                   type="text"
                   value={newWfDesc}
                   onChange={(e) => setNewWfDesc(e.target.value)}
                   placeholder="Descripción del objetivo del flujo"
-                  style={{ width: '100%', backgroundColor: '#0c1017', border: '1px solid #243044', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', color: '#f8fafc' }}
+                  style={{ width: '100%', backgroundColor: 'var(--bg)', border: '1px solid var(--line)', borderRadius: '9px', padding: '6px 10px', fontSize: '12.5px', color: 'var(--text)' }}
                 />
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '6px' }}>
-                <button type="button" onClick={() => setShowCreateWfModal(false)} style={{ padding: '6px 12px', borderRadius: '5px', backgroundColor: '#1e293b', border: 'none', color: '#f8fafc', fontSize: '11.5px', cursor: 'pointer' }}>
+                <button type="button" onClick={() => setShowCreateWfModal(false)} style={{ padding: '6px 12px', borderRadius: '6px', backgroundColor: 'var(--line)', border: 'none', color: 'var(--text)', fontSize: '12.5px', cursor: 'pointer' }}>
                   Cancelar
                 </button>
-                <button type="submit" style={{ padding: '6px 14px', borderRadius: '5px', backgroundColor: '#238636', border: 'none', color: '#ffffff', fontSize: '11.5px', fontWeight: '600', cursor: 'pointer' }}>
-                  Crear Flujo
+                <button type="submit" style={{ padding: '6px 14px', borderRadius: '6px', backgroundColor: 'var(--ok)', border: 'none', color: 'var(--on-accent)', fontSize: '12.5px', fontWeight: '600', cursor: 'pointer' }}>
+                  Crear flujo
                 </button>
               </div>
             </form>
@@ -2325,7 +2155,7 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
           style={{
             position: 'fixed',
             inset: 0,
-            backgroundColor: 'rgba(0,0,0,0.75)',
+            backgroundColor: 'var(--scrim)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -2334,9 +2164,9 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
         >
           <div
             style={{
-              backgroundColor: '#121824',
-              border: '1px solid #233147',
-              borderRadius: '10px',
+              backgroundColor: 'var(--surface)',
+              border: '1px solid var(--line)',
+              borderRadius: '9px',
               padding: '20px',
               width: '420px',
               display: 'flex',
@@ -2345,32 +2175,32 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <h3 style={{ fontSize: '14.5px', fontWeight: '700', color: '#f8fafc', margin: 0 }}>
-                Añadir Nodo al Flujo
+              <h3 style={{ fontSize: '14.5px', fontWeight: '700', color: 'var(--text)', margin: 0 }}>
+                Añadir un nodo al flujo
               </h3>
-              <button onClick={() => setShowAddNodeModal(false)} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer' }}>
+              <button onClick={() => setShowAddNodeModal(false)} style={{ background: 'none', border: 'none', color: 'var(--text)', cursor: 'pointer' }}>
                 <X size={16} />
               </button>
             </div>
             <form onSubmit={handleAddNode} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
               <div>
-                <label style={{ fontSize: '11px', color: '#94a3b8', display: 'block', marginBottom: '3px' }}>Nombre del Nodo:</label>
+                <label style={{ fontSize: 'var(--fs-secondary)', color: 'var(--muted)', display: 'block', marginBottom: '4px' }}>Nombre del nodo</label>
                 <input
                   type="text"
                   required
                   value={createNodeForm.name}
                   onChange={(e) => setCreateNodeForm({ ...createNodeForm, name: e.target.value })}
-                  placeholder="ej. Auditoría de Seguridad"
-                  style={{ width: '100%', backgroundColor: '#0c1017', border: '1px solid #243044', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', color: '#f8fafc' }}
+                  placeholder="p. ej. Auditoría de seguridad"
+                  style={{ width: '100%', backgroundColor: 'var(--bg)', border: '1px solid var(--line)', borderRadius: '9px', padding: '6px 10px', fontSize: '12.5px', color: 'var(--text)' }}
                 />
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
                 <div>
-                  <label style={{ fontSize: '11px', color: '#94a3b8', display: 'block', marginBottom: '3px' }}>Qué hace este nodo:</label>
+                  <label style={{ fontSize: 'var(--fs-secondary)', color: 'var(--muted)', display: 'block', marginBottom: '4px' }}>Qué hace este nodo</label>
                   <select
                     value={createNodeForm.node_type}
                     onChange={(e) => setCreateNodeForm({ ...createNodeForm, node_type: e.target.value })}
-                    style={{ width: '100%', backgroundColor: '#0c1017', border: '1px solid #243044', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', color: '#f8fafc' }}
+                    style={{ width: '100%', backgroundColor: 'var(--bg)', border: '1px solid var(--line)', borderRadius: '9px', padding: '6px 10px', fontSize: '12.5px', color: 'var(--text)' }}
                   >
                     {Object.entries(NODE_TYPE_LABELS)
                       .filter(([value]) => value !== 'START')
@@ -2382,12 +2212,12 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
                   </select>
                 </div>
                 <div>
-                  <label style={{ fontSize: '11px', color: '#94a3b8', display: 'block', marginBottom: '3px' }}>Agente que lo ejecuta:</label>
+                  <label style={{ fontSize: 'var(--fs-secondary)', color: 'var(--muted)', display: 'block', marginBottom: '4px' }}>Agente que lo ejecuta</label>
                   {WORK_TYPES.includes(createNodeForm.node_type) ? (
                     <select
                       value={createNodeForm.agent_id}
                       onChange={(e) => setCreateNodeForm({ ...createNodeForm, agent_id: e.target.value })}
-                      style={{ width: '100%', backgroundColor: '#0c1017', border: '1px solid #243044', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', color: '#10b981' }}
+                      style={{ width: '100%', backgroundColor: 'var(--bg)', border: '1px solid var(--line)', borderRadius: '9px', padding: '6px 10px', fontSize: '12.5px', color: 'var(--ok)' }}
                     >
                       <option value="">Elige un agente…</option>
                       {registeredAgents.map((ag) => (
@@ -2401,7 +2231,7 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
                       type="text"
                       disabled
                       placeholder="No aplica"
-                      style={{ width: '100%', backgroundColor: '#0c1017', border: '1px solid #1e293b', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', color: '#64748b' }}
+                      style={{ width: '100%', backgroundColor: 'var(--bg)', border: '1px solid var(--line)', borderRadius: '9px', padding: '6px 10px', fontSize: '12.5px', color: 'var(--muted)' }}
                     />
                   )}
                 </div>
@@ -2409,11 +2239,11 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
 
               {createNodeForm.node_type === 'TASK' && (
                 <div>
-                  <label style={{ fontSize: '11px', color: '#94a3b8', display: 'block', marginBottom: '3px' }}>Herramienta fija:</label>
+                  <label style={{ fontSize: 'var(--fs-secondary)', color: 'var(--muted)', display: 'block', marginBottom: '4px' }}>Herramienta fija</label>
                   <select
                     value={createNodeForm.tool_name}
                     onChange={(e) => setCreateNodeForm({ ...createNodeForm, tool_name: e.target.value })}
-                    style={{ width: '100%', backgroundColor: '#0c1017', border: '1px solid #243044', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', color: '#f8fafc' }}
+                    style={{ width: '100%', backgroundColor: 'var(--bg)', border: '1px solid var(--line)', borderRadius: '9px', padding: '6px 10px', fontSize: '12.5px', color: 'var(--text)' }}
                   >
                     {TOOL_CHOICES.map((t) => (
                       <option key={t.value} value={t.value}>
@@ -2424,16 +2254,16 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
                 </div>
               )}
 
-              <div style={{ fontSize: '10.5px', color: '#64748b' }}>
+              <div style={{ fontSize: '11px', color: 'var(--muted)' }}>
                 La misión del nodo, el resultado esperado y las conexiones se configuran después en el panel derecho.
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '6px' }}>
-                <button type="button" onClick={() => setShowAddNodeModal(false)} style={{ padding: '6px 12px', borderRadius: '5px', backgroundColor: '#1e293b', border: 'none', color: '#f8fafc', fontSize: '11.5px', cursor: 'pointer' }}>
+                <button type="button" onClick={() => setShowAddNodeModal(false)} style={{ padding: '6px 12px', borderRadius: '6px', backgroundColor: 'var(--line)', border: 'none', color: 'var(--text)', fontSize: '12.5px', cursor: 'pointer' }}>
                   Cancelar
                 </button>
-                <button type="submit" style={{ padding: '6px 14px', borderRadius: '5px', backgroundColor: '#238636', border: 'none', color: '#ffffff', fontSize: '11.5px', fontWeight: '600', cursor: 'pointer' }}>
-                  Añadir al Lienzo
+                <button type="submit" style={{ padding: '6px 14px', borderRadius: '6px', backgroundColor: 'var(--ok)', border: 'none', color: 'var(--on-accent)', fontSize: '12.5px', fontWeight: '600', cursor: 'pointer' }}>
+                  Añadir al lienzo
                 </button>
               </div>
             </form>
@@ -2447,7 +2277,7 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
           style={{
             position: 'fixed',
             inset: 0,
-            backgroundColor: 'rgba(0,0,0,0.75)',
+            backgroundColor: 'var(--scrim)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -2456,9 +2286,9 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
         >
           <div
             style={{
-              backgroundColor: '#121824',
-              border: '1px solid #233147',
-              borderRadius: '10px',
+              backgroundColor: 'var(--surface)',
+              border: '1px solid var(--line)',
+              borderRadius: '9px',
               padding: '20px',
               width: '450px',
               display: 'flex',
@@ -2467,24 +2297,24 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <h3 style={{ fontSize: '14.5px', fontWeight: '700', color: '#f8fafc', margin: 0 }}>
-                Conectar Nodos (Crear Unión / Arista)
+              <h3 style={{ fontSize: '14.5px', fontWeight: '700', color: 'var(--text)', margin: 0 }}>
+                Conectar nodos
               </h3>
-              <button onClick={() => setShowConnectModal(false)} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer' }}>
+              <button onClick={() => setShowConnectModal(false)} style={{ background: 'none', border: 'none', color: 'var(--text)', cursor: 'pointer' }}>
                 <X size={16} />
               </button>
             </div>
             <form onSubmit={handleConnectNodesModal} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
                 <div>
-                  <label style={{ fontSize: '11px', color: '#94a3b8', display: 'block', marginBottom: '3px' }}>Nodo Origen:</label>
+                  <label style={{ fontSize: 'var(--fs-secondary)', color: 'var(--muted)', display: 'block', marginBottom: '4px' }}>Nodo de origen</label>
                   <select
                     required
                     value={connectForm.from_node}
                     onChange={(e) => setConnectForm({ ...connectForm, from_node: e.target.value })}
-                    style={{ width: '100%', backgroundColor: '#0c1017', border: '1px solid #243044', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', color: '#f8fafc' }}
+                    style={{ width: '100%', backgroundColor: 'var(--bg)', border: '1px solid var(--line)', borderRadius: '9px', padding: '6px 10px', fontSize: '12.5px', color: 'var(--text)' }}
                   >
-                    <option value="">Seleccionar...</option>
+                    <option value="">Elegir…</option>
                     {nodesArray.map((n) => {
                       const nid = n.node_id || n.id;
                       return <option key={nid} value={nid}>{n.name} ({nid})</option>;
@@ -2492,14 +2322,14 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
                   </select>
                 </div>
                 <div>
-                  <label style={{ fontSize: '11px', color: '#94a3b8', display: 'block', marginBottom: '3px' }}>Nodo Destino:</label>
+                  <label style={{ fontSize: 'var(--fs-secondary)', color: 'var(--muted)', display: 'block', marginBottom: '4px' }}>Nodo de destino</label>
                   <select
                     required
                     value={connectForm.to_node}
                     onChange={(e) => setConnectForm({ ...connectForm, to_node: e.target.value })}
-                    style={{ width: '100%', backgroundColor: '#0c1017', border: '1px solid #243044', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', color: '#f8fafc' }}
+                    style={{ width: '100%', backgroundColor: 'var(--bg)', border: '1px solid var(--line)', borderRadius: '9px', padding: '6px 10px', fontSize: '12.5px', color: 'var(--text)' }}
                   >
-                    <option value="">Seleccionar...</option>
+                    <option value="">Elegir…</option>
                     {nodesArray.map((n) => {
                       const nid = n.node_id || n.id;
                       return <option key={nid} value={nid}>{n.name} ({nid})</option>;
@@ -2508,45 +2338,45 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
                 </div>
               </div>
               <div>
-                <label style={{ fontSize: '11px', color: '#94a3b8', display: 'block', marginBottom: '3px' }}>Etiqueta (opcional):</label>
+                <label style={{ fontSize: 'var(--fs-secondary)', color: 'var(--muted)', display: 'block', marginBottom: '4px' }}>Etiqueta (opcional)</label>
                 <input
                   type="text"
                   value={connectForm.label}
                   onChange={(e) => setConnectForm({ ...connectForm, label: e.target.value })}
-                  placeholder="ej. Si status == SUCCESS"
-                  style={{ width: '100%', backgroundColor: '#0c1017', border: '1px solid #243044', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', color: '#f8fafc' }}
+                  placeholder="p. ej. Si status == SUCCESS"
+                  style={{ width: '100%', backgroundColor: 'var(--bg)', border: '1px solid var(--line)', borderRadius: '9px', padding: '6px 10px', fontSize: '12.5px', color: 'var(--text)' }}
                 />
               </div>
 
               {/* Condición lógica */}
-              <div style={{ backgroundColor: '#0c1017', border: '1px solid #243044', borderRadius: '6px', padding: '10px' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: '600', color: '#c084fc', cursor: 'pointer' }}>
+              <div style={{ backgroundColor: 'var(--bg)', border: '1px solid var(--line)', borderRadius: '9px', padding: '10px' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: '600', color: 'var(--muted)', cursor: 'pointer' }}>
                   <input
                     type="checkbox"
                     checked={connectForm.has_condition}
                     onChange={(e) => setConnectForm({ ...connectForm, has_condition: e.target.checked })}
                   />
-                  <span>Aplicar Condición Lógica de Unión (Branching)</span>
+                  <span>Aplicar una condición lógica a la unión (ramificación)</span>
                 </label>
 
                 {connectForm.has_condition && (
                   <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr 1fr', gap: '6px', marginTop: '8px' }}>
                     <div>
-                      <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Campo:</label>
+                      <label style={{ fontSize: 'var(--fs-secondary)', color: 'var(--muted)', display: 'block', marginBottom: '4px' }}>Campo</label>
                       <input
                         type="text"
                         value={connectForm.field}
                         onChange={(e) => setConnectForm({ ...connectForm, field: e.target.value })}
                         placeholder="output.status"
-                        style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#f8fafc' }}
+                        style={{ width: '100%', backgroundColor: 'var(--surface)', border: '1px solid var(--line)', borderRadius: '6px', padding: '4px 6px', fontSize: '11px', color: 'var(--text)' }}
                       />
                     </div>
                     <div>
-                      <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Operador:</label>
+                      <label style={{ fontSize: 'var(--fs-secondary)', color: 'var(--muted)', display: 'block', marginBottom: '4px' }}>Operador</label>
                       <select
                         value={connectForm.operator}
                         onChange={(e) => setConnectForm({ ...connectForm, operator: e.target.value })}
-                        style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#f8fafc' }}
+                        style={{ width: '100%', backgroundColor: 'var(--surface)', border: '1px solid var(--line)', borderRadius: '6px', padding: '4px 6px', fontSize: '11px', color: 'var(--text)' }}
                       >
                         <option value="==">==</option>
                         <option value="!=">!=</option>
@@ -2561,13 +2391,13 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
                       </select>
                     </div>
                     <div>
-                      <label style={{ fontSize: '10px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Valor:</label>
+                      <label style={{ fontSize: 'var(--fs-secondary)', color: 'var(--muted)', display: 'block', marginBottom: '4px' }}>Valor</label>
                       <input
                         type="text"
                         value={connectForm.expected_value}
                         onChange={(e) => setConnectForm({ ...connectForm, expected_value: e.target.value })}
                         placeholder="SUCCESS"
-                        style={{ width: '100%', backgroundColor: '#161c28', border: '1px solid #243044', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', color: '#f8fafc' }}
+                        style={{ width: '100%', backgroundColor: 'var(--surface)', border: '1px solid var(--line)', borderRadius: '6px', padding: '4px 6px', fontSize: '11px', color: 'var(--text)' }}
                       />
                     </div>
                   </div>
@@ -2575,10 +2405,10 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '6px' }}>
-                <button type="button" onClick={() => setShowConnectModal(false)} style={{ padding: '6px 12px', borderRadius: '5px', backgroundColor: '#1e293b', border: 'none', color: '#f8fafc', fontSize: '11.5px', cursor: 'pointer' }}>
+                <button type="button" onClick={() => setShowConnectModal(false)} style={{ padding: '6px 12px', borderRadius: '6px', backgroundColor: 'var(--line)', border: 'none', color: 'var(--text)', fontSize: '12.5px', cursor: 'pointer' }}>
                   Cancelar
                 </button>
-                <button type="submit" style={{ padding: '6px 14px', borderRadius: '5px', backgroundColor: '#238636', border: 'none', color: '#ffffff', fontSize: '11.5px', fontWeight: '600', cursor: 'pointer' }}>
+                <button type="submit" style={{ padding: '6px 14px', borderRadius: '6px', backgroundColor: 'var(--ok)', border: 'none', color: 'var(--on-accent)', fontSize: '12.5px', fontWeight: '600', cursor: 'pointer' }}>
                   Conectar
                 </button>
               </div>
@@ -2593,7 +2423,7 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
           style={{
             position: 'fixed',
             inset: 0,
-            backgroundColor: 'rgba(0,0,0,0.8)',
+            backgroundColor: 'var(--scrim)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -2602,9 +2432,9 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
         >
           <div
             style={{
-              backgroundColor: '#101522',
-              border: '1px solid #28354d',
-              borderRadius: '12px',
+              backgroundColor: 'var(--surface)',
+              border: '1px solid var(--line)',
+              borderRadius: '11px',
               padding: '24px',
               width: '680px',
               maxWidth: '92vw',
@@ -2612,27 +2442,27 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
               display: 'flex',
               flexDirection: 'column',
               gap: '16px',
-              boxShadow: '0 20px 40px rgba(0,0,0,0.6)',
+              boxShadow: 'none',
               overflowY: 'auto',
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #1e293b', paddingBottom: '12px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--line)', paddingBottom: '12px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <div style={{ width: '28px', height: '28px', borderRadius: '6px', backgroundColor: 'rgba(165, 180, 252, 0.15)', color: '#a5b4fc', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <div style={{ width: '28px', height: '28px', borderRadius: '9px', backgroundColor: 'color-mix(in srgb, var(--accent) 15%, transparent)', color: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   <LayoutTemplate size={16} />
                 </div>
                 <div>
-                  <h3 style={{ fontSize: '15px', fontWeight: '700', color: '#f8fafc', margin: 0 }}>
-                    Plantillas Canónicas de Orquestación
+                  <h3 style={{ fontSize: '14.5px', fontWeight: '700', color: 'var(--text)', margin: 0 }}>
+                    Plantillas canónicas de orquestación
                   </h3>
-                  <p style={{ fontSize: '11px', color: '#94a3b8', margin: 0 }}>
-                    Flujos de control multiagente preconfigurados según la semántica PRAXEON
+                  <p style={{ fontSize: '11px', color: 'var(--text)', margin: 0 }}>
+                    Flujos multiagente preconfigurados con la semántica de PRAXEON
                   </p>
                 </div>
               </div>
               <button
                 onClick={() => setShowTemplatesModal(false)}
-                style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: '4px' }}
+                style={{ background: 'none', border: 'none', color: 'var(--text)', cursor: 'pointer', padding: '4px' }}
               >
                 <X size={18} />
               </button>
@@ -2644,9 +2474,9 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
                   <div
                     key={tpl.template_id || tpl.key}
                     style={{
-                      backgroundColor: '#161d2d',
-                      border: '1px solid #233148',
-                      borderRadius: '8px',
+                      backgroundColor: 'var(--line)',
+                      border: '1px solid var(--line)',
+                      borderRadius: '9px',
                       padding: '14px 16px',
                       display: 'flex',
                       flexDirection: 'column',
@@ -2656,47 +2486,47 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
                   >
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span style={{ fontSize: '13.5px', fontWeight: '700', color: '#f8fafc' }}>
+                        <span style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text)' }}>
                           {tpl.name}
                         </span>
                         <span
                           style={{
-                            fontSize: '9.5px',
+                            fontSize: '11px',
                             fontWeight: '600',
                             padding: '2px 6px',
-                            borderRadius: '4px',
-                            backgroundColor: 'rgba(56, 189, 248, 0.15)',
-                            color: '#38bdf8',
+                            borderRadius: '6px',
+                            backgroundColor: 'color-mix(in srgb, var(--accent) 15%, transparent)',
+                            color: 'var(--accent)',
                             fontFamily: 'var(--font-mono)',
                           }}
                         >
                           {tpl.template_id || tpl.key}
                         </span>
                       </div>
-                      <div style={{ fontSize: '11px', color: '#64748b' }}>
+                      <div style={{ fontSize: '11px', color: 'var(--muted)' }}>
                         {tpl.node_count} nodos &bull; {tpl.edge_count} aristas
                       </div>
                     </div>
 
-                    <p style={{ fontSize: '11.5px', color: '#94a3b8', margin: 0, lineHeight: 1.4 }}>
+                    <p style={{ fontSize: '12.5px', color: 'var(--text)', margin: 0, lineHeight: 1.4 }}>
                       {tpl.description}
                     </p>
 
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '4px', paddingTop: '8px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '4px', paddingTop: '8px', borderTop: '1px solid color-mix(in srgb, var(--on-accent) 6%, transparent)' }}>
                       <div style={{ display: 'flex', gap: '6px' }}>
                         {(tpl.template_id || tpl.key) === 'code_review_loop' && (
-                          <span style={{ fontSize: '10px', color: '#06b6d4', backgroundColor: 'rgba(6, 182, 212, 0.12)', padding: '2px 6px', borderRadius: '4px' }}>
+                          <span style={{ fontSize: '11px', color: 'var(--accent)', backgroundColor: 'color-mix(in srgb, var(--accent) 12%, transparent)', padding: '2px 6px', borderRadius: '6px' }}>
                             Bucle Acotado (WHILE &le; 3)
                           </span>
                         )}
                         {(tpl.template_id || tpl.key) === 'research_writer_reviewer' && (
-                          <span style={{ fontSize: '10px', color: '#ec4899', backgroundColor: 'rgba(236, 72, 153, 0.12)', padding: '2px 6px', borderRadius: '4px' }}>
-                            Compuerta Humana (Approval)
+                          <span style={{ fontSize: '11px', color: 'var(--muted)', backgroundColor: 'color-mix(in srgb, var(--muted) 12%, transparent)', padding: '2px 6px', borderRadius: '6px' }}>
+                            Compuerta humana (aprobación)
                           </span>
                         )}
                         {(tpl.template_id || tpl.key) === 'triage_router' && (
-                          <span style={{ fontSize: '10px', color: '#a855f7', backgroundColor: 'rgba(168, 85, 247, 0.12)', padding: '2px 6px', borderRadius: '4px' }}>
-                            Router IF + Parallel Join
+                          <span style={{ fontSize: '11px', color: 'var(--muted)', backgroundColor: 'color-mix(in srgb, var(--muted) 12%, transparent)', padding: '2px 6px', borderRadius: '6px' }}>
+                            Enrutador IF + unión paralela
                           </span>
                         )}
                       </div>
@@ -2708,34 +2538,34 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
                           alignItems: 'center',
                           gap: '6px',
                           padding: '6px 12px',
-                          borderRadius: '6px',
-                          backgroundColor: '#2563eb',
+                          borderRadius: '9px',
+                          backgroundColor: 'var(--accent)',
                           border: 'none',
-                          color: '#ffffff',
+                          color: 'var(--on-accent)',
                           fontSize: '11px',
                           fontWeight: '600',
                           cursor: 'pointer',
                         }}
                       >
                         <Plus size={12} />
-                        <span>Usar Plantilla</span>
+                        <span>Usar plantilla</span>
                       </button>
                     </div>
                   </div>
                 ))
               ) : (
-                <div style={{ textAlign: 'center', padding: '30px', color: '#64748b' }}>
+                <div style={{ textAlign: 'center', padding: '30px', color: 'var(--muted)' }}>
                   <LayoutTemplate size={32} style={{ margin: '0 auto 8px', opacity: 0.5 }} />
-                  <div>No se han cargado las plantillas o el backend no está disponible.</div>
+                  <div>No se han cargado las plantillas o el servidor no está disponible.</div>
                   <button
                     onClick={() => loadTemplates()}
                     style={{
                       marginTop: '10px',
                       padding: '5px 12px',
-                      borderRadius: '5px',
-                      backgroundColor: '#1e293b',
-                      border: '1px solid #334155',
-                      color: '#f8fafc',
+                      borderRadius: '6px',
+                      backgroundColor: 'var(--line)',
+                      border: '1px solid var(--line)',
+                      color: 'var(--text)',
                       fontSize: '11px',
                       cursor: 'pointer',
                     }}

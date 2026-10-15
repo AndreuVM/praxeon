@@ -11,7 +11,7 @@ import {
   panelStyle,
 } from './formHelpers';
 
-const titleStyle = { fontSize: '11px', fontWeight: 700, color: '#38bdf8' };
+const titleStyle = { fontSize: '11px', fontWeight: 700, color: 'var(--accent)' };
 
 function Field({ label, hint, children }) {
   return (
@@ -139,7 +139,7 @@ export default function NodeFields({ form, setForm, nodes, outgoingEdges, agents
                 : 'Límite de acciones que puede hacer en este nodo (por defecto 30, hasta 500).'
             }
           >
-            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11.5px', color: '#e2e8f0', marginBottom: '5px', cursor: 'pointer' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12.5px', color: 'var(--text)', marginBottom: '5px', cursor: 'pointer' }}>
               <input
                 type="checkbox"
                 checked={Boolean(form.unlimited_steps)}
@@ -181,7 +181,7 @@ export default function NodeFields({ form, setForm, nodes, outgoingEdges, agents
                   type="button"
                   title="Quitar"
                   onClick={() => set({ param_rows: form.param_rows.filter((_, i) => i !== idx) })}
-                  style={{ background: 'none', border: '1px solid #243044', borderRadius: '5px', color: '#f43f5e', cursor: 'pointer', padding: '0 8px' }}
+                  style={{ background: 'none', border: '1px solid var(--line)', borderRadius: '6px', color: 'var(--bad)', cursor: 'pointer', padding: '0 8px' }}
                 >
                   ×
                 </button>
@@ -190,7 +190,7 @@ export default function NodeFields({ form, setForm, nodes, outgoingEdges, agents
             <button
               type="button"
               onClick={() => set({ param_rows: [...form.param_rows, { key: '', value: '' }] })}
-              style={{ background: 'none', border: '1px dashed #334155', borderRadius: '5px', color: '#94a3b8', cursor: 'pointer', fontSize: '11px', padding: '3px 8px' }}
+              style={{ background: 'none', border: '1px dashed var(--line)', borderRadius: '6px', color: 'var(--text)', cursor: 'pointer', fontSize: '11px', padding: '3px 8px' }}
             >
               + Añadir dato
             </button>
@@ -212,7 +212,7 @@ export default function NodeFields({ form, setForm, nodes, outgoingEdges, agents
               <label style={fieldLabelStyle}>Agentes candidatos</label>
               {agents.length === 0 && <div style={hintStyle}>No hay agentes registrados.</div>}
               {agents.map((ag) => (
-                <label key={ag.id} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11.5px', color: '#e2e8f0', marginBottom: '3px' }}>
+                <label key={ag.id} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12.5px', color: 'var(--text)', marginBottom: '3px' }}>
                   <input
                     type="checkbox"
                     checked={form.candidate_agents.includes(ag.id)}
@@ -328,9 +328,9 @@ export default function NodeFields({ form, setForm, nodes, outgoingEdges, agents
           <div
             style={{
               ...fieldStyle,
-              backgroundColor: '#111827',
-              border: '1px solid #1e293b',
-              color: '#94a3b8',
+              backgroundColor: 'var(--surface)',
+              border: '1px solid var(--line)',
+              color: 'var(--text)',
               maxHeight: '140px',
               overflowY: 'auto',
               whiteSpace: 'pre-wrap',

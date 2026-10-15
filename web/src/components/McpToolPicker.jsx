@@ -29,7 +29,7 @@ export default function McpToolPicker({ value, onChange }) {
 
   return (
     <div style={{ marginTop: '6px' }}>
-      <span style={{ fontSize: '10.5px', color: '#73849c', display: 'block', marginBottom: '4px' }}>
+      <span style={{ fontSize: '11px', color: 'var(--muted)', display: 'block', marginBottom: '4px' }}>
         {everything
           ? 'Con «*» este agente puede usar todas las herramientas MCP aprobadas. Quita «*» y elige abajo para limitarlo.'
           : 'Herramientas MCP aprobadas (pulsa para permitirlas o quitarlas):'}
@@ -46,10 +46,10 @@ export default function McpToolPicker({ value, onChange }) {
               title={t.description || t.name}
               aria-pressed={on}
               style={{
-                fontSize: '11px', fontFamily: 'var(--font-mono)', padding: '2px 8px', borderRadius: '4px', cursor: everything ? 'default' : 'pointer',
-                backgroundColor: on ? 'rgba(56,189,248,0.12)' : 'transparent',
-                border: `1px solid ${on ? 'rgba(56,189,248,0.45)' : '#243044'}`,
-                color: on ? '#38bdf8' : '#8b949e',
+                fontSize: '11px', fontFamily: 'var(--font-mono)', padding: '2px 8px', borderRadius: '6px', cursor: everything ? 'default' : 'pointer',
+                backgroundColor: on ? 'color-mix(in srgb, var(--accent) 12%, transparent)' : 'transparent',
+                border: `1px solid ${on ? 'color-mix(in srgb, var(--accent) 45%, transparent)' : 'var(--line)'}`,
+                color: on ? 'var(--accent)' : 'var(--muted)',
               }}
             >
               {t.name}

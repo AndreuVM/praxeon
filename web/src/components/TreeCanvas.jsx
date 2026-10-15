@@ -17,88 +17,88 @@ const STATUS_TEXT = {
 
 export function getNodeVisuals(node, isSelected) {
   let icon = Check;
-  let iconBg = 'rgba(16, 185, 129, 0.15)';
-  let iconBorder = 'rgba(16, 185, 129, 0.35)';
-  let iconColor = '#34d399';
-  let borderColor = '#1e293b';
-  let bg = '#121824';
+  let iconBg = 'color-mix(in srgb, var(--ok) 15%, transparent)';
+  let iconBorder = 'color-mix(in srgb, var(--ok) 35%, transparent)';
+  let iconColor = 'var(--ok)';
+  let borderColor = 'var(--line)';
+  let bg = 'var(--surface)';
 
   if (node.type === 'start') {
     icon = Play;
-    iconBg = '#1e293b';
-    iconBorder = '#334155';
-    iconColor = '#cbd5e1';
-    bg = '#162030';
+    iconBg = 'var(--line)';
+    iconBorder = 'var(--line)';
+    iconColor = 'var(--text)';
+    bg = 'var(--line)';
   } else if (node.status === 'PROPOSE' || node.type === 'hub') {
     icon = Sparkles;
-    iconBg = 'rgba(139, 92, 246, 0.2)';
-    iconBorder = 'rgba(139, 92, 246, 0.4)';
-    iconColor = '#c084fc';
-    borderColor = 'rgba(139, 92, 246, 0.4)';
-    bg = '#1a1f33';
+    iconBg = 'color-mix(in srgb, var(--accent) 20%, transparent)';
+    iconBorder = 'color-mix(in srgb, var(--accent) 40%, transparent)';
+    iconColor = 'var(--muted)';
+    borderColor = 'color-mix(in srgb, var(--accent) 40%, transparent)';
+    bg = 'var(--line)';
   } else if (node.status === 'BLOCK') {
     icon = X;
-    iconBg = 'rgba(239, 68, 68, 0.18)';
-    iconBorder = 'rgba(239, 68, 68, 0.35)';
-    iconColor = '#f87171';
-    borderColor = 'rgba(239, 68, 68, 0.28)';
-    bg = '#1a151b';
+    iconBg = 'color-mix(in srgb, var(--bad) 18%, transparent)';
+    iconBorder = 'color-mix(in srgb, var(--bad) 35%, transparent)';
+    iconColor = 'var(--bad)';
+    borderColor = 'color-mix(in srgb, var(--bad) 28%, transparent)';
+    bg = 'var(--surface)';
   } else if (node.status === 'REVIEW') {
     icon = AlertTriangle;
-    iconBg = 'rgba(245, 158, 11, 0.18)';
-    iconBorder = 'rgba(245, 158, 11, 0.35)';
-    iconColor = '#fbbf24';
-    borderColor = 'rgba(245, 158, 11, 0.28)';
-    bg = '#1c1b18';
+    iconBg = 'color-mix(in srgb, var(--accent) 18%, transparent)';
+    iconBorder = 'color-mix(in srgb, var(--accent) 35%, transparent)';
+    iconColor = 'var(--accent)';
+    borderColor = 'color-mix(in srgb, var(--accent) 28%, transparent)';
+    bg = 'var(--surface)';
   } else if (node.status === 'REPLAN') {
     icon = RotateCcw;
-    iconBg = 'rgba(168, 85, 247, 0.2)';
-    iconBorder = 'rgba(168, 85, 247, 0.4)';
-    iconColor = '#c084fc';
-    borderColor = 'rgba(168, 85, 247, 0.35)';
-    bg = '#181424';
+    iconBg = 'color-mix(in srgb, var(--muted) 20%, transparent)';
+    iconBorder = 'color-mix(in srgb, var(--muted) 40%, transparent)';
+    iconColor = 'var(--muted)';
+    borderColor = 'color-mix(in srgb, var(--muted) 35%, transparent)';
+    bg = 'var(--surface)';
   } else if (node.status === 'PENDING') {
     icon = Clock;
-    iconBg = 'rgba(100, 116, 139, 0.2)';
-    iconBorder = 'rgba(100, 116, 139, 0.35)';
-    iconColor = '#94a3b8';
-    borderColor = '#293548';
-    bg = '#131a26';
+    iconBg = 'color-mix(in srgb, var(--muted) 20%, transparent)';
+    iconBorder = 'color-mix(in srgb, var(--muted) 35%, transparent)';
+    iconColor = 'var(--muted)';
+    borderColor = 'var(--line)';
+    bg = 'var(--surface)';
   } else if (node.status === 'EXECUTING') {
     icon = RefreshCw;
-    iconBg = 'rgba(56, 189, 248, 0.2)';
-    iconBorder = 'rgba(56, 189, 248, 0.45)';
-    iconColor = '#38bdf8';
-    borderColor = 'rgba(56, 189, 248, 0.45)';
-    bg = '#0e1726';
+    iconBg = 'color-mix(in srgb, var(--accent) 20%, transparent)';
+    iconBorder = 'color-mix(in srgb, var(--accent) 45%, transparent)';
+    iconColor = 'var(--accent)';
+    borderColor = 'color-mix(in srgb, var(--accent) 45%, transparent)';
+    bg = 'var(--surface)';
   }
 
   if (isSelected) {
-    borderColor = '#5a6882';
-    bg = '#1c2432';
+    borderColor = 'var(--line)';
+    bg = 'var(--line)';
   }
 
   return { icon, iconBg, iconBorder, iconColor, borderColor, bg };
 }
 
 function edgeColors(node) {
-  let strokeColor = '#3b4961';
-  let particleColor = '#60a5fa';
+  let strokeColor = 'var(--line)';
+  let particleColor = 'var(--accent)';
   if (node.status === 'ALLOW') {
-    strokeColor = 'rgba(16, 185, 129, 0.7)';
-    particleColor = '#34d399';
+    strokeColor = 'color-mix(in srgb, var(--ok) 70%, transparent)';
+    particleColor = 'var(--ok)';
   } else if (node.status === 'PROPOSE' || node.status === 'REPLAN') {
-    strokeColor = 'rgba(168, 85, 247, 0.75)';
-    particleColor = '#c084fc';
+    strokeColor = 'color-mix(in srgb, var(--muted) 75%, transparent)';
+    particleColor = 'var(--muted)';
   } else if (node.status === 'REVIEW') {
-    strokeColor = 'rgba(245, 158, 11, 0.75)';
-    particleColor = '#fbbf24';
+    strokeColor = 'color-mix(in srgb, var(--accent) 75%, transparent)';
+    particleColor = 'var(--accent)';
   } else if (node.status === 'BLOCK') {
-    strokeColor = 'rgba(239, 68, 68, 0.7)';
-    particleColor = '#f87171';
+    strokeColor = 'color-mix(in srgb, var(--bad) 70%, transparent)';
+    particleColor = 'var(--bad)';
   } else if (node.status === 'EXECUTING') {
-    strokeColor = 'rgba(56, 189, 248, 0.85)';
-    particleColor = '#38bdf8';
+    strokeColor = 'color-mix(in srgb, var(--accent) 85%, transparent)';
+    particleColor = 'var(--accent)';
   }
   return { strokeColor, particleColor };
 }
@@ -127,8 +127,6 @@ function Edges({ nodes, nodeMap, hidden, compact, cardWidth }) {
 
     return (
       <g key={`edge-${node.parentId}-${node.id}`}>
-        {/* Resplandor sutil del enlace */}
-        <path d={pathData} fill="none" stroke={strokeColor} strokeWidth="3.5" opacity="0.25" filter="blur(1px)" />
         {/* Trazado principal animado al unirse al grafo */}
         <path
           className="edge-path-animated"
@@ -146,7 +144,7 @@ function Edges({ nodes, nodeMap, hidden, compact, cardWidth }) {
         <polygon points={`${endX},${endY} ${endX - 4},${endY - 6} ${endX + 4},${endY - 6}`} fill={strokeColor} />
         {pill && (
           <g>
-            <rect x={midX - pillW / 2} y={midY - 9} width={pillW} height="18" rx="9" fill="#0a0e16" stroke={handoffColor} strokeWidth="1.2" />
+            <rect x={midX - pillW / 2} y={midY - 9} width={pillW} height="18" rx="9" fill="var(--bg)" stroke={handoffColor} strokeWidth="1.2" />
             <text x={midX} y={midY + 3.5} textAnchor="middle" fontSize="10" fontWeight="600" fill={handoffColor}>
               {pill}
             </text>
@@ -180,16 +178,16 @@ function NodeCard({ node, isSelected, isLatest, onSelectNode, compact, cardWidth
           alignItems: 'center',
           justifyContent: 'center',
           gap: '6px',
-          color: '#e2e8f0',
+          color: 'var(--text)',
           fontSize: '11px',
           fontWeight: '600',
           cursor: 'pointer',
           userSelect: 'none',
-          boxShadow: isSelected ? '0 0 12px rgba(56, 189, 248, 0.4)' : 'var(--shadow-sm)',
+          boxShadow: isSelected ? 'none' : 'none',
           transition: 'all 0.25s ease',
         }}
       >
-        <Play size={11} style={{ fill: '#e2e8f0' }} />
+        <Play size={11} style={{ fill: 'var(--text)' }} />
         <span>Start</span>
       </div>
     );
@@ -211,7 +209,7 @@ function NodeCard({ node, isSelected, isLatest, onSelectNode, compact, cardWidth
         top: `${node.y}px`,
         width: `${cardWidth}px`,
         height: `${cardHeight(node, compact)}px`,
-        borderRadius: '8px',
+        borderRadius: '9px',
         backgroundColor: visuals.bg,
         border: `1px solid ${visuals.borderColor}`,
         borderLeft: showAgent ? `4px solid ${agentColor(node.agentName)}` : `1px solid ${visuals.borderColor}`,
@@ -223,10 +221,10 @@ function NodeCard({ node, isSelected, isLatest, onSelectNode, compact, cardWidth
         userSelect: 'none',
         transition: 'all 0.22s ease',
         boxShadow: isSelected
-          ? '0 0 12px rgba(90, 104, 130, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.1)'
+          ? 'none'
           : isLatest
-            ? '0 0 12px rgba(56, 189, 248, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.08)'
-            : 'var(--shadow-clay-sm)',
+            ? 'none'
+            : 'none',
       }}
     >
       <div
@@ -248,21 +246,21 @@ function NodeCard({ node, isSelected, isLatest, onSelectNode, compact, cardWidth
 
       <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <span
-          style={{ fontSize: '11.5px', fontWeight: '600', color: isSelected ? '#ffffff' : '#f0f6fc', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+          style={{ fontSize: '12.5px', fontWeight: '600', color: isSelected ? 'var(--text)' : 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
         >
           {node.label}
         </span>
         {showAgent && (
           <span
             title={`${node.agentName}${node.agentRole ? ` — ${node.agentRole}` : ''}`}
-            style={{ fontSize: '10.5px', fontWeight: 700, color: agentColor(node.agentName), whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+            style={{ fontSize: '11px', fontWeight: 700, color: agentColor(node.agentName), whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
           >
             {node.agentName}
-            {node.agentRole ? <span style={{ fontWeight: 400, color: '#8b949e' }}> · {node.agentRole}</span> : null}
+            {node.agentRole ? <span style={{ fontWeight: 400, color: 'var(--muted)' }}> · {node.agentRole}</span> : null}
           </span>
         )}
         {detail ? (
-          <span style={{ fontSize: '10px', color: '#8b949e', marginTop: '1px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{detail}</span>
+          <span style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '1px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{detail}</span>
         ) : null}
       </div>
     </div>

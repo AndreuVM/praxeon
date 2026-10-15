@@ -29,15 +29,16 @@ export default function WorkspaceField({ value = '', onChange, disabled = false,
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', backgroundColor: '#0a0e16', border: '1px solid #1e293b', borderRadius: '6px', padding: compact ? '5px 8px' : '7px 10px', minWidth: 0 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', backgroundColor: 'var(--bg)', border: '1px solid var(--line)', borderRadius: '9px', padding: compact ? '5px 8px' : '7px 10px', minWidth: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
-          <FolderOpen size={14} style={{ color: own ? '#eab308' : '#58a6ff', flexShrink: 0 }} />
-          <div title={effectivePath} style={{ flex: 1, minWidth: 0, fontSize: compact ? '11px' : '12px', fontWeight: 600, color: '#f0f6fc', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</div>
+          <FolderOpen size={14} style={{ color: 'var(--muted)', flexShrink: 0 }} />
+          <div title={effectivePath} style={{ flex: 1, minWidth: 0, fontSize: compact ? '11px' : '12px', fontWeight: 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</div>
           <button
             type="button"
             disabled={disabled}
             onClick={() => setOpen(true)}
-            style={{ flexShrink: 0, padding: '3px 9px', borderRadius: '5px', border: '1px solid #2b6cb0', backgroundColor: 'rgba(56,139,253,0.12)', color: '#58a6ff', fontSize: '11px', fontWeight: 600, cursor: disabled ? 'not-allowed' : 'pointer' }}
+            className="btn btn-secondary"
+          style={{ flexShrink: 0, padding: '2px 10px' }}
           >
             Cambiar
           </button>
@@ -47,7 +48,8 @@ export default function WorkspaceField({ value = '', onChange, disabled = false,
               disabled={disabled}
               onClick={() => onChange('')}
               title="Volver al workspace del proyecto"
-              style={{ flexShrink: 0, padding: '3px 8px', borderRadius: '5px', border: '1px solid #243044', backgroundColor: 'transparent', color: '#94a3b8', fontSize: '11px', cursor: 'pointer' }}
+              className="btn btn-secondary"
+            style={{ flexShrink: 0, padding: '2px 10px' }}
             >
               Quitar
             </button>
@@ -55,11 +57,11 @@ export default function WorkspaceField({ value = '', onChange, disabled = false,
         </div>
         <div
           title={effectivePath}
-          style={{ fontFamily: 'var(--font-mono)', fontSize: '10.5px', color: '#8b949e', wordBreak: 'break-all', lineHeight: 1.35, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}
+          style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--muted)', wordBreak: 'break-all', lineHeight: 1.35, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}
         >
           {effectivePath}
         </div>
-        {badge && <div style={{ fontSize: '9.5px', color: own ? '#eab308' : '#58a6ff' }}>{badge}</div>}
+        {badge && <div style={{ fontSize: '11px', color: 'var(--muted)' }}>{badge}</div>}
       </div>
       <WorkspacePicker
         open={open}

@@ -1,6 +1,26 @@
 // Estado del chat (razonamiento, hitos, agente en control, respuesta final) derivado del flujo de eventos de una sesión.
 // Lo usa el chat en vivo y también la reconstrucción de sesiones antiguas que se vuelven a abrir.
 
+
+// Textos de relleno del motor y fragmentos del prompt interno: no son razonamiento del modelo y no se muestran al usuario.
+const BOILERPLATE = [
+  /^Paso \d+ generado por /i,
+  /^Paso inicial de inspección/i,
+  /^Conclusión directa emitida/i,
+  /^Respuesta directa emitida/i,
+  /^El modelo emitió una herramienta no especificada/i,
+  /^Paso de contingencia/i,
+  /^\[?DEGRADED_MODE/i,
+  /===\s*OBJETIVO GLOBAL/i,
+];
+
+/** Razonamiento legible del paso: sin prefijo «Thought:» ni texto de relleno; cadena vacía si no hay nada que mostrar. */
+export function cleanThought(raw) {
+  let t = String(raw || "").trim().replace(/^thought\s*:\s*/i, "").trim();
+  if (!t || BOILERPLATE.some((re) => re.test(t))) return "";
+  return t;
+}
+
 /** @param {Array} eventsOldestFirst eventos ordenados del más antiguo al más reciente */
 export function deriveChatState(eventsOldestFirst) {
   const thoughts = [];
@@ -14,10 +34,11 @@ export function deriveChatState(eventsOldestFirst) {
     const payload = ev.payload || {};
     if (ev.type === 'action.proposed') {
       const stepNum = payload.step || thoughts.length + 1;
-      const rationale = payload.thought_rationale || payload.detail || '';
+      const rationale = cleanThought(payload.thought_rationale || payload.detail);
       if (rationale) currentThought = rationale;
       thoughts.push({
         step: stepNum,
+        nodeId: ev.node_id || null,
         tool: payload.tool && payload.tool !== 'action' ? payload.tool : payload.operation || 'acción',
         operation: payload.operation || `${stepNum}. ${payload.tool || 'acción'}`,
         thought: rationale || (payload.tool ? `Paso ${stepNum}: Proponiendo ${payload.tool}` : `Paso ${stepNum}: Proponiendo acción`),
@@ -56,6 +77,15 @@ export function deriveChatState(eventsOldestFirst) {
       const last = thoughts[thoughts.length - 1];
       last.verdict = payload.intervention || 'BACKTRACK';
       last.interventionMessage = payload.message;
+    } else if (ev.type === 'approval.completed') {
+      const target = thoughts.find((t) => t.nodeId && t.nodeId === ev.node_id) || [...thoughts].reverse().find((t) => String(t.verdict).toUpperCase() === 'REVIEW');
+      if (target) target.verdict = payload.approved ? 'ALLOW' : 'BLOCK';
+    } else if (ev.type === 'decision.pruned') {
+      const target = thoughts.find((t) => t.nodeId && t.nodeId === ev.node_id) || thoughts[thoughts.length - 1];
+      if (target) {
+        target.verdict = 'BACKTRACK';
+        if (!target.interventionMessage && payload.reason) target.interventionMessage = payload.reason;
+      }
     } else if (ev.type === 'session.completed') {
       completed = true;
       if (payload.summary) finalAnswer = payload.summary;

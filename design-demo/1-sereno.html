@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Praxeon · Sereno</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="shared.css">
+<style>
+/* Sereno: oscuro, un acento azul suave, riel de iconos, consola colapsada */
+:root{--b:#0e1013;--s:#15181c;--l:#22262c;--t:#e4e6e9;--m:#80888f;--a:#7aa2f7;--ab:#0e1013;--ok:#6fbf8b;--bad:#e07a76;--f:'Geist',system-ui,sans-serif;--fm:'Geist Mono',ui-monospace,monospace;--r:7px}
+#app{display:flex;height:100%}
+#rail{width:52px;border-right:1px solid var(--l);display:flex;flex-direction:column;align-items:center;gap:4px;padding:12px 0;flex:none}
+#rail button{width:36px;height:36px;border-radius:9px;display:grid;place-items:center;color:var(--m);position:relative}
+#rail button:hover{background:var(--s);color:var(--t)}
+#rail button.on{background:var(--s);color:var(--t)}
+#rail button::after{content:attr(data-label);position:absolute;left:46px;top:50%;transform:translateY(-50%);background:var(--s);border:1px solid var(--l);color:var(--t);padding:2px 9px;border-radius:6px;font-size:12px;white-space:nowrap;opacity:0;pointer-events:none;transition:opacity .12s;z-index:20}
+#rail button:hover::after{opacity:1}
+.col{flex:1;display:flex;flex-direction:column;min-width:0}
+.top{height:46px;border-bottom:1px solid var(--l);display:flex;align-items:center;gap:12px;padding:0 20px;flex:none;min-width:0}
+.top b{font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.main{flex:1;min-height:0;display:flex}
+#live{flex:1;display:flex;min-width:0}
+.cv{flex:1;position:relative;min-width:0;padding:16px 16px 90px}
+.cv .tree{height:100%}
+.comp{position:absolute;left:50%;bottom:24px;transform:translateX(-50%);width:min(480px,86%);background:var(--s);border:1px solid var(--l);border-radius:12px;display:flex;align-items:center;gap:8px;padding:7px 7px 7px 14px}
+.comp:focus-within{border-color:var(--m)}
+.comp input{flex:1;min-width:0}
+.comp input::placeholder{color:var(--m)}
+.insp{width:310px;border-left:1px solid var(--l);padding:0 18px 16px;overflow:auto;flex:none;display:flex;flex-direction:column;gap:12px}
+.other{flex:1;overflow:auto;padding:32px clamp(20px,5vw,64px);max-width:1100px}
+.drawer{height:0;overflow:hidden;border-top:0 solid var(--l);transition:height .2s;background:var(--s)}
+.drawer.open{height:170px;border-top-width:1px;overflow:auto}
+.drawer div{display:flex;gap:14px;padding:3px 20px;font-family:var(--fm);font-size:11.5px;white-space:nowrap}
+.bar{height:30px;border-top:1px solid var(--l);display:flex;align-items:center;gap:12px;padding:0 20px;color:var(--m);flex:none;width:100%;text-align:left}
+.bar:hover{color:var(--t)}
+@media (max-width:900px){.insp{display:none}}
+</style>
+</head>
+<body>
+<div id="app">
+  <nav id="rail" aria-label="Vistas"></nav>
+  <div class="col">
+    <header class="top">
+      <span class="dot" id="sd"></span><b>Auditar el proyecto y ejecutar pytest</b><span class="dim mono">7f3a2c</span>
+      <span class="sp"></span><span class="dim">Simulado · LAYA · Local restringido</span>
+    </header>
+    <div class="main">
+      <div id="live">
+        <div class="cv">
+          <div id="tree"></div>
+          <form class="comp" id="form">
+            <input id="q" placeholder="Escribe la siguiente misión…" aria-label="Misión">
+            <button class="btn" type="submit">Enviar</button>
+          </form>
+        </div>
+        <aside class="insp">
+          <div class="tabs" id="tabs">
+            <button data-tab="decision" class="on">Decisión</button><button data-tab="evidence">Evidencia</button><button data-tab="policy">Política</button><button data-tab="receipt">Recibo</button>
+          </div>
+          <div id="detail"></div>
+        </aside>
+      </div>
+      <div class="other" id="other" hidden></div>
+    </div>
+    <div class="drawer" id="drawer"></div>
+    <button class="bar" id="bar"><span>Consola</span><span class="mono" id="cnt"></span><span class="sp"></span><span id="arrow">▴</span></button>
+  </div>
+</div>
+<script src="shared.js"></script>
+<script>
+(function(){
+  var M=PX.M, view='live', tab='decision';
+  var rail=document.getElementById('rail');
+  PX.VIEWS.forEach(function(v){
+    if(v.id==='settings') rail.insertAdjacentHTML('beforeend','<span class="sp"></span>');
+    rail.insertAdjacentHTML('beforeend','<button data-view="'+v.id+'" data-label="'+v.label+'" aria-label="'+v.label+'">'+PX.icon(v.id)+'</button>');
+  });
+  rail.addEventListener('click',function(e){var b=e.target.closest('[data-view]');if(b)go(b.dataset.view)});
+  function go(v){
+    view=v;
+    rail.querySelectorAll('button').forEach(function(b){b.classList.toggle('on',b.dataset.view===v)});
+    document.getElementById('live').hidden=v!=='live';
+    var o=document.getElementById('other');o.hidden=v==='live';
+    if(v!=='live')o.innerHTML=PX.viewHTML(v);
+  }
+  go('live');
+  PX.tree(document.getElementById('tree'));
+  document.getElementById('tabs').addEventListener('click',function(e){
+    var b=e.target.closest('[data-tab]');if(!b)return;tab=b.dataset.tab;
+    this.querySelectorAll('button').forEach(function(x){x.classList.toggle('on',x===b)});paint();
+  });
+  function paint(){document.getElementById('detail').innerHTML=PX.detailHTML(M.step(M.selected),tab)}
+  var drawer=document.getElementById('drawer');
+  M.on(function(){
+    paint();
+    document.getElementById('sd').className='dot'+(M.running?' run':'');
+    document.getElementById('cnt').textContent=M.events.length+' eventos';
+    drawer.innerHTML=M.events.map(function(e){return '<div><span class="dim">'+e.t+'</span><span class="'+(e.lvl==='error'?'bad':'')+'">'+e.type+'</span><span class="dim">'+e.detail+'</span></div>'}).join('');
+    drawer.scrollTop=drawer.scrollHeight;
+    if(view!=='live'&&view==='decisions')document.getElementById('other').innerHTML=PX.viewHTML(view);
+  });
+  document.getElementById('bar').addEventListener('click',function(){
+    var open=drawer.classList.toggle('open');document.getElementById('arrow').textContent=open?'▾':'▴';
+    drawer.scrollTop=drawer.scrollHeight;
+  });
+  document.getElementById('form').addEventListener('submit',function(e){
+    e.preventDefault();var q=document.getElementById('q');q.value='';M.run();
+  });
+})();
+</script>
+</body>
+</html>

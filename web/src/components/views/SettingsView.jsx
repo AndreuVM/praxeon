@@ -1,14 +1,9 @@
 import React, { useState } from 'react';
 import WorkspaceField from '../workspace/WorkspaceField';
 import {
-  Settings,
   Save,
   Check,
   RotateCcw,
-  Sliders,
-  Shield,
-  Cpu,
-  Zap,
   Key,
   Eye,
   EyeOff,
@@ -17,6 +12,8 @@ import {
   Trash2,
 } from 'lucide-react';
 import { getApiKey, setApiKey, clearApiKey, fetchHealth } from '../../services/api';
+import { confirmDialog } from '../Dialogs';
+import { ViewPage, ViewHeader } from '../ui';
 
 const STORAGE_KEY = 'praxeon_runtime_settings_v1';
 
@@ -81,7 +78,7 @@ export default function SettingsView({
 
   const handleTestAuth = async () => {
     if (!praxeonApiKey.trim()) {
-      setAuthStatus({ success: false, message: 'Introduce una API Key antes de probar.' });
+      setAuthStatus({ success: false, message: 'Introduce una clave de API antes de probar.' });
       return;
     }
     setTestingAuth(true);
@@ -91,10 +88,10 @@ export default function SettingsView({
     try {
       const res = await fetchHealth();
       if (res && res.status !== 'offline') {
-        setAuthStatus({ success: true, message: 'Autenticación verificada con éxito. Servidor online.' });
+        setAuthStatus({ success: true, message: 'Autenticación verificada. El servidor responde.' });
       } else {
         setApiKey(prevKey);
-        setAuthStatus({ success: false, message: 'Fallo de autenticación (401/403) o servidor offline.' });
+        setAuthStatus({ success: false, message: 'Fallo de autenticación (401/403) o servidor sin conexión.' });
       }
     } catch (err) {
       setApiKey(prevKey);
@@ -144,8 +141,8 @@ export default function SettingsView({
     }
   };
 
-  const handleReset = () => {
-    if (window.confirm('¿Deseas restablecer todos los parámetros a los valores canónicos predeterminados?')) {
+  const handleReset = async () => {
+    if (await confirmDialog('¿Restablecer todos los parámetros a los valores predeterminados?', { confirmLabel: 'Restablecer', danger: true })) {
       setSettings(DEFAULT_SETTINGS);
       localStorage.setItem(STORAGE_KEY, JSON.stringify(DEFAULT_SETTINGS));
       setSaved(true);
@@ -154,121 +151,43 @@ export default function SettingsView({
   };
 
   return (
-    <div style={{
-      flex: 1,
-      padding: '24px 32px',
-      overflowY: 'auto',
-      backgroundColor: '#0a0e16',
-      display: 'flex',
-      flexDirection: 'column',
-      gap: '20px',
-    }}>
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px' }}>
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <div style={{
-              width: '32px',
-              height: '32px',
-              borderRadius: '8px',
-              backgroundColor: '#161c28',
-              border: '1px solid #243044',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: '#58a6ff',
-            }}>
-              <Settings size={18} />
-            </div>
-            <h1 style={{ fontSize: '18px', fontWeight: '700', color: '#f8fafc', letterSpacing: '-0.01em' }}>
-              Configuración del Runtime de Supervisión
-            </h1>
-          </div>
-          <p style={{ fontSize: '12px', color: '#73849c', marginTop: '6px' }}>
-            Parámetros operativos de PRAXEON 1.0: umbrales cognitivos, backends LLM, políticas de sandbox y resiliencia.
-          </p>
-        </div>
+    <ViewPage maxWidth={900} gap={20}>
+      <ViewHeader
+        title="Ajustes"
+        description="Parámetros del runtime: umbrales cognitivos, motores de modelo, políticas de sandbox y resiliencia."
+        actions={
+          <>
+            <button type="button" onClick={handleReset} className="btn btn-secondary">
+              <RotateCcw size={13} />
+              Restablecer valores
+            </button>
+            <button onClick={handleSave} className="btn btn-primary">
+              <Save size={13} />
+              Guardar cambios
+            </button>
+          </>
+        }
+      />
 
-        {/* Action Buttons */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <button
-            type="button"
-            onClick={handleReset}
-            className="btn btn-secondary"
-            style={{ padding: '7px 12px', fontSize: '12px' }}
-          >
-            <RotateCcw size={13} />
-            Restablecer Valores
-          </button>
-
-          <button
-            onClick={handleSave}
-            className="btn btn-primary"
-            style={{ padding: '7px 16px', fontSize: '12px' }}
-          >
-            <Save size={13} />
-            Guardar Cambios
-          </button>
-        </div>
-      </div>
-
-      {/* Save Toast Notification */}
       {saved && (
-        <div style={{
-          padding: '10px 16px',
-          borderRadius: '8px',
-          backgroundColor: 'rgba(63, 185, 80, 0.15)',
-          border: '1px solid rgba(63, 185, 80, 0.35)',
-          color: '#3fb950',
-          fontSize: '12px',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px',
-        }}>
-          <Check size={16} />
-          <span>Configuración aplicada con éxito al runtime y guardada localmente.</span>
+        <div role="status" style={{ padding: '10px 14px', borderRadius: 'var(--r-ui)', border: '1px solid color-mix(in srgb, var(--ok) 40%, transparent)', color: 'var(--ok)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <Check size={15} />
+          <span>Configuración aplicada al runtime y guardada localmente.</span>
         </div>
       )}
 
-      {/* Settings Navigation Tabs */}
-      <div style={{
-        display: 'flex',
-        borderBottom: '1px solid #1e293b',
-        gap: '4px',
-      }}>
+      <div className="tabs" role="tablist" aria-label="Secciones de ajustes" style={{ borderBottom: '1px solid var(--line)', flexWrap: 'wrap' }}>
         {[
-          { id: 'auth', label: 'Autenticación & Clave Maestra', icon: Key },
-          { id: 'supervisor', label: 'Supervisor Cognitivo & Bucles', icon: Sliders },
-          { id: 'models', label: 'Proveedores LLM & Endpoints', icon: Cpu },
-          { id: 'sandbox', label: 'Sandbox & Aislamiento Físico', icon: Shield },
-          { id: 'circuit', label: 'Circuit Breaker & Resiliencia', icon: Zap },
-        ].map((tab) => {
-          const Icon = tab.icon;
-          const isActive = activeTab === tab.id;
-          return (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                padding: '10px 16px',
-                border: 'none',
-                background: 'none',
-                borderBottom: isActive ? '2px solid #58a6ff' : '2px solid transparent',
-                color: isActive ? '#f8fafc' : '#73849c',
-                fontSize: '12.5px',
-                fontWeight: isActive ? '600' : '400',
-                cursor: 'pointer',
-                transition: 'all 0.15s ease',
-              }}
-            >
-              <Icon size={14} style={{ color: isActive ? '#58a6ff' : '#64748b' }} />
-              {tab.label}
-            </button>
-          );
-        })}
+          { id: 'auth', label: 'Autenticación' },
+          { id: 'supervisor', label: 'Supervisor y bucles' },
+          { id: 'models', label: 'Modelos y endpoints' },
+          { id: 'sandbox', label: 'Sandbox y aislamiento' },
+          { id: 'circuit', label: 'Resiliencia' },
+        ].map((tab) => (
+          <button key={tab.id} type="button" role="tab" aria-selected={activeTab === tab.id} className={activeTab === tab.id ? 'on' : ''} onClick={() => setActiveTab(tab.id)}>
+            {tab.label}
+          </button>
+        ))}
       </div>
 
       {/* Settings Tab Content */}
@@ -276,9 +195,9 @@ export default function SettingsView({
         {/* Tab 0: Autenticación & Clave Maestra */}
         {activeTab === 'auth' && (
           <div style={{
-            backgroundColor: '#121824',
-            borderRadius: '10px',
-            border: '1px solid #1e293b',
+            backgroundColor: 'var(--surface)',
+            borderRadius: '9px',
+            border: '1px solid var(--line)',
             padding: '24px',
             display: 'flex',
             flexDirection: 'column',
@@ -286,12 +205,12 @@ export default function SettingsView({
           }}>
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-                <Key size={16} style={{ color: '#58a6ff' }} />
-                <label style={{ fontSize: '13px', fontWeight: '600', color: '#f8fafc' }}>
-                  Clave Maestra de Acceso (PRAXEON API Key)
+                <Key size={16} style={{ color: 'var(--accent)' }} />
+                <label style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text)' }}>
+                  Clave maestra de acceso (PRAXEON_API_KEY)
                 </label>
               </div>
-              <p style={{ fontSize: '11.5px', color: '#73849c', marginBottom: '14px', lineHeight: '1.5' }}>
+              <p style={{ fontSize: '12.5px', color: 'var(--muted)', marginBottom: '14px', lineHeight: '1.5' }}>
                 Requerida para comunicar la interfaz web con el servidor cuando el entorno se ejecuta en perfil de producción (<code>PRAXEON_PROFILE=production</code>) o tiene la variable de entorno <code>PRAXEON_API_KEY</code> configurada.
               </p>
 
@@ -303,14 +222,14 @@ export default function SettingsView({
                     setPraxeonApiKey(e.target.value);
                     setAuthStatus(null);
                   }}
-                  placeholder="Introduce tu PRAXEON_API_KEY..."
+                  placeholder="Introduce tu PRAXEON_API_KEY…"
                   style={{
                     width: '100%',
                     padding: '10px 42px 10px 14px',
-                    borderRadius: '6px',
-                    backgroundColor: '#0c111a',
-                    border: '1px solid #1e293b',
-                    color: '#f8fafc',
+                    borderRadius: '9px',
+                    backgroundColor: 'var(--bg)',
+                    border: '1px solid var(--line)',
+                    color: 'var(--text)',
                     fontSize: '12.5px',
                     fontFamily: 'var(--font-mono)',
                     outline: 'none',
@@ -325,7 +244,7 @@ export default function SettingsView({
                     right: '12px',
                     background: 'none',
                     border: 'none',
-                    color: '#64748b',
+                    color: 'var(--muted)',
                     cursor: 'pointer',
                     padding: '2px',
                     display: 'flex',
@@ -338,11 +257,11 @@ export default function SettingsView({
               {authStatus && (
                 <div style={{
                   padding: '10px 14px',
-                  borderRadius: '6px',
-                  backgroundColor: authStatus.success ? 'rgba(63, 185, 80, 0.12)' : 'rgba(248, 81, 73, 0.12)',
-                  border: `1px solid ${authStatus.success ? 'rgba(63, 185, 80, 0.3)' : 'rgba(248, 81, 73, 0.3)'}`,
-                  color: authStatus.success ? '#3fb950' : '#f85149',
-                  fontSize: '12px',
+                  borderRadius: '9px',
+                  backgroundColor: authStatus.success ? 'color-mix(in srgb, var(--ok) 12%, transparent)' : 'color-mix(in srgb, var(--bad) 12%, transparent)',
+                  border: `1px solid ${authStatus.success ? 'color-mix(in srgb, var(--ok) 30%, transparent)' : 'color-mix(in srgb, var(--bad) 30%, transparent)'}`,
+                  color: authStatus.success ? 'var(--ok)' : 'var(--bad)',
+                  fontSize: '12.5px',
                   display: 'flex',
                   alignItems: 'center',
                   gap: '8px',
@@ -359,10 +278,10 @@ export default function SettingsView({
                   onClick={handleTestAuth}
                   disabled={testingAuth || !praxeonApiKey.trim()}
                   className="btn btn-secondary"
-                  style={{ padding: '8px 14px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}
+                  style={{ padding: '8px 14px', fontSize: '12.5px', display: 'flex', alignItems: 'center', gap: '6px' }}
                 >
                   <Key size={13} />
-                  {testingAuth ? 'Comprobando...' : 'Probar Conexión'}
+                  {testingAuth ? 'Comprobando...' : 'Probar la conexión'}
                 </button>
 
                 {praxeonApiKey && (
@@ -370,29 +289,29 @@ export default function SettingsView({
                     type="button"
                     onClick={handleClearAuth}
                     className="btn btn-secondary"
-                    style={{ padding: '8px 14px', fontSize: '12px', color: '#f85149', display: 'flex', alignItems: 'center', gap: '6px' }}
+                    style={{ padding: '8px 14px', fontSize: '12.5px', color: 'var(--bad)', display: 'flex', alignItems: 'center', gap: '6px' }}
                   >
                     <Trash2 size={13} />
-                    Limpiar Credencial
+                    Borrar la credencial
                   </button>
                 )}
               </div>
             </div>
 
             <div style={{
-              borderTop: '1px solid #1a2333',
+              borderTop: '1px solid var(--line)',
               paddingTop: '18px',
               display: 'flex',
               flexDirection: 'column',
               gap: '10px',
             }}>
-              <h3 style={{ fontSize: '12px', fontWeight: '600', color: '#94a3b8', margin: 0 }}>
-                Protocolo de Seguridad y Streaming
+              <h3 style={{ fontSize: '12.5px', fontWeight: '600', color: 'var(--text)', margin: 0 }}>
+                Seguridad y transmisión en tiempo real
               </h3>
-              <ul style={{ fontSize: '11.5px', color: '#64748b', margin: 0, paddingLeft: '18px', lineHeight: '1.6' }}>
-                <li><strong>Inyección Automática:</strong> Las llamadas REST envían la clave en las cabeceras <code>X-API-Key</code> y <code>Authorization: Bearer</code>.</li>
-                <li><strong>Handshake Efímero en WebSocket:</strong> La SPA solicita tokens de streaming efímeros de un solo uso (<code>/v1/sessions/:id/ws-ticket</code>) con TTL de 60s, evitando la exposición de claves maestras en URLs de WebSockets y registros de proxies.</li>
-                <li><strong>Almacenamiento Local Seguro:</strong> La clave se guarda solo en memoria y en <code>sessionStorage</code> (se borra al cerrar la ventana); no se escribe en disco ni en <code>localStorage</code>.</li>
+              <ul style={{ fontSize: '12.5px', color: 'var(--muted)', margin: 0, paddingLeft: '18px', lineHeight: '1.6' }}>
+                <li><strong>Inyección automática:</strong> Las llamadas REST envían la clave en las cabeceras <code>X-API-Key</code> y <code>Authorization: Bearer</code>.</li>
+                <li><strong>Ticket efímero en WebSocket:</strong> La SPA solicita tokens de streaming efímeros de un solo uso (<code>/v1/sessions/:id/ws-ticket</code>) con TTL de 60s, evitando la exposición de claves maestras en URLs de WebSockets y registros de proxies.</li>
+                <li><strong>Almacenamiento local seguro:</strong> La clave se guarda solo en memoria y en <code>sessionStorage</code> (se borra al cerrar la ventana); no se escribe en disco ni en <code>localStorage</code>.</li>
               </ul>
             </div>
           </div>
@@ -401,34 +320,34 @@ export default function SettingsView({
         {/* Tab 1: Supervisor Cognitivo */}
         {activeTab === 'supervisor' && (
           <div style={{
-            backgroundColor: '#121824',
-            borderRadius: '10px',
-            border: '1px solid #1e293b',
+            backgroundColor: 'var(--surface)',
+            borderRadius: '9px',
+            border: '1px solid var(--line)',
             padding: '24px',
             display: 'flex',
             flexDirection: 'column',
             gap: '22px',
           }}>
             <div>
-              <label style={{ fontSize: '13px', fontWeight: '600', color: '#f8fafc', display: 'block', marginBottom: '6px' }}>
-                Supervisor Cognitivo Predeterminado
+              <label style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text)', display: 'block', marginBottom: '6px' }}>
+                Supervisor cognitivo predeterminado
               </label>
-              <p style={{ fontSize: '11.5px', color: '#73849c', marginBottom: '10px' }}>
+              <p style={{ fontSize: '12.5px', color: 'var(--muted)', marginBottom: '10px' }}>
                 Define qué motor ejecuta la evaluación fast-path de propuestas y decisiones de replanificación.
               </p>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <div
                   onClick={() => handleChange('defaultSupervisor', 'laya')}
                   style={{
-                    backgroundColor: settings.defaultSupervisor === 'laya' ? '#162234' : '#0c111a',
-                    border: `1px solid ${settings.defaultSupervisor === 'laya' ? '#58a6ff' : '#1e293b'}`,
-                    borderRadius: '8px',
+                    backgroundColor: settings.defaultSupervisor === 'laya' ? 'var(--line)' : 'var(--bg)',
+                    border: `1px solid ${settings.defaultSupervisor === 'laya' ? 'var(--accent)' : 'var(--line)'}`,
+                    borderRadius: '9px',
                     padding: '14px',
                     cursor: 'pointer',
                   }}
                 >
-                  <div style={{ fontSize: '13px', fontWeight: '700', color: '#f8fafc' }}>LAYA (System-1)</div>
-                  <div style={{ fontSize: '11px', color: '#8b949e', marginTop: '4px' }}>
+                  <div style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text)' }}>LAYA (sistema 1)</div>
+                  <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '4px' }}>
                     Fast-path local ultra rápido (&lt;15ms), detector de bucles de invariantes n-gram y groundedness sintáctico.
                   </div>
                 </div>
@@ -436,15 +355,15 @@ export default function SettingsView({
                 <div
                   onClick={() => handleChange('defaultSupervisor', 'typesafe')}
                   style={{
-                    backgroundColor: settings.defaultSupervisor === 'typesafe' ? '#162234' : '#0c111a',
-                    border: `1px solid ${settings.defaultSupervisor === 'typesafe' ? '#58a6ff' : '#1e293b'}`,
-                    borderRadius: '8px',
+                    backgroundColor: settings.defaultSupervisor === 'typesafe' ? 'var(--line)' : 'var(--bg)',
+                    border: `1px solid ${settings.defaultSupervisor === 'typesafe' ? 'var(--accent)' : 'var(--line)'}`,
+                    borderRadius: '9px',
                     padding: '14px',
                     cursor: 'pointer',
                   }}
                 >
-                  <div style={{ fontSize: '13px', fontWeight: '700', color: '#f8fafc' }}>TypeSafe AI (System-2)</div>
-                  <div style={{ fontSize: '11px', color: '#8b949e', marginTop: '4px' }}>
+                  <div style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text)' }}>TypeSafe AI (sistema 2)</div>
+                  <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '4px' }}>
                     Escalación semántica profunda, diagnóstico de trayectorias divergentes y corte de alucinaciones.
                   </div>
                 </div>
@@ -454,14 +373,14 @@ export default function SettingsView({
             {/* Loop Detection Threshold Slider */}
             <div>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
-                <label style={{ fontSize: '12.5px', fontWeight: '600', color: '#f8fafc' }}>
-                  Umbral de Detección de Bucles Cognitivos (Loop Threshold)
+                <label style={{ fontSize: '12.5px', fontWeight: '600', color: 'var(--text)' }}>
+                  Umbral de detección de bucles cognitivos
                 </label>
-                <span style={{ fontSize: '13px', fontWeight: '700', color: '#58a6ff', fontFamily: 'var(--font-mono)' }}>
+                <span style={{ fontSize: '13px', fontWeight: '700', color: 'var(--accent)', fontFamily: 'var(--font-mono)' }}>
                   {settings.loopThreshold}
                 </span>
               </div>
-              <p style={{ fontSize: '11.5px', color: '#73849c', marginBottom: '8px' }}>
+              <p style={{ fontSize: '12.5px', color: 'var(--muted)', marginBottom: '8px' }}>
                 Si la probabilidad de repetición o entropía de invariantes supera este umbral, el supervisor interviene automáticamente cortando el bucle con REPLAN.
               </p>
               <input
@@ -471,21 +390,21 @@ export default function SettingsView({
                 step="0.05"
                 value={settings.loopThreshold}
                 onChange={(e) => handleChange('loopThreshold', parseFloat(e.target.value))}
-                style={{ width: '100%', accentColor: '#388bfd', cursor: 'pointer' }}
+                style={{ width: '100%', accentColor: 'var(--accent)', cursor: 'pointer' }}
               />
             </div>
 
             {/* Min Grounded Threshold Slider */}
             <div>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
-                <label style={{ fontSize: '12.5px', fontWeight: '600', color: '#f8fafc' }}>
-                  Umbral Mínimo de Fundamentación (Min Grounded Threshold)
+                <label style={{ fontSize: '12.5px', fontWeight: '600', color: 'var(--text)' }}>
+                  Umbral mínimo de fundamentación
                 </label>
-                <span style={{ fontSize: '13px', fontWeight: '700', color: '#3fb950', fontFamily: 'var(--font-mono)' }}>
+                <span style={{ fontSize: '13px', fontWeight: '700', color: 'var(--ok)', fontFamily: 'var(--font-mono)' }}>
                   {settings.minGroundedThreshold}
                 </span>
               </div>
-              <p style={{ fontSize: '11.5px', color: '#73849c', marginBottom: '8px' }}>
+              <p style={{ fontSize: '12.5px', color: 'var(--muted)', marginBottom: '8px' }}>
                 Acciones dirigidas a archivos o rutas inexistentes sin observación previa se consideran alucinaciones y reciben veto determinista si su score es inferior a este valor.
               </p>
               <input
@@ -495,14 +414,14 @@ export default function SettingsView({
                 step="0.05"
                 value={settings.minGroundedThreshold}
                 onChange={(e) => handleChange('minGroundedThreshold', parseFloat(e.target.value))}
-                style={{ width: '100%', accentColor: '#3fb950', cursor: 'pointer' }}
+                style={{ width: '100%', accentColor: 'var(--ok)', cursor: 'pointer' }}
               />
             </div>
 
             {/* Chunk Size */}
             <div>
-              <label style={{ fontSize: '12.5px', fontWeight: '600', color: '#f8fafc', display: 'block', marginBottom: '6px' }}>
-                Tamaño de Bloque de Candidatos (Evaluation Chunk Size)
+              <label style={{ fontSize: '12.5px', fontWeight: '600', color: 'var(--text)', display: 'block', marginBottom: '6px' }}>
+                Tamaño del bloque de candidatos
               </label>
               <select
                 value={settings.evaluationChunkSize}
@@ -510,15 +429,15 @@ export default function SettingsView({
                 style={{
                   width: '180px',
                   padding: '8px 12px',
-                  borderRadius: '6px',
-                  backgroundColor: '#0c111a',
-                  border: '1px solid #1e293b',
-                  color: '#f8fafc',
-                  fontSize: '12px',
+                  borderRadius: '9px',
+                  backgroundColor: 'var(--bg)',
+                  border: '1px solid var(--line)',
+                  color: 'var(--text)',
+                  fontSize: '12.5px',
                   outline: 'none',
                 }}
               >
-                <option value={1}>1 candidato (Paso a paso estricto)</option>
+                <option value={1}>1 candidato (paso a paso estricto)</option>
                 <option value={2}>2 candidatos por bloque</option>
                 <option value={3}>3 candidatos (Recomendado)</option>
                 <option value={5}>5 candidatos (Mayor paralelismo)</option>
@@ -530,17 +449,17 @@ export default function SettingsView({
         {/* Tab 2: Proveedores LLM & Endpoints */}
         {activeTab === 'models' && (
           <div style={{
-            backgroundColor: '#121824',
-            borderRadius: '10px',
-            border: '1px solid #1e293b',
+            backgroundColor: 'var(--surface)',
+            borderRadius: '9px',
+            border: '1px solid var(--line)',
             padding: '24px',
             display: 'flex',
             flexDirection: 'column',
             gap: '20px',
           }}>
             <div>
-              <label style={{ fontSize: '12.5px', fontWeight: '600', color: '#f8fafc', display: 'block', marginBottom: '6px' }}>
-                Proveedor de Inferencia LLM Predeterminado
+              <label style={{ fontSize: '12.5px', fontWeight: '600', color: 'var(--text)', display: 'block', marginBottom: '6px' }}>
+                Proveedor de modelo predeterminado
               </label>
               <select
                 value={settings.defaultProvider}
@@ -548,41 +467,41 @@ export default function SettingsView({
                 style={{
                   width: '100%',
                   padding: '9px 12px',
-                  borderRadius: '6px',
-                  backgroundColor: '#0c111a',
-                  border: '1px solid #1e293b',
-                  color: '#f8fafc',
-                  fontSize: '12px',
+                  borderRadius: '9px',
+                  backgroundColor: 'var(--bg)',
+                  border: '1px solid var(--line)',
+                  color: 'var(--text)',
+                  fontSize: '12.5px',
                   outline: 'none',
                 }}
               >
-                <option value="ollama">Ollama (Servidor Local Seguro - Zero Data Egress)</option>
-                <option value="groq">Groq Cloud (LPU Ultra-Fast &gt;200 t/s)</option>
-                <option value="simulator">Simulador Determinista PRAXEON (Pruebas reproducibles)</option>
+                <option value="ollama">Ollama (servidor local, sin salida de datos)</option>
+                <option value="groq">Groq Cloud (muy rápido, más de 200 t/s)</option>
+                <option value="simulator">Simulador determinista de PRAXEON (pruebas reproducibles)</option>
                 <option value="openai">OpenAI API (GPT-4o / GPT-4o-mini)</option>
                 <option value="gemini">Google Gemini API</option>
-                <option value="anthropic">Claude (Anthropic API)</option>
+                <option value="anthropic">Claude (API de Anthropic)</option>
                 <option value="claude_cli">Claude CLI (suscripción)</option>
               </select>
             </div>
 
             <div>
-              <label style={{ fontSize: '12.5px', fontWeight: '600', color: '#f8fafc', display: 'block', marginBottom: '6px' }}>
-                Identificador de Modelo Predeterminado
+              <label style={{ fontSize: '12.5px', fontWeight: '600', color: 'var(--text)', display: 'block', marginBottom: '6px' }}>
+                Modelo predeterminado
               </label>
               <input
                 type="text"
                 value={settings.defaultModel}
                 onChange={(e) => handleChange('defaultModel', e.target.value)}
-                placeholder="Ej: qwen2.5-coder:7b, llama-3.3-70b-versatile, gpt-4o..."
+                placeholder="Por ejemplo: qwen2.5-coder:7b, llama-3.3-70b-versatile, gpt-4o"
                 style={{
                   width: '100%',
                   padding: '9px 12px',
-                  borderRadius: '6px',
-                  backgroundColor: '#0c111a',
-                  border: '1px solid #1e293b',
-                  color: '#f8fafc',
-                  fontSize: '12px',
+                  borderRadius: '9px',
+                  backgroundColor: 'var(--bg)',
+                  border: '1px solid var(--line)',
+                  color: 'var(--text)',
+                  fontSize: '12.5px',
                   fontFamily: 'var(--font-mono)',
                   outline: 'none',
                 }}
@@ -590,8 +509,8 @@ export default function SettingsView({
             </div>
 
             <div>
-              <label style={{ fontSize: '12.5px', fontWeight: '600', color: '#f8fafc', display: 'block', marginBottom: '6px' }}>
-                URL Base de Ollama Local
+              <label style={{ fontSize: '12.5px', fontWeight: '600', color: 'var(--text)', display: 'block', marginBottom: '6px' }}>
+                URL base de Ollama local
               </label>
               <input
                 type="text"
@@ -601,26 +520,26 @@ export default function SettingsView({
                 style={{
                   width: '100%',
                   padding: '9px 12px',
-                  borderRadius: '6px',
-                  backgroundColor: '#0c111a',
-                  border: '1px solid #1e293b',
-                  color: '#f8fafc',
-                  fontSize: '12px',
+                  borderRadius: '9px',
+                  backgroundColor: 'var(--bg)',
+                  border: '1px solid var(--line)',
+                  color: 'var(--text)',
+                  fontSize: '12.5px',
                   fontFamily: 'var(--font-mono)',
                   outline: 'none',
                 }}
               />
             </div>
 
-            <div style={{ borderTop: '1px solid #1a2333', paddingTop: '16px' }}>
-              <h3 style={{ fontSize: '13px', fontWeight: '600', color: '#cbd5e1', marginBottom: '12px' }}>
-                Claves de API Cloud (Opcionales para proveedores externos)
+            <div style={{ borderTop: '1px solid var(--line)', paddingTop: '16px' }}>
+              <h3 style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text)', marginBottom: '12px' }}>
+                Claves de API en la nube (opcionales para proveedores externos)
               </h3>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 <div>
-                  <label style={{ fontSize: '11.5px', color: '#8b949e', display: 'block', marginBottom: '4px' }}>
-                    Groq API Key (gsk_...)
+                  <label style={{ fontSize: '12.5px', color: 'var(--muted)', display: 'block', marginBottom: '4px' }}>
+                    Clave de API de Groq (gsk_…)
                   </label>
                   <input
                     type="password"
@@ -630,11 +549,11 @@ export default function SettingsView({
                     style={{
                       width: '100%',
                       padding: '8px 12px',
-                      borderRadius: '6px',
-                      backgroundColor: '#0c111a',
-                      border: '1px solid #1e293b',
-                      color: '#f8fafc',
-                      fontSize: '12px',
+                      borderRadius: '9px',
+                      backgroundColor: 'var(--bg)',
+                      border: '1px solid var(--line)',
+                      color: 'var(--text)',
+                      fontSize: '12.5px',
                       fontFamily: 'var(--font-mono)',
                       outline: 'none',
                     }}
@@ -642,8 +561,8 @@ export default function SettingsView({
                 </div>
 
                 <div>
-                  <label style={{ fontSize: '11.5px', color: '#8b949e', display: 'block', marginBottom: '4px' }}>
-                    TypeSafe AI API Key
+                  <label style={{ fontSize: '12.5px', color: 'var(--muted)', display: 'block', marginBottom: '4px' }}>
+                    Clave de API de TypeSafe AI
                   </label>
                   <input
                     type="password"
@@ -653,11 +572,11 @@ export default function SettingsView({
                     style={{
                       width: '100%',
                       padding: '8px 12px',
-                      borderRadius: '6px',
-                      backgroundColor: '#0c111a',
-                      border: '1px solid #1e293b',
-                      color: '#f8fafc',
-                      fontSize: '12px',
+                      borderRadius: '9px',
+                      backgroundColor: 'var(--bg)',
+                      border: '1px solid var(--line)',
+                      color: 'var(--text)',
+                      fontSize: '12.5px',
                       fontFamily: 'var(--font-mono)',
                       outline: 'none',
                     }}
@@ -671,17 +590,17 @@ export default function SettingsView({
         {/* Tab 3: Sandbox & Aislamiento */}
         {activeTab === 'sandbox' && (
           <div style={{
-            backgroundColor: '#121824',
-            borderRadius: '10px',
-            border: '1px solid #1e293b',
+            backgroundColor: 'var(--surface)',
+            borderRadius: '9px',
+            border: '1px solid var(--line)',
             padding: '24px',
             display: 'flex',
             flexDirection: 'column',
             gap: '20px',
           }}>
             <div>
-              <label style={{ fontSize: '12.5px', fontWeight: '600', color: '#f8fafc', display: 'block', marginBottom: '6px' }}>
-                Modo de Confinamiento de Sandbox Predeterminado
+              <label style={{ fontSize: '12.5px', fontWeight: '600', color: 'var(--text)', display: 'block', marginBottom: '6px' }}>
+                Modo de confinamiento predeterminado
               </label>
               <select
                 value={settings.defaultExecutionMode}
@@ -689,28 +608,28 @@ export default function SettingsView({
                 style={{
                   width: '100%',
                   padding: '9px 12px',
-                  borderRadius: '6px',
-                  backgroundColor: '#0c111a',
-                  border: '1px solid #1e293b',
-                  color: '#f8fafc',
-                  fontSize: '12px',
+                  borderRadius: '9px',
+                  backgroundColor: 'var(--bg)',
+                  border: '1px solid var(--line)',
+                  color: 'var(--text)',
+                  fontSize: '12.5px',
                   outline: 'none',
                 }}
               >
-                <option value="local_restricted">local_restricted - Espacio Confinado (Recomendado)</option>
-                <option value="container">container - Contenedor Aislado</option>
-                <option value="full_access">full_access - Direct Host (Requiere confirmación explícita)</option>
+                <option value="local_restricted">local_restricted: espacio confinado (recomendado)</option>
+                <option value="container">container: contenedor aislado</option>
+                <option value="full_access">full_access: acceso directo al host (requiere confirmación explícita)</option>
               </select>
             </div>
 
             <div>
-              <label style={{ fontSize: '12.5px', fontWeight: '600', color: '#f8fafc', display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+              <label style={{ fontSize: '12.5px', fontWeight: '600', color: 'var(--text)', display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
                 <span>Workspace del proyecto</span>
-                <span style={{ fontSize: '11px', color: '#58a6ff' }}>Confinamiento de ruta física</span>
+                <span style={{ fontSize: '11px', color: 'var(--accent)' }}>Confinamiento de ruta física</span>
               </label>
               <WorkspaceField global />
-              <p style={{ fontSize: '11px', color: '#73849c', marginTop: '4px' }}>
-                Carpeta sobre la que trabajan todas las tareas nuevas: el sandbox y el supervisor solo permiten operar dentro de ella. Se guarda en el servidor y también puedes cambiarla desde la cabecera. Cada tarea puede usar otra carpeta si lo necesita.
+              <p style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '4px' }}>
+                Carpeta sobre la que trabajan todas las tareas nuevas: el sandbox y el supervisor solo permiten operar dentro de ella. Se guarda en el servidor y también puedes cambiarla desde el selector de workspace del riel de navegación. Cada tarea puede usar otra carpeta si lo necesita.
               </p>
             </div>
 
@@ -719,15 +638,15 @@ export default function SettingsView({
               alignItems: 'center',
               justifyContent: 'space-between',
               padding: '12px 14px',
-              borderRadius: '8px',
-              backgroundColor: '#0c111a',
-              border: '1px solid #1a2333',
+              borderRadius: '9px',
+              backgroundColor: 'var(--bg)',
+              border: '1px solid var(--line)',
             }}>
               <div>
-                <div style={{ fontSize: '12.5px', fontWeight: '600', color: '#f8fafc' }}>
-                  Confirmación Obligatoria para Modo Direct Host (Full Access)
+                <div style={{ fontSize: '12.5px', fontWeight: '600', color: 'var(--text)' }}>
+                  Confirmación obligatoria para el acceso directo al host (Full Access)
                 </div>
-                <div style={{ fontSize: '11px', color: '#73849c', marginTop: '2px' }}>
+                <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '2px' }}>
                   Exige confirmación criptográfica del operador antes de permitir cualquier mutación sin sandbox.
                 </div>
               </div>
@@ -735,14 +654,14 @@ export default function SettingsView({
                 type="checkbox"
                 checked={settings.requireConfirmationForFullAccess}
                 onChange={(e) => handleChange('requireConfirmationForFullAccess', e.target.checked)}
-                style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#388bfd' }}
+                style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: 'var(--accent)' }}
               />
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
               <div>
-                <label style={{ fontSize: '12.5px', fontWeight: '600', color: '#f8fafc', display: 'block', marginBottom: '6px' }}>
-                  Límite Máximo de Pasos por Misión
+                <label style={{ fontSize: '12.5px', fontWeight: '600', color: 'var(--text)', display: 'block', marginBottom: '6px' }}>
+                  Límite máximo de pasos por misión
                 </label>
                 <input
                   type="number"
@@ -753,19 +672,19 @@ export default function SettingsView({
                   style={{
                     width: '100%',
                     padding: '8px 12px',
-                    borderRadius: '6px',
-                    backgroundColor: '#0c111a',
-                    border: '1px solid #1e293b',
-                    color: '#f8fafc',
-                    fontSize: '12px',
+                    borderRadius: '9px',
+                    backgroundColor: 'var(--bg)',
+                    border: '1px solid var(--line)',
+                    color: 'var(--text)',
+                    fontSize: '12.5px',
                     outline: 'none',
                   }}
                 />
               </div>
 
               <div>
-                <label style={{ fontSize: '12.5px', fontWeight: '600', color: '#f8fafc', display: 'block', marginBottom: '6px' }}>
-                  Retardo entre Pasos (ms)
+                <label style={{ fontSize: '12.5px', fontWeight: '600', color: 'var(--text)', display: 'block', marginBottom: '6px' }}>
+                  Retardo entre pasos (ms)
                 </label>
                 <input
                   type="number"
@@ -777,11 +696,11 @@ export default function SettingsView({
                   style={{
                     width: '100%',
                     padding: '8px 12px',
-                    borderRadius: '6px',
-                    backgroundColor: '#0c111a',
-                    border: '1px solid #1e293b',
-                    color: '#f8fafc',
-                    fontSize: '12px',
+                    borderRadius: '9px',
+                    backgroundColor: 'var(--bg)',
+                    border: '1px solid var(--line)',
+                    color: 'var(--text)',
+                    fontSize: '12.5px',
                     outline: 'none',
                   }}
                 />
@@ -793,9 +712,9 @@ export default function SettingsView({
         {/* Tab 4: Circuit Breaker & Resiliencia */}
         {activeTab === 'circuit' && (
           <div style={{
-            backgroundColor: '#121824',
-            borderRadius: '10px',
-            border: '1px solid #1e293b',
+            backgroundColor: 'var(--surface)',
+            borderRadius: '9px',
+            border: '1px solid var(--line)',
             padding: '24px',
             display: 'flex',
             flexDirection: 'column',
@@ -806,15 +725,15 @@ export default function SettingsView({
               alignItems: 'center',
               justifyContent: 'space-between',
               padding: '12px 14px',
-              borderRadius: '8px',
-              backgroundColor: '#0c111a',
-              border: '1px solid #1a2333',
+              borderRadius: '9px',
+              backgroundColor: 'var(--bg)',
+              border: '1px solid var(--line)',
             }}>
               <div>
-                <div style={{ fontSize: '12.5px', fontWeight: '600', color: '#f8fafc' }}>
-                  Modo Fail-Closed (Seguridad por Defecto)
+                <div style={{ fontSize: '12.5px', fontWeight: '600', color: 'var(--text)' }}>
+                  Modo de fallo cerrado (seguridad por defecto)
                 </div>
-                <div style={{ fontSize: '11px', color: '#73849c', marginTop: '2px' }}>
+                <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '2px' }}>
                   Si el evaluador semántico o la red fallan, bloquear incondicionalmente cualquier acción que mute el estado.
                 </div>
               </div>
@@ -822,14 +741,14 @@ export default function SettingsView({
                 type="checkbox"
                 checked={settings.failClosed}
                 onChange={(e) => handleChange('failClosed', e.target.checked)}
-                style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#f85149' }}
+                style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: 'var(--bad)' }}
               />
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
               <div>
-                <label style={{ fontSize: '12.5px', fontWeight: '600', color: '#f8fafc', display: 'block', marginBottom: '6px' }}>
-                  TTL de Capability Token (segundos)
+                <label style={{ fontSize: '12.5px', fontWeight: '600', color: 'var(--text)', display: 'block', marginBottom: '6px' }}>
+                  Vida del token de capacidad (segundos)
                 </label>
                 <input
                   type="number"
@@ -840,22 +759,22 @@ export default function SettingsView({
                   style={{
                     width: '100%',
                     padding: '8px 12px',
-                    borderRadius: '6px',
-                    backgroundColor: '#0c111a',
-                    border: '1px solid #1e293b',
-                    color: '#f8fafc',
-                    fontSize: '12px',
+                    borderRadius: '9px',
+                    backgroundColor: 'var(--bg)',
+                    border: '1px solid var(--line)',
+                    color: 'var(--text)',
+                    fontSize: '12.5px',
                     outline: 'none',
                   }}
                 />
-                <span style={{ fontSize: '11px', color: '#64748b', marginTop: '4px', display: 'block' }}>
-                  Expiración automática del nonce HMAC (def: 300s).
+                <span style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '4px', display: 'block' }}>
+                  Expiración automática del nonce HMAC (por defecto: 300 s).
                 </span>
               </div>
 
               <div>
-                <label style={{ fontSize: '12.5px', fontWeight: '600', color: '#f8fafc', display: 'block', marginBottom: '6px' }}>
-                  Fallos Consecutivos para Abrir Circuito
+                <label style={{ fontSize: '12.5px', fontWeight: '600', color: 'var(--text)', display: 'block', marginBottom: '6px' }}>
+                  Fallos consecutivos para abrir el circuito
                 </label>
                 <input
                   type="number"
@@ -866,22 +785,22 @@ export default function SettingsView({
                   style={{
                     width: '100%',
                     padding: '8px 12px',
-                    borderRadius: '6px',
-                    backgroundColor: '#0c111a',
-                    border: '1px solid #1e293b',
-                    color: '#f8fafc',
-                    fontSize: '12px',
+                    borderRadius: '9px',
+                    backgroundColor: 'var(--bg)',
+                    border: '1px solid var(--line)',
+                    color: 'var(--text)',
+                    fontSize: '12.5px',
                     outline: 'none',
                   }}
                 />
-                <span style={{ fontSize: '11px', color: '#64748b', marginTop: '4px', display: 'block' }}>
-                  Umbral antes de activar circuito de recuperación (def: 3).
+                <span style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '4px', display: 'block' }}>
+                  Umbral antes de activar circuito de recuperación (por defecto: 3).
                 </span>
               </div>
             </div>
           </div>
         )}
       </form>
-    </div>
+    </ViewPage>
   );
 }

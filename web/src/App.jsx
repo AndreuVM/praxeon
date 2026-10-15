@@ -1,14 +1,22 @@
-import React, { useState, useEffect, useRef, useCallback, Suspense } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback, Suspense } from 'react';
+import {
+  Activity, FolderOpen,
+  Plus, Map as MapIcon, ScrollText, History, FlaskConical, SquarePen, KeyRound, Pause, Play, Square,
+} from 'lucide-react';
 import Header from './components/Header';
-import TopNav from './components/TopNav';
-import SessionKPIs from './components/SessionKPIs';
+import Rail, { NAV_ITEMS } from './components/Rail';
+import Drawer from './components/Drawer';
+import Conversation from './components/Conversation';
+import CommandPalette from './components/CommandPalette';
+import StepDetail from './components/StepDetail';
+import EventsPanel from './components/EventsPanel';
 import DecisionTree from './components/DecisionTree';
-import ConsolePanel from './components/ConsolePanel';
-import DecisionInspector from './components/DecisionInspector';
 import ProposeActionModal from './components/ProposeActionModal';
 import SessionsModal from './components/SessionsModal';
 import UnauthorizedModal from './components/UnauthorizedModal';
+import DialogsHost from './components/Dialogs';
 import WorkspacePicker from './components/workspace/WorkspacePicker';
+import WorkspaceFlyout from './components/workspace/WorkspaceFlyout';
 import useWorkspace from './components/workspace/useWorkspace';
 import { loadChatConfig, loadChats, persistChatConfig, persistChats } from './utils/chatStore';
 import { rebuildChatFromSession } from './utils/chatFromEvents';
@@ -67,7 +75,7 @@ export default function App() {
     {
       time: new Date().toTimeString().split(' ')[0],
       level: 'INFO',
-      message: 'PRAXEON Runtime 1.0 inicializado. Listo para recibir prompt y modelos.',
+      message: 'Runtime de PRAXEON inicializado. Listo para recibir una misión.',
     },
   ]);
   const [events, setEvents] = useState([]);
@@ -81,8 +89,31 @@ export default function App() {
   const [isSessionsOpen, setIsSessionsOpen] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isWorkspaceOpen, setIsWorkspaceOpen] = useState(false);
+  const [isPaletteOpen, setIsPaletteOpen] = useState(false);
+  const [isWsFlyoutOpen, setIsWsFlyoutOpen] = useState(false);
   const { workspace, choose: chooseWorkspace, forget: forgetWorkspace } = useWorkspace();
-  const [inspectorTab, setInspectorTab] = useState('chat');
+  // Cajón de detalle: null (cerrado) | 'map' | 'step' | 'events'
+  const [drawerTab, setDrawerTab] = useState(null);
+  const [drawerWide, setDrawerWide] = useState(false);
+  const [narrow, setNarrow] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 980px)').matches);
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 980px)');
+    const onChange = (e) => setNarrow(e.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+
+  // Ctrl K / ⌘ K abre la paleta de comandos
+  useEffect(() => {
+    const onKey = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setIsPaletteOpen((v) => !v);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
   const maxSeqRef = useRef(0);
 
   // Escuchar eventos globales de 401/403 para abrir modal de autenticación reactivo
@@ -188,46 +219,46 @@ export default function App() {
 
           let logMsg = `[${evType}]`;
           if (evType === 'session.started') {
-            logMsg = `Session #${ev.session_id} started (Agent: ${ev.payload?.agent_name || 'CodingAgent'})`;
+            logMsg = `Sesión #${ev.session_id} iniciada (agente: ${ev.payload?.agent_name || 'CodingAgent'})`;
           } else if (evType === 'goal.created') {
-            logMsg = `Mission goal: ${ev.payload?.goal}`;
+            logMsg = `Objetivo de la misión: ${ev.payload?.goal}`;
           } else if (evType === 'action.proposed') {
-            logMsg = `Step ${ev.payload?.step || 1}: Proposing action '${ev.payload?.tool}' (${ev.payload?.operation || ''})`;
+            logMsg = `Paso ${ev.payload?.step || 1}: propone la acción «${ev.payload?.tool}» (${ev.payload?.operation || ''})`;
           } else if (evType === 'operation.classified') {
-            logMsg = `Operation classified: ${ev.payload?.category?.toUpperCase()} (Risk: ${ev.payload?.risk_level?.toUpperCase()}, Conf: ${Math.round((ev.payload?.confidence || 0) * 100)}%)`;
+            logMsg = `Operación clasificada: ${ev.payload?.category?.toUpperCase()} (riesgo: ${ev.payload?.risk_level?.toUpperCase()}, confianza: ${Math.round((ev.payload?.confidence || 0) * 100)}%)`;
           } else if (evType === 'evidence.evaluated') {
-            logMsg = `Evaluated ${ev.payload?.evidence_count || 0} empirical claims (Grounding score: ${Math.round((ev.payload?.grounding_score || 0.85) * 100)}%)`;
+            logMsg = `Evaluadas ${ev.payload?.evidence_count || 0} afirmaciones empíricas (fundamentación: ${Math.round((ev.payload?.grounding_score || 0.85) * 100)}%)`;
           } else if (evType === 'risk.assessed') {
-            logMsg = `Risk assessed: ${ev.payload?.level || 'LOW'} (Score: ${ev.payload?.score || 0.15})`;
+            logMsg = `Riesgo evaluado: ${ev.payload?.level || 'LOW'} (puntuación: ${ev.payload?.score || 0.15})`;
           } else if (evType === 'provider.evaluated') {
-            logMsg = `Semantic evaluation (${ev.payload?.provider_name}): Score ${ev.payload?.score} -> ${ev.payload?.verdict}`;
+            logMsg = `Evaluación semántica (${ev.payload?.provider_name}): puntuación ${ev.payload?.score} -> ${ev.payload?.verdict}`;
           } else if (evType === 'policy.decided') {
-            logMsg = `Policy decided: ${ev.payload?.status} (${ev.payload?.reason_code || 'STANDARD_POLICY'})`;
+            logMsg = `Política decidida: ${ev.payload?.status} (${ev.payload?.reason_code || 'STANDARD_POLICY'})`;
           } else if (evType === 'approval.requested') {
-            logMsg = `Policy requires human confirmation (Risk: ${ev.payload?.risk_level || 'HIGH'})`;
+            logMsg = `La política requiere confirmación humana (riesgo: ${ev.payload?.risk_level || 'HIGH'})`;
           } else if (evType === 'approval.completed') {
-            logMsg = `Human operator decided: ${ev.payload?.approved ? 'APPROVED' : 'REJECTED'}`;
+            logMsg = `El operador decidió: ${ev.payload?.approved ? 'APROBADO' : 'RECHAZADO'}`;
           } else if (evType === 'capability.issued') {
-            logMsg = `Capability token issued & signed with HMAC`;
+            logMsg = `Token de capacidad emitido y firmado con HMAC`;
           } else if (evType === 'execution.started') {
             const isFull = (session.execution_mode === 'full_access');
             logMsg = isFull
               ? `Executing action on Host OS (Full Access): ${ev.payload?.tool}...`
               : `Executing action in local sandbox: ${ev.payload?.tool}...`;
           } else if (evType === 'execution.completed') {
-            logMsg = `Action executed ${ev.payload?.success ? 'successfully' : 'with error'} in ${ev.payload?.execution_time_ms || 12}ms`;
+            logMsg = `Acción ejecutada ${ev.payload?.success ? 'correctamente' : 'con error'} en ${ev.payload?.execution_time_ms || 12} ms`;
           } else if (evType === 'observation.recorded') {
-            logMsg = `Observation: ${(ev.payload?.output || '').slice(0, 100)}...`;
+            logMsg = `Observación: ${(ev.payload?.output || '').slice(0, 100)}…`;
           } else if (evType === 'decision.pruned') {
-            logMsg = `Decision pruned: ${ev.payload?.reason}`;
+            logMsg = `Decisión podada: ${ev.payload?.reason}`;
           } else if (evType === 'intervention.applied') {
-            logMsg = `[INTERVENTION] ${ev.payload?.intervention || 'Supervisor'}: ${ev.payload?.message || ''}`;
+            logMsg = `[INTERVENCIÓN] ${ev.payload?.intervention || 'Supervisor'}: ${ev.payload?.message || ''}`;
           } else if (evType === 'workflow.node_started') {
-            logMsg = `[WORKFLOW] Nodo «${ev.payload?.node_name || ev.payload?.node_id}»: ${ev.payload?.agent_name || 'agente'} toma el control`;
+            logMsg = `[FLUJO] Nodo «${ev.payload?.node_name || ev.payload?.node_id}»: ${ev.payload?.agent_name || 'agente'} toma el control`;
           } else if (evType === 'workflow.node_completed') {
-            logMsg = `[WORKFLOW] Nodo «${ev.payload?.node_name || ev.payload?.node_id}» completado por ${ev.payload?.agent_name || 'agente'}`;
+            logMsg = `[FLUJO] Nodo «${ev.payload?.node_name || ev.payload?.node_id}» completado por ${ev.payload?.agent_name || 'agente'}`;
           } else if (evType === 'session.completed') {
-            logMsg = `Mission complete: ${ev.payload?.summary || 'Completed successfully'}`;
+            logMsg = `Misión completada: ${ev.payload?.summary || 'terminó correctamente'}`;
           }
 
           setLogs((prev) => [
@@ -803,13 +834,13 @@ export default function App() {
 
   const handleSelectNode = (nodeId) => {
     setSelectedNodeId(nodeId);
-    setInspectorTab('decision');
+    setDrawerTab('step');
     const found = decisionsMap[nodeId];
     if (found) {
       const timeStr = new Date().toTimeString().split(' ')[0];
       setLogs((prev) => [
         ...prev,
-        { time: timeStr, level: 'INFO', message: `Inspecting decision #${found.sequence || 1}: ${found.actionCommand}` },
+        { time: timeStr, level: 'INFO', message: `Inspeccionando la decisión #${found.sequence || 1}: ${found.actionCommand}` },
       ]);
       const decId = found.decisionId || (nodeId.startsWith('d_') ? nodeId : `d_${nodeId}`);
       fetchAndSetDecision(nodeId, decId);
@@ -850,7 +881,6 @@ export default function App() {
   }) => {
     setIsRunning(true);
     setIsPaused(false);
-    setInspectorTab('chat');
     const timeStr = new Date().toTimeString().split(' ')[0];
 
     try {
@@ -925,19 +955,19 @@ export default function App() {
           {
             time: timeStr,
             level: 'INFO',
-            message: `Starting interactive session #${sid} with LLM (${llm_provider.toUpperCase()}) & Supervisor (${supervisor.toUpperCase()})`,
+            message: `Iniciando la sesión interactiva #${sid} con el modelo (${llm_provider.toUpperCase()}) y el supervisor (${supervisor.toUpperCase()})`,
           },
           {
             time: timeStr,
             level: 'INFO',
-            message: `Goal: ${goal}`,
+            message: `Objetivo: ${goal}`,
           },
         ]);
       }
     } catch (err) {
       setLogs((prev) => [
         ...prev,
-        { time: timeStr, level: 'ERROR', message: `Error starting mission: ${err.message}` },
+        { time: timeStr, level: 'ERROR', message: `No se pudo iniciar la misión: ${err.message}` },
       ]);
       setIsRunning(false);
     }
@@ -1030,7 +1060,7 @@ export default function App() {
     setEvents([]);
     sidRef.current = newSid;
     setChatMessages([]);
-    setInspectorTab('chat');
+    setDrawerTab(null);
     setLogs([
       {
         time: timeStr,
@@ -1256,14 +1286,13 @@ export default function App() {
     setNodes(INITIAL_NODES);
     setDecisionsMap(INITIAL_DECISIONS_MAP);
     setSelectedNodeId('node-5');
-    setInspectorTab('chat');
     setLogs(INITIAL_LOGS);
     setEvents(INITIAL_EVENTS);
     setChatMessages([
       {
         id: 'msg-demo-user',
         role: 'user',
-        text: INITIAL_SESSION.goal || 'Fix authentication bug in the API',
+        text: INITIAL_SESSION.goal || 'Corregir el fallo de autenticación en la API',
         time: '14:32:00',
         config: {
           llm_provider: 'JEV (Claude-3.5-sonnet)',
@@ -1320,7 +1349,14 @@ export default function App() {
   };
 
   // Autorización humana desde el DecisionInspector
-  const handleApprove = async (decisionId) => {
+  const operatorMessage = (text) => {
+    updateChat((prev) => [
+      ...prev,
+      { id: `op-${Date.now()}`, role: 'operator', text, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) },
+    ]);
+  };
+
+  const handleApprove = async (decisionId, nodeId = selectedNodeId) => {
     const timeStr = new Date().toTimeString().split(' ')[0];
     try {
       await api.confirmDecision(decisionId, true, 'Authorized from Decision Inspector', 'operator_admin', 'operator');
@@ -1330,11 +1366,11 @@ export default function App() {
 
     // Actualizar visualmente de inmediato
     setDecisionsMap((prev) => {
-      const cur = prev[selectedNodeId];
+      const cur = prev[nodeId];
       if (!cur) return prev;
       return {
         ...prev,
-        [selectedNodeId]: {
+        [nodeId]: {
           ...cur,
           status: 'ALLOW',
           policyDecision: {
@@ -1352,8 +1388,9 @@ export default function App() {
     });
 
     setNodes((prev) =>
-      prev.map((n) => (n.id === selectedNodeId ? { ...n, status: 'ALLOW' } : n))
+      prev.map((n) => (n.id === nodeId ? { ...n, status: 'ALLOW' } : n))
     );
+    operatorMessage('Aprobado');
 
     setSession((prev) => ({
       ...prev,
@@ -1366,14 +1403,14 @@ export default function App() {
 
     setLogs((prev) => [
       ...prev,
-      { time: timeStr, level: 'INFO', message: `Decision #${decisionId} authorized by human operator.` },
+      { time: timeStr, level: 'INFO', message: `Decisión #${decisionId} autorizada por el operador.` },
     ]);
   };
 
   // Rechazo de decisión desde el DecisionInspector
-  const handleReject = async (decisionId, customReason) => {
+  const handleReject = async (decisionId, customReason, nodeId = selectedNodeId) => {
     const timeStr = new Date().toTimeString().split(' ')[0];
-    const rejectionMsg = customReason || 'Blocked by human operator';
+    const rejectionMsg = customReason || 'Bloqueada por el operador';
     try {
       await api.rejectDecision(decisionId, rejectionMsg, 'operator_admin', 'operator');
     } catch (e) {
@@ -1381,26 +1418,27 @@ export default function App() {
     }
 
     setDecisionsMap((prev) => {
-      const cur = prev[selectedNodeId];
+      const cur = prev[nodeId];
       if (!cur) return prev;
       return {
         ...prev,
-        [selectedNodeId]: {
+        [nodeId]: {
           ...cur,
           status: 'BLOCKED',
           reason: rejectionMsg,
-          capability: { issued: false, statusText: 'Revoked by Human', token: null },
+          capability: { issued: false, statusText: 'Revocada por el operador', token: null },
         },
       };
     });
 
     setNodes((prev) =>
-      prev.map((n) => (n.id === selectedNodeId ? { ...n, status: 'BLOCK' } : n))
+      prev.map((n) => (n.id === nodeId ? { ...n, status: 'BLOCK' } : n))
     );
+    operatorMessage(`Rechazado: ${rejectionMsg}`);
 
     setLogs((prev) => [
       ...prev,
-      { time: timeStr, level: 'ERROR', message: `Decision #${decisionId} rejected and pruned: ${rejectionMsg}` },
+      { time: timeStr, level: 'ERROR', message: `Decisión #${decisionId} rechazada y podada: ${rejectionMsg}` },
     ]);
   };
 
@@ -1414,104 +1452,148 @@ export default function App() {
         {
           time: timeStr,
           level: res?.data?.success ? 'INFO' : 'ERROR',
-          message: `Execution in sandbox finished (${res?.data?.execution_time_ms || 12}ms): ${res?.data?.output || 'Success'}`,
+          message: `Ejecución en el sandbox terminada (${res?.data?.execution_time_ms || 12} ms): ${res?.data?.output || 'correcta'}`,
         },
       ]);
     } catch (e) {
       setLogs((prev) => [
         ...prev,
-        { time: timeStr, level: 'ERROR', message: `Execution failed: ${e.message}` },
+        { time: timeStr, level: 'ERROR', message: `La ejecución falló: ${e.message}` },
       ]);
     }
   };
 
+  // Aprobaciones pendientes: decisiones que la política retiene para que las resuelva el operador (RD-6.3.3)
+  const pendingApprovals = useMemo(() => {
+    if (!isRunning) return [];
+    return Object.entries(decisionsMap)
+      .filter(([, d]) => d.status === 'REVIEW' && !d.capability?.issued)
+      .map(([nodeId, d]) => ({
+        nodeId,
+        decisionId: d.decisionId || `d_${nodeId}`,
+        tool: d.tool,
+        command: d.actionCommand,
+        riskLevel: d.riskLevel,
+        laya: d.semanticEvaluation?.[0]?.score,
+      }));
+  }, [decisionsMap, isRunning]);
+
+  const openDrawer = (tab) => {
+    setActiveNav('live');
+    setDrawerTab(tab);
+  };
+
+  // Esc en una vista secundaria vuelve a la conversación (RD-V3)
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key !== 'Escape' || e.defaultPrevented || activeNav === 'live') return;
+      if (isPaletteOpen || isSessionsOpen || isProposeOpen || isAuthModalOpen || isWorkspaceOpen || isWsFlyoutOpen) return;
+      const tag = (e.target?.tagName || '').toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+      setActiveNav('live');
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [activeNav, isPaletteOpen, isSessionsOpen, isProposeOpen, isAuthModalOpen, isWorkspaceOpen, isWsFlyoutOpen]);
+
+  const paletteItems = [
+    { id: 'go-live', group: 'Conversación', label: 'Volver a la conversación', icon: Activity, run: () => setActiveNav('live') },
+    { id: 'new-session', group: 'Conversación', label: 'Nueva sesión limpia', icon: Plus, run: handleNewCleanSession },
+    { id: 'open-map', group: 'Conversación', label: 'Abrir el mapa de decisiones', icon: MapIcon, run: () => openDrawer('map') },
+    { id: 'open-events', group: 'Conversación', label: 'Ver los eventos de la sesión', icon: ScrollText, run: () => openDrawer('events') },
+    { id: 'open-sessions', group: 'Conversación', label: 'Abrir las sesiones registradas', icon: History, run: () => setIsSessionsOpen(true) },
+    { id: 'propose', group: 'Conversación', label: 'Proponer una acción manual', icon: SquarePen, run: () => setIsProposeOpen(true) },
+    { id: 'demo', group: 'Conversación', label: 'Cargar la sesión de demostración', icon: FlaskConical, run: () => { setActiveNav('live'); handleLoadDemo(); } },
+    ...(isRunning
+      ? [
+          isPaused
+            ? { id: 'resume', group: 'Conversación', label: 'Reanudar la misión', icon: Play, run: handleResumeMission }
+            : { id: 'pause', group: 'Conversación', label: 'Pausar la misión', icon: Pause, run: handlePauseMission },
+          { id: 'stop', group: 'Conversación', label: 'Detener la misión', icon: Square, run: handleStopMission },
+        ]
+      : []),
+    { id: 'workspace', group: 'Proyecto y cuenta', label: 'Cambiar de workspace', icon: FolderOpen, run: () => setIsWsFlyoutOpen(true) },
+    { id: 'api-key', group: 'Proyecto y cuenta', label: 'Configurar la clave de API', icon: KeyRound, run: () => setIsAuthModalOpen(true) },
+    ...NAV_ITEMS.filter((i) => i.id !== 'live').map((i) => ({ id: `view-${i.id}`, group: 'Vistas', label: i.label, icon: i.icon, run: () => setActiveNav(i.id) })),
+  ];
+
+  const sessionWorkspace = session.workspace_root || session.working_directory || null;
+  const workspaceMismatch = Boolean(sessionWorkspace && workspace?.path && sessionWorkspace !== workspace.path);
+  const selectedNode = nodes.find((n) => n.id === selectedNodeId);
+  const stepDecision = selectedNodeId === 'start' ? null : currentDecision;
+  const executionModeNow = session.execution_mode || missionConfig.executionMode || 'local_restricted';
+
   return (
-    <div style={{
-      display: 'flex',
-      flexDirection: 'column',
-      height: '100vh',
-      width: '100vw',
-      backgroundColor: 'var(--bg-app)',
-      color: 'var(--text-primary)',
-    }}>
-      {/* 1. Header Bar */}
-      <Header
-        sessionId={session.sessionId}
-        runtimeActive={runtimeActive}
-        executionMode={session.execution_mode || 'local_restricted'}
-        isAutonomous={Boolean(session.autonomous || session.isAutonomous || session.execution_mode === 'full_access_autonomous')}
-        isDegraded={Boolean(session.isDegraded || session.fallbackActive || session.status === 'Degraded')}
-        fallbackReason={session.fallbackReason}
-        decisionModel={session.decision_model_effective || session.decisionModel}
-        operatorId="operator_admin"
-        operatorRole="operator"
-        onOpenSessions={() => setIsSessionsOpen(true)}
-        onOpenPropose={() => setIsProposeOpen(true)}
-        onNewSession={handleNewCleanSession}
-        onOpenAuth={() => setIsAuthModalOpen(true)}
+    <div style={{ display: 'flex', height: '100vh', width: '100vw', backgroundColor: 'var(--bg)', color: 'var(--text)' }}>
+      <Rail
+        active={activeNav}
+        onSelect={setActiveNav}
         workspace={workspace}
-        sessionWorkspace={session.workspace_root || session.working_directory || null}
-        onOpenWorkspace={() => setIsWorkspaceOpen(true)}
-      />
-      <WorkspacePicker
-        open={isWorkspaceOpen}
-        title="Workspace del proyecto"
-        initialPath={workspace?.path || ''}
-        recent={workspace?.recent || []}
-        onSelect={chooseWorkspace}
-        onForget={forgetWorkspace}
-        onClose={() => setIsWorkspaceOpen(false)}
+        workspaceMismatch={workspaceMismatch}
+        workspaceOpen={isWsFlyoutOpen}
+        onOpenWorkspace={() => setIsWsFlyoutOpen((v) => !v)}
+        onOpenPalette={() => setIsPaletteOpen(true)}
+        onOpenAccount={() => setIsAuthModalOpen(true)}
+        pendingApprovals={pendingApprovals.length}
       />
 
-      {/* 2. Main Work Layout (Left: TopNav + Content; Right: DecisionInspector / MissionChat) */}
-      <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-        {/* Left Column: TopNav + Active View Content */}
-        <div style={{
-          display: 'flex',
-          flexDirection: 'column',
-          flex: 1,
-          overflow: 'hidden',
-          minWidth: 0,
-        }}>
-          {/* Top Window / View Selection Bar */}
-          <TopNav
-            activeNav={activeNav}
-            onNavSelect={setActiveNav}
-            currentDecisionCount={nodes.length}
-          />
+      <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+        <Header
+          session={session}
+          runtimeActive={runtimeActive}
+          executionMode={executionModeNow}
+          isAutonomous={Boolean(session.autonomous || session.isAutonomous || session.execution_mode === 'full_access_autonomous')}
+          isDegraded={Boolean(session.isDegraded || session.fallbackActive || session.status === 'Degraded')}
+          fallbackReason={session.fallbackReason}
+          isRunning={isRunning}
+          isPaused={isPaused}
+          pendingApprovals={pendingApprovals.length}
+          drawerTab={drawerTab}
+          onOpenSessions={() => setIsSessionsOpen(true)}
+          onNewSession={handleNewCleanSession}
+          onOpenMap={() => (activeNav === 'live' && drawerTab === 'map' ? setDrawerTab(null) : openDrawer('map'))}
+          onOpenPalette={() => setIsPaletteOpen(true)}
+          onGoToConversation={() => setActiveNav('live')}
+        />
 
-          {/* Central Supervision Canvas & Console Area */}
-          <div style={{ display: 'flex', flex: 1, overflow: 'hidden', minWidth: 0 }}>
-            {activeNav === 'live' && (
-              <main style={{
-                flex: 1,
-                display: 'flex',
-                flexDirection: 'column',
-                overflow: 'hidden',
-                backgroundColor: '#0a0e16',
-                minWidth: 0,
-              }}>
-                {/* Top Session KPIs Overview (Compacto) */}
-                <SessionKPIs session={session} />
+        <div style={{ flex: 1, minHeight: 0, display: 'flex', position: 'relative', overflow: 'hidden' }}>
+          <main style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            {/* La conversación permanece montada al cambiar de vista para no perder el texto ni la configuración */}
+            <div style={{ display: activeNav === 'live' ? 'flex' : 'none', flex: 1, minHeight: 0, flexDirection: 'column' }}>
+              <Conversation
+                session={session}
+                isRunning={isRunning}
+                isPaused={isPaused}
+                events={events}
+                chatMessages={chatMessages}
+                onMessagesChange={updateChat}
+                missionConfig={missionConfig}
+                onConfigChange={setMissionConfig}
+                onStartMission={handleStartMission}
+                onPauseMission={handlePauseMission}
+                onResumeMission={handleResumeMission}
+                onStopMission={handleStopMission}
+                nodes={nodes}
+                selectedNodeId={selectedNodeId}
+                drawerTab={drawerTab}
+                pendingApprovals={pendingApprovals}
+                onSelectStep={(nodeId) => {
+                  if (nodeId) handleSelectNode(nodeId);
+                  else setDrawerTab('step');
+                }}
+                onOpenDrawer={openDrawer}
+                onApprove={(a) => handleApprove(a.decisionId, a.nodeId)}
+                onReject={(a, reason) => handleReject(a.decisionId, reason, a.nodeId)}
+                onViewApproval={(a) => {
+                  setSelectedNodeId(a.nodeId);
+                  setDrawerTab('step');
+                }}
+              />
+            </div>
 
-                {/* Interactive Decision Tree (Maximizado en el canvas central) */}
-                <DecisionTree
-                  nodes={nodes}
-                  selectedNodeId={selectedNodeId}
-                  onSelectNode={handleSelectNode}
-                />
-
-                {/* Bottom Console Panel (Terminal + Events + Telemetry) */}
-                <ConsolePanel
-                  logs={logs}
-                  events={events}
-                  runtime={session.runtime}
-                />
-              </main>
-            )}
-
-            {/* Supplementary Views */}
-            <Suspense fallback={<div className="flex items-center justify-center h-full text-slate-400 p-8">Cargando vista...</div>}>
+            {activeNav !== 'live' && (
+              <div style={{ display: 'flex', flex: 1, overflow: 'hidden', minWidth: 0 }}>
+                <Suspense fallback={<div style={{ flex: 1, display: 'grid', placeItems: 'center', color: 'var(--muted)' }}>Cargando…</div>}>
               {activeNav === 'sessions' && (
                 <SessionsView
                   sessions={sessionsList}
@@ -1530,7 +1612,7 @@ export default function App() {
 
               {activeNav === 'decisions' && (
                 <DecisionsView
-                  decisions={nodes.map((n) => ({
+                  decisions={nodes.filter((n) => n.type !== 'start').map((n) => ({
                     decision_id: n.id,
                     sequence: n.sequence,
                     session_id: session.sessionId,
@@ -1547,7 +1629,7 @@ export default function App() {
                       handleLoadSession(sid);
                     }
                     setSelectedNodeId(nodeId);
-                    setInspectorTab('decision');
+                    setDrawerTab('step');
                     setActiveNav('live');
                   }}
                 />
@@ -1578,7 +1660,7 @@ export default function App() {
                 <SecurityView
                   session={session}
                   sessionsList={sessionsList}
-                  decisions={nodes.map((n) => ({
+                  decisions={nodes.filter((n) => n.type !== 'start').map((n) => ({
                     decision_id: n.id,
                     session_id: session.sessionId,
                     tool: n.tool,
@@ -1597,34 +1679,68 @@ export default function App() {
                 />
               )}
             </Suspense>
-          </div>
-        </div>
+              </div>
+            )}
+          </main>
 
-        {/* Right Panel: Decision Inspector & Mission Chat (Llega directamente bajo Header ocupando la esquina superior derecha) */}
-        {activeNav === 'live' && (
-          <DecisionInspector
-            decision={currentDecision}
-            activeTab={inspectorTab}
-            onTabChange={setInspectorTab}
-            session={session}
-            isRunning={isRunning}
-            isPaused={isPaused}
-            events={events}
-            chatMessages={chatMessages}
-            onMessagesChange={updateChat}
-            missionConfig={missionConfig}
-            onConfigChange={setMissionConfig}
-            onStartMission={handleStartMission}
-            onPauseMission={handlePauseMission}
-            onResumeMission={handleResumeMission}
-            onStopMission={handleStopMission}
-            onLoadDemo={handleLoadDemo}
-            onApprove={handleApprove}
-            onReject={handleReject}
-            onExecute={handleExecute}
-          />
-        )}
+          {activeNav === 'live' && (
+            <Drawer
+              tab={drawerTab}
+              wide={drawerWide}
+              overlay={narrow}
+              onTabChange={setDrawerTab}
+              onToggleWide={() => setDrawerWide((v) => !v)}
+              onClose={() => setDrawerTab(null)}
+            >
+              {drawerTab === 'map' && (
+                <DecisionTree nodes={nodes} selectedNodeId={selectedNodeId} onSelectNode={handleSelectNode} />
+              )}
+              {drawerTab === 'step' && (
+                <div style={{ flex: 1, overflowY: 'auto', padding: '18px' }}>
+                  <StepDetail
+                    decision={stepDecision}
+                    nodeId={selectedNodeId}
+                    title={selectedNode && selectedNodeId !== 'start' ? selectedNode.label : ''}
+                    session={session}
+                    onApprove={handleApprove}
+                    onReject={handleReject}
+                    onExecute={handleExecute}
+                  />
+                </div>
+              )}
+              {drawerTab === 'events' && (
+                <div style={{ flex: 1, overflowY: 'auto', padding: '18px' }}>
+                  <EventsPanel logs={logs} events={events} runtime={session.runtime} />
+                </div>
+              )}
+            </Drawer>
+          )}
+        </div>
       </div>
+
+      <WorkspaceFlyout
+        open={isWsFlyoutOpen}
+        workspace={workspace}
+        sessionWorkspace={sessionWorkspace}
+        onSelect={chooseWorkspace}
+        onForget={forgetWorkspace}
+        onBrowse={() => {
+          setIsWsFlyoutOpen(false);
+          setIsWorkspaceOpen(true);
+        }}
+        onClose={() => setIsWsFlyoutOpen(false)}
+      />
+      <WorkspacePicker
+        open={isWorkspaceOpen}
+        title="Workspace del proyecto"
+        initialPath={workspace?.path || ''}
+        recent={workspace?.recent || []}
+        onSelect={chooseWorkspace}
+        onForget={forgetWorkspace}
+        onClose={() => setIsWorkspaceOpen(false)}
+      />
+      <DialogsHost />
+      <CommandPalette open={isPaletteOpen} items={paletteItems} onClose={() => setIsPaletteOpen(false)} />
 
       {/* Modals */}
       <ProposeActionModal
@@ -1650,8 +1766,20 @@ export default function App() {
           setIsSessionsOpen(false);
         }}
         onCreateSession={(cfg) => {
-          handleStartMission(cfg);
+          // El modal entrega solo el objetivo: se completa con la configuración de la conversación
+          handleStartMission(
+            typeof cfg === 'string'
+              ? {
+                  goal: cfg,
+                  execution_mode: missionConfig.executionMode,
+                  llm_provider: missionConfig.llmProvider,
+                  supervisor: missionConfig.supervisor,
+                  max_steps: missionConfig.maxSteps,
+                }
+              : cfg
+          );
           setIsSessionsOpen(false);
+          setActiveNav('live');
         }}
         onDeleteSession={handleDeleteSession}
         onNewCleanSession={handleNewCleanSession}

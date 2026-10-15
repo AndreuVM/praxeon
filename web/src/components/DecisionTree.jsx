@@ -65,6 +65,23 @@ export default function DecisionTree({
 
   const handleMouseUp = () => setIsDragging(false);
 
+  // Si el visor cambia de tamaño (apertura o ampliación del cajón), se vuelve a encuadrar el árbol
+  const fitRef = useRef(fitView);
+  fitRef.current = fitView;
+  const autoRef = useRef(autoLayout);
+  autoRef.current = autoLayout;
+  useEffect(() => {
+    const el = canvasRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return undefined;
+    let timer = null;
+    const ro = new ResizeObserver(() => {
+      clearTimeout(timer);
+      timer = setTimeout(() => { if (autoRef.current) fitRef.current(); }, 120);
+    });
+    ro.observe(el);
+    return () => { clearTimeout(timer); ro.disconnect(); };
+  }, []);
+
   // Seguimiento automático: centra el nodo nuevo (teniendo en cuenta el zoom); al cargar un árbol entero, lo encuadra
   const prevCountRef = useRef(0);
   useEffect(() => {
@@ -113,97 +130,73 @@ export default function DecisionTree({
         flex: 1,
         display: 'flex',
         flexDirection: 'column',
-        backgroundColor: '#0a0e16',
+        backgroundColor: 'var(--bg)',
         position: 'relative',
         overflow: 'hidden',
       }}
     >
-      {/* Top Header of Canvas */}
+      {/* Controles del mapa */}
       <div
         style={{
-          height: '42px',
-          padding: '0 16px',
+          minHeight: '42px',
+          padding: '6px 16px',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          borderBottom: '1px solid #1a202c',
-          backgroundColor: '#0c0f14',
+          flexWrap: 'wrap',
+          gap: '8px 14px',
+          borderBottom: '1px solid var(--line)',
+          backgroundColor: 'var(--bg)',
           zIndex: 10,
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{ fontSize: '13px', fontWeight: '600', color: '#f0f6fc' }}>
-            Decision Tree (Live)
-          </span>
-          <span className="pulse-dot" style={{ width: '6px', height: '6px' }} />
-          {controlling && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+          {controlling ? (
             <span
               title={`Agente con el control ahora: ${controlling.agentName}${controlling.agentRole ? ` (${controlling.agentRole})` : ''} · nodo «${controlling.wfNodeName || controlling.wfNodeId}»`}
-              style={{ display: 'flex', alignItems: 'center', gap: '6px', marginLeft: '8px', padding: '2px 9px', borderRadius: '9999px', fontSize: '11px', fontWeight: 600, color: agentColor(controlling.agentName), border: `1px solid ${agentColor(controlling.agentName)}`, backgroundColor: 'rgba(255,255,255,0.03)' }}
+              style={{ display: 'flex', alignItems: 'center', gap: '7px', fontSize: 'var(--fs-secondary)', color: 'var(--text)', minWidth: 0 }}
             >
-              <span style={{ width: '7px', height: '7px', borderRadius: '50%', backgroundColor: agentColor(controlling.agentName) }} />
-              En control: {controlling.agentName}
-              <span style={{ color: '#8b949e', fontWeight: 400 }}>· {controlling.wfNodeName || controlling.wfNodeId}</span>
+              <span className="pulse-dot" />
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                En control: {controlling.agentName}
+                <span style={{ color: 'var(--muted)' }}> · {controlling.wfNodeName || controlling.wfNodeId}</span>
+              </span>
             </span>
+          ) : (
+            <span style={{ fontSize: 'var(--fs-secondary)', color: 'var(--muted)' }}>{nodes.length > 1 ? `${nodes.length - 1} pasos` : 'Sin pasos todavía'}</span>
           )}
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          {/* Auto layout switch */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontSize: '11.5px', color: '#8b949e' }}>Auto layout</span>
-            <div
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: 'var(--fs-secondary)', color: 'var(--muted)' }}>
+            <span>Diseño automático</span>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={autoLayout}
+              aria-label="Diseño automático"
               onClick={() => setAutoLayout(!autoLayout)}
-              style={{
-                width: '32px',
-                height: '18px',
-                borderRadius: '9999px',
-                backgroundColor: autoLayout ? '#48546a' : '#222a36',
-                position: 'relative',
-                cursor: 'pointer',
-                transition: 'background 0.2s ease',
-              }}
+              style={{ width: '30px', height: '17px', borderRadius: '99px', border: 0, padding: 0, background: autoLayout ? 'var(--accent)' : 'var(--line)', position: 'relative' }}
             >
-              <div
-                style={{
-                  width: '14px',
-                  height: '14px',
-                  borderRadius: '50%',
-                  backgroundColor: '#ffffff',
-                  position: 'absolute',
-                  top: '2px',
-                  left: autoLayout ? '16px' : '2px',
-                  transition: 'left 0.2s ease',
-                }}
-              />
-            </div>
-          </div>
+              <span style={{ position: 'absolute', top: '2px', left: autoLayout ? '15px' : '2px', width: '13px', height: '13px', borderRadius: '50%', background: autoLayout ? 'var(--on-accent)' : 'var(--muted)', transition: 'left var(--t-fast)' }} />
+            </button>
+          </label>
 
           {hasWorkflow && (
             <div style={{ display: 'flex', gap: '6px' }}>
-              <button type="button" onClick={() => setAllBlocks(true)} style={{ fontSize: '11px', color: '#8b949e', background: 'transparent', border: '1px solid #243044', borderRadius: '5px', padding: '2px 8px', cursor: 'pointer' }}>
+              <button type="button" className="btn btn-secondary" onClick={() => setAllBlocks(true)} style={{ padding: '2px 9px', fontSize: 'var(--fs-secondary)' }}>
                 Expandir todo
               </button>
-              <button type="button" onClick={() => setAllBlocks(false)} style={{ fontSize: '11px', color: '#8b949e', background: 'transparent', border: '1px solid #243044', borderRadius: '5px', padding: '2px 8px', cursor: 'pointer' }}>
+              <button type="button" className="btn btn-secondary" onClick={() => setAllBlocks(false)} style={{ padding: '2px 9px', fontSize: 'var(--fs-secondary)' }}>
                 Contraer todo
               </button>
             </div>
           )}
 
-          {/* Action icons */}
-          <button
-            onClick={handleResetZoom}
-            className="btn btn-secondary"
-            style={{ padding: '4px', border: 'none', background: 'transparent', color: '#8595a8' }}
-            title="Ajustar vista"
-          >
+          <button onClick={handleResetZoom} className="btn-icon" title="Ajustar vista" aria-label="Ajustar vista">
             <Maximize2 size={15} />
           </button>
-          <button
-            className="btn btn-secondary"
-            style={{ padding: '4px', border: 'none', background: 'transparent', color: '#8595a8' }}
-            title="Exportar árbol"
-          >
+          <button className="btn-icon" title="Exportar árbol" aria-label="Exportar árbol">
             <Download size={15} />
           </button>
         </div>
@@ -211,18 +204,18 @@ export default function DecisionTree({
 
       {!hasWorkflow && agentLegend.length > 0 && (
         <div
-          style={{ position: 'absolute', bottom: '12px', left: '16px', zIndex: 10, display: 'flex', flexDirection: 'column', gap: '4px', padding: '8px 10px', backgroundColor: '#141924', border: '1px solid #1e2636', borderRadius: '8px', fontSize: '10.5px', color: '#c9d1d9' }}
+          style={{ position: 'absolute', bottom: '12px', left: '16px', zIndex: 10, display: 'flex', flexDirection: 'column', gap: '4px', padding: '8px 10px', backgroundColor: 'var(--surface)', border: '1px solid var(--line)', borderRadius: '9px', fontSize: '11px', color: 'var(--text)' }}
         >
-          <span style={{ color: '#8b949e', fontWeight: 600 }}>Agentes</span>
+          <span style={{ color: 'var(--muted)', fontWeight: 600 }}>Agentes</span>
           {agentLegend.map(([name, role]) => (
             <span key={name} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ width: '9px', height: '9px', borderRadius: '2px', backgroundColor: agentColor(name) }} />
+              <span style={{ width: '9px', height: '9px', borderRadius: '6px', backgroundColor: agentColor(name) }} />
               {name}
-              {role ? <span style={{ color: '#64748b' }}>· {role}</span> : null}
+              {role ? <span style={{ color: 'var(--muted)' }}>· {role}</span> : null}
             </span>
           ))}
-          <span style={{ color: '#64748b', display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <svg width="18" height="6"><line x1="0" y1="3" x2="18" y2="3" stroke="#94a3b8" strokeWidth="2" strokeDasharray="5 3" /></svg>
+          <span style={{ color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <svg width="18" height="6"><line x1="0" y1="3" x2="18" y2="3" stroke="var(--muted)" strokeWidth="2" strokeDasharray="5 3" /></svg>
             traspaso de tarea
           </span>
         </div>
@@ -237,11 +230,11 @@ export default function DecisionTree({
           zIndex: 10,
           display: 'flex',
           flexDirection: 'column',
-          backgroundColor: '#141924',
-          borderRadius: '8px',
-          border: '1px solid #1e2636',
+          backgroundColor: 'var(--surface)',
+          borderRadius: '9px',
+          border: '1px solid var(--line)',
           overflow: 'hidden',
-          boxShadow: 'var(--shadow-clay-sm)',
+          boxShadow: 'none',
         }}
       >
         <button
@@ -250,11 +243,11 @@ export default function DecisionTree({
             padding: '7px 9px',
             background: 'transparent',
             border: 'none',
-            color: '#c9d1d9',
+            color: 'var(--text)',
             cursor: 'pointer',
-            borderBottom: '1px solid #1e2636',
+            borderBottom: '1px solid var(--line)',
           }}
-          title="Zoom In"
+          title="Acercar" aria-label="Acercar"
         >
           <Plus size={14} />
         </button>
@@ -264,11 +257,11 @@ export default function DecisionTree({
             padding: '7px 9px',
             background: 'transparent',
             border: 'none',
-            color: '#c9d1d9',
+            color: 'var(--text)',
             cursor: 'pointer',
-            borderBottom: '1px solid #1e2636',
+            borderBottom: '1px solid var(--line)',
           }}
-          title="Zoom Out"
+          title="Alejar" aria-label="Alejar"
         >
           <Minus size={14} />
         </button>
@@ -278,9 +271,9 @@ export default function DecisionTree({
             padding: '7px 9px',
             background: 'transparent',
             border: 'none',
-            color: '#cbd5e1',
+            color: 'var(--text)',
             cursor: 'pointer',
-            fontSize: '10px',
+            fontSize: '11px',
             fontWeight: '600',
           }}
           title="Ajustar a la vista"
@@ -301,7 +294,7 @@ export default function DecisionTree({
           cursor: isDragging ? 'grabbing' : 'grab',
           position: 'relative',
           overflow: 'hidden',
-          backgroundImage: 'radial-gradient(#1e293b 1px, transparent 1px)',
+          backgroundImage: 'radial-gradient(var(--line) 1px, transparent 1px)',
           backgroundSize: '24px 24px',
         }}
       >

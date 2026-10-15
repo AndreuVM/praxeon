@@ -273,21 +273,21 @@ export function describeResult(result = {}) {
   return lines.join('\n');
 }
 
-export const fieldLabelStyle = { fontSize: '10.5px', color: '#94a3b8', display: 'block', marginBottom: '3px' };
+export const fieldLabelStyle = { fontSize: '11px', color: 'var(--text)', display: 'block', marginBottom: '3px' };
 export const fieldStyle = {
   width: '100%',
-  backgroundColor: '#161c28',
-  border: '1px solid #243044',
-  borderRadius: '5px',
-  padding: '5px 8px',
-  fontSize: '11.5px',
-  color: '#f8fafc',
-};
-export const hintStyle = { fontSize: '10px', color: '#64748b', marginTop: '3px', lineHeight: 1.35 };
-export const panelStyle = {
-  backgroundColor: '#0d1520',
-  border: '1px solid #1e2b3f',
+  backgroundColor: 'var(--surface)',
+  border: '1px solid var(--line)',
   borderRadius: '6px',
+  padding: '5px 8px',
+  fontSize: '12.5px',
+  color: 'var(--text)',
+};
+export const hintStyle = { fontSize: '11px', color: 'var(--muted)', marginTop: '3px', lineHeight: 1.35 };
+export const panelStyle = {
+  backgroundColor: 'var(--surface)',
+  border: '1px solid var(--line)',
+  borderRadius: '9px',
   padding: '10px',
   display: 'flex',
   flexDirection: 'column',

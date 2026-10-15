@@ -54,12 +54,17 @@ autenticación completa.
 
 ### 🧭 La interfaz: misiones, agentes y workflows
 
-La interfaz web (React) tiene nueve vistas: *Live Canvas*, *Sessions*, *Decisions*, *Agents*, *Workflows*, *Providers*,
-*Tools (MCP)*, *Security* y *Settings*. Lo esencial para trabajar con ella:
+La interfaz web (React) tiene nueve vistas, todas en el riel de navegación de la izquierda: *Conversación*, *Sesiones*, *Decisiones*,
+*Agentes*, *Flujos*, *Proveedores*, *Herramientas (MCP)*, *Seguridad* y *Ajustes*. La paleta de comandos (`Ctrl K`) abre cualquier vista
+y las acciones frecuentes. Lo esencial para trabajar con ella:
 
-- **Workspace siempre visible.** La carpeta del proyecto se elige desde la cabecera (selector nativo de carpetas, recientes) y se
+- **La conversación es el centro.** Cada paso del agente aparece en el hilo con su razonamiento y una tarjeta; el detalle de la decisión
+  (veredicto, evidencia, política y recibo firmado), el mapa de decisiones y los eventos viven en un cajón lateral que se abre al pulsar
+  una tarjeta. Cuando una política retiene una acción, la aprobación aparece como ventana emergente sobre la barra de texto.
+
+- **Workspace siempre a mano.** La carpeta del proyecto se elige desde el primer botón del riel (selector nativo de carpetas, recientes) y se
   recuerda. Orden de resolución: carpeta elegida → `PRAXEON_DEFAULT_WORKSPACE_ROOT` / `PRAXEON_WORKSPACE_ROOT` → autodetección.
-- **Chat de misión.** Se elige el proveedor y, en los ajustes del chat, el modelo exacto (una lista por proveedor que puedes ampliar),
+- **Compositor de la misión.** Se elige el proveedor y, en los ajustes de la misión (engranaje), el modelo exacto (una lista por proveedor que puedes ampliar),
   el supervisor, el modo de ejecución (`container`, `local_restricted`, `full_access`) y, opcionalmente, un workflow. La última
   configuración y el historial de cada sesión se conservan.
 - **Workflows que mandan de verdad.** Con un workflow activo el grafo gobierna la tarea: cada nodo `AGENT` / `DELEGATE` / `TASK`
@@ -69,7 +74,7 @@ La interfaz web (React) tiene nueve vistas: *Live Canvas*, *Sessions*, *Decision
 - **Pasos ilimitados.** `max_steps = 0` quita el tope de pasos; lo frenan el `finish`, los cortacircuitos del supervisor o el operador.
 - **Canvas por bloques.** Con un workflow, cada agente tiene un bloque que agrupa sus pasos; al abrirlo se ve el árbol de pasos con
   animación en tiempo real.
-- **Herramientas externas (MCP).** La pestaña *Tools (MCP)* gestiona los servidores MCP que PRAXEON consume (ver §5.C).
+- **Herramientas externas (MCP).** La vista *Herramientas (MCP)* gestiona los servidores MCP que PRAXEON consume (ver §5.C).
 
 ---
 
@@ -408,7 +413,7 @@ Compatible con **Antigravity IDE**, **Claude Desktop** y **Cursor**:
 ### C. Cliente MCP: herramientas externas dentro de PRAXEON
 PRAXEON también puede **consumir** servidores MCP: sus herramientas aparecen a los agentes como `mcp__<servidor>__<herramienta>` y
 pasan por exactamente el mismo circuito que las nativas (política → capability HMAC → ejecución → redacción de secretos). Se
-gestionan desde la pestaña *Tools (MCP)* o por la API `/v1/mcp` (permisos de administración).
+gestionan desde la vista *Herramientas (MCP)* o por la API `/v1/mcp` (permisos de administración).
 
 - **Servidores locales** (stdio, `command` + `args`) y **remotos** (`url`, con SSE clásico o HTTP streamable).
 - **Nace desactivado y sin exponer nada.** Al activarlo ves sus herramientas; solo se exponen al aprobarlas (por huella). Si el

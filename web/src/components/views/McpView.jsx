@@ -1,24 +1,26 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { AlertTriangle, ChevronDown, ChevronRight, Pencil, Plug, Plus, Power, RefreshCw, RotateCw, ShieldCheck, Trash2, X } from 'lucide-react';
+import { AlertTriangle, ChevronDown, ChevronRight, Pencil, Plus, Power, RefreshCw, RotateCw, ShieldCheck, Trash2, X } from 'lucide-react';
 import * as api from '../../services/api';
 import { parseEnv } from '../../utils/mcpForm';
+import { confirmDialog } from '../Dialogs';
+import { ViewPage, ViewHeader, EmptyState } from '../ui';
 
 const STATUS = {
-  disabled: { label: 'Desactivado', color: '#8b949e' },
-  stopped: { label: 'Detenido', color: '#8b949e' },
-  running: { label: 'Activo', color: '#3fb950' },
-  pending_approval: { label: 'Pendiente de aprobar', color: '#d29922' },
-  changed: { label: 'Cambió: reaprobar', color: '#f85149' },
-  error: { label: 'Error', color: '#f85149' },
+  disabled: { label: 'Desactivado', color: 'var(--muted)' },
+  stopped: { label: 'Detenido', color: 'var(--muted)' },
+  running: { label: 'Activo', color: 'var(--ok)' },
+  pending_approval: { label: 'Pendiente de aprobar', color: 'var(--accent)' },
+  changed: { label: 'Cambió: reaprobar', color: 'var(--bad)' },
+  error: { label: 'Error', color: 'var(--bad)' },
 };
 
 const NAME_RE = /^[a-z][a-z0-9_]{0,31}$/;
 const input = {
-  width: '100%', backgroundColor: '#0c1017', border: '1px solid #243044', borderRadius: '6px',
-  padding: '7px 10px', fontSize: '12px', color: '#f8fafc', fontFamily: 'inherit',
+  width: '100%', backgroundColor: 'var(--bg)', border: '1px solid var(--line)', borderRadius: '9px',
+  padding: '7px 10px', fontSize: '12.5px', color: 'var(--text)', fontFamily: 'inherit',
 };
-const label = { fontSize: '11px', color: '#94a3b8', display: 'block', marginBottom: '4px' };
-const card = { backgroundColor: '#121824', borderRadius: '10px', border: '1px solid #1e293b', padding: '16px' };
+const label = { fontSize: 'var(--fs-secondary)', color: 'var(--muted)', display: 'block', marginBottom: '4px' };
+const card = { backgroundColor: 'var(--surface)', borderRadius: '9px', border: '1px solid var(--line)', padding: '16px' };
 
 const tri = (value) => (value === true ? 'yes' : value === false ? 'no' : '');
 const fromTri = (value) => (value === 'yes' ? true : value === 'no' ? false : null);
@@ -61,9 +63,9 @@ function ServerForm({ form, setForm, onSubmit, onCancel, busy, error }) {
   const target = remote ? (form.mode === 'edit' || form.url.trim()) : form.command.trim();
   const canSave = nameOk && target && !busy;
   return (
-    <div style={{ ...card, display: 'flex', flexDirection: 'column', gap: '12px', borderColor: '#2f4a6b' }}>
+    <div style={{ ...card, display: 'flex', flexDirection: 'column', gap: '12px', borderColor: 'var(--line)' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h3 style={{ fontSize: '14px', fontWeight: 700, color: '#f0f6fc' }}>
+        <h3 style={{ fontSize: 'var(--fs-chat)', fontWeight: 600 }}>
           {form.mode === 'new' ? 'Nuevo servidor MCP' : `Editar «${form.name}»`}
         </h3>
         <button className="btn btn-secondary" onClick={onCancel} style={{ padding: '4px 8px' }} aria-label="Cerrar formulario">
@@ -74,12 +76,12 @@ function ServerForm({ form, setForm, onSubmit, onCancel, busy, error }) {
       {form.mode === 'new' && (
         <div>
           <label style={label}>Nombre (minúsculas, dígitos y «_»; sin «__»)</label>
-          <input style={{ ...input, borderColor: form.name && !nameOk ? '#f85149' : '#243044' }} value={form.name}
+          <input style={{ ...input, borderColor: form.name && !nameOk ? 'var(--bad)' : 'var(--line)' }} value={form.name}
             onChange={(e) => set({ name: e.target.value })} placeholder="github" />
         </div>
       )}
       {form.mode === 'new' && (
-        <div role="radiogroup" aria-label="Tipo de servidor" style={{ display: 'flex', gap: '16px', fontSize: '12px', color: '#cbd5e1' }}>
+        <div role="radiogroup" aria-label="Tipo de servidor" style={{ display: 'flex', gap: '16px', fontSize: '12.5px', color: 'var(--text)' }}>
           <label style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
             <input type="radio" name="mcp-kind" checked={!remote} onChange={() => set({ kind: 'local' })} /> Local (comando en esta máquina)
           </label>
@@ -94,7 +96,7 @@ function ServerForm({ form, setForm, onSubmit, onCancel, busy, error }) {
             <label style={label}>URL del servidor (SSE o HTTP streamable)</label>
             <input style={input} value={form.url} onChange={(e) => set({ url: e.target.value })} autoComplete="off" spellCheck={false}
               placeholder={form.mode === 'edit' ? `${form.shownUrl} (vacío = conservar la guardada)` : 'https://servidor.ejemplo.com/mcp/sse?token=${MI_TOKEN}'} />
-            <span style={{ fontSize: '10.5px', color: '#73849c' }}>
+            <span style={{ fontSize: '11px', color: 'var(--muted)' }}>
               El token no lo escribas literal: usa «${'{'}VARIABLE{'}'}» y define la variable en tu entorno o en el .env de PRAXEON. La URL se guarda sin mostrarse nunca en pantalla.
             </span>
           </div>
@@ -103,7 +105,7 @@ function ServerForm({ form, setForm, onSubmit, onCancel, busy, error }) {
             <textarea style={{ ...input, minHeight: '48px', fontFamily: 'var(--font-mono)' }} value={form.headersText}
               onChange={(e) => set({ headersText: e.target.value })} autoComplete="off" spellCheck={false} />
             {form.mode === 'edit' && form.headerKeys.length > 0 && (
-              <span style={{ fontSize: '10.5px', color: '#73849c' }}>Deja el valor vacío para conservar el guardado (nunca se muestra).</span>
+              <span style={{ fontSize: '11px', color: 'var(--muted)' }}>Deja el valor vacío para conservar el guardado (nunca se muestra).</span>
             )}
           </div>
           <div>
@@ -134,7 +136,7 @@ function ServerForm({ form, setForm, onSubmit, onCancel, busy, error }) {
         <textarea style={{ ...input, minHeight: '56px', fontFamily: 'var(--font-mono)' }} value={form.envText}
           onChange={(e) => set({ envText: e.target.value })} placeholder="GITHUB_TOKEN=${MI_TOKEN_GITHUB}" />
         {form.mode === 'edit' && form.envKeys.length > 0 && (
-          <span style={{ fontSize: '10.5px', color: '#73849c' }}>Deja el valor vacío para conservar el guardado (nunca se muestra).</span>
+          <span style={{ fontSize: '11px', color: 'var(--muted)' }}>Deja el valor vacío para conservar el guardado (nunca se muestra).</span>
         )}
       </div>
       <div>
@@ -147,21 +149,21 @@ function ServerForm({ form, setForm, onSubmit, onCancel, busy, error }) {
         <label style={label}>Tiempo máx. por llamada (s)</label>
         <input style={input} type="number" min="1" value={form.timeout} onChange={(e) => set({ timeout: e.target.value })} />
       </div>
-      <label style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', fontSize: '12px', color: '#cbd5e1' }}>
+      <label style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', fontSize: '12.5px', color: 'var(--text)' }}>
         <input type="checkbox" checked={form.trustHints} onChange={(e) => set({ trustHints: e.target.checked })} />
         <span>
           Fiarme de lo que el servidor anuncia sobre sus herramientas (solo lectura / destructiva).
-          <span style={{ display: 'block', fontSize: '10.5px', color: '#73849c' }}>
+          <span style={{ display: 'block', fontSize: '11px', color: 'var(--muted)' }}>
             Sin esto, toda herramienta MCP pide confirmación humana. Lo anuncia el propio servidor, así que actívalo solo con servidores de confianza.
           </span>
         </span>
       </label>
       {form.mode === 'edit' && (
-        <div style={{ fontSize: '11px', color: '#d29922' }}>
+        <div style={{ fontSize: '11px', color: 'var(--accent)' }}>
           Si cambias lo que se ejecuta o a qué te conectas (comando, argumentos, entorno, carpeta, URL, cabeceras o transporte), el servidor se desactivará y habrá que revisarlo y aprobarlo de nuevo.
         </div>
       )}
-      {error && <div style={{ fontSize: '12px', color: '#f85149' }}>{error}</div>}
+      {error && <div style={{ fontSize: '12.5px', color: 'var(--bad)' }}>{error}</div>}
       <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
         <button className="btn btn-secondary" onClick={onCancel}>Cancelar</button>
         <button className="btn btn-primary" onClick={onSubmit} disabled={!canSave}>Guardar</button>
@@ -178,25 +180,25 @@ function ToolRow({ tool, onOverride }) {
   const update = (patch) => onOverride(tool.name, { risk: ov.risk ?? null, read_only: ov.read_only ?? null, confirm: ov.confirm ?? null, disabled: Boolean(ov.disabled), ...patch });
   const small = { ...input, padding: '3px 6px', width: 'auto', fontSize: '11px' };
   return (
-    <div style={{ borderTop: '1px solid #1e293b', padding: '10px 0', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+    <div style={{ borderTop: '1px solid var(--line)', padding: '10px 0', display: 'flex', flexDirection: 'column', gap: '6px' }}>
       <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-        <code style={{ fontSize: '12px', color: tool.exposed ? '#3fb950' : '#8b949e' }} title="Nombre con el que lo ve el agente">{tool.exposed_as}</code>
-        <span style={{ fontSize: '10.5px', color: tool.exposed ? '#3fb950' : '#8b949e' }}>
+        <code style={{ fontSize: '12.5px', color: tool.exposed ? 'var(--ok)' : 'var(--muted)' }} title="Nombre con el que lo ve el agente">{tool.exposed_as}</code>
+        <span style={{ fontSize: '11px', color: tool.exposed ? 'var(--ok)' : 'var(--muted)' }}>
           {tool.exposed ? 'expuesta al agente' : ov.disabled ? 'desactivada' : 'no expuesta'}
         </span>
         {hints.readOnlyHint === true && <span className="badge" title="Lo anuncia el servidor; no se cree salvo que lo permitas">anuncia solo lectura</span>}
         {hints.destructiveHint === true && <span className="badge badge-danger" title="Lo anuncia el servidor">anuncia destructiva</span>}
       </div>
-      {tool.description && <div style={{ fontSize: '11.5px', color: '#94a3b8' }}>{tool.description}</div>}
-      <code style={{ fontSize: '11px', color: '#73849c' }}>{tool.exposed_as}({tool.signature})</code>
-      <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center', fontSize: '11px', color: '#94a3b8' }}>
+      {tool.description && <div style={{ fontSize: '12.5px', color: 'var(--text)' }}>{tool.description}</div>}
+      <code style={{ fontSize: '11px', color: 'var(--muted)' }}>{tool.exposed_as}({tool.signature})</code>
+      <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center', fontSize: '11px', color: 'var(--text)' }}>
         <label>Riesgo{' '}
           <select style={small} value={ov.risk || ''} onChange={(e) => update({ risk: e.target.value || null })} aria-label={`Riesgo de ${tool.name}`}>
             <option value="">Auto</option>
-            <option value="LOW">LOW</option>
-            <option value="MEDIUM">MEDIUM</option>
-            <option value="HIGH">HIGH</option>
-            <option value="CRITICAL">CRITICAL</option>
+            <option value="LOW">Bajo</option>
+            <option value="MEDIUM">Medio</option>
+            <option value="HIGH">Alto</option>
+            <option value="CRITICAL">Crítico</option>
           </select>
         </label>
         <label>Solo lectura{' '}
@@ -226,33 +228,33 @@ function ServerCard({ server, busy, expanded, onToggle, actions }) {
     <div style={card}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
         <div style={{ minWidth: 0, flex: 1 }}>
-          <button onClick={onToggle} style={{ background: 'none', border: 'none', color: '#f0f6fc', display: 'flex', alignItems: 'center', gap: '6px', padding: 0, cursor: 'pointer' }}
+          <button onClick={onToggle} style={{ background: 'none', border: 'none', color: 'var(--text)', display: 'flex', alignItems: 'center', gap: '6px', padding: 0, cursor: 'pointer' }}
             aria-expanded={expanded} aria-label={`Herramientas de ${server.name}`}>
             {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-            <span style={{ fontSize: '14px', fontWeight: 700 }}>{server.name}</span>
+            <span style={{ fontSize: 'var(--fs-chat)', fontWeight: 600 }}>{server.name}</span>
           </button>
-          <div style={{ fontSize: '11.5px', color: '#73849c', fontFamily: 'var(--font-mono)', wordBreak: 'break-all', marginTop: '4px' }}>{argsLine}</div>
-          {remote && <div style={{ fontSize: '11px', color: '#73849c', marginTop: '2px' }}>Remoto · transporte {server.transport}{server.header_keys?.length > 0 ? ` · cabeceras: ${server.header_keys.join(', ')}` : ''}</div>}
-          {server.env_keys?.length > 0 && <div style={{ fontSize: '11px', color: '#73849c', marginTop: '2px' }}>Entorno: {server.env_keys.join(', ')}</div>}
+          <div style={{ fontSize: '11.5px', color: 'var(--muted)', fontFamily: 'var(--font-mono)', wordBreak: 'break-all', marginTop: '4px' }}>{argsLine}</div>
+          {remote && <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '2px' }}>Remoto · transporte {server.transport}{server.header_keys?.length > 0 ? ` · cabeceras: ${server.header_keys.join(', ')}` : ''}</div>}
+          {server.env_keys?.length > 0 && <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '2px' }}>Entorno: {server.env_keys.join(', ')}</div>}
           {(server.warnings || []).map((w) => (
-            <div key={w} style={{ fontSize: '11px', color: '#e3b341', marginTop: '6px', display: 'flex', gap: '6px' }}>
+            <div key={w} style={{ fontSize: '11px', color: 'var(--accent)', marginTop: '6px', display: 'flex', gap: '6px' }}>
               <AlertTriangle size={13} style={{ flexShrink: 0, marginTop: '1px' }} /><span>{w}</span>
             </div>
           ))}
         </div>
-        <span style={{ fontSize: '11px', fontWeight: 600, color: st.color, border: `1px solid ${st.color}55`, borderRadius: '999px', padding: '2px 10px', whiteSpace: 'nowrap' }}>
+        <span style={{ fontSize: '11px', fontWeight: 600, color: st.color, border: `1px solid color-mix(in srgb, ${st.color} 45%, transparent)`, borderRadius: '14px', padding: '2px 10px', whiteSpace: 'nowrap' }}>
           {st.label}
         </span>
       </div>
 
       {server.error && (
-        <div style={{ marginTop: '10px', fontSize: '11.5px', color: '#f85149', display: 'flex', gap: '6px' }}>
+        <div style={{ marginTop: '10px', fontSize: '12.5px', color: 'var(--bad)', display: 'flex', gap: '6px' }}>
           <AlertTriangle size={14} style={{ flexShrink: 0 }} /><span style={{ wordBreak: 'break-word' }}>{server.error}</span>
         </div>
       )}
 
       {needsApproval && (
-        <div style={{ marginTop: '10px', padding: '10px 12px', borderRadius: '8px', backgroundColor: 'rgba(210,153,34,0.1)', border: '1px solid rgba(210,153,34,0.35)', fontSize: '12px', color: '#e3b341', display: 'flex', gap: '12px', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
+        <div style={{ marginTop: '10px', padding: '10px 12px', borderRadius: '9px', backgroundColor: 'color-mix(in srgb, var(--accent) 10%, transparent)', border: '1px solid color-mix(in srgb, var(--accent) 35%, transparent)', fontSize: '12.5px', color: 'var(--accent)', display: 'flex', gap: '12px', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
           <span>
             {server.status === 'changed'
               ? 'El servidor cambió sus herramientas desde que las aprobaste. No se exponen hasta que las revises de nuevo.'
@@ -268,17 +270,17 @@ function ServerCard({ server, busy, expanded, onToggle, actions }) {
         {server.enabled ? (
           <button className="btn btn-secondary" disabled={busy} onClick={actions.disable}><Power size={13} /> Desactivar</button>
         ) : (
-          <button className="btn btn-primary" disabled={busy} onClick={actions.enable}><Power size={13} /> Activar y revisar</button>
+          <button className="btn btn-secondary" disabled={busy} onClick={actions.enable}><Power size={13} /> Activar y revisar</button>
         )}
         {server.enabled && <button className="btn btn-secondary" disabled={busy} onClick={actions.restart}><RotateCw size={13} /> Reiniciar</button>}
         <button className="btn btn-secondary" disabled={busy} onClick={actions.edit}><Pencil size={13} /> Editar</button>
-        <button className="btn btn-secondary" disabled={busy} onClick={actions.remove} style={{ color: '#f85149' }}><Trash2 size={13} /> Eliminar</button>
+        <button className="btn btn-danger" disabled={busy} onClick={actions.remove}><Trash2 size={13} /> Eliminar</button>
       </div>
 
       {expanded && (
         <div style={{ marginTop: '12px' }}>
           {server.tools.length === 0 ? (
-            <div style={{ fontSize: '12px', color: '#73849c' }}>
+            <div style={{ fontSize: '12.5px', color: 'var(--muted)' }}>
               {server.enabled ? 'El servidor no ha anunciado herramientas.' : 'Activa el servidor para ver sus herramientas.'}
             </div>
           ) : (
@@ -363,52 +365,49 @@ export default function McpView() {
     approve: () => run(server.name, () => api.approveMcpServer(server.name, server.tools_hash)),
     override: (tool, body) => run(server.name, () => api.setMcpToolOverride(server.name, tool, body)),
     edit: () => { setFormError(''); setForm(formFromServer(server)); },
-    remove: () => {
-      if (window.confirm(`¿Eliminar el servidor «${server.name}»? Sus herramientas dejarán de estar disponibles.`)) {
+    remove: async () => {
+      if (await confirmDialog(`¿Eliminar el servidor «${server.name}»? Sus herramientas dejarán de estar disponibles.`, { confirmLabel: 'Eliminar', danger: true })) {
         run(server.name, () => api.deleteMcpServer(server.name));
       }
     },
   });
 
   return (
-    <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '18px', overflowY: 'auto', height: '100%' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap', alignItems: 'flex-start' }}>
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <div style={{ width: '32px', height: '32px', borderRadius: '8px', backgroundColor: '#161c28', border: '1px solid #243044', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#38bdf8' }}>
-              <Plug size={18} />
-            </div>
-            <h1 style={{ fontSize: '18px', fontWeight: 700, color: '#f8fafc' }}>Herramientas externas (MCP)</h1>
-          </div>
-          <p style={{ fontSize: '12px', color: '#73849c', marginTop: '6px', maxWidth: '760px' }}>
-            Cada herramienta pasa por la misma supervisión que las nativas. Un servidor es un programa que se ejecuta con tus permisos:
-            nace desactivado, no expone nada hasta que revisas y apruebas sus herramientas, y si las cambia deja de exponerlas. Las que
-            tienen efectos siempre esperan tu confirmación, incluso en Full Access autónomo.
-          </p>
-        </div>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <button className="btn btn-secondary" onClick={refresh} disabled={Boolean(busy)}><RefreshCw size={13} /> Actualizar</button>
-          <button className="btn btn-primary" onClick={() => { setFormError(''); setForm(emptyForm()); }}><Plus size={13} /> Añadir servidor</button>
-        </div>
-      </div>
+    <ViewPage maxWidth={1000} gap={18}>
+      <ViewHeader
+        title="Herramientas externas (MCP)"
+        description="Cada herramienta pasa por la misma supervisión que las nativas. Un servidor es un programa que se ejecuta con tus permisos: nace desactivado, no expone nada hasta que revisas y apruebas sus herramientas, y si las cambia deja de exponerlas. Las que tienen efectos siempre esperan tu confirmación, incluso en Full Access autónomo."
+        actions={
+          <>
+            <button className="btn btn-secondary" onClick={refresh} disabled={Boolean(busy)}><RefreshCw size={13} /> Actualizar</button>
+            <button className="btn btn-primary" onClick={() => { setFormError(''); setForm(emptyForm()); }}><Plus size={13} /> Añadir servidor</button>
+          </>
+        }
+      />
 
-      {error && <div role="alert" style={{ padding: '10px 14px', borderRadius: '8px', backgroundColor: 'rgba(248,81,73,0.1)', border: '1px solid rgba(248,81,73,0.3)', fontSize: '12px', color: '#f85149' }}>{error}</div>}
+      {error && (
+        <div role="alert" style={{ padding: '10px 14px', borderRadius: 'var(--r-ui)', border: '1px solid var(--bad)', color: 'var(--bad)', fontSize: 'var(--fs-secondary)', overflowWrap: 'anywhere' }}>
+          {error}
+        </div>
+      )}
 
       {form && <ServerForm form={form} setForm={setForm} onSubmit={submitForm} onCancel={() => setForm(null)} busy={Boolean(busy)} error={formError} />}
 
       {servers === null ? (
-        <div style={{ fontSize: '12px', color: '#73849c' }}>Cargando…</div>
+        <div style={{ color: 'var(--muted)' }}>Cargando…</div>
       ) : servers.length === 0 && !form ? (
-        <div style={{ ...card, fontSize: '12.5px', color: '#94a3b8' }}>
-          Aún no hay servidores. Pulsa «Añadir servidor» e indica el comando que lo arranca (por ejemplo <code>npx</code> o <code>uvx</code> con el
-          paquete del servidor). Cuando lo actives verás sus herramientas para revisarlas antes de aprobarlas.
-        </div>
+        <EmptyState
+          title="Aún no hay servidores"
+          actions={<button className="btn btn-primary" onClick={() => { setFormError(''); setForm(emptyForm()); }}><Plus size={13} /> Añadir servidor</button>}
+        >
+          Indica el comando que arranca el servidor (por ejemplo <code>npx</code> o <code>uvx</code> con el paquete del servidor). Cuando lo actives verás sus herramientas para revisarlas antes de aprobarlas.
+        </EmptyState>
       ) : (
         servers.map((server) => (
           <ServerCard key={server.name} server={server} busy={busy === server.name} expanded={Boolean(expanded[server.name])}
             onToggle={() => setExpanded((e) => ({ ...e, [server.name]: !e[server.name] }))} actions={actionsFor(server)} />
         ))
       )}
-    </div>
+    </ViewPage>
   );
 }

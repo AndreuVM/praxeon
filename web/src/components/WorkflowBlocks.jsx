@@ -44,7 +44,7 @@ export function buildBlocks(nodes) {
 }
 
 const STATE_LABEL = { running: 'Trabajando', done: 'Completado', failed: 'Interrumpido' };
-const STATE_COLOR = { running: '#38bdf8', done: '#34d399', failed: '#f87171' };
+const STATE_COLOR = { running: 'var(--accent)', done: 'var(--ok)', failed: 'var(--bad)' };
 
 const PAD = 10;
 const CARD_W = 184; // tarjetas compactas: caben varias ramas por bloque
@@ -156,18 +156,16 @@ export default function WorkflowBlocks({ blocks, isOpen, onToggle, selectedNodeI
             <div key={b.key}>
               {prev && (
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', margin: '0 0 0 0' }}>
-                  <div style={{ width: 0, height: 14, borderLeft: `2px dashed ${color}` }} />
-                  <span style={{ fontSize: '10.5px', fontWeight: 600, color, border: `1px solid ${color}`, borderRadius: 9999, padding: '2px 10px', backgroundColor: '#0a0e16' }}>{bridgeLabel}</span>
-                  <div style={{ width: 0, height: 14, borderLeft: `2px dashed ${color}` }} />
+                  <div style={{ width: 0, height: 14, borderLeft: '1px dashed var(--line)' }} />
+                  <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--muted)', border: '1px solid var(--line)', borderRadius: 14, padding: '2px 10px', backgroundColor: 'var(--bg)' }}>{bridgeLabel}</span>
+                  <div style={{ width: 0, height: 14, borderLeft: '1px dashed var(--line)' }} />
                 </div>
               )}
               <div
                 style={{
-                  borderRadius: '10px',
-                  border: `1px solid ${b.state === 'running' ? color : '#1e293b'}`,
-                  borderLeft: `5px solid ${color}`,
-                  backgroundColor: '#111826',
-                  boxShadow: b.state === 'running' ? `0 0 14px ${color}33` : 'none',
+                  borderRadius: '9px',
+                  border: `1px solid ${b.state === 'running' ? 'var(--accent)' : 'var(--line)'}`,
+                  backgroundColor: 'var(--surface)',
                   overflow: 'hidden',
                 }}
               >
@@ -175,13 +173,13 @@ export default function WorkflowBlocks({ blocks, isOpen, onToggle, selectedNodeI
                   onClick={() => onToggle(b)}
                   style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 12px', cursor: 'pointer', userSelect: 'none' }}
                 >
-                  {open ? <ChevronDown size={14} style={{ color: '#8b949e' }} /> : <ChevronRight size={14} style={{ color: '#8b949e' }} />}
+                  {open ? <ChevronDown size={14} style={{ color: 'var(--muted)' }} /> : <ChevronRight size={14} style={{ color: 'var(--muted)' }} />}
                   <div style={{ minWidth: 0, flex: 1 }}>
                     <div style={{ fontSize: '12.5px', fontWeight: 700, color, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {b.agentName}
-                      {b.agentRole ? <span style={{ fontWeight: 400, color: '#8b949e' }}> · {b.agentRole}</span> : null}
+                      {b.agentRole ? <span style={{ fontWeight: 400, color: 'var(--muted)' }}> · {b.agentRole}</span> : null}
                     </div>
-                    <div style={{ fontSize: '11px', color: '#94a3b8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    <div style={{ fontSize: '11px', color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {b.wfNodeName}
                       {b.iteration > 1 ? ` · pasada ${b.iteration}` : ''}
                     </div>
@@ -191,16 +189,16 @@ export default function WorkflowBlocks({ blocks, isOpen, onToggle, selectedNodeI
                       {b.state === 'running' && <span className="pulse-dot" style={{ backgroundColor: stateColor }} />}
                       {STATE_LABEL[b.state]}
                     </div>
-                    <div style={{ fontSize: '10px', color: '#64748b' }}>
+                    <div style={{ fontSize: '11px', color: 'var(--muted)' }}>
                       {b.steps.length} {b.steps.length === 1 ? 'paso' : 'pasos'}
                       {blocked > 0 ? ` · ${blocked} vetados` : ''}
                     </div>
                   </div>
                 </div>
                 {open && (
-                  <div style={{ padding: '2px 12px 12px 12px', borderTop: '1px solid #1b2638' }}>
+                  <div style={{ padding: '2px 12px 12px 12px', borderTop: '1px solid var(--line)' }}>
                     {b.steps.length === 0 ? (
-                      <div style={{ fontSize: '11px', color: '#64748b', padding: '8px 2px' }}>Esperando la primera acción del agente…</div>
+                      <div style={{ fontSize: '11px', color: 'var(--muted)', padding: '8px 2px' }}>Esperando la primera acción del agente…</div>
                     ) : (
                       <BlockTree steps={b.steps} selectedNodeId={selectedNodeId} onSelectNode={onSelectNode} latestId={latestId} />
                     )}

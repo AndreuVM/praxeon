@@ -4,12 +4,12 @@ import { addCustomModel, BUILTIN_MODELS, hasModels, isBuiltin, modelsFor, remove
 
 const field = {
   width: '100%',
-  backgroundColor: '#121722',
-  border: '1px solid #202737',
-  borderRadius: '4px',
+  backgroundColor: 'var(--surface)',
+  border: '1px solid var(--line)',
+  borderRadius: '6px',
   padding: '4px 6px',
-  color: '#f0f6fc',
-  fontSize: '10.5px',
+  color: 'var(--text)',
+  fontSize: '11px',
   outline: 'none',
 };
 
@@ -25,8 +25,8 @@ export default function ModelPicker({ provider, value, onChange, disabled }) {
   if (!hasModels(provider)) {
     return (
       <div>
-        <label style={{ fontSize: '10px', color: '#8b949e', display: 'block', marginBottom: '2px' }}>Modelo:</label>
-        <div style={{ ...field, color: '#64748b' }}>No aplica (modo simulado)</div>
+        <label style={{ fontSize: 'var(--fs-secondary)', color: 'var(--muted)', display: 'block', marginBottom: '4px' }}>Modelo</label>
+        <div style={{ ...field, color: 'var(--muted)' }}>No aplica (modo simulado)</div>
       </div>
     );
   }
@@ -47,13 +47,13 @@ export default function ModelPicker({ provider, value, onChange, disabled }) {
 
   return (
     <div>
-      <label style={{ fontSize: '10px', color: '#8b949e', display: 'flex', justifyContent: 'space-between', marginBottom: '2px' }}>
-        <span>Modelo:</span>
+      <label style={{ fontSize: '11px', color: 'var(--muted)', display: 'flex', justifyContent: 'space-between', marginBottom: '2px' }}>
+        <span>Modelo</span>
         {!disabled && (
           <button
             type="button"
             onClick={() => setAdding((v) => !v)}
-            style={{ background: 'none', border: 'none', color: '#58a6ff', fontSize: '10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '2px', padding: 0 }}
+            style={{ background: 'none', border: 'none', color: 'var(--accent)', fontSize: '11px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '2px', padding: 0 }}
           >
             <Plus size={10} /> Añadir
           </button>
@@ -78,7 +78,7 @@ export default function ModelPicker({ provider, value, onChange, disabled }) {
               onChange('');
               force((n) => n + 1);
             }}
-            style={{ background: '#161c28', border: '1px solid #202737', borderRadius: '4px', color: '#f87171', cursor: 'pointer', padding: '0 6px' }}
+            style={{ background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: '6px', color: 'var(--bad)', cursor: 'pointer', padding: '0 6px' }}
           >
             <Trash2 size={11} />
           </button>
@@ -105,7 +105,7 @@ export default function ModelPicker({ provider, value, onChange, disabled }) {
             type="button"
             onClick={confirmAdd}
             disabled={!draft.trim()}
-            style={{ background: draft.trim() ? '#238636' : '#18202d', border: '1px solid #2ea043', borderRadius: '4px', color: '#fff', fontSize: '10.5px', padding: '0 8px', cursor: draft.trim() ? 'pointer' : 'not-allowed' }}
+            style={{ background: draft.trim() ? 'var(--ok)' : 'var(--line)', border: '1px solid var(--ok)', borderRadius: '6px', color: 'var(--on-accent)', fontSize: '11px', padding: '0 8px', cursor: draft.trim() ? 'pointer' : 'not-allowed' }}
           >
             Añadir
           </button>

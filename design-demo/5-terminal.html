@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Praxeon · Terminal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap">
+<link rel="stylesheet" href="shared.css">
+<style>
+/* Terminal: monocromo, rejilla visible, navegación numerada y atajos de teclado */
+:root{--b:#0a0a0a;--s:#0a0a0a;--l:#333;--t:#d8d8d8;--m:#7d7d7d;--a:#ffffff;--ab:#000;--ok:#d8d8d8;--bad:#ffb454;--f:'JetBrains Mono',ui-monospace,monospace;--fm:'JetBrains Mono',ui-monospace,monospace;--r:0}
+body{font-size:12px}
+#app{display:flex;flex-direction:column;height:100%}
+.st{height:32px;border-bottom:1px solid var(--l);display:flex;align-items:center;gap:4px;padding:0 10px;color:var(--m);white-space:nowrap;overflow-x:auto;flex:none}
+.st b{color:var(--t);font-weight:700;margin-right:12px}
+.st button{padding:0 8px;color:var(--m);height:20px}
+.st button:hover{color:var(--t)}
+.st button.on{background:var(--t);color:#000}
+.st .r{margin-left:auto;display:flex;gap:16px;padding-left:16px}
+#live{flex:1;min-height:0;display:grid;grid-template-columns:1.2fr 1fr;grid-template-rows:1fr 150px auto}
+.pane{border-right:1px solid var(--l);border-bottom:1px solid var(--l);position:relative;padding:24px 14px 10px;min-height:0;min-width:0;overflow:hidden}
+.pane .pt{position:absolute;top:5px;left:14px;color:var(--m);font-size:11px;z-index:1}
+.pane.nr{border-right:0}
+.pane.full{grid-column:1/3;border-right:0;overflow:auto}
+.pane .tree{height:100%}
+.pane.det{overflow:auto}
+.pane.det .detail{font-size:12px}
+.pane.det .kv{padding:3px 0;border-bottom:0}
+.pane.det .code{border-color:var(--l);padding:6px 8px}
+.pane.det .verdict{font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.04em}
+.keys{color:var(--m);margin-top:10px}
+.keys b{color:var(--t);font-weight:500}
+.log #evs>div{display:flex;gap:14px;white-space:nowrap}
+.log .lv-error{color:var(--bad)}
+.prompt{grid-column:1/3;display:flex;gap:8px;align-items:center;padding:7px 14px;color:var(--t);border-bottom:0}
+.prompt input{flex:1;min-width:0;caret-color:var(--t)}
+.prompt input::placeholder{color:var(--m)}
+.other{flex:1;overflow:auto;padding:28px clamp(16px,4vw,56px)}
+.other .view{max-width:980px}
+.tree .n.sel rect{stroke:#fff;stroke-width:1.5}
+.tree .n text{font-size:8.6px}
+.tree .n text.sub{font-size:8px}
+
+@media (max-width:900px){#live{grid-template-columns:1fr}.pane.det{display:none}.pane.full{grid-column:1}.prompt{grid-column:1}}
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="st" id="st"></div>
+  <div id="live">
+    <section class="pane"><span class="pt">árbol</span><div id="tree"></div></section>
+    <section class="pane det nr"><span class="pt" id="dpt">paso</span><div id="detail"></div><div class="keys"><b>j/k</b> mover · <b>d</b> decisión · <b>e</b> evidencia · <b>p</b> política · <b>r</b> recibo</div></section>
+    <section class="pane full log" id="log"><span class="pt">eventos</span><div id="evs"></div></section>
+    <form class="prompt" id="form"><span class="dim">misión ▸</span><input id="q" placeholder="escribe y pulsa Enter · / para enfocar" aria-label="Misión" autocomplete="off"></form>
+  </div>
+  <div class="other" id="other" hidden></div>
+</div>
+<script src="shared.js"></script>
+<script>
+(function(){
+  var M=PX.M, view='live', tab='decision';
+  var ORDER=['live','sessions','decisions','agents','workflows','providers','mcp','security','settings'];
+  var SHORT={live:'live',sessions:'sesiones',decisions:'decisiones',agents:'agentes',workflows:'flujos',providers:'proveedores',mcp:'mcp',security:'seguridad',settings:'ajustes'};
+  var st=document.getElementById('st');
+  function paintSt(){
+    st.innerHTML='<b>praxeon</b>'+ORDER.map(function(id,i){return '<button data-view="'+id+'" class="'+(view===id?'on':'')+'">'+(i+1)+' '+SHORT[id]+'</button>'}).join('')+
+      '<span class="r"><span>local_restricted</span><span>'+(M.running?'● en curso':'○ completada')+'</span><span>7f3a2c</span></span>';
+  }
+  st.addEventListener('click',function(e){var b=e.target.closest('[data-view]');if(b)go(b.dataset.view)});
+  function go(v){
+    view=v;paintSt();
+    document.getElementById('live').hidden=v!=='live';
+    var o=document.getElementById('other');o.hidden=v==='live';
+    if(v!=='live')o.innerHTML=PX.viewHTML(v);
+  }
+  PX.tree(document.getElementById('tree'),{glyph:true});
+  function paint(){
+    var s=M.step(M.selected);
+    document.getElementById('dpt').textContent=s.start?'misión':'paso '+s.n+' · '+tab;
+    document.getElementById('detail').innerHTML=PX.detailHTML(s,tab);
+  }
+  M.on(function(){
+    paintSt();paint();
+    var ev=document.getElementById('evs');
+    ev.innerHTML=M.events.map(function(e){return '<div class="'+(e.lvl==='error'?'lv-error':'')+'"><span class="dim">'+e.t+'</span><span>'+e.type+'</span><span class="dim">'+e.detail+'</span></div>'}).join('');
+    var p=document.getElementById('log');p.scrollTop=p.scrollHeight;
+    if(view==='decisions')document.getElementById('other').innerHTML=PX.viewHTML(view);
+  });
+  var TABS={d:'decision',e:'evidence',p:'policy',r:'receipt'};
+  document.addEventListener('keydown',function(e){
+    var q=document.getElementById('q');
+    if(document.activeElement===q){if(e.key==='Escape')q.blur();return}
+    if(e.ctrlKey||e.metaKey||e.altKey)return;
+    if(/^[1-9]$/.test(e.key)){go(ORDER[+e.key-1]);return}
+    if(e.key==='/'){e.preventDefault();go('live');q.focus();return}
+    if(view!=='live')return;
+    var ids=M.steps.map(function(s){return s.id}),i=ids.indexOf(M.selected);
+    if(e.key==='j'&&i<ids.length-1)M.select(ids[i+1]);
+    else if(e.key==='k'&&i>0)M.select(ids[i-1]);
+    else if(TABS[e.key]){tab=TABS[e.key];paint()}
+  });
+  document.getElementById('form').addEventListener('submit',function(e){e.preventDefault();document.getElementById('q').value='';M.run()});
+  go('live');
+})();
+</script>
+</body>
+</html>

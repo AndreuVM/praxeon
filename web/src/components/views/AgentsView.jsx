@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import {
+  Search,
   Bot,
   RefreshCw,
   Plus,
@@ -18,6 +19,8 @@ import {
   fetchAgentVersions,
 } from '../../services/api';
 import McpToolPicker from '../McpToolPicker';
+import { notify, confirmDialog } from '../Dialogs';
+import { ViewPage, ViewHeader, Chip, Segmented, SearchField, EmptyState } from '../ui';
 
 export default function AgentsView({
   session: _session = {},
@@ -311,14 +314,14 @@ export default function AgentsView({
 
   const handleDeleteAgent = async (agent, hardDelete = false) => {
     const modeDesc = hardDelete ? 'eliminar permanentemente' : 'dar de baja lógica (TERMINATED)';
-    if (!window.confirm(`¿Estás seguro de que deseas ${modeDesc} al agente '${agent.name}'?`)) {
+    if (!(await confirmDialog(`¿Seguro que quieres ${modeDesc} al agente «${agent.name}»?`, { confirmLabel: hardDelete ? 'Eliminar' : 'Dar de baja', danger: true }))) {
       return;
     }
     try {
       await deleteAgent(agent.agent_id, hardDelete);
       await loadAgents();
     } catch (err) {
-      alert(`Error al eliminar agente: ${err.message}`);
+      notify(`Error al eliminar agente: ${err.message}`);
     }
   };
 
@@ -337,196 +340,57 @@ export default function AgentsView({
 
   const getStatusBadge = (status) => {
     switch (status) {
-      case 'ACTIVE':
-        return { label: 'Activo', bg: 'rgba(63, 185, 80, 0.15)', text: '#3fb950', border: 'rgba(63, 185, 80, 0.4)' };
-      case 'INACTIVE':
-        return { label: 'Inactivo', bg: 'rgba(139, 148, 158, 0.15)', text: '#8b949e', border: 'rgba(139, 148, 158, 0.4)' };
-      case 'QUARANTINED':
-        return { label: 'Cuarentena', bg: 'rgba(248, 81, 73, 0.15)', text: '#f85149', border: 'rgba(248, 81, 73, 0.4)' };
-      case 'TERMINATED':
-        return { label: 'Deprecado', bg: 'rgba(210, 153, 34, 0.15)', text: '#d29922', border: 'rgba(210, 153, 34, 0.4)' };
-      default:
-        return { label: status, bg: 'rgba(139, 148, 158, 0.1)', text: '#8b949e', border: 'rgba(139, 148, 158, 0.3)' };
+      case 'ACTIVE': return { label: 'Activo', tone: 'ok' };
+      case 'INACTIVE': return { label: 'Inactivo', tone: undefined };
+      case 'QUARANTINED': return { label: 'En cuarentena', tone: 'bad' };
+      case 'TERMINATED': return { label: 'Deprecado', tone: undefined };
+      default: return { label: status, tone: undefined };
     }
   };
 
   return (
-    <div
-      style={{
-        flex: 1,
-        padding: '24px 32px',
-        overflowY: 'auto',
-        backgroundColor: '#0a0e16',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '24px',
-        color: '#f8fafc',
-      }}
-    >
-      {/* Header & Acciones de Catálogo */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px' }}>
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <div
-              style={{
-                width: '34px',
-                height: '34px',
-                borderRadius: '8px',
-                backgroundColor: '#161c28',
-                border: '1px solid #243044',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: '#c084fc',
-              }}
-            >
-              <Bot size={20} />
-            </div>
-            <h1 style={{ fontSize: '19px', fontWeight: '700', color: '#f8fafc', letterSpacing: '-0.01em' }}>
-              Catálogo de Agentes Autónomos (AgentRegistry)
-            </h1>
-          </div>
-          <p style={{ fontSize: '12px', color: '#73849c', marginTop: '4px' }}>
-            Gestión completa del ciclo de vida, versionado criptográfico inmutable SHA-256 y políticas de confinamiento.
-          </p>
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <button
-            onClick={loadAgents}
-            disabled={loading}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '7px 12px',
-              borderRadius: '6px',
-              backgroundColor: '#161c28',
-              border: '1px solid #243044',
-              color: '#94a3b8',
-              fontSize: '12px',
-              fontWeight: '500',
-              cursor: 'pointer',
-            }}
-          >
-            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-            <span>Refrescar</span>
-          </button>
-
-          <button
-            onClick={handleOpenCreate}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '7px 14px',
-              borderRadius: '6px',
-              backgroundColor: '#238636',
-              border: '1px solid rgba(255, 255, 255, 0.1)',
-              color: '#ffffff',
-              fontSize: '12.5px',
-              fontWeight: '600',
-              cursor: 'pointer',
-              boxShadow: '0 2px 8px rgba(35, 134, 54, 0.3)',
-            }}
-          >
-            <Plus size={15} />
-            <span>Registrar Agente</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Barra de Filtros */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          backgroundColor: '#121824',
-          borderRadius: '8px',
-          border: '1px solid #1e293b',
-          padding: '10px 14px',
-          gap: '12px',
-          flexWrap: 'wrap',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, minWidth: '240px' }}>
-          <input
-            type="text"
-            placeholder="Buscar agente por nombre, ID, rol o capacidades..."
-            value={searchFilter}
-            onChange={(e) => setSearchFilter(e.target.value)}
-            style={{
-              flex: 1,
-              backgroundColor: '#0c1017',
-              border: '1px solid #243044',
-              borderRadius: '6px',
-              padding: '6px 12px',
-              fontSize: '12px',
-              color: '#f8fafc',
-              outline: 'none',
-            }}
-          />
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{ fontSize: '11.5px', color: '#73849c' }}>Estado:</span>
-          {['', 'ACTIVE', 'INACTIVE', 'QUARANTINED', 'TERMINATED'].map((st) => (
-            <button
-              key={st}
-              onClick={() => setStatusFilter(st)}
-              style={{
-                fontSize: '11px',
-                fontWeight: statusFilter === st ? '700' : '500',
-                padding: '3px 8px',
-                borderRadius: '4px',
-                backgroundColor: statusFilter === st ? '#1e293b' : 'transparent',
-                color: statusFilter === st ? '#38bdf8' : '#73849c',
-                border: `1px solid ${statusFilter === st ? '#38bdf8' : 'transparent'}`,
-                cursor: 'pointer',
-              }}
-            >
-              {st === '' ? 'Todos' : st}
+    <ViewPage maxWidth={1240}>
+      <ViewHeader
+        title="Agentes"
+        description="Catálogo de agentes autónomos (AgentRegistry): ciclo de vida, versionado inmutable SHA-256 y políticas de confinamiento."
+        actions={
+          <>
+            <button onClick={loadAgents} disabled={loading} className="btn btn-secondary">
+              <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+              <span>Actualizar</span>
             </button>
-          ))}
-        </div>
+            <button onClick={handleOpenCreate} className="btn btn-primary">
+              <Plus size={15} />
+              <span>Registrar agente</span>
+            </button>
+          </>
+        }
+      />
+
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
+        <SearchField value={searchFilter} onChange={setSearchFilter} placeholder="Buscar agente por nombre, id, rol o capacidades…" icon={Search} maxWidth={460} />
+        <Segmented
+          label="Filtrar por estado"
+          value={statusFilter}
+          onChange={setStatusFilter}
+          options={[
+            { id: '', label: 'Todos' },
+            { id: 'ACTIVE', label: 'Activos' },
+            { id: 'INACTIVE', label: 'Inactivos' },
+            { id: 'QUARANTINED', label: 'En cuarentena' },
+            { id: 'TERMINATED', label: 'Deprecados' },
+          ]}
+        />
       </div>
 
-      {/* Grid Principal: Lista de Agentes vs Detalle Activo */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'minmax(320px, 1fr) minmax(420px, 1.2fr)',
-          gap: '20px',
-          alignItems: 'start',
-        }}
-      >
-        {/* Columna Izquierda: Tarjetas de Agentes */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <span style={{ fontSize: '12.5px', fontWeight: '700', color: '#94a3b8' }}>
-              Agentes Registrados ({filteredAgents.length})
-            </span>
-          </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 380px), 1fr))', gap: '20px', alignItems: 'start' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', minWidth: 0 }}>
+          <div style={{ color: 'var(--muted)', fontSize: 'var(--fs-secondary)' }}>Agentes registrados ({filteredAgents.length})</div>
 
           {loading ? (
-            <div style={{ padding: '30px', textAlign: 'center', color: '#73849c', fontSize: '12px' }}>
-              Cargando catálogo desde el servidor...
-            </div>
+            <div style={{ padding: '30px', textAlign: 'center', color: 'var(--muted)' }}>Cargando el catálogo desde el servidor…</div>
           ) : filteredAgents.length === 0 ? (
-            <div
-              style={{
-                backgroundColor: '#121824',
-                borderRadius: '8px',
-                border: '1px solid #1e293b',
-                padding: '30px',
-                textAlign: 'center',
-                color: '#73849c',
-                fontSize: '12.5px',
-              }}
-            >
-              No se encontraron agentes coincidentes con los filtros.
-            </div>
+            <EmptyState title="Ningún agente coincide">Prueba con otro filtro, o registra un agente nuevo con «Registrar agente».</EmptyState>
           ) : (
             filteredAgents.map((agent) => {
               const isSelected = selectedAgent?.agent_id === agent.agent_id;
@@ -535,85 +399,39 @@ export default function AgentsView({
               return (
                 <div
                   key={agent.agent_id}
+                  role="button"
+                  tabIndex={0}
                   onClick={() => setSelectedAgentId(agent.agent_id)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelectedAgentId(agent.agent_id); } }}
                   style={{
-                    backgroundColor: isSelected ? '#162234' : '#121824',
-                    borderRadius: '8px',
-                    border: `1px solid ${isSelected ? '#388bfd' : '#1e293b'}`,
+                    background: isSelected ? 'var(--surface)' : 'transparent',
+                    borderRadius: 'var(--r-card)',
+                    border: `1px solid ${isSelected ? 'var(--muted)' : 'var(--line)'}`,
                     padding: '14px 16px',
                     cursor: 'pointer',
-                    transition: 'all 0.15s ease',
                     display: 'flex',
                     flexDirection: 'column',
                     gap: '8px',
                   }}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span style={{ fontSize: '13.5px', fontWeight: '700', color: isSelected ? '#58a6ff' : '#f0f6fc' }}>
-                        {agent.name}
-                      </span>
-                      <span
-                        style={{
-                          fontSize: '10px',
-                          fontWeight: '700',
-                          padding: '1px 5px',
-                          borderRadius: '4px',
-                          backgroundColor: '#1e293b',
-                          color: '#38bdf8',
-                          fontFamily: 'var(--font-mono)',
-                        }}
-                      >
-                        v{agent.version}
-                      </span>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                      <span style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{agent.name}</span>
+                      <Chip mono>v{agent.version}</Chip>
                     </div>
-
-                    <span
-                      style={{
-                        fontSize: '10px',
-                        fontWeight: '700',
-                        padding: '2px 7px',
-                        borderRadius: '10px',
-                        backgroundColor: badge.bg,
-                        color: badge.text,
-                        border: `1px solid ${badge.border}`,
-                      }}
-                    >
-                      {badge.label}
-                    </span>
+                    <Chip tone={badge.tone}>{badge.label}</Chip>
                   </div>
 
-                  <div style={{ fontSize: '11px', color: '#73849c' }}>
-                    <span style={{ color: '#94a3b8', fontWeight: '600' }}>{agent.role}</span> ·{' '}
-                    <span>{agent.model?.provider || 'gemini'} / {agent.model?.model_name || 'gemini-1.5-pro'}</span>
+                  <div style={{ fontSize: 'var(--fs-secondary)', color: 'var(--muted)' }}>
+                    <span style={{ color: 'var(--text)' }}>{agent.role}</span> · <span>{agent.model?.provider || 'gemini'} / {agent.model?.model_name || 'gemini-1.5-pro'}</span>
                   </div>
 
-                  {agent.description && (
-                    <p style={{ fontSize: '11.5px', color: '#8b949e', margin: 0, lineHeight: '1.4' }}>
-                      {agent.description}
-                    </p>
-                  )}
+                  {agent.description && <p style={{ color: 'var(--muted)', lineHeight: 1.4, fontSize: 'var(--fs-secondary)' }}>{agent.description}</p>}
 
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '4px' }}>
-                    <span style={{ fontSize: '10px', color: '#64748b', fontFamily: 'var(--font-mono)' }}>
-                      #{agent.definition_hash?.slice(0, 8)}
-                    </span>
-
-                    <div style={{ display: 'flex', gap: '4px' }}>
-                      {(agent.capabilities || []).slice(0, 2).map((c) => (
-                        <span
-                          key={c}
-                          style={{
-                            fontSize: '9.5px',
-                            backgroundColor: 'rgba(56, 189, 248, 0.1)',
-                            color: '#38bdf8',
-                            padding: '1px 5px',
-                            borderRadius: '3px',
-                          }}
-                        >
-                          {c}
-                        </span>
-                      ))}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginTop: '2px', flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: 'var(--fs-code)', color: 'var(--muted)', fontFamily: 'var(--font-mono)' }}>#{agent.definition_hash?.slice(0, 8)}</span>
+                    <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                      {(agent.capabilities || []).slice(0, 2).map((c) => <Chip key={c}>{c}</Chip>)}
                     </div>
                   </div>
                 </div>
@@ -622,256 +440,92 @@ export default function AgentsView({
           )}
         </div>
 
-        {/* Columna Derecha: Detalle Completo del Agente Seleccionado */}
         {selectedAgent ? (
-          <div
-            style={{
-              backgroundColor: '#121824',
-              borderRadius: '10px',
-              border: '1px solid #1e293b',
-              padding: '20px',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '18px',
-            }}
-          >
-            {/* Top Bar Detalle */}
-            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px' }}>
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <h2 style={{ fontSize: '17px', fontWeight: '700', color: '#f8fafc', margin: 0 }}>
-                    {selectedAgent.name}
-                  </h2>
-                  <span
-                    style={{
-                      fontSize: '11px',
-                      fontWeight: '700',
-                      padding: '2px 8px',
-                      borderRadius: '12px',
-                      ...getStatusBadge(selectedAgent.status),
-                    }}
-                  >
-                    {selectedAgent.status}
-                  </span>
-                  <span
-                    style={{
-                      fontSize: '11px',
-                      fontWeight: '700',
-                      padding: '2px 8px',
-                      borderRadius: '4px',
-                      backgroundColor: '#1e293b',
-                      color: '#38bdf8',
-                      fontFamily: 'var(--font-mono)',
-                    }}
-                  >
-                    v{selectedAgent.version}
-                  </span>
+          <div style={{ border: '1px solid var(--line)', borderRadius: 'var(--r-card)', padding: '20px', display: 'flex', flexDirection: 'column', gap: '18px', minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                  <h2 style={{ fontSize: 'var(--fs-title)', fontWeight: 600, letterSpacing: '-0.01em' }}>{selectedAgent.name}</h2>
+                  <Chip tone={getStatusBadge(selectedAgent.status).tone}>{getStatusBadge(selectedAgent.status).label}</Chip>
+                  <Chip mono>v{selectedAgent.version}</Chip>
                 </div>
-                <div style={{ fontSize: '11.5px', color: '#73849c', marginTop: '4px' }}>
-                  ID: <span style={{ fontFamily: 'var(--font-mono)', color: '#94a3b8' }}>{selectedAgent.agent_id}</span> ·
-                  Fingerprint:{' '}
-                  <span style={{ fontFamily: 'var(--font-mono)', color: '#38bdf8' }}>
-                    {selectedAgent.definition_hash}
-                  </span>
+                <div style={{ fontSize: 'var(--fs-secondary)', color: 'var(--muted)', marginTop: '6px', overflowWrap: 'anywhere' }}>
+                  Id: <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--text)' }}>{selectedAgent.agent_id}</span> · Huella:{' '}
+                  <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--text)' }}>{selectedAgent.definition_hash}</span>
                 </div>
               </div>
 
-              {/* Botones de acción */}
-              <div style={{ display: 'flex', gap: '6px' }}>
-                <button
-                  onClick={() => handleOpenHistory(selectedAgent)}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '5px',
-                    padding: '5px 10px',
-                    borderRadius: '5px',
-                    backgroundColor: '#161c28',
-                    border: '1px solid #243044',
-                    color: '#94a3b8',
-                    fontSize: '11.5px',
-                    cursor: 'pointer',
-                  }}
-                  title="Ver trazabilidad de versiones"
-                >
-                  <History size={13} />
-                  <span>Versiones</span>
+              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                <button onClick={() => handleOpenHistory(selectedAgent)} className="btn btn-secondary" title="Ver la trazabilidad de versiones">
+                  <History size={13} /> Versiones
                 </button>
-
-                <button
-                  onClick={() => handleOpenVersion(selectedAgent)}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '5px',
-                    padding: '5px 10px',
-                    borderRadius: '5px',
-                    backgroundColor: '#162234',
-                    border: '1px solid #2a3c5a',
-                    color: '#38bdf8',
-                    fontSize: '11.5px',
-                    cursor: 'pointer',
-                  }}
-                  title="Crear nueva versión inmutable"
-                >
-                  <GitCommit size={13} />
-                  <span>Versionar</span>
+                <button onClick={() => handleOpenVersion(selectedAgent)} className="btn btn-secondary" title="Crear una nueva versión inmutable">
+                  <GitCommit size={13} /> Versionar
                 </button>
-
-                <button
-                  onClick={() => handleOpenEdit(selectedAgent)}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '5px',
-                    padding: '5px 10px',
-                    borderRadius: '5px',
-                    backgroundColor: '#1e293b',
-                    border: '1px solid #334155',
-                    color: '#f8fafc',
-                    fontSize: '11.5px',
-                    cursor: 'pointer',
-                  }}
-                  title="Editar configuración"
-                >
-                  <Edit2 size={13} />
-                  <span>Editar</span>
+                <button onClick={() => handleOpenEdit(selectedAgent)} className="btn btn-secondary" title="Editar la configuración">
+                  <Edit2 size={13} /> Editar
                 </button>
-
-                <button
-                  onClick={() => handleDeleteAgent(selectedAgent, false)}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '5px',
-                    padding: '5px 8px',
-                    borderRadius: '5px',
-                    backgroundColor: 'rgba(248, 81, 73, 0.1)',
-                    border: '1px solid rgba(248, 81, 73, 0.3)',
-                    color: '#f85149',
-                    fontSize: '11.5px',
-                    cursor: 'pointer',
-                  }}
-                  title="Eliminar o dar de baja"
-                >
+                <button onClick={() => handleDeleteAgent(selectedAgent, false)} className="btn btn-danger" title="Eliminar o dar de baja" aria-label="Eliminar o dar de baja">
                   <Trash2 size={13} />
                 </button>
               </div>
             </div>
 
-            {/* Directiva raíz / System Prompt */}
             <div>
-              <span style={{ fontSize: '11.5px', fontWeight: '700', color: '#94a3b8', display: 'block', marginBottom: '6px' }}>
-                Directiva Raíz (System Prompt):
-              </span>
-              <div
-                style={{
-                  backgroundColor: '#0c1017',
-                  borderRadius: '6px',
-                  border: '1px solid #1a2333',
-                  padding: '12px',
-                  fontFamily: 'var(--font-mono)',
-                  fontSize: '11.5px',
-                  color: '#cbd5e1',
-                  maxHeight: '140px',
-                  overflowY: 'auto',
-                  whiteSpace: 'pre-wrap',
-                  lineHeight: '1.45',
-                }}
-              >
+              <span style={{ color: 'var(--muted)', fontSize: 'var(--fs-secondary)', display: 'block', marginBottom: '6px' }}>Directiva raíz (system prompt)</span>
+              <div style={{ background: 'var(--surface)', borderRadius: 'var(--r-ui)', border: '1px solid var(--line)', padding: '12px', fontFamily: 'var(--font-mono)', fontSize: 'var(--fs-code)', maxHeight: '160px', overflowY: 'auto', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', lineHeight: 1.45 }}>
                 {selectedAgent.system_prompt || 'Sin directiva configurada.'}
               </div>
             </div>
 
-            {/* Configuración de Inferencia y Riesgo */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
-              <div style={{ backgroundColor: '#0c1017', borderRadius: '6px', border: '1px solid #1a2333', padding: '10px 12px' }}>
-                <span style={{ fontSize: '11px', color: '#64748b', display: 'block' }}>Motor de Inferencia</span>
-                <span style={{ fontSize: '13px', fontWeight: '600', color: '#f8fafc', marginTop: '2px', display: 'block' }}>
+              <div style={{ border: '1px solid var(--line)', borderRadius: 'var(--r-ui)', padding: '10px 12px' }}>
+                <span style={{ fontSize: 'var(--fs-label)', color: 'var(--muted)', display: 'block' }}>Motor de inferencia</span>
+                <span style={{ fontWeight: 500, marginTop: '2px', display: 'block', overflowWrap: 'anywhere' }}>
                   {selectedAgent.model?.provider} / {selectedAgent.model?.model_name}
                 </span>
-                <span style={{ fontSize: '10.5px', color: '#73849c', marginTop: '2px', display: 'block' }}>
-                  Temp: {selectedAgent.model?.temperature ?? 0.2} · Max Tokens: {selectedAgent.model?.max_output_tokens ?? 4096}
+                <span style={{ fontSize: 'var(--fs-secondary)', color: 'var(--muted)', marginTop: '2px', display: 'block' }}>
+                  Temperatura: {selectedAgent.model?.temperature ?? 0.2} · Tokens máx.: {selectedAgent.model?.max_output_tokens ?? 4096}
                 </span>
               </div>
-
-              <div style={{ backgroundColor: '#0c1017', borderRadius: '6px', border: '1px solid #1a2333', padding: '10px 12px' }}>
-                <span style={{ fontSize: '11px', color: '#64748b', display: 'block' }}>Perfil de Riesgo y HITL</span>
-                <span style={{ fontSize: '13px', fontWeight: '600', color: '#d29922', marginTop: '2px', display: 'block' }}>
-                  Nivel Máximo: {selectedAgent.risk_profile?.max_risk_level || 'MEDIUM'}
+              <div style={{ border: '1px solid var(--line)', borderRadius: 'var(--r-ui)', padding: '10px 12px' }}>
+                <span style={{ fontSize: 'var(--fs-label)', color: 'var(--muted)', display: 'block' }}>Perfil de riesgo y revisión humana</span>
+                <span style={{ fontWeight: 500, marginTop: '2px', display: 'block' }}>
+                  Nivel máximo: {({ LOW: 'bajo', MEDIUM: 'medio', HIGH: 'alto', CRITICAL: 'crítico' })[selectedAgent.risk_profile?.max_risk_level || 'MEDIUM'] || selectedAgent.risk_profile?.max_risk_level}
                 </span>
-                <span style={{ fontSize: '10.5px', color: '#73849c', marginTop: '2px', display: 'block' }}>
-                  Aprobación Humana:{' '}
-                  {selectedAgent.risk_profile?.require_human_confirmation ? 'Obligatoria' : 'Automática'}
+                <span style={{ fontSize: 'var(--fs-secondary)', color: 'var(--muted)', marginTop: '2px', display: 'block' }}>
+                  Aprobación humana: {selectedAgent.risk_profile?.require_human_confirmation ? 'obligatoria' : 'automática'}
                 </span>
               </div>
             </div>
 
-            {/* Listas de Herramientas y Capacidades */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               <div>
-                <span style={{ fontSize: '11px', fontWeight: '600', color: '#73849c', display: 'block', marginBottom: '4px' }}>
-                  Herramientas Autorizadas:
-                </span>
+                <span style={{ fontSize: 'var(--fs-secondary)', color: 'var(--muted)', display: 'block', marginBottom: '6px' }}>Herramientas autorizadas</span>
                 <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                  {(selectedAgent.allowed_tools || []).map((t) => (
-                    <span
-                      key={t}
-                      style={{
-                        fontSize: '11px',
-                        backgroundColor: 'rgba(63, 185, 80, 0.1)',
-                        border: '1px solid rgba(63, 185, 80, 0.3)',
-                        color: '#3fb950',
-                        padding: '2px 8px',
-                        borderRadius: '4px',
-                        fontFamily: 'var(--font-mono)',
-                      }}
-                    >
-                      {t}
-                    </span>
-                  ))}
+                  {(selectedAgent.allowed_tools || []).map((t) => <Chip key={t} mono>{t}</Chip>)}
                 </div>
               </div>
-
               <div>
-                <span style={{ fontSize: '11px', fontWeight: '600', color: '#73849c', display: 'block', marginBottom: '4px' }}>
-                  Capacidades del Runtime:
-                </span>
+                <span style={{ fontSize: 'var(--fs-secondary)', color: 'var(--muted)', display: 'block', marginBottom: '6px' }}>Capacidades del runtime</span>
                 <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                  {(selectedAgent.capabilities || []).map((c) => (
-                    <span
-                      key={c}
-                      style={{
-                        fontSize: '11px',
-                        backgroundColor: 'rgba(56, 189, 248, 0.1)',
-                        border: '1px solid rgba(56, 189, 248, 0.3)',
-                        color: '#38bdf8',
-                        padding: '2px 8px',
-                        borderRadius: '4px',
-                      }}
-                    >
-                      {c}
-                    </span>
-                  ))}
+                  {(selectedAgent.capabilities || []).map((c) => <Chip key={c}>{c}</Chip>)}
                 </div>
               </div>
             </div>
           </div>
         ) : (
-          <div style={{ color: '#73849c', textAlign: 'center', padding: '40px' }}>
-            Selecciona un agente del catálogo para inspeccionar su configuración canónica.
-          </div>
+          <div style={{ color: 'var(--muted)', textAlign: 'center', padding: '40px' }}>Elige un agente del catálogo para ver su configuración canónica.</div>
         )}
       </div>
 
-      {/* MODAL: Registrar Nuevo Agente / Editar Agente */}
+      {/* MODAL: Registrar un agente nuevo / Editar Agente */}
       {(showCreateModal || showEditModal || showVersionModal) && (
         <div
           style={{
             position: 'fixed',
             inset: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.75)',
-            backdropFilter: 'blur(4px)',
+            backgroundColor: 'var(--scrim)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -881,9 +535,9 @@ export default function AgentsView({
         >
           <div
             style={{
-              backgroundColor: '#121824',
-              border: '1px solid #233147',
-              borderRadius: '12px',
+              backgroundColor: 'var(--surface)',
+              border: '1px solid var(--line)',
+              borderRadius: 'var(--r-panel)',
               width: '100%',
               maxWidth: '620px',
               maxHeight: '90vh',
@@ -892,18 +546,18 @@ export default function AgentsView({
               display: 'flex',
               flexDirection: 'column',
               gap: '16px',
-              boxShadow: '0 20px 40px rgba(0, 0, 0, 0.6)',
+              boxShadow: 'none',
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Bot size={18} style={{ color: '#38bdf8' }} />
-                <h3 style={{ fontSize: '16px', fontWeight: '700', color: '#f8fafc', margin: 0 }}>
+                <Bot size={18} style={{ color: 'var(--accent)' }} />
+                <h3 style={{ fontSize: '14.5px', fontWeight: '700', color: 'var(--text)', margin: 0 }}>
                   {showCreateModal
-                    ? 'Registrar Nuevo Agente'
+                    ? 'Registrar un agente nuevo'
                     : showVersionModal
-                    ? `Nueva Versión Inmutable (${activeAgent?.agent_id})`
-                    : `Editar Agente (${activeAgent?.agent_id})`}
+                    ? `Nueva versión inmutable (${activeAgent?.agent_id})`
+                    : `Editar agente (${activeAgent?.agent_id})`}
                 </h3>
               </div>
               <button
@@ -912,7 +566,7 @@ export default function AgentsView({
                   setShowEditModal(false);
                   setShowVersionModal(false);
                 }}
-                style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer' }}
+                style={{ background: 'none', border: 'none', color: 'var(--text)', cursor: 'pointer' }}
               >
                 <X size={18} />
               </button>
@@ -921,12 +575,12 @@ export default function AgentsView({
             {formError && (
               <div
                 style={{
-                  backgroundColor: 'rgba(248, 81, 73, 0.15)',
-                  border: '1px solid rgba(248, 81, 73, 0.4)',
-                  borderRadius: '6px',
+                  backgroundColor: 'color-mix(in srgb, var(--bad) 15%, transparent)',
+                  border: '1px solid color-mix(in srgb, var(--bad) 40%, transparent)',
+                  borderRadius: '9px',
                   padding: '8px 12px',
-                  color: '#f85149',
-                  fontSize: '12px',
+                  color: 'var(--bad)',
+                  fontSize: '12.5px',
                 }}
               >
                 {formError}
@@ -945,22 +599,22 @@ export default function AgentsView({
             >
               {showCreateModal && (
                 <div>
-                  <label style={{ fontSize: '11px', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>
-                    Agent ID (opcional, autogenerado si se omite):
+                  <label style={{ fontSize: 'var(--fs-secondary)', color: 'var(--muted)', display: 'block', marginBottom: '4px' }}>
+                    Id del agente (opcional; se genera solo si se omite)
                   </label>
                   <input
                     type="text"
                     value={formData.agent_id}
                     onChange={(e) => setFormData({ ...formData, agent_id: e.target.value })}
-                    placeholder="ej. ag_qa_specialist"
+                    placeholder="p. ej. ag_qa_specialist"
                     style={{
                       width: '100%',
-                      backgroundColor: '#0c1017',
-                      border: '1px solid #243044',
-                      borderRadius: '6px',
+                      backgroundColor: 'var(--bg)',
+                      border: '1px solid var(--line)',
+                      borderRadius: '9px',
                       padding: '7px 10px',
-                      fontSize: '12px',
-                      color: '#f8fafc',
+                      fontSize: '12.5px',
+                      color: 'var(--text)',
                     }}
                   />
                 </div>
@@ -968,53 +622,53 @@ export default function AgentsView({
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                 <div>
-                  <label style={{ fontSize: '11px', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>
-                    Nombre del Agente:
+                  <label style={{ fontSize: 'var(--fs-secondary)', color: 'var(--muted)', display: 'block', marginBottom: '4px' }}>
+                    Nombre del agente
                   </label>
                   <input
                     type="text"
                     required
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    placeholder="ej. Auditor de Seguridad"
+                    placeholder="p. ej. Auditor de seguridad"
                     style={{
                       width: '100%',
-                      backgroundColor: '#0c1017',
-                      border: '1px solid #243044',
-                      borderRadius: '6px',
+                      backgroundColor: 'var(--bg)',
+                      border: '1px solid var(--line)',
+                      borderRadius: '9px',
                       padding: '7px 10px',
-                      fontSize: '12px',
-                      color: '#f8fafc',
+                      fontSize: '12.5px',
+                      color: 'var(--text)',
                     }}
                   />
                 </div>
 
                 <div>
-                  <label style={{ fontSize: '11px', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>
-                    Rol Funcional:
+                  <label style={{ fontSize: 'var(--fs-secondary)', color: 'var(--muted)', display: 'block', marginBottom: '4px' }}>
+                    Rol funcional
                   </label>
                   <input
                     type="text"
                     required
                     value={formData.role}
                     onChange={(e) => setFormData({ ...formData, role: e.target.value })}
-                    placeholder="ej. Security Auditor"
+                    placeholder="p. ej. Auditor de seguridad"
                     style={{
                       width: '100%',
-                      backgroundColor: '#0c1017',
-                      border: '1px solid #243044',
-                      borderRadius: '6px',
+                      backgroundColor: 'var(--bg)',
+                      border: '1px solid var(--line)',
+                      borderRadius: '9px',
                       padding: '7px 10px',
-                      fontSize: '12px',
-                      color: '#f8fafc',
+                      fontSize: '12.5px',
+                      color: 'var(--text)',
                     }}
                   />
                 </div>
               </div>
 
               <div>
-                <label style={{ fontSize: '11px', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>
-                  Descripción Operacional:
+                <label style={{ fontSize: 'var(--fs-secondary)', color: 'var(--muted)', display: 'block', marginBottom: '4px' }}>
+                  Descripción operativa
                 </label>
                 <input
                   type="text"
@@ -1023,55 +677,55 @@ export default function AgentsView({
                   placeholder="Propósito funcional del agente"
                   style={{
                     width: '100%',
-                    backgroundColor: '#0c1017',
-                    border: '1px solid #243044',
-                    borderRadius: '6px',
+                    backgroundColor: 'var(--bg)',
+                    border: '1px solid var(--line)',
+                    borderRadius: '9px',
                     padding: '7px 10px',
-                    fontSize: '12px',
-                    color: '#f8fafc',
+                    fontSize: '12.5px',
+                    color: 'var(--text)',
                   }}
                 />
               </div>
 
               <div>
-                <label style={{ fontSize: '11px', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>
-                  Directiva Raíz (System Prompt):
+                <label style={{ fontSize: 'var(--fs-secondary)', color: 'var(--muted)', display: 'block', marginBottom: '4px' }}>
+                  Directiva raíz (system prompt)
                 </label>
                 <textarea
                   required
                   rows={4}
                   value={formData.system_prompt}
                   onChange={(e) => setFormData({ ...formData, system_prompt: e.target.value })}
-                  placeholder="Instrucciones maestras de razonamiento y contención..."
+                  placeholder="Instrucciones maestras de razonamiento y contención…"
                   style={{
                     width: '100%',
-                    backgroundColor: '#0c1017',
-                    border: '1px solid #243044',
-                    borderRadius: '6px',
+                    backgroundColor: 'var(--bg)',
+                    border: '1px solid var(--line)',
+                    borderRadius: '9px',
                     padding: '8px 10px',
                     fontSize: '11.5px',
                     fontFamily: 'var(--font-mono)',
-                    color: '#f8fafc',
+                    color: 'var(--text)',
                   }}
                 />
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>
                 <div>
-                  <label style={{ fontSize: '11px', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>
-                    Proveedor:
+                  <label style={{ fontSize: 'var(--fs-secondary)', color: 'var(--muted)', display: 'block', marginBottom: '4px' }}>
+                    Proveedor
                   </label>
                   <select
                     value={formData.provider}
                     onChange={(e) => setFormData({ ...formData, provider: e.target.value })}
                     style={{
                       width: '100%',
-                      backgroundColor: '#0c1017',
-                      border: '1px solid #243044',
-                      borderRadius: '6px',
+                      backgroundColor: 'var(--bg)',
+                      border: '1px solid var(--line)',
+                      borderRadius: '9px',
                       padding: '7px 10px',
-                      fontSize: '12px',
-                      color: '#f8fafc',
+                      fontSize: '12.5px',
+                      color: 'var(--text)',
                     }}
                   >
                     <option value="gemini">Gemini</option>
@@ -1079,13 +733,13 @@ export default function AgentsView({
                     <option value="anthropic">Anthropic</option>
                     <option value="claude_cli">Claude CLI</option>
                     <option value="ollama">Ollama</option>
-                    <option value="mock">Mock Provider</option>
+                    <option value="mock">Proveedor simulado</option>
                   </select>
                 </div>
 
                 <div>
-                  <label style={{ fontSize: '11px', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>
-                    Modelo:
+                  <label style={{ fontSize: 'var(--fs-secondary)', color: 'var(--muted)', display: 'block', marginBottom: '4px' }}>
+                    Modelo
                   </label>
                   <input
                     type="text"
@@ -1094,44 +748,44 @@ export default function AgentsView({
                     placeholder="gemini-1.5-pro"
                     style={{
                       width: '100%',
-                      backgroundColor: '#0c1017',
-                      border: '1px solid #243044',
-                      borderRadius: '6px',
+                      backgroundColor: 'var(--bg)',
+                      border: '1px solid var(--line)',
+                      borderRadius: '9px',
                       padding: '7px 10px',
-                      fontSize: '12px',
-                      color: '#f8fafc',
+                      fontSize: '12.5px',
+                      color: 'var(--text)',
                     }}
                   />
                 </div>
 
                 <div>
-                  <label style={{ fontSize: '11px', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>
-                    Riesgo Máximo:
+                  <label style={{ fontSize: 'var(--fs-secondary)', color: 'var(--muted)', display: 'block', marginBottom: '4px' }}>
+                    Riesgo máximo
                   </label>
                   <select
                     value={formData.max_risk_level}
                     onChange={(e) => setFormData({ ...formData, max_risk_level: e.target.value })}
                     style={{
                       width: '100%',
-                      backgroundColor: '#0c1017',
-                      border: '1px solid #243044',
-                      borderRadius: '6px',
+                      backgroundColor: 'var(--bg)',
+                      border: '1px solid var(--line)',
+                      borderRadius: '9px',
                       padding: '7px 10px',
-                      fontSize: '12px',
-                      color: '#f8fafc',
+                      fontSize: '12.5px',
+                      color: 'var(--text)',
                     }}
                   >
-                    <option value="LOW">LOW</option>
-                    <option value="MEDIUM">MEDIUM</option>
-                    <option value="HIGH">HIGH</option>
-                    <option value="CRITICAL">CRITICAL</option>
+                    <option value="LOW">Bajo</option>
+                    <option value="MEDIUM">Medio</option>
+                    <option value="HIGH">Alto</option>
+                    <option value="CRITICAL">Crítico</option>
                   </select>
                 </div>
               </div>
 
               <div>
-                <label style={{ fontSize: '11px', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>
-                  Herramientas Permitidas (separadas por comas, '*' para todas):
+                <label style={{ fontSize: 'var(--fs-secondary)', color: 'var(--muted)', display: 'block', marginBottom: '4px' }}>
+                  Herramientas permitidas (separadas por comas; «*» para todas)
                 </label>
                 <input
                   type="text"
@@ -1140,12 +794,12 @@ export default function AgentsView({
                   placeholder="read_file, write_file, run_command"
                   style={{
                     width: '100%',
-                    backgroundColor: '#0c1017',
-                    border: '1px solid #243044',
-                    borderRadius: '6px',
+                    backgroundColor: 'var(--bg)',
+                    border: '1px solid var(--line)',
+                    borderRadius: '9px',
                     padding: '7px 10px',
-                    fontSize: '12px',
-                    color: '#f8fafc',
+                    fontSize: '12.5px',
+                    color: 'var(--text)',
                   }}
                 />
                 <McpToolPicker
@@ -1155,8 +809,8 @@ export default function AgentsView({
               </div>
 
               <div>
-                <label style={{ fontSize: '11px', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>
-                  Capacidades Operativas (separadas por comas):
+                <label style={{ fontSize: 'var(--fs-secondary)', color: 'var(--muted)', display: 'block', marginBottom: '4px' }}>
+                  Capacidades operativas (separadas por comas)
                 </label>
                 <input
                   type="text"
@@ -1165,12 +819,12 @@ export default function AgentsView({
                   placeholder="code_editing, testing, security_audit"
                   style={{
                     width: '100%',
-                    backgroundColor: '#0c1017',
-                    border: '1px solid #243044',
-                    borderRadius: '6px',
+                    backgroundColor: 'var(--bg)',
+                    border: '1px solid var(--line)',
+                    borderRadius: '9px',
                     padding: '7px 10px',
-                    fontSize: '12px',
-                    color: '#f8fafc',
+                    fontSize: '12.5px',
+                    color: 'var(--text)',
                   }}
                 />
               </div>
@@ -1183,7 +837,7 @@ export default function AgentsView({
                   onChange={(e) => setFormData({ ...formData, require_human_confirmation: e.target.checked })}
                   style={{ cursor: 'pointer' }}
                 />
-                <label htmlFor="req_human" style={{ fontSize: '12px', color: '#f8fafc', cursor: 'pointer' }}>
+                <label htmlFor="req_human" style={{ fontSize: '12.5px', color: 'var(--text)', cursor: 'pointer' }}>
                   Requerir confirmación humana obligatoria en operaciones de riesgo
                 </label>
               </div>
@@ -1198,11 +852,11 @@ export default function AgentsView({
                   }}
                   style={{
                     padding: '8px 14px',
-                    borderRadius: '6px',
-                    backgroundColor: '#1e293b',
-                    border: '1px solid #334155',
-                    color: '#f8fafc',
-                    fontSize: '12px',
+                    borderRadius: '9px',
+                    backgroundColor: 'var(--line)',
+                    border: '1px solid var(--line)',
+                    color: 'var(--text)',
+                    fontSize: '12.5px',
                     cursor: 'pointer',
                   }}
                 >
@@ -1213,16 +867,16 @@ export default function AgentsView({
                   disabled={actionLoading}
                   style={{
                     padding: '8px 16px',
-                    borderRadius: '6px',
-                    backgroundColor: '#238636',
+                    borderRadius: '9px',
+                    backgroundColor: 'var(--ok)',
                     border: 'none',
-                    color: '#ffffff',
-                    fontSize: '12px',
+                    color: 'var(--on-accent)',
+                    fontSize: '12.5px',
                     fontWeight: '600',
                     cursor: 'pointer',
                   }}
                 >
-                  {actionLoading ? 'Guardando...' : showCreateModal ? 'Registrar Agente' : 'Guardar Cambios'}
+                  {actionLoading ? 'Guardando...' : showCreateModal ? 'Registrar agente' : 'Guardar cambios'}
                 </button>
               </div>
             </form>
@@ -1236,8 +890,7 @@ export default function AgentsView({
           style={{
             position: 'fixed',
             inset: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.75)',
-            backdropFilter: 'blur(4px)',
+            backgroundColor: 'var(--scrim)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -1247,9 +900,9 @@ export default function AgentsView({
         >
           <div
             style={{
-              backgroundColor: '#121824',
-              border: '1px solid #233147',
-              borderRadius: '12px',
+              backgroundColor: 'var(--surface)',
+              border: '1px solid var(--line)',
+              borderRadius: '11px',
               width: '100%',
               maxWidth: '560px',
               maxHeight: '80vh',
@@ -1262,25 +915,25 @@ export default function AgentsView({
           >
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <History size={18} style={{ color: '#38bdf8' }} />
-                <h3 style={{ fontSize: '15px', fontWeight: '700', color: '#f8fafc', margin: 0 }}>
+                <History size={18} style={{ color: 'var(--accent)' }} />
+                <h3 style={{ fontSize: '14.5px', fontWeight: '700', color: 'var(--text)', margin: 0 }}>
                   Trazabilidad de Versiones: {activeAgent?.name}
                 </h3>
               </div>
               <button
                 onClick={() => setShowHistoryModal(false)}
-                style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer' }}
+                style={{ background: 'none', border: 'none', color: 'var(--text)', cursor: 'pointer' }}
               >
                 <X size={18} />
               </button>
             </div>
 
             {historyLoading ? (
-              <div style={{ padding: '20px', textAlign: 'center', color: '#73849c', fontSize: '12px' }}>
-                Cargando historial inmutable...
+              <div style={{ padding: '20px', textAlign: 'center', color: 'var(--muted)', fontSize: '12.5px' }}>
+                Cargando el historial inmutable…
               </div>
             ) : versionHistory.length === 0 ? (
-              <div style={{ padding: '20px', textAlign: 'center', color: '#73849c', fontSize: '12px' }}>
+              <div style={{ padding: '20px', textAlign: 'center', color: 'var(--muted)', fontSize: '12.5px' }}>
                 Sin versiones previas registradas.
               </div>
             ) : (
@@ -1289,9 +942,9 @@ export default function AgentsView({
                   <div
                     key={item.version}
                     style={{
-                      backgroundColor: '#0c1017',
-                      borderRadius: '6px',
-                      border: '1px solid #1a2333',
+                      backgroundColor: 'var(--bg)',
+                      borderRadius: '9px',
+                      border: '1px solid var(--line)',
                       padding: '12px 14px',
                       display: 'flex',
                       alignItems: 'center',
@@ -1300,32 +953,32 @@ export default function AgentsView({
                   >
                     <div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span style={{ fontSize: '13px', fontWeight: '700', color: '#38bdf8' }}>
+                        <span style={{ fontSize: '13px', fontWeight: '700', color: 'var(--accent)' }}>
                           Versión {item.version}
                         </span>
                         {item.version === activeAgent?.version && (
                           <span
                             style={{
-                              fontSize: '10px',
-                              backgroundColor: 'rgba(63, 185, 80, 0.15)',
-                              color: '#3fb950',
+                              fontSize: '11px',
+                              backgroundColor: 'color-mix(in srgb, var(--ok) 15%, transparent)',
+                              color: 'var(--ok)',
                               padding: '1px 6px',
-                              borderRadius: '4px',
+                              borderRadius: '6px',
                             }}
                           >
                             Actual
                           </span>
                         )}
                       </div>
-                      <div style={{ fontSize: '11px', color: '#73849c', marginTop: '2px' }}>
+                      <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '2px' }}>
                         Hash SHA-256:{' '}
-                        <span style={{ fontFamily: 'var(--font-mono)', color: '#94a3b8' }}>
+                        <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--text)' }}>
                           {item.definition_hash}
                         </span>
                       </div>
                     </div>
 
-                    <span style={{ fontSize: '11px', color: '#64748b' }}>
+                    <span style={{ fontSize: '11px', color: 'var(--muted)' }}>
                       {item.created_at ? new Date(item.created_at).toLocaleDateString() : ''}
                     </span>
                   </div>
@@ -1335,6 +988,6 @@ export default function AgentsView({
           </div>
         </div>
       )}
-    </div>
+    </ViewPage>
   );
 }
