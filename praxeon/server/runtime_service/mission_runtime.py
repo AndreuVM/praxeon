@@ -642,7 +642,7 @@ class MissionRuntimeMixin:
                 else:
                     tool = raw_tool
                     args = st.get("tool_args") or {}
-                    thought = st.get("thought_rationale") or f"Paso {step_idx} generado por {agent_llm.model_name} para '{goal}'."
+                    thought = st.get("thought_rationale") or f"Paso {step_idx} generado por {agent_llm.model_name}."
             else:
                 finish_match = re.search(
                     r'finish\s*\(\s*(?:summary\s*=\s*)?(?:"""(.*?)"""|\'\'\'(.*?)\'\'\'|"((?:[^"\\]|\\.)*)"|\'((?:[^\'\\]|\\.)*)\'|(.*?))\s*\)',
@@ -690,7 +690,7 @@ class MissionRuntimeMixin:
                         # En el paso inicial de una tarea técnica o de análisis de código, forzar inspección empírica
                         tool = "run_command"
                         args = {"command": "python -c \"import os; print('Archivos del proyecto:', [f for f in os.listdir('.') if not f.startswith('.')][:12])\""}
-                        thought = llm_output[:250].strip() or f"Paso inicial de inspección de archivos requerido para fundamentar: '{goal}'."
+                        thought = llm_output[:250].strip() or "Paso inicial de inspección de archivos."
 
             # CIRCUITO DE FIJACIÓN SEMÁNTICA (SEMANTIC CIRCUIT BREAKER): Detección de bucles repetitivos de herramientas
             action_sig = f"{tool}:{json.dumps(args, sort_keys=True)}"
