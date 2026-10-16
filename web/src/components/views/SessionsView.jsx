@@ -341,7 +341,9 @@ export default function SessionsView({
             <Field label="Supervisor cognitivo" htmlFor="sv-supervisor">
               <select id="sv-supervisor" value={formData.supervisor} onChange={(e) => setFormData({ ...formData, supervisor: e.target.value })} style={{ width: '100%' }}>
                 <option value="laya">LAYA (ruta rápida local, sistema 1)</option>
+                <option value="kev">KEV (local, sistema 1)</option>
                 <option value="typesafe">TypeSafe AI (escalado profundo)</option>
+                <option value="cascade">Cascada (configurable en Proveedores)</option>
               </select>
             </Field>
           </div>

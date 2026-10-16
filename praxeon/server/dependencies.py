@@ -674,7 +674,21 @@ class RuntimeApplicationService(DecisionPipelineMixin, MissionRuntimeMixin):
                     "name": "LAYA System-1",
                     "model_id": "laya-v1",
                     "version": "0.3.0",
-                    "supported_backends": ["local", "api"],
+                    "supported_backends": ["local", "hosted"],
+                    "fallbacks": ["mock", "replay"],
+                },
+                "kev": {
+                    "name": "KEV System-1",
+                    "model_id": "kev-v1",
+                    "version": "0.1.0",
+                    "supported_backends": ["local", "hosted"],
+                    "fallbacks": ["mock", "replay"],
+                },
+                "cascade": {
+                    "name": "Cascada de supervisión",
+                    "model_id": "cascade",
+                    "version": "1.0.0",
+                    "supported_backends": ["local", "hosted"],
                     "fallbacks": ["mock", "replay"],
                 },
                 "typesafe": {

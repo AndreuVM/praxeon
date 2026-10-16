@@ -236,6 +236,112 @@ def _create_typesafe_provider(config: DecisionModelConfig) -> DecisionProvider:
     )
 
 
+def _create_kev_provider(config: DecisionModelConfig) -> DecisionProvider:
+    from praxeon.providers.kev import KevProvider
+
+    return KevProvider(
+        backend=config.backend or "auto",
+        model_name=config.model_id if config.model_id and config.model_id != "default" else "kev-v1-calibrated",
+        endpoint_url=config.endpoint or config.custom_params.get("endpoint_url"),
+        auth_token=config.custom_params.get("auth_token"),
+        timeout=config.timeout_seconds or 5.0,
+        device=config.device or "cpu",
+        model_path=config.model_path,
+    )
+
+
+# Valores por defecto de la cascada: ruta rápida local (LAYA) y, si no está segura, segundo modelo local (KEV).
+DEFAULT_CASCADE_PRIMARY = {"provider": "laya", "backend": "local"}
+DEFAULT_CASCADE_SECONDARY = {"provider": "kev", "backend": "local"}
+CASCADE_MAX_LEVELS = ("primary", "secondary")
+
+
+class UnavailableProvider:
+    """Nivel de la cascada que no se pudo construir: nunca concede nada, solo informa de que no responde."""
+
+    def __init__(self, provider_id: str, reason: str):
+        self.name = provider_id
+        self.provider_id = provider_id
+        self.model_name = provider_id
+        self.backend = "unavailable"
+        self.reason = reason
+
+    def is_available(self) -> bool:
+        return False
+
+    def evaluate(self, state: Any, actions: List[Any]) -> List[Any]:
+        from praxeon.domain.assessment import ProviderAssessment
+
+        return [
+            ProviderAssessment(
+                provider=self.provider_id,
+                model=self.model_name,
+                available=False,
+                confidence=0.0,
+                failure_reason=self.reason,
+                reason_codes=["CASCADE_LEVEL_UNAVAILABLE"],
+            )
+            for _ in actions
+        ]
+
+    def metadata(self):
+        from praxeon.domain.decision_provider import DecisionProviderMetadata
+
+        return DecisionProviderMetadata(
+            provider_id=self.provider_id, model_id=self.model_name, backend=self.backend, is_available=False,
+            extra_info={"reason": self.reason},
+        )
+
+
+def _cascade_level_config(level: str, raw: Any, default: Dict[str, Any]) -> DecisionModelConfig:
+    """Convierte la definición de un nivel (dict o nombre de proveedor) en un DecisionModelConfig."""
+    if isinstance(raw, DecisionModelConfig):
+        return raw
+    if isinstance(raw, str):
+        raw = {"provider": raw}
+    data = {**default, **(raw or {})} if not (raw or {}).get("provider") else dict(raw)
+    if str(data.get("provider", "")).lower().strip() == "cascade":
+        raise DecisionProviderError(f"El nivel '{level}' de la cascada no puede ser otra cascada.")
+    data.setdefault("model_id", data.get("provider", "default"))
+    return DecisionModelConfig(**data)
+
+
+def _build_cascade_level(reg: "DecisionProviderRegistry", level: str, raw: Any, default: Dict[str, Any]) -> Any:
+    try:
+        cfg = _cascade_level_config(level, raw, default)
+    except DecisionProviderError:
+        raise
+    except Exception as exc:  # configuración inválida (p. ej. endpoint fuera de la allowlist)
+        pid = (raw.get("provider") if isinstance(raw, dict) else raw) or default.get("provider", level)
+        logger.warning("Nivel '%s' de la cascada inválido: %s", level, exc)
+        return UnavailableProvider(str(pid), f"Configuración inválida: {exc}")
+    try:
+        return reg.create(cfg.model_copy(update={"fallback_policy": "none"}))
+    except Exception as exc:
+        logger.warning("Nivel '%s' de la cascada ('%s') no disponible: %s", level, cfg.provider, exc)
+        return UnavailableProvider(cfg.provider, str(exc))
+
+
+def _create_cascade_provider(config: DecisionModelConfig, reg: "DecisionProviderRegistry") -> DecisionProvider:
+    """Cascada en dos niveles: el primero responde si su confianza supera el umbral; si no, escala al segundo."""
+    from praxeon.providers.router import ConfidenceAwareRouter, RoutingStrategy
+
+    params = config.custom_params or {}
+    primary = _build_cascade_level(reg, "primary", params.get("primary"), DEFAULT_CASCADE_PRIMARY)
+    secondary = _build_cascade_level(reg, "secondary", params.get("secondary"), DEFAULT_CASCADE_SECONDARY)
+    try:
+        strategy = RoutingStrategy(params.get("strategy", RoutingStrategy.CASCADE_CONFIDENCE.value))
+    except ValueError as exc:
+        raise DecisionProviderError(f"Estrategia de cascada desconocida: {params.get('strategy')!r}") from exc
+    return ConfidenceAwareRouter(
+        primary_provider=primary,
+        secondary_provider=secondary,
+        default_confidence_threshold=float(params.get("confidence_threshold", 0.70)),
+        secondary_confidence_threshold=float(params.get("secondary_threshold", 0.50)),
+        strategy=strategy,
+    )
+
+
 def build_default_registry() -> DecisionProviderRegistry:
     """Construye e inicializa el registro canónico con los 4 proveedores principales de PRAXEON."""
     reg = DecisionProviderRegistry()
@@ -266,7 +372,23 @@ def build_default_registry() -> DecisionProviderRegistry:
         default_backend="auto",
     )
 
-    # 4. TypeSafe (requiere extra 'typesafe' / 'typesafe-sdk')
+    # 4. KEV (supervisor System-1 local, misma familia de primitivas que LAYA)
+    reg.register(
+        provider_id="kev",
+        factory=_create_kev_provider,
+        description="Supervisor System-1 local KEV (paquete local, endpoint propio o motor calibrado)",
+        default_backend="auto",
+    )
+
+    # 5. Cascada configurable: cualquier combinación local+local o local+API
+    reg.register(
+        provider_id="cascade",
+        factory=lambda cfg: _create_cascade_provider(cfg, reg),
+        description="Cascada en dos niveles: el primer supervisor decide si está seguro; si no, escala al segundo",
+        default_backend="cascade",
+    )
+
+    # 6. TypeSafe (requiere extra 'typesafe' / 'typesafe-sdk')
     reg.register(
         provider_id="typesafe",
         factory=_create_typesafe_provider,

@@ -2,6 +2,7 @@
 
 from praxeon.providers.base import BaseReasoningProvider, Provider
 from praxeon.providers.context import ProviderContext, ProviderContextBuilder
+from praxeon.providers.kev import KevProvider
 from praxeon.providers.laya import LayaProvider
 from praxeon.providers.mock import MockProvider
 from praxeon.providers.registry import (
@@ -18,6 +19,7 @@ __all__ = [
     "Provider",
     "MockProvider",
     "ConfidenceAwareRouter",
+    "KevProvider",
     "LayaProvider",
     "ProviderContext",
     "ProviderContextBuilder",

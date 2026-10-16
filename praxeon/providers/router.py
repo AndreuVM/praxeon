@@ -99,6 +99,9 @@ class ConfidenceAwareRouter(BaseReasoningProvider):
     ):
         self.primary = primary_provider
         self.secondary = secondary_provider
+        self.name = "cascade"
+        self.backend = "cascade"
+        self.model_name = f"{getattr(primary_provider, 'name', 'primary')}+{getattr(secondary_provider, 'name', 'secondary')}"
         self.default_confidence_threshold = default_confidence_threshold
         self.secondary_confidence_threshold = secondary_confidence_threshold
         self.risk_thresholds = risk_thresholds or {
@@ -121,6 +124,13 @@ class ConfidenceAwareRouter(BaseReasoningProvider):
         self._secondary_failures_count = 0
         self._disagreements_count = 0
         self._shadow_evaluations_count = 0
+
+    def is_available(self) -> bool:
+        """La cascada responde mientras al menos uno de sus dos niveles esté operativo."""
+        return any(
+            bool(p.is_available()) if callable(getattr(p, "is_available", None)) else True
+            for p in (self.primary, self.secondary)
+        )
 
     def get_threshold_for_action(self, action: ActionCandidate) -> float:
         """Determina el umbral de confianza exigido según el riesgo contextual de la acción."""

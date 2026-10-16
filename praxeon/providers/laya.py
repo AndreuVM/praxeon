@@ -46,7 +46,17 @@ class LayaDecisionPrimitives(BaseModel):
 
 
 class LayaProvider(BaseReasoningProvider):
-    """Adaptador de razonamiento semántico para LAYA con soporte para choice, score y noul."""
+    """Adaptador de razonamiento semántico para LAYA con soporte para choice, score y noul.
+
+    Las constantes de clase permiten que otros supervisores System-1 con las mismas primitivas (p. ej. KEV)
+    reutilicen toda la lógica cambiando solo su identidad, sus variables de entorno y su paquete local.
+    """
+
+    PROVIDER_ID = "laya"
+    CODE_PREFIX = "LAYA"
+    SDK_MODULE = "laya"
+    ENV_PREFIX = "LAYA"
+    DEFAULT_MODEL_PATH = "convaiinnovations/laya"
 
     def __init__(
         self,
@@ -58,25 +68,27 @@ class LayaProvider(BaseReasoningProvider):
         max_context_tokens: int = 2048,
         timeout: float = 5.0,
         device: str = "cpu",
+        model_path: Optional[str] = None,
     ):
-        self.name = "laya"
+        self.name = self.PROVIDER_ID
         self.requested_backend = backend.lower()
         self.model_name = model_name
+        self.model_path = model_path
 
-        trusted_endpoint = os.getenv("LAYA_ENDPOINT_URL")
+        trusted_endpoint = os.getenv(f"{self.ENV_PREFIX}_ENDPOINT_URL")
         # Finding 8: Prevenir filtración de LAYA_AUTH_TOKEN del entorno a endpoints personalizados del llamador
         if endpoint_url:
             self.endpoint_url = endpoint_url
             if auth_token:
                 self.auth_token = auth_token
             elif trusted_endpoint and endpoint_url == trusted_endpoint:
-                self.auth_token = os.getenv("LAYA_AUTH_TOKEN")
+                self.auth_token = os.getenv(f"{self.ENV_PREFIX}_AUTH_TOKEN")
             else:
                 # Endpoint personalizado sin token explícito: no filtrar credenciales del servidor
                 self.auth_token = None
         else:
             self.endpoint_url = trusted_endpoint
-            self.auth_token = auth_token or os.getenv("LAYA_AUTH_TOKEN")
+            self.auth_token = auth_token or os.getenv(f"{self.ENV_PREFIX}_AUTH_TOKEN")
         self.context_builder = context_builder or ProviderContextBuilder(default_max_tokens=max_context_tokens)
         self.max_context_tokens = max_context_tokens
         self.timeout = timeout
@@ -92,25 +104,25 @@ class LayaProvider(BaseReasoningProvider):
         if self.requested_backend == "simulated":
             return "simulated"
         if self.requested_backend == "local":
-            try:
-                import laya  # type: ignore  # noqa: F401 (comprobación de disponibilidad)
+            if self._sdk_installed():
                 return "local"
-            except ImportError:
-                logger.info(
-                    "Backend 'local' solicitado pero 'laya' no está instalado. "
-                    "Ejecute 'pip install praxeon[laya]' o 'pip install laya' para inferencia neuronal con pesos locales. "
-                    "Utilizando motor local calibrado sin pesos externos."
-                )
-                return "simulated"
+            logger.info(
+                "Backend 'local' solicitado pero '%s' no está instalado. "
+                "Instale el paquete para inferencia neuronal con pesos locales. "
+                "Utilizando motor local calibrado sin pesos externos.",
+                self.SDK_MODULE,
+            )
+            return "simulated"
 
         # Modo 'auto'
         if self.endpoint_url:
             return "hosted"
-        try:
-            import laya  # type: ignore  # noqa: F401 (comprobación de disponibilidad)
-            return "local"
-        except ImportError:
-            return "simulated"
+        return "local" if self._sdk_installed() else "simulated"
+
+    def _sdk_installed(self) -> bool:
+        """Indica si el paquete neuronal local de este supervisor está instalado."""
+        import importlib.util
+        return importlib.util.find_spec(self.SDK_MODULE) is not None
 
     def is_available(self) -> bool:
         """Comprueba si el proveedor LAYA está disponible para realizar inferencias."""
@@ -176,11 +188,12 @@ class LayaProvider(BaseReasoningProvider):
     def _get_local_model(self):
         """Carga o reutiliza la instancia del modelo neuronal local LAYA."""
         if getattr(self, "_loaded_model", None) is None:
-            import laya  # type: ignore  # noqa: F401 (comprobación de disponibilidad)
-            model_target = self.model_name
-            if model_target in ("laya-v1-calibrated", "default"):
-                model_target = os.getenv("LAYA_MODEL_PATH", "convaiinnovations/laya")
-            load_fn = getattr(laya, "load_model", None) or getattr(laya, "LayaModel", None)
+            import importlib
+            sdk = importlib.import_module(self.SDK_MODULE)
+            model_target = self.model_path or self.model_name
+            if model_target in (f"{self.PROVIDER_ID}-v1-calibrated", "default", self.PROVIDER_ID):
+                model_target = os.getenv(f"{self.ENV_PREFIX}_MODEL_PATH", self.DEFAULT_MODEL_PATH)
+            load_fn = getattr(sdk, "load_model", None) or getattr(sdk, "LayaModel", None) or getattr(sdk, "Model", None)
             if callable(load_fn):
                 self._loaded_model = load_fn(model_target)
             else:
@@ -409,22 +422,23 @@ class LayaProvider(BaseReasoningProvider):
             # JEV analítico: producto de progreso, no-bucle y fundamentación
             analytical_jev = progress_prob * (1.0 - loop_prob) * grounded_prob
 
-            reason_codes: List[str] = [f"LAYA_CHOICE_{choice_data.get('label', 'ALLOW')}"]
+            px = self.CODE_PREFIX
+            reason_codes: List[str] = [f"{px}_CHOICE_{choice_data.get('label', 'ALLOW')}"]
             if choice_data.get("label") == "BLOCK":
-                reason_codes.append("LAYA_DESTRUCTIVE_BLOCK")
+                reason_codes.append(f"{px}_DESTRUCTIVE_BLOCK")
             elif choice_data.get("label") == "REPLAN":
-                reason_codes.append("LAYA_UNNECESSARY_ACTION_REPLAN")
+                reason_codes.append(f"{px}_UNNECESSARY_ACTION_REPLAN")
             elif choice_data.get("label") == "ALLOW":
-                reason_codes.append("LAYA_PROGRESS_APPROVED")
+                reason_codes.append(f"{px}_PROGRESS_APPROVED")
             if loop_prob >= 0.70:
-                reason_codes.append("LAYA_LOOP_PREVENTED")
+                reason_codes.append(f"{px}_LOOP_PREVENTED")
             if grounded_prob < 0.30:
-                reason_codes.append("LAYA_UNGROUNDED_EVIDENCE")
+                reason_codes.append(f"{px}_UNGROUNDED_EVIDENCE")
             if score_val >= 0.75:
-                reason_codes.append("LAYA_HIGH_PROGRESS")
+                reason_codes.append(f"{px}_HIGH_PROGRESS")
 
             metadata = {
-                "provider": "laya",
+                "provider": self.name,
                 "backend": self.backend,
                 "model_name": self.model_name,
                 "device": self.device,
@@ -440,7 +454,7 @@ class LayaProvider(BaseReasoningProvider):
 
 
             return ProviderAssessment(
-                provider="laya",
+                provider=self.name,
                 model=self.model_name,
                 available=True,
                 confidence=float(choice_data.get("confidence", 0.90)),
@@ -455,10 +469,10 @@ class LayaProvider(BaseReasoningProvider):
 
         except Exception as e:
             elapsed_ms = (time.perf_counter() - start_t) * 1000.0
-            logger.error(f"Fallo durante la evaluación en LayaProvider ({self.backend}): {e}")
+            logger.error(f"Fallo durante la evaluación en {type(self).__name__} ({self.backend}): {e}")
 
             metadata = {
-                "provider": "laya",
+                "provider": self.name,
                 "backend": self.backend,
                 "model_name": self.model_name,
                 "latency_ms": round(elapsed_ms, 2),
@@ -468,12 +482,12 @@ class LayaProvider(BaseReasoningProvider):
             }
 
             return ProviderAssessment(
-                provider="laya",
+                provider=self.name,
                 model=self.model_name,
                 available=False,
                 confidence=0.0,
-                failure_reason=f"LAYA failure ({self.backend}): {str(e)}",
-                reason_codes=["LAYA_PROVIDER_UNAVAILABLE"],
+                failure_reason=f"{self.CODE_PREFIX} failure ({self.backend}): {str(e)}",
+                reason_codes=[f"{self.CODE_PREFIX}_PROVIDER_UNAVAILABLE"],
                 metadata=metadata,
             )
 

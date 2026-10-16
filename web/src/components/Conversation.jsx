@@ -776,8 +776,9 @@ export default function Conversation({
               title="Supervisor cognitivo del runtime"
             >
               <option value="laya">LAYA (sistema 1)</option>
+              <option value="kev">KEV (sistema 1)</option>
               <option value="typesafe">TypeSafe AI (AST)</option>
-              <option value="cascade">Cascada JEV</option>
+              <option value="cascade">Cascada (configurable en Proveedores)</option>
             </select>
             <select
               aria-label="Modo de ejecución"

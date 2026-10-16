@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import * as api from '../../services/api';
 import { ViewPage, ViewHeader, Chip } from '../ui';
+import CascadeEditor from './CascadeEditor';
 
 export default function ProvidersView() {
   const [healthStatus, setHealthStatus] = useState(null);
@@ -88,7 +89,7 @@ export default function ProvidersView() {
     },
     {
       provider_id: 'typesafe',
-      name: 'TypeSafe AI (Legacy / KEV)',
+      name: 'TypeSafe AI (Legacy)',
       model_id: 'typesafe-v1',
       version: '0.7.0',
       backend: 'api',
@@ -211,6 +212,8 @@ export default function ProvidersView() {
           ))}
         </div>
       </section>
+
+      <CascadeEditor decisionProviders={dynamicProviders?.decision_providers} />
 
       <section>
         <h2 style={sectionTitle}>Motores de inferencia para agentes</h2>

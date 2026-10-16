@@ -19,6 +19,7 @@ import WorkspacePicker from './components/workspace/WorkspacePicker';
 import WorkspaceFlyout from './components/workspace/WorkspaceFlyout';
 import useWorkspace from './components/workspace/useWorkspace';
 import { loadChatConfig, loadChats, persistChatConfig, persistChats } from './utils/chatStore';
+import { buildCascadeDecisionModel } from './utils/cascadeConfig';
 import { rebuildChatFromSession } from './utils/chatFromEvents';
 
 const SessionsView = React.lazy(() => import('./components/views/SessionsView'));
@@ -882,6 +883,8 @@ export default function App() {
     setIsRunning(true);
     setIsPaused(false);
     const timeStr = new Date().toTimeString().split(' ')[0];
+    // La cascada se configura en Proveedores: se envía con la misión para que cada una lleve la suya
+    if (!decision_model && supervisor === 'cascade') decision_model = buildCascadeDecisionModel();
 
     try {
       const res = await api.runMission({
