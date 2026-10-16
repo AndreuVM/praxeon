@@ -188,6 +188,22 @@ def attach_notifications(window_getter=None, notifier=None):
     return approval_notifier
 
 
+APP_USER_MODEL_ID = "Praxeon.Desktop"
+ICON_PATH = Path(__file__).resolve().parent / "assets" / "praxeon.ico"
+
+
+def _claim_taskbar_identity() -> None:
+    """En Windows, la barra de tareas agrupa la ventana bajo python.exe y le pone su icono salvo que el proceso declare su propio AppUserModelID."""
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(APP_USER_MODEL_ID)
+    except Exception:  # cosmético: sin esto la ventana funciona igual
+        pass
+
+
 def run_window(local: LocalServer, debug: bool = False, notifications: bool = True) -> None:
     """Muestra la interfaz en una ventana nativa. Bloquea hasta que se cierra."""
     try:
@@ -210,6 +226,7 @@ def run_window(local: LocalServer, debug: bool = False, notifications: bool = Tr
             result = window.create_file_dialog(dialog_type, directory=start_dir)
             return str(result[0]) if result else None
 
+    _claim_taskbar_identity()
     window = webview.create_window(
         APP_TITLE,
         local.window_url,
@@ -223,7 +240,12 @@ def run_window(local: LocalServer, debug: bool = False, notifications: bool = Tr
     try:
         # private_mode=False + storage_path: las preferencias de la interfaz (modelos, configuración, chats)
         # sobreviven al cierre; por defecto pywebview usa una sesión privada que se descarta al salir
-        webview.start(debug=debug, private_mode=False, storage_path=webview_storage_dir())
+        webview.start(
+            debug=debug,
+            private_mode=False,
+            storage_path=webview_storage_dir(),
+            icon=str(ICON_PATH) if ICON_PATH.is_file() else None,
+        )
     finally:
         if approval_notifier:
             approval_notifier.detach()
