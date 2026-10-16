@@ -210,7 +210,7 @@ def _create_laya_provider(config: DecisionModelConfig) -> DecisionProvider:
 
     backend = config.backend or "auto"
     endpoint = config.endpoint or config.custom_params.get("endpoint_url")
-    device = config.device or "cpu"
+    device = config.device or "auto"
     timeout = config.timeout_seconds or 5.0
     return LayaProvider(
         backend=backend,

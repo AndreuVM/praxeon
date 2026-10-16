@@ -48,6 +48,19 @@ _ROUTERS: Dict[Optional[str], Any] = {}
 _ROUTER_LOCK = threading.Lock()
 
 
+def resolve_device(requested: Optional[str] = None) -> str:
+    """Dispositivo de inferencia: `LAYA_DEVICE` o lo pedido; «auto» usa la GPU CUDA si hay y, si no, la CPU."""
+    device = (requested or os.getenv("LAYA_DEVICE") or "auto").strip().lower()
+    if device != "auto":
+        return device
+    try:
+        import torch  # type: ignore
+
+        return "cuda" if torch.cuda.is_available() else "cpu"
+    except Exception:
+        return "cpu"
+
+
 class LayaDecisionPrimitives(BaseModel):
     """Estructura de las tres primitivas fundamentales retornadas por LAYA."""
     model_config = ConfigDict(frozen=True)
@@ -80,7 +93,7 @@ class LayaProvider(BaseReasoningProvider):
         context_builder: Optional[ProviderContextBuilder] = None,
         max_context_tokens: int = 2048,
         timeout: float = 5.0,
-        device: str = "cpu",
+        device: str = "auto",
     ):
         self.name = "laya"
         self.requested_backend = backend.lower()
@@ -193,15 +206,15 @@ class LayaProvider(BaseReasoningProvider):
     def _get_router(self):
         """Carga (una vez por proceso y dispositivo) el Router del paquete `laya`, que elige el checkpoint por idioma."""
         with _ROUTER_LOCK:
-            router = _ROUTERS.get(self.device)
+            device = resolve_device(self.device)
+            router = _ROUTERS.get(device)
             if router is None:
                 if os.name == "nt":
                     # Sin modo desarrollador Windows no permite enlaces simbólicos y la descarga de pesos falla
                     os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS", "1")
                 from laya import Router  # type: ignore
 
-                kwargs = {"device": self.device} if self.device and self.device != "auto" else {}
-                router = _ROUTERS[self.device] = Router(**kwargs)
+                router = _ROUTERS[device] = Router(device=device)
             return router
 
     def _infer_primitives_local_sdk(self, ctx: ProviderContext) -> LayaDecisionPrimitives:
