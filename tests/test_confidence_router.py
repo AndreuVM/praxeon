@@ -309,8 +309,8 @@ def test_router_integration_with_navigator_and_policy_engine(sample_action):
 
 def test_navigator_abstains_on_dual_uncertainty(sample_action):
     """Si ambos proveedores son inciertos, Navigator y PolicyEngine emiten ABSTAIN formal."""
-    primary = MockReasoningProvider(name="laya_fast", confidence=0.30)
-    secondary = MockReasoningProvider(name="typesafe_supervisor", confidence=0.32)
+    primary = MockReasoningProvider(name="laya_fast", confidence=0.20)
+    secondary = MockReasoningProvider(name="typesafe_supervisor", confidence=0.22)
 
     router = ConfidenceAwareRouter(
         primary_provider=primary,

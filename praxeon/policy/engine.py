@@ -43,7 +43,7 @@ class PolicyEngine:
         permission_manager: Optional[PermissionManager] = None,
         loop_threshold: float = 0.65,
         min_grounded_threshold: float = 0.35,
-        min_confidence_threshold: float = 0.40,
+        min_confidence_threshold: float = 0.30,
         secret_key: Optional[str] = None,
         receipt_ttl_seconds: float = 60.0,
         classifier: Optional[CommandClassifier] = None,
