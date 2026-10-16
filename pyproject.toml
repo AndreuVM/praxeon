@@ -107,7 +107,6 @@ select = ["F", "E9", "B904", "B033", "B007", "B905"]
 "scripts/*" = ["F401", "F841", "B007", "B904", "B905"]
 "examples/*" = ["F401", "F841", "B007", "B904", "B905"]
 "demo.py" = ["F401", "F841"]
-"generate_audit_pdf.py" = ["F401", "F841", "B007"]
 "run_praxeon.py" = ["F401", "F841"]
 
 [tool.coverage.run]

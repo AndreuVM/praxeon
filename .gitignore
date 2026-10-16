@@ -42,3 +42,9 @@ scratch/
 historia_tortuga.txt
 proceso.txt
 *.tmp
+
+# Informes, auditorías y material archivado (solo local)
+archivo/
+benchmark_results/historical/
+benchmark_results/*_REPORT.md
+benchmark_results/SUMMARY.md

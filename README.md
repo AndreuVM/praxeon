@@ -268,7 +268,6 @@ praxeon/
 │   └── dashboard.py              # Monitor visual interactivo TUI en tiempo real
 ├── web/                          # Interfaz React (Vite); se compila a praxeon/server/static
 ├── docs/
-│   ├── DAM_PROJECT_MEMO.md       # Memoria técnica formal para el ciclo DAM
 │   ├── FULL_ACCESS_POLICY.md     # Política de gobernanza del modo Full Access
 │   └── MCP_CLIENT.md             # PRAXEON como cliente MCP: alta, aprobación, seguridad
 ├── tests/                        # 1.118 pruebas automatizadas (unitarias, integración, seguridad, MCP, OOD, contexto)
@@ -656,17 +655,11 @@ pytest -q
 
 ---
 
-## Documentación y Memoria Académica (DAM)
+## Documentación
 
-Para una exposición exhaustiva de los fundamentos teóricos, la arquitectura técnica, la justificación de diseño frente al currículo del Ciclo Formativo de Grado Superior en Desarrollo de Aplicaciones Multiplataforma (DAM) y el análisis de resultados empíricos, consulta:
-
-- 📄 **[Memoria Técnica Oficial del Proyecto (DAM_PROJECT_MEMO.md)](docs/DAM_PROJECT_MEMO.md)**
 - 🛡️ **[Política de Seguridad y Modelo de Amenazas (SECURITY.md)](SECURITY.md)**
 - 🔓 **[Gobernanza de Full Access (docs/FULL_ACCESS_POLICY.md)](docs/FULL_ACCESS_POLICY.md)**
 - 🔌 **[PRAXEON como cliente MCP (docs/MCP_CLIENT.md)](docs/MCP_CLIENT.md)**
-- 📊 **[Informe Comparativo Multidimensional (COMPARATIVE_REPORT.md)](benchmark_results/COMPARATIVE_REPORT.md)**
-- 🧠 **[Informe de Inferencia con LLM Real (LIVE_LLM_REPORT.md)](benchmark_results/LIVE_LLM_REPORT.md)**
-- 📈 **[Resumen Ejecutivo de Benchmarks](benchmark_results/SUMMARY.md)**
 
 ---
 

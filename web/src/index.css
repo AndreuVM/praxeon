@@ -1,5 +1,5 @@
 /* PRAXEON · Sistema de diseño «Sereno»
-   Fuente de verdad de todos los valores visuales (ver design-demo/INFORME_ESPECIFICACION_DISENO_UI.md).
+   Fuente de verdad de todos los valores visuales.
    Ningún componente debe definir colores, tamaños de letra ni radios sueltos: se usan estos tokens. */
 :root {
   /* Color (tema oscuro único) */
