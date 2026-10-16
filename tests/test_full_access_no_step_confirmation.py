@@ -7,8 +7,12 @@ from praxeon.server.app import create_app
 from praxeon.server.dependencies import RuntimeApplicationService, set_runtime_service
 from praxeon.server.schemas.action import ProposeActionRequest
 
+import sys
+
+OUTSIDE = "C:/Windows/win.ini" if sys.platform == "win32" else "/etc/hostname"
+
 REVIEW_CASES = [
-    ("read_file", {"path": "C:/Windows/win.ini"}),                 # lectura fuera del workspace
+    ("read_file", {"path": OUTSIDE}),                               # lectura fuera del workspace
     ("run_command", {"command": "git push origin main"}),           # mutación remota
     ("run_command", {"command": "algo-desconocido --flag"}),       # operación no clasificada
 ]

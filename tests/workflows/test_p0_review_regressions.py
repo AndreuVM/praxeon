@@ -122,9 +122,9 @@ def test_incompatible_edge_condition_types_do_not_crash_engine():
 def test_engine_without_handlers_fails_closed_without_simulation():
     svc = WorkflowEditorService()
     wid, nid = _task_workflow(svc)
-    svc.update_node(wid, nid, tool_name="echo")
+    svc.update_node(wid, nid, tool_name="herramienta_inexistente")  # "echo" sí existe en Linux y se ejecutaría de verdad
     res = svc.execute_workflow(wid)
-    assert res["status"] != WorkflowStatus.COMPLETED.value
+    assert res["status"] !=WorkflowStatus.COMPLETED.value
 
 
 def _agent_engine(bus, exec_id):

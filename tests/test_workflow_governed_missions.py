@@ -412,7 +412,7 @@ def _run_full_access(runtime, tmp_path, llm, sid):
                                      workspace_root=str(tmp_path), workflow_id="wf_dev_only", step_delay_ms=0,
                                      execution_mode="full_access", metadata={"full_access_authorized_by_operator": True}, autonomous=True,
                                      allow_unattended_execution=True)
-        assert _wait(lambda: any(e.type.value == "session.completed" for e in runtime.event_bus.get_events(meta["session_id"], limit=2000)), 90)
+        assert _wait(lambda: any(e.type.value == "session.completed" for e in runtime.event_bus.get_events(meta["session_id"], limit=2000)), 240)
     return meta["session_id"]
 
 

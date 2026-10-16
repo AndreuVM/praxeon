@@ -1,5 +1,6 @@
 """Full Access: las lecturas legítimas no piden aprobación y una aprobación pendiente no es un veto."""
 
+import sys
 import threading
 import time
 from unittest.mock import patch
@@ -79,8 +80,9 @@ def _types(events):
 
 def test_pending_approval_is_reported_and_never_pruned(runtime, tmp_path):
     """Una lectura fuera del workspace pide aprobación: se informa, no se poda ni cuenta como fallo."""
+    outside = "C:/Windows/win.ini" if sys.platform == "win32" else "/etc/hostname"
     turns = [
-        'Thought: leer fichero externo\nAction: read_file({"path": "C:/Windows/win.ini"})',
+        f'Thought: leer fichero externo\nAction: read_file({{"path": "{outside}"}})',
         'Thought: inspección local\nAction: run_command({"command": "echo ok"})',
         'Thought: concluir\nAction: finish({"summary": "listo"})',
     ]
