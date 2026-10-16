@@ -127,15 +127,23 @@ class KevServerManager:
         log_dir.mkdir(parents=True, exist_ok=True)
         self._log_handle = open(log_dir / "kev_server.log", "ab")  # noqa: SIM115 (vive lo que el proceso)
         logger.info("Arrancando KEV: %s (cwd=%s)", " ".join(argv), self.home)
+        env = dict(os.environ)
+        if os.name == "nt":
+            # Sin modo desarrollador Windows no permite enlaces simbólicos y la descarga de pesos de Hugging Face falla
+            env.setdefault("HF_HUB_DISABLE_SYMLINKS", "1")
         self._proc = subprocess.Popen(  # nosec B603
-            argv, cwd=str(self.home), stdout=self._log_handle, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
+            argv, cwd=str(self.home), env=env, stdout=self._log_handle, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
         )
         atexit.register(self.stop)
 
     def stop(self) -> None:
         proc, self._proc = self._proc, None
         if proc is not None and proc.poll() is None:
-            proc.terminate()
+            if os.name == "nt":
+                # 'uv run' lanza el servidor como proceso hijo: sin matar el árbol entero quedaría huérfano
+                subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)], capture_output=True, check=False)  # nosec B603 B607
+            else:
+                proc.terminate()
             try:
                 proc.wait(timeout=10)
             except subprocess.TimeoutExpired:
