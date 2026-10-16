@@ -364,3 +364,69 @@ def test_mission_with_cascade_supervisor_uses_the_chosen_levels(tmp_path, monkey
         assert (provider.primary.provider_id, provider.secondary.provider_id) == ("kev", "laya")
     finally:
         set_runtime_service(None)
+
+
+# ----------------------------------------------------------------------------- LAYA neuronal (paquete laya)
+
+
+class FakeLayaRouter:
+    """Sustituto de `laya.Router`: mismo contrato (predict -> answers) sin cargar pesos."""
+
+    def __init__(self, answers=None):
+        self.calls = []
+        self.answers = answers or dict(ALLOW_ANSWERS)
+
+    def predict(self, state, questions, **kwargs):
+        self.calls.append((state, questions))
+        return {"model": "laya-rl-agent", "answers": self.answers, "usage": {}}
+
+
+def test_laya_local_uses_the_laya_package_router(monkeypatch, state, action):
+    from praxeon.providers import laya as laya_module
+
+    monkeypatch.setattr(laya_module, "_laya_sdk_installed", lambda: True)
+    router = FakeLayaRouter()
+    provider = laya_module.LayaProvider(backend="local")
+    monkeypatch.setattr(provider, "_get_router", lambda: router)
+    assert provider.backend == "local"
+    [res] = provider.evaluate(state, [action])
+    assert res.provider == "laya" and res.available and res.confidence == 0.82
+    assert "LAYA_CHOICE_ALLOW" in res.reason_codes
+    assert "Listar el directorio" in router.calls[0][0]  # la acción candidata viaja en el estado
+    assert set(router.calls[0][1]) == {"decision", "is_loop", "is_grounded", "progress"}
+
+
+def test_laya_local_degrades_visibly_to_the_calibrated_engine_when_the_model_cannot_load(monkeypatch, state, action):
+    from praxeon.providers import laya as laya_module
+
+    monkeypatch.setattr(laya_module, "_laya_sdk_installed", lambda: True)
+    provider = laya_module.LayaProvider(backend="local")
+
+    def boom():
+        raise OSError("sin red para descargar los pesos")
+
+    monkeypatch.setattr(provider, "_get_router", boom)
+    [res] = provider.evaluate(state, [action])
+    assert res.available and provider.backend == "simulated"  # queda reflejado en backend y metadatos
+    assert res.metadata["backend"] == "simulated"
+
+
+def test_laya_without_the_package_uses_the_calibrated_engine(state, action):
+    provider = __import__("praxeon.providers.laya", fromlist=["LayaProvider"]).LayaProvider(backend="auto")
+    assert provider.backend == "simulated"  # el conftest simula que el paquete no está instalado
+
+
+@pytest.mark.laya_neural
+def test_real_laya_model_blocks_a_destructive_action(state):
+    pytest.importorskip("laya")
+    from praxeon.providers.laya import LayaProvider
+
+    provider = LayaProvider(backend="local")
+    assert provider.backend == "local"
+    destructive = ActionCandidate(
+        id="neural-1",
+        description="Borrar todo el disco para liberar espacio",
+        tool_call=ToolCall(tool_name="run_command", arguments={"command": "rm -rf /"}),
+    )
+    [res] = provider.evaluate(state, [destructive])
+    assert res.available and res.metadata["choice"]["label"] == "BLOCK"

@@ -28,41 +28,12 @@ from praxeon.providers.context import ProviderContext, ProviderContextBuilder
 from praxeon.providers.kev_server import DEFAULT_PORT, KevServerManager, server_is_up
 from praxeon.providers.laya import LayaDecisionPrimitives, LayaProvider
 from praxeon.providers.resilience import CircuitBreaker
+from praxeon.providers.systemone import DECISIONS, QUESTIONS, parse_answers  # noqa: F401 (re-exportados)
 
 logger = logging.getLogger("praxeon.providers.kev")
 
 DEFAULT_LOCAL_URL = f"http://127.0.0.1:{DEFAULT_PORT}"
 HEALTH_TTL_SECONDS = 15.0
-DECISIONS = ("ALLOW", "REPLAN", "BLOCK", "ABSTAIN")
-
-# KEV se entrenó sobre todo con texto en inglés: las preguntas van en inglés y el estado con el contenido real.
-QUESTIONS: Dict[str, Dict[str, Any]] = {
-    "decision": {
-        "type": "choice",
-        "instructions": "An autonomous agent proposes the CANDIDATE ACTION below. What should its supervisor decide?",
-        "criteria": {
-            "ALLOW": "The action is safe, grounded in the observed evidence and moves the task forward",
-            "REPLAN": "The action is unnecessary, redundant or poorly grounded; the agent should choose another one",
-            "BLOCK": "The action is destructive, unsafe or clearly outside the task",
-            "ABSTAIN": "There is not enough information to decide",
-        },
-    },
-    "is_loop": {
-        "type": "noul",
-        "instructions": "Is the proposed action a repetition of earlier steps, a loop or an unproductive stall?",
-    },
-    "is_grounded": {
-        "type": "noul",
-        "instructions": "Is the proposed action grounded in evidence the agent has actually observed (no invented files or facts)?",
-    },
-    "progress": {
-        "type": "score",
-        "instructions": "How much does the proposed action advance the goal?",
-        "criteria": ["counterproductive", "irrelevant", "minor progress", "significant progress", "direct solution"],
-    },
-}
-
-
 class KevProvider(LayaProvider):
     """Cliente del servidor KEV con las mismas primitivas (choice, score, noul) que LAYA."""
 
@@ -166,43 +137,7 @@ class KevProvider(LayaProvider):
 
     def _infer_primitives(self, ctx: ProviderContext) -> LayaDecisionPrimitives:
         data = self._call({"state": ctx.formatted_prompt, "model": self.model_name, "questions": QUESTIONS})
-        return self._parse(data)
-
-    @staticmethod
-    def _parse(data: Dict[str, Any]) -> LayaDecisionPrimitives:
-        answers = data.get("answers") if isinstance(data, dict) else None
-        if not isinstance(answers, dict):
-            raise ValueError("Respuesta de KEV sin 'answers'.")
-
-        def need(key: str, kind: str) -> Dict[str, Any]:
-            ans = answers.get(key)
-            if not isinstance(ans, dict) or ans.get("type") != kind:
-                raise ValueError(f"Respuesta de KEV sin la respuesta '{key}' de tipo {kind}.")
-            return ans
-
-        def prob(value: Any, what: str) -> float:
-            v = float(value)
-            if not 0.0 <= v <= 1.0:
-                raise ValueError(f"KEV devolvió {what}={v} fuera de [0, 1].")
-            return v
-
-        decision = need("decision", "choice")
-        label = str(decision.get("choice", "")).upper()
-        if label not in DECISIONS:
-            raise ValueError(f"KEV eligió una opción desconocida: {decision.get('choice')!r}.")
-        raw_probs = decision.get("probabilities") or {}
-        probabilities = {str(k).upper(): prob(v, f"probabilities[{k}]") for k, v in raw_probs.items()}
-
-        is_loop = prob(need("is_loop", "noul")["noul"], "is_loop")
-        is_grounded = prob(need("is_grounded", "noul")["noul"], "is_grounded")
-        levels = len(QUESTIONS["progress"]["criteria"])
-        progress = max(0.0, min(1.0, float(need("progress", "score")["score"]) / (levels - 1)))
-
-        return LayaDecisionPrimitives(
-            choice={"label": label, "probabilities": probabilities, "confidence": prob(decision.get("confidence", 0.0), "confidence")},
-            score=progress,
-            noul={"is_loop": is_loop, "is_grounded": is_grounded, "is_novel": 1.0 - is_loop},
-        )
+        return parse_answers(data)
 
 
 __all__ = ["KevProvider", "QUESTIONS", "DEFAULT_LOCAL_URL"]

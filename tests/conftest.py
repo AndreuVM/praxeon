@@ -94,3 +94,14 @@ def cleanup_e2e_residual_dirs():
     for p in Path.cwd().glob("e2e_dir_*"):
         if p.is_dir():
             shutil.rmtree(p, ignore_errors=True)
+
+
+@pytest.fixture(autouse=True)
+def _hermetic_laya(request, monkeypatch):
+    """Los tests no dependen de que el paquete `laya` (y sus pesos) esté instalado: usan el motor calibrado.
+
+    Los tests que quieran el modelo neuronal real lo piden con `@pytest.mark.laya_neural`.
+    """
+    if request.node.get_closest_marker("laya_neural"):
+        return
+    monkeypatch.setattr("praxeon.providers.laya._laya_sdk_installed", lambda: False)

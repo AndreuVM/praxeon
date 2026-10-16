@@ -17,6 +17,7 @@ import json
 import logging
 
 import os
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -28,8 +29,19 @@ from praxeon.domain.action import ActionCandidate
 from praxeon.domain.assessment import ProviderAssessment
 from praxeon.providers.base import BaseReasoningProvider
 from praxeon.providers.context import ProviderContext, ProviderContextBuilder
+from praxeon.providers.systemone import QUESTIONS, parse_answers
 
 logger = logging.getLogger("praxeon.providers.laya")
+
+def _laya_sdk_installed() -> bool:
+    """Comprueba si el paquete `laya` está instalado sin importarlo (arrastra torch y tarda segundos)."""
+    import importlib.util
+
+    return importlib.util.find_spec("laya") is not None
+
+
+_ROUTERS: Dict[Optional[str], Any] = {}
+_ROUTER_LOCK = threading.Lock()
 
 
 class LayaDecisionPrimitives(BaseModel):
@@ -99,25 +111,19 @@ class LayaProvider(BaseReasoningProvider):
         if self.requested_backend == "simulated":
             return "simulated"
         if self.requested_backend == "local":
-            try:
-                import laya  # type: ignore  # noqa: F401 (comprobación de disponibilidad)
+            if _laya_sdk_installed():
                 return "local"
-            except ImportError:
-                logger.info(
-                    "Backend 'local' solicitado pero 'laya' no está instalado. "
-                    "Ejecute 'pip install praxeon[laya]' o 'pip install laya' para inferencia neuronal con pesos locales. "
-                    "Utilizando motor local calibrado sin pesos externos."
-                )
-                return "simulated"
+            logger.info(
+                "Backend 'local' solicitado pero 'laya' no está instalado. "
+                "Ejecute 'pip install praxeon[laya]' o 'pip install laya' para inferencia neuronal con pesos locales. "
+                "Utilizando motor local calibrado sin pesos externos."
+            )
+            return "simulated"
 
         # Modo 'auto'
         if self.endpoint_url:
             return "hosted"
-        try:
-            import laya  # type: ignore  # noqa: F401 (comprobación de disponibilidad)
-            return "local"
-        except ImportError:
-            return "simulated"
+        return "local" if _laya_sdk_installed() else "simulated"
 
     def is_available(self) -> bool:
         """Comprueba si el proveedor LAYA está disponible para realizar inferencias."""
@@ -180,45 +186,30 @@ class LayaProvider(BaseReasoningProvider):
             noul=noul_data,
         )
 
-    def _get_local_model(self):
-        """Carga o reutiliza la instancia del modelo neuronal local LAYA."""
-        if getattr(self, "_loaded_model", None) is None:
-            import laya  # type: ignore  # noqa: F401 (comprobación de disponibilidad)
-            model_target = self.model_name
-            if model_target in ("laya-v1-calibrated", "default"):
-                model_target = os.getenv("LAYA_MODEL_PATH", "convaiinnovations/laya")
-            load_fn = getattr(laya, "load_model", None) or getattr(laya, "LayaModel", None)
-            if callable(load_fn):
-                self._loaded_model = load_fn(model_target)
-            else:
-                self._loaded_model = None
-        return self._loaded_model
+    def _get_router(self):
+        """Carga (una vez por proceso y dispositivo) el Router del paquete `laya`, que elige el checkpoint por idioma."""
+        with _ROUTER_LOCK:
+            router = _ROUTERS.get(self.device)
+            if router is None:
+                if os.name == "nt":
+                    # Sin modo desarrollador Windows no permite enlaces simbólicos y la descarga de pesos falla
+                    os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS", "1")
+                from laya import Router  # type: ignore
+
+                kwargs = {"device": self.device} if self.device and self.device != "auto" else {}
+                router = _ROUTERS[self.device] = Router(**kwargs)
+            return router
 
     def _infer_primitives_local_sdk(self, ctx: ProviderContext) -> LayaDecisionPrimitives:
-        """Invoca el paquete local laya con pesos neuronales cacheados."""
-        model = self._get_local_model()
-        if model is None:
+        """Inferencia neuronal con el paquete `laya` (Router.predict) en este equipo."""
+        try:
+            router = self._get_router()
+        except Exception as exc:
+            # No se pudo cargar el modelo (p. ej. sin red en el primer uso): se degrada al motor calibrado, a la vista
+            logger.warning("LAYA local no pudo cargar el modelo (%s); se usa el motor calibrado.", exc)
+            self.backend = "simulated"
             return self._infer_primitives_calibrated(ctx)
-
-        prompt = ctx.formatted_prompt
-        choice_res = model.choice(prompt, options=["ALLOW", "REPLAN", "BLOCK", "ABSTAIN"])
-        score_res = model.score(prompt, scale=(0.0, 1.0))
-        is_loop = model.noul(f"{prompt}\n¿La acción propuesta es un bucle o estancamiento repetitivo?")
-        is_grounded = model.noul(f"{prompt}\n¿La acción propuesta está fundamentada en observaciones comprobadas?")
-
-        return LayaDecisionPrimitives(
-            choice={
-                "label": choice_res.label,
-                "probabilities": choice_res.probabilities,
-                "confidence": choice_res.confidence,
-            },
-            score=float(score_res),
-            noul={
-                "is_loop": float(is_loop),
-                "is_grounded": float(is_grounded),
-                "is_novel": float(1.0 - is_loop),
-            },
-        )
+        return parse_answers(router.predict(ctx.formatted_prompt, QUESTIONS))
 
     def _infer_primitives_calibrated(self, ctx: ProviderContext) -> LayaDecisionPrimitives:
         """Inferencia local simulada de alta fidelidad y calibración matemática."""

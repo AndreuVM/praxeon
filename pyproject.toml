@@ -89,6 +89,7 @@ markers = [
     "security: Tests de seguridad, HMAC, autorizacion, limites y aislamiento",
     "providers: Tests de proveedores de inferencia y evaluacion semantica",
     "benchmark: Tests de rendimiento, ablacion y benchmarking comparativo",
+    "laya_neural: Usa el modelo neuronal real del paquete laya (descarga pesos; se salta si no esta instalado)",
 ]
 
 [tool.ruff]
