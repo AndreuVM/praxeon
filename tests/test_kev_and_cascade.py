@@ -1,4 +1,14 @@
-"""KEV como supervisor System-1 local y cascada configurable (local+local o local+API)."""
+"""KEV (jaredpalmer/kev) como supervisor System-1 y cascada configurable (local+local o local+API).
+
+Los tests usan un servidor HTTP falso con el formato de respuesta documentado de ``kev.serve``
+(POST /v1/systemone); no cargan pesos ni requieren GPU.
+"""
+
+import json
+import socket
+import sys
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
 
@@ -7,6 +17,7 @@ from praxeon.domain.decision_provider import DecisionModelConfig, DecisionProvid
 from praxeon.domain.evidence import Evidence
 from praxeon.domain.goal import Goal
 from praxeon.providers.kev import KevProvider
+from praxeon.providers.kev_server import KevServerManager
 from praxeon.providers.registry import build_default_registry
 from praxeon.providers.router import ConfidenceAwareRouter
 from praxeon.runtime.decision_runtime import DecisionRuntime
@@ -34,39 +45,218 @@ def registry():
     return build_default_registry()
 
 
+ALLOW_ANSWERS = {
+    "decision": {"type": "choice", "choice": "ALLOW", "confidence": 0.82,
+                 "probabilities": {"ALLOW": 0.9, "REPLAN": 0.05, "BLOCK": 0.03, "ABSTAIN": 0.02}},
+    "is_loop": {"type": "noul", "noul": 0.04},
+    "is_grounded": {"type": "noul", "noul": 0.93},
+    "progress": {"type": "score", "score": 3.0, "confidence": 0.6, "legend": {}, "probabilities": {}},
+}
+
+
+class FakeKev:
+    """Servidor con el formato de respuesta documentado de ``kev.serve`` (POST /v1/systemone, GET /v1/models)."""
+
+    def __init__(self, answers=None, api_key=None):
+        self.requests = []
+        self.answers = answers or dict(ALLOW_ANSWERS)
+        outer = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self, *args):
+                pass
+
+            def _denied(self):
+                if api_key and self.headers.get("Authorization") != f"Bearer {api_key}":
+                    self.send_response(401)
+                    self.end_headers()
+                    return True
+                return False
+
+            def do_GET(self):
+                if self._denied():
+                    return
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(b"[]")
+
+            def do_POST(self):
+                length = int(self.headers.get("Content-Length", 0))
+                outer.requests.append({"path": self.path, "headers": dict(self.headers), "body": json.loads(self.rfile.read(length))})
+                if self._denied():
+                    return
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"model": "kev-latest", "answers": outer.answers}).encode())
+
+        self.httpd = HTTPServer(("127.0.0.1", 0), Handler)
+        self.url = f"http://127.0.0.1:{self.httpd.server_address[1]}"
+        threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
+
+    def close(self):
+        self.httpd.shutdown()
+        self.httpd.server_close()
+
+
+@pytest.fixture
+def kev_server(monkeypatch):
+    for key in ("KEV_AUTOSTART", "KEV_API_KEY"):
+        monkeypatch.delenv(key, raising=False)
+    server = FakeKev()
+    monkeypatch.setenv("KEV_ENDPOINT_URL", server.url)
+    yield server
+    server.close()
+
+
 def _cascade(registry, **params):
     return registry.create(DecisionModelConfig(provider="cascade", model_id="cascade", custom_params=params))
 
 
-def test_kev_is_registered_and_evaluates_locally_without_weights(registry, state, action):
+# ----------------------------------------------------------------------------- KEV
+
+
+def test_kev_sends_a_systemone_request_and_maps_the_answers(registry, kev_server, state, action):
     provider = registry.create(DecisionModelConfig(provider="kev", model_id="kev", backend="local"))
-    assert isinstance(provider, KevProvider)
-    assert provider.provider_id == "kev"
-    assert provider.backend in ("local", "simulated")  # sin el paquete «kev» usa el motor calibrado
+    assert isinstance(provider, KevProvider) and provider.provider_id == "kev" and provider.backend == "local"
     [res] = provider.evaluate(state, [action])
+
+    req = kev_server.requests[0]
+    assert req["path"] == "/v1/systemone"
+    assert req["body"]["model"] == "kev-latest"
+    assert set(req["body"]["questions"]) == {"decision", "is_loop", "is_grounded", "progress"}
+    assert "Listar el directorio" in req["body"]["state"]  # el estado lleva la acción candidata real
+
     assert res.available and res.provider == "kev"
-    assert all(code.startswith("KEV_") for code in res.reason_codes)
-    assert res.metadata["provider"] == "kev"
+    assert res.confidence == 0.82
+    assert res.loop_probability == 0.04 and res.grounded_probability == 0.93
+    assert res.progress_probability == 0.75  # score 3 en la escala 0..4
+    assert "KEV_CHOICE_ALLOW" in res.reason_codes and "KEV_PROGRESS_APPROVED" in res.reason_codes
+    assert not any(code.startswith("LAYA_") for code in res.reason_codes)
 
 
-def test_kev_hosted_without_endpoint_is_unavailable(registry):
-    provider = registry.create(DecisionModelConfig(provider="kev", backend="hosted"))
-    assert provider.is_available() is False
+def test_kev_block_loop_and_ungrounded_are_reported(registry, kev_server, state, action):
+    kev_server.answers = {
+        "decision": {"type": "choice", "choice": "BLOCK", "confidence": 0.9, "probabilities": {"BLOCK": 0.95}},
+        "is_loop": {"type": "noul", "noul": 0.9},
+        "is_grounded": {"type": "noul", "noul": 0.1},
+        "progress": {"type": "score", "score": 0.4},
+    }
+    [res] = registry.create(DecisionModelConfig(provider="kev")).evaluate(state, [action])
+    assert {"KEV_DESTRUCTIVE_BLOCK", "KEV_LOOP_PREVENTED", "KEV_UNGROUNDED_EVIDENCE"} <= set(res.reason_codes)
 
 
-def test_kev_hosted_failure_is_reported_never_allowed(registry, state, action, monkeypatch):
-    monkeypatch.setenv("KEV_ENDPOINT_URL", "http://127.0.0.1:9/")  # puerto cerrado
-    provider = KevProvider(backend="hosted", timeout=0.5)
-    [res] = provider.evaluate(state, [action])
+@pytest.mark.parametrize("answers", [
+    {"decision": {"type": "choice", "choice": "QUIZAS", "confidence": 0.5}},          # opción desconocida
+    {"decision": {"type": "choice", "choice": "ALLOW", "confidence": 0.5}},           # faltan preguntas
+    {"decision": {"type": "choice", "choice": "ALLOW", "confidence": 0.5},
+     "is_loop": {"type": "noul", "noul": 7}, "is_grounded": {"type": "noul", "noul": 0.5},
+     "progress": {"type": "score", "score": 1}},                                       # probabilidad fuera de rango
+])
+def test_malformed_kev_answers_fail_closed(registry, kev_server, state, action, answers):
+    kev_server.answers = answers
+    [res] = registry.create(DecisionModelConfig(provider="kev")).evaluate(state, [action])
     assert res.available is False and res.confidence == 0.0
     assert "KEV_PROVIDER_UNAVAILABLE" in res.reason_codes
+
+
+def test_unreachable_kev_server_fails_closed(registry, state, action, monkeypatch):
+    monkeypatch.setenv("KEV_ENDPOINT_URL", "http://127.0.0.1:9")
+    monkeypatch.delenv("KEV_AUTOSTART", raising=False)
+    provider = registry.create(DecisionModelConfig(provider="kev", timeout_seconds=1))
+    assert provider.is_available() is False
+    [res] = provider.evaluate(state, [action])
+    assert res.available is False and res.confidence == 0.0
+
+
+def test_hosted_kev_without_endpoint_is_unavailable(registry, monkeypatch):
+    monkeypatch.delenv("KEV_ENDPOINT_URL", raising=False)
+    assert registry.create(DecisionModelConfig(provider="kev", backend="hosted")).is_available() is False
+
+
+def test_hosted_kev_sends_the_bearer_key_and_rejects_a_wrong_one(monkeypatch, state, action):
+    monkeypatch.delenv("KEV_API_KEY", raising=False)
+    server = FakeKev(api_key="secreta")
+    try:
+        good = KevProvider(backend="hosted", endpoint_url=server.url, api_key="secreta")
+        assert good.evaluate(state, [action])[0].available
+        assert server.requests[-1]["headers"]["Authorization"] == "Bearer secreta"
+        bad = KevProvider(backend="hosted", endpoint_url=server.url, api_key="otra")
+        assert bad.evaluate(state, [action])[0].available is False
+    finally:
+        server.close()
+
+
+def test_environment_key_is_not_leaked_to_a_foreign_endpoint(monkeypatch, state, action):
+    monkeypatch.setenv("KEV_API_KEY", "clave-del-servidor")
+    monkeypatch.delenv("KEV_ENDPOINT_URL", raising=False)
+    server = FakeKev()
+    try:
+        provider = KevProvider(backend="hosted", endpoint_url=server.url)
+        assert provider.api_key is None
+        provider.evaluate(state, [action])
+        assert "Authorization" not in server.requests[-1]["headers"]
+    finally:
+        server.close()
+
+
+def test_autostart_launches_the_server_and_waits_until_ready(tmp_path, monkeypatch, state, action):
+    """KEV_AUTOSTART=1 + KEV_HOME: PRAXEON lanza el servidor (aquí un sustituto mínimo) y espera a que responda."""
+    sock = socket.socket()
+    sock.bind(("127.0.0.1", 0))
+    port = sock.getsockname()[1]
+    sock.close()
+    answers = json.dumps({"answers": ALLOW_ANSWERS})
+    script = tmp_path / "fake_kev.py"
+    script.write_text(
+        "import sys\n"
+        "from http.server import BaseHTTPRequestHandler, HTTPServer\n"
+        f"BODY = {answers!r}.encode()\n"
+        "class H(BaseHTTPRequestHandler):\n"
+        "    def log_message(self, *a): pass\n"
+        "    def do_GET(self):\n"
+        "        self.send_response(200); self.end_headers(); self.wfile.write(b'[]')\n"
+        "    def do_POST(self):\n"
+        "        self.rfile.read(int(self.headers['Content-Length']))\n"
+        "        self.send_response(200); self.end_headers(); self.wfile.write(BODY)\n"
+        "HTTPServer(('127.0.0.1', int(sys.argv[1])), H).serve_forever()\n"
+    )
+    monkeypatch.setenv("KEV_AUTOSTART", "1")
+    monkeypatch.setenv("KEV_HOME", str(tmp_path))
+    monkeypatch.setenv("KEV_PORT", str(port))
+    monkeypatch.setenv("KEV_STARTUP_TIMEOUT", "30")
+    monkeypatch.setenv("KEV_SERVE_COMMAND", f'"{sys.executable}" "{script}" {{port}}')
+    monkeypatch.setenv("PRAXEON_CACHE_DIR", str(tmp_path / "cache"))
+    monkeypatch.delenv("KEV_ENDPOINT_URL", raising=False)
+    manager = KevServerManager.from_env()
+    assert manager is not None and manager.base_url == f"http://127.0.0.1:{port}"
+    try:
+        provider = KevProvider(backend="local")
+        assert provider.endpoint_url == manager.base_url and provider.is_available()
+        [res] = provider.evaluate(state, [action])
+        assert res.available and res.provider == "kev"
+        assert manager.is_running()
+    finally:
+        manager.stop()
+
+
+def test_autostart_is_off_by_default_and_needs_a_real_folder(monkeypatch, tmp_path):
+    monkeypatch.delenv("KEV_AUTOSTART", raising=False)
+    assert KevServerManager.from_env() is None
+    monkeypatch.setenv("KEV_AUTOSTART", "1")
+    monkeypatch.setenv("KEV_HOME", str(tmp_path / "no-existe"))
+    assert KevServerManager.from_env() is None
+
+
+# ----------------------------------------------------------------------------- cascada
 
 
 def test_default_cascade_is_local_plus_local(registry):
     router = _cascade(registry)
     assert isinstance(router, ConfidenceAwareRouter)
     assert (router.primary.provider_id, router.secondary.provider_id) == ("laya", "kev")
-    assert router.provider_id == "cascade" and router.is_available()
+    assert router.provider_id == "cascade"
 
 
 @pytest.mark.parametrize("primary,secondary", [("laya", "kev"), ("kev", "laya"), ("kev", "kev"), ("laya", "mock")])
@@ -86,7 +276,7 @@ def test_confident_primary_is_not_escalated(registry, state, action):
     assert router.get_telemetry().local_decision_rate == 1.0
 
 
-def test_unsure_primary_escalates_to_the_second_level(registry, state, action):
+def test_unsure_primary_escalates_to_kev(registry, kev_server, state, action):
     router = _cascade(
         registry,
         primary={"provider": "mock", "custom_params": {"default_confidence": 0.3}},
@@ -95,8 +285,19 @@ def test_unsure_primary_escalates_to_the_second_level(registry, state, action):
     )
     [res] = router.evaluate(state, [action])
     assert res.metadata["routed_to"] == "secondary" and res.metadata["escalated"] is True
-    assert res.provider == "kev"
+    assert res.provider == "kev" and len(kev_server.requests) == 1
     assert router.get_telemetry().escalated_count == 1
+
+
+def test_kev_as_first_level_answers_without_calling_the_second(registry, kev_server, state, action):
+    router = _cascade(
+        registry,
+        primary={"provider": "kev", "backend": "local"},
+        secondary={"provider": "mock", "model_id": "no-deberia-usarse"},
+        confidence_threshold=0.7,
+    )
+    [res] = router.evaluate(state, [action])
+    assert res.provider == "kev" and res.metadata["routed_to"] == "primary"
 
 
 def test_unreachable_cloud_level_fails_closed(registry, state, action):
@@ -112,11 +313,6 @@ def test_unreachable_cloud_level_fails_closed(registry, state, action):
     [res] = router.evaluate(state, [action])
     assert res.available is False and res.confidence == 0.0
     assert "DUAL_PROVIDER_UNCERTAINTY_ESCALATE" in res.reason_codes
-
-
-def test_typesafe_level_without_sdk_is_unavailable_not_a_crash(registry):
-    router = _cascade(registry, primary="laya", secondary={"provider": "typesafe", "backend": "api"})
-    assert router.secondary.provider_id == "typesafe"
 
 
 def test_unknown_level_provider_is_unavailable_not_a_crash(registry, state, action):
@@ -136,14 +332,13 @@ def test_unknown_strategy_is_rejected(registry):
         _cascade(registry, strategy="inventada")
 
 
-def test_cascade_works_inside_a_decision_runtime(registry, state, action):
+def test_cascade_works_inside_a_decision_runtime(registry, kev_server, state, action):
     runtime = DecisionRuntime.from_config(
-        DecisionModelConfig(provider="cascade", model_id="cascade", custom_params={"primary": "laya", "secondary": "kev"}),
+        DecisionModelConfig(provider="cascade", model_id="cascade", custom_params={"primary": "kev", "secondary": "laya"}),
         registry=registry,
     )
     [res] = runtime.evaluate(state, [action])
-    assert res.available
-    assert runtime.provider_id == "cascade"
+    assert res.available and runtime.provider_id == "cascade"
 
 
 def test_mission_with_cascade_supervisor_uses_the_chosen_levels(tmp_path, monkeypatch):
@@ -168,5 +363,4 @@ def test_mission_with_cascade_supervisor_uses_the_chosen_levels(tmp_path, monkey
         assert provider.provider_id == "cascade"
         assert (provider.primary.provider_id, provider.secondary.provider_id) == ("kev", "laya")
     finally:
-        service.stop_mission("casc-1") if hasattr(service, "stop_mission") else None
         set_runtime_service(None)

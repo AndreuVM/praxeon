@@ -48,15 +48,12 @@ class LayaDecisionPrimitives(BaseModel):
 class LayaProvider(BaseReasoningProvider):
     """Adaptador de razonamiento semántico para LAYA con soporte para choice, score y noul.
 
-    Las constantes de clase permiten que otros supervisores System-1 con las mismas primitivas (p. ej. KEV)
-    reutilicen toda la lógica cambiando solo su identidad, sus variables de entorno y su paquete local.
+    La construcción del `ProviderAssessment` a partir de las primitivas es común a los supervisores System-1
+    (p. ej. KEV): basta con cambiar `PROVIDER_ID` y `CODE_PREFIX` y sustituir `_infer_primitives`.
     """
 
     PROVIDER_ID = "laya"
     CODE_PREFIX = "LAYA"
-    SDK_MODULE = "laya"
-    ENV_PREFIX = "LAYA"
-    DEFAULT_MODEL_PATH = "convaiinnovations/laya"
 
     def __init__(
         self,
@@ -68,27 +65,25 @@ class LayaProvider(BaseReasoningProvider):
         max_context_tokens: int = 2048,
         timeout: float = 5.0,
         device: str = "cpu",
-        model_path: Optional[str] = None,
     ):
-        self.name = self.PROVIDER_ID
+        self.name = "laya"
         self.requested_backend = backend.lower()
         self.model_name = model_name
-        self.model_path = model_path
 
-        trusted_endpoint = os.getenv(f"{self.ENV_PREFIX}_ENDPOINT_URL")
+        trusted_endpoint = os.getenv("LAYA_ENDPOINT_URL")
         # Finding 8: Prevenir filtración de LAYA_AUTH_TOKEN del entorno a endpoints personalizados del llamador
         if endpoint_url:
             self.endpoint_url = endpoint_url
             if auth_token:
                 self.auth_token = auth_token
             elif trusted_endpoint and endpoint_url == trusted_endpoint:
-                self.auth_token = os.getenv(f"{self.ENV_PREFIX}_AUTH_TOKEN")
+                self.auth_token = os.getenv("LAYA_AUTH_TOKEN")
             else:
                 # Endpoint personalizado sin token explícito: no filtrar credenciales del servidor
                 self.auth_token = None
         else:
             self.endpoint_url = trusted_endpoint
-            self.auth_token = auth_token or os.getenv(f"{self.ENV_PREFIX}_AUTH_TOKEN")
+            self.auth_token = auth_token or os.getenv("LAYA_AUTH_TOKEN")
         self.context_builder = context_builder or ProviderContextBuilder(default_max_tokens=max_context_tokens)
         self.max_context_tokens = max_context_tokens
         self.timeout = timeout
@@ -104,25 +99,25 @@ class LayaProvider(BaseReasoningProvider):
         if self.requested_backend == "simulated":
             return "simulated"
         if self.requested_backend == "local":
-            if self._sdk_installed():
+            try:
+                import laya  # type: ignore  # noqa: F401 (comprobación de disponibilidad)
                 return "local"
-            logger.info(
-                "Backend 'local' solicitado pero '%s' no está instalado. "
-                "Instale el paquete para inferencia neuronal con pesos locales. "
-                "Utilizando motor local calibrado sin pesos externos.",
-                self.SDK_MODULE,
-            )
-            return "simulated"
+            except ImportError:
+                logger.info(
+                    "Backend 'local' solicitado pero 'laya' no está instalado. "
+                    "Ejecute 'pip install praxeon[laya]' o 'pip install laya' para inferencia neuronal con pesos locales. "
+                    "Utilizando motor local calibrado sin pesos externos."
+                )
+                return "simulated"
 
         # Modo 'auto'
         if self.endpoint_url:
             return "hosted"
-        return "local" if self._sdk_installed() else "simulated"
-
-    def _sdk_installed(self) -> bool:
-        """Indica si el paquete neuronal local de este supervisor está instalado."""
-        import importlib.util
-        return importlib.util.find_spec(self.SDK_MODULE) is not None
+        try:
+            import laya  # type: ignore  # noqa: F401 (comprobación de disponibilidad)
+            return "local"
+        except ImportError:
+            return "simulated"
 
     def is_available(self) -> bool:
         """Comprueba si el proveedor LAYA está disponible para realizar inferencias."""
@@ -188,12 +183,11 @@ class LayaProvider(BaseReasoningProvider):
     def _get_local_model(self):
         """Carga o reutiliza la instancia del modelo neuronal local LAYA."""
         if getattr(self, "_loaded_model", None) is None:
-            import importlib
-            sdk = importlib.import_module(self.SDK_MODULE)
-            model_target = self.model_path or self.model_name
-            if model_target in (f"{self.PROVIDER_ID}-v1-calibrated", "default", self.PROVIDER_ID):
-                model_target = os.getenv(f"{self.ENV_PREFIX}_MODEL_PATH", self.DEFAULT_MODEL_PATH)
-            load_fn = getattr(sdk, "load_model", None) or getattr(sdk, "LayaModel", None) or getattr(sdk, "Model", None)
+            import laya  # type: ignore  # noqa: F401 (comprobación de disponibilidad)
+            model_target = self.model_name
+            if model_target in ("laya-v1-calibrated", "default"):
+                model_target = os.getenv("LAYA_MODEL_PATH", "convaiinnovations/laya")
+            load_fn = getattr(laya, "load_model", None) or getattr(laya, "LayaModel", None)
             if callable(load_fn):
                 self._loaded_model = load_fn(model_target)
             else:

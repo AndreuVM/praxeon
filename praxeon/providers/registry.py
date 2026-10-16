@@ -239,14 +239,13 @@ def _create_typesafe_provider(config: DecisionModelConfig) -> DecisionProvider:
 def _create_kev_provider(config: DecisionModelConfig) -> DecisionProvider:
     from praxeon.providers.kev import KevProvider
 
+    model = config.model_id if config.model_id and config.model_id not in ("default", "kev") else "kev-latest"
     return KevProvider(
-        backend=config.backend or "auto",
-        model_name=config.model_id if config.model_id and config.model_id != "default" else "kev-v1-calibrated",
-        endpoint_url=config.endpoint or config.custom_params.get("endpoint_url"),
-        auth_token=config.custom_params.get("auth_token"),
-        timeout=config.timeout_seconds or 5.0,
-        device=config.device or "cpu",
-        model_path=config.model_path,
+        backend=config.backend or "local",
+        model_name=model,
+        endpoint_url=config.endpoint,
+        api_key=config.custom_params.get("api_key"),
+        timeout=max(config.timeout_seconds or 0.0, 15.0),
     )
 
 
@@ -376,8 +375,8 @@ def build_default_registry() -> DecisionProviderRegistry:
     reg.register(
         provider_id="kev",
         factory=_create_kev_provider,
-        description="Supervisor System-1 local KEV (paquete local, endpoint propio o motor calibrado)",
-        default_backend="auto",
+        description="KEV (jaredpalmer/kev): modelo de decisión System-1 servido en local o en un endpoint propio",
+        default_backend="local",
     )
 
     # 5. Cascada configurable: cualquier combinación local+local o local+API

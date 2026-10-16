@@ -50,6 +50,11 @@ function LevelFields({ id, title, level, providers, onChange }) {
           ))}
         </select>
       </Field>
+      {level.provider === 'kev' && level.backend === 'local' && (
+        <p style={{ color: 'var(--muted)', fontSize: 'var(--fs-secondary)', lineHeight: 1.4 }}>
+          KEV responde desde su servidor local (por defecto 127.0.0.1:8009). Arráncalo con <code>python -m kev.serve</code> o deja que PRAXEON lo lance con KEV_AUTOSTART y KEV_HOME. Si no responde, este nivel informa de fallo y no concede nada.
+        </p>
+      )}
       {isRemote(level.backend) && (
         <Field
           label="Endpoint (opcional)"
