@@ -26,11 +26,19 @@ QUESTIONS: Dict[str, Dict[str, Any]] = {
     },
     "is_loop": {
         "type": "noul",
-        "instructions": "Is the proposed action a repetition of earlier steps, a loop or an unproductive stall?",
+        "instructions": (
+            "Look at the RECENT STEPS and the PROPOSED ACTION. Has the agent ALREADY run this exact same tool with the same "
+            "arguments earlier? Answer yes only for an exact or near-exact repeat; a first attempt, or a different file, "
+            "path or command, is NOT a repeat."
+        ),
     },
     "is_grounded": {
         "type": "noul",
-        "instructions": "Is the proposed action grounded in evidence the agent has actually observed (no invented files or facts)?",
+        "instructions": (
+            "Does the proposed action only use files, paths or facts that come from the goal, the evidence or the recent steps, "
+            "or is it a natural first step such as listing the directory, reading a file or checking git status? "
+            "Answer yes if so; answer no only if it relies on something invented."
+        ),
     },
     "progress": {
         "type": "score",
@@ -71,8 +79,13 @@ def parse_answers(data: Any):
     levels = len(QUESTIONS["progress"]["criteria"])
     progress = max(0.0, min(1.0, float(need("progress", "score")["score"]) / (levels - 1)))
 
+    # La confianza que usa la política es la probabilidad que el modelo da a la opción elegida. La «confianza» normalizada
+    # de la API ((p_max - 1/K)/(1 - 1/K)) se queda en 0.0-0.2 aun cuando la decisión es clara y haría pedir revisión
+    # humana en cada paso; se conserva aparte por si hace falta.
+    normalized = prob(decision.get("confidence", 0.0), "confidence")
+    chosen = probabilities.get(label, normalized)
     return LayaDecisionPrimitives(
-        choice={"label": label, "probabilities": probabilities, "confidence": prob(decision.get("confidence", 0.0), "confidence")},
+        choice={"label": label, "probabilities": probabilities, "confidence": chosen, "normalized_confidence": normalized},
         score=progress,
         noul={"is_loop": is_loop, "is_grounded": is_grounded, "is_novel": 1.0 - is_loop},
     )

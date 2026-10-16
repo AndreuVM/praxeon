@@ -129,14 +129,16 @@ def test_kev_sends_a_systemone_request_and_maps_the_answers(registry, kev_server
     assert "Listar el directorio" in req["body"]["state"]  # el estado lleva la acción candidata real
 
     assert res.available and res.provider == "kev"
-    assert res.confidence == 0.82
-    assert res.loop_probability == 0.04 and res.grounded_probability == 0.93
+    assert res.confidence == 0.9  # probabilidad de la opción elegida (ALLOW)
+    assert res.metadata["choice"]["normalized_confidence"] == 0.82
+    assert res.metadata["noul"]["neural_is_loop"] == 0.04 and res.loop_probability < 0.1  # sin repetición no hay bucle
+    assert res.grounded_probability == 0.93
     assert res.progress_probability == 0.75  # score 3 en la escala 0..4
     assert "KEV_CHOICE_ALLOW" in res.reason_codes and "KEV_PROGRESS_APPROVED" in res.reason_codes
     assert not any(code.startswith("LAYA_") for code in res.reason_codes)
 
 
-def test_kev_block_loop_and_ungrounded_are_reported(registry, kev_server, state, action):
+def test_kev_block_and_ungrounded_are_reported_and_its_loop_signal_is_capped(registry, kev_server, state, action):
     kev_server.answers = {
         "decision": {"type": "choice", "choice": "BLOCK", "confidence": 0.9, "probabilities": {"BLOCK": 0.95}},
         "is_loop": {"type": "noul", "noul": 0.9},
@@ -144,7 +146,8 @@ def test_kev_block_loop_and_ungrounded_are_reported(registry, kev_server, state,
         "progress": {"type": "score", "score": 0.4},
     }
     [res] = registry.create(DecisionModelConfig(provider="kev")).evaluate(state, [action])
-    assert {"KEV_DESTRUCTIVE_BLOCK", "KEV_LOOP_PREVENTED", "KEV_UNGROUNDED_EVIDENCE"} <= set(res.reason_codes)
+    assert {"KEV_DESTRUCTIVE_BLOCK", "KEV_UNGROUNDED_EVIDENCE"} <= set(res.reason_codes)
+    assert res.loop_probability < 0.65 and res.metadata["noul"]["neural_is_loop"] == 0.9
 
 
 @pytest.mark.parametrize("answers", [
@@ -377,7 +380,7 @@ class FakeLayaRouter:
         self.answers = answers or dict(ALLOW_ANSWERS)
 
     def predict(self, state, questions, **kwargs):
-        self.calls.append((state, questions))
+        self.calls.append((state, questions, kwargs))
         return {"model": "laya-rl-agent", "answers": self.answers, "usage": {}}
 
 
@@ -390,10 +393,49 @@ def test_laya_local_uses_the_laya_package_router(monkeypatch, state, action):
     monkeypatch.setattr(provider, "_get_router", lambda: router)
     assert provider.backend == "local"
     [res] = provider.evaluate(state, [action])
-    assert res.provider == "laya" and res.available and res.confidence == 0.82
+    assert res.provider == "laya" and res.available and res.confidence == 0.9
     assert "LAYA_CHOICE_ALLOW" in res.reason_codes
     assert "Listar el directorio" in router.calls[0][0]  # la acción candidata viaja en el estado
     assert set(router.calls[0][1]) == {"decision", "is_loop", "is_grounded", "progress"}
+    assert router.calls[0][2] == {"model": "typed-decisions"}  # checkpoint entrenado para decisiones tipadas
+
+
+def _repeated_read_state(times):
+    s = SessionState(session_id="rep", goal=Goal(objective="Resumir el README", success_criteria=["resumen"]))
+    from praxeon.domain.decision import DecisionStatus, PolicyDecision
+
+    for i in range(times):
+        step = ActionCandidate(id=f"act_{i}", description="Leer README.md",
+                               tool_call=ToolCall(tool_name="read_file", arguments={"path": "README.md"}))
+        s.add_step(step, PolicyDecision(status=DecisionStatus.ALLOW), observation="# Praxeon")
+    return s
+
+
+def test_neural_loop_signal_alone_cannot_reach_the_blocking_threshold(monkeypatch, state, action):
+    """El modelo separa mal «bucle» de «paso nuevo»: un 0.97 neuronal sin repetición comprobable no bloquea."""
+    from praxeon.providers import laya as laya_module
+
+    monkeypatch.setattr(laya_module, "_laya_sdk_installed", lambda: True)
+    answers = {**ALLOW_ANSWERS, "is_loop": {"type": "noul", "noul": 0.97}}
+    provider = laya_module.LayaProvider(backend="local")
+    monkeypatch.setattr(provider, "_get_router", lambda: FakeLayaRouter(answers))
+    [res] = provider.evaluate(state, [action])
+    assert res.loop_probability == laya_module.NEURAL_LOOP_CAP < 0.65
+    assert res.metadata["noul"]["neural_is_loop"] == 0.97
+
+
+def test_an_exact_repeat_is_detected_even_when_the_neural_model_misses_it(monkeypatch):
+    from praxeon.providers import laya as laya_module
+
+    monkeypatch.setattr(laya_module, "_laya_sdk_installed", lambda: True)
+    answers = {**ALLOW_ANSWERS, "is_loop": {"type": "noul", "noul": 0.05}}
+    provider = laya_module.LayaProvider(backend="local")
+    monkeypatch.setattr(provider, "_get_router", lambda: FakeLayaRouter(answers))
+    repeat = ActionCandidate(id="act_9", description="Leer README.md",
+                             tool_call=ToolCall(tool_name="read_file", arguments={"path": "README.md"}))
+    [res] = provider.evaluate(_repeated_read_state(3), [repeat])
+    assert res.loop_probability >= 0.65
+    assert res.metadata["noul"]["neural_is_loop"] == 0.05
 
 
 def test_laya_local_degrades_visibly_to_the_calibrated_engine_when_the_model_cannot_load(monkeypatch, state, action):

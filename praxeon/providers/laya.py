@@ -40,6 +40,10 @@ def _laya_sdk_installed() -> bool:
     return importlib.util.find_spec("laya") is not None
 
 
+# Checkpoint de LAYA: «typed-decisions» (entrenado para decisiones tipadas) o «auto» (el Router elige por idioma)
+LAYA_CHECKPOINT = os.getenv("LAYA_CHECKPOINT", "typed-decisions").strip() or "typed-decisions"
+NEURAL_LOOP_CAP = 0.60  # por debajo del umbral de bloqueo por bucle (0.65): el modelo solo no puede bloquear
+
 _ROUTERS: Dict[Optional[str], Any] = {}
 _ROUTER_LOCK = threading.Lock()
 
@@ -209,7 +213,22 @@ class LayaProvider(BaseReasoningProvider):
             logger.warning("LAYA local no pudo cargar el modelo (%s); se usa el motor calibrado.", exc)
             self.backend = "simulated"
             return self._infer_primitives_calibrated(ctx)
-        return parse_answers(router.predict(ctx.formatted_prompt, QUESTIONS))
+        kwargs = {} if LAYA_CHECKPOINT == "auto" else {"model": LAYA_CHECKPOINT}
+        primitives = parse_answers(router.predict(ctx.formatted_prompt, QUESTIONS, **kwargs))
+        return self._combine_loop_evidence(primitives, ctx)
+
+    def _combine_loop_evidence(self, primitives: LayaDecisionPrimitives, ctx: ProviderContext) -> LayaDecisionPrimitives:
+        """La detección de bucles la decide la repetición comprobable; el modelo neuronal solo puede sumar hasta un tope.
+
+        Medido sobre escenarios etiquetados, el modelo separa mal «bucle» de «paso nuevo» (sus probabilidades se solapan) y
+        llegó a bloquear lecturas seguras. Las repeticiones exactas, en cambio, las detecta con precisión el motor de
+        reglas, así que el valor final es el mayor de los dos, con el aporte neuronal acotado por debajo del umbral de bloqueo.
+        """
+        neural_loop = float(primitives.noul.get("is_loop", 0.0))
+        rule_loop = float(self._infer_primitives_calibrated(ctx).noul.get("is_loop", 0.0))
+        loop = max(rule_loop, min(neural_loop, NEURAL_LOOP_CAP))
+        noul = {**primitives.noul, "is_loop": loop, "is_novel": 1.0 - loop, "neural_is_loop": neural_loop, "rule_is_loop": rule_loop}
+        return primitives.model_copy(update={"noul": noul})
 
     def _infer_primitives_calibrated(self, ctx: ProviderContext) -> LayaDecisionPrimitives:
         """Inferencia local simulada de alta fidelidad y calibración matemática."""

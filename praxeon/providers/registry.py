@@ -335,7 +335,7 @@ def _create_cascade_provider(config: DecisionModelConfig, reg: "DecisionProvider
     return ConfidenceAwareRouter(
         primary_provider=primary,
         secondary_provider=secondary,
-        default_confidence_threshold=float(params.get("confidence_threshold", 0.70)),
+        default_confidence_threshold=float(params.get("confidence_threshold", 0.50)),
         secondary_confidence_threshold=float(params.get("secondary_threshold", 0.50)),
         strategy=strategy,
     )

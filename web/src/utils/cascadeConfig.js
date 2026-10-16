@@ -11,7 +11,7 @@ export const CASCADE_PRESETS = {
     config: {
       primary: { provider: 'laya', backend: 'local', endpoint: '' },
       secondary: { provider: 'kev', backend: 'local', endpoint: '' },
-      confidence_threshold: 0.7,
+      confidence_threshold: 0.5,
       secondary_threshold: 0.5,
     },
   },
@@ -21,7 +21,7 @@ export const CASCADE_PRESETS = {
     config: {
       primary: { provider: 'laya', backend: 'local', endpoint: '' },
       secondary: { provider: 'typesafe', backend: 'api', endpoint: '' },
-      confidence_threshold: 0.7,
+      confidence_threshold: 0.5,
       secondary_threshold: 0.5,
     },
   },

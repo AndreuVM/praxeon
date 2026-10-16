@@ -137,7 +137,7 @@ class KevProvider(LayaProvider):
 
     def _infer_primitives(self, ctx: ProviderContext) -> LayaDecisionPrimitives:
         data = self._call({"state": ctx.formatted_prompt, "model": self.model_name, "questions": QUESTIONS})
-        return parse_answers(data)
+        return self._combine_loop_evidence(parse_answers(data), ctx)
 
 
 __all__ = ["KevProvider", "QUESTIONS", "DEFAULT_LOCAL_URL"]
