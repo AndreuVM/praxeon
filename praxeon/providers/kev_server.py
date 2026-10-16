@@ -28,6 +28,8 @@ import urllib.request
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+from praxeon.providers.hardware import kev_device
+
 logger = logging.getLogger("praxeon.providers.kev_server")
 
 DEFAULT_RUN = "jaredpalmer/kev-4b"
@@ -61,6 +63,7 @@ class KevServerManager:
         self.command = command
         self.startup_timeout = startup_timeout
         self._proc: Optional[subprocess.Popen] = None
+        self._cuda_graphs: Optional[bool] = None
         self._lock = threading.Lock()
         self._log_handle = None
 
@@ -97,8 +100,15 @@ class KevServerManager:
         uv = shutil.which("uv")
         if not uv:
             raise RuntimeError("No se encuentra 'uv' en el PATH: instálalo o define KEV_SERVE_COMMAND.")
-        return [uv, "run", "--extra", "serve", "python", "-m", "kev.serve",
-                "--run", self.run, "--host", LOOPBACK, "--port", str(self.port)]
+        # El reparto GPU/CPU se adapta al equipo (ver hardware.py); KEV_DEVICE lo fuerza
+        device, self._cuda_graphs, reason = kev_device(run=self.run)
+        logger.info("KEV en %s (CUDA graphs: %s): %s", device, self._cuda_graphs, reason)
+        # Con un entorno ya montado no se resincroniza: `uv run` volvería a instalar el PyTorch del lockfile (solo CPU)
+        # encima del que el operador haya puesto con CUDA.
+        sync = [] if (self.home / ".venv").is_dir() else ["--extra", "serve"]
+        flags = ["--no-sync"] if not sync else sync
+        return [uv, "run", *flags, "python", "-m", "kev.serve",
+                "--run", self.run, "--host", LOOPBACK, "--port", str(self.port), "--device", device]
 
     def is_running(self) -> bool:
         return server_is_up(self.base_url)
@@ -128,6 +138,9 @@ class KevServerManager:
         self._log_handle = open(log_dir / "kev_server.log", "ab")  # noqa: SIM115 (vive lo que el proceso)
         logger.info("Arrancando KEV: %s (cwd=%s)", " ".join(argv), self.home)
         env = dict(os.environ)
+        if self._cuda_graphs is not None:
+            # con poca VRAM libre los CUDA graphs de KEV (activos por defecto) lo vuelven el doble de lento
+            env.setdefault("KEV_CUDA_GRAPHS", "1" if self._cuda_graphs else "0")
         if os.name == "nt":
             # Sin modo desarrollador Windows no permite enlaces simbólicos y la descarga de pesos de Hugging Face falla
             env.setdefault("HF_HUB_DISABLE_SYMLINKS", "1")

@@ -29,6 +29,7 @@ from praxeon.domain.action import ActionCandidate
 from praxeon.domain.assessment import ProviderAssessment
 from praxeon.providers.base import BaseReasoningProvider
 from praxeon.providers.context import ProviderContext, ProviderContextBuilder
+from praxeon.providers.hardware import laya_device
 from praxeon.providers.systemone import QUESTIONS, parse_answers
 
 logger = logging.getLogger("praxeon.providers.laya")
@@ -49,16 +50,19 @@ _ROUTER_LOCK = threading.Lock()
 
 
 def resolve_device(requested: Optional[str] = None) -> str:
-    """Dispositivo de inferencia: `LAYA_DEVICE` o lo pedido; «auto» usa la GPU CUDA si hay y, si no, la CPU."""
-    device = (requested or os.getenv("LAYA_DEVICE") or "auto").strip().lower()
-    if device != "auto":
-        return device
-    try:
-        import torch  # type: ignore
+    """Dispositivo de inferencia: lo pedido o `LAYA_DEVICE`; con «auto» decide el plan según el hardware (hardware.py)."""
+    device, reason = laya_device(requested)
+    if device.startswith("cuda"):
+        try:
+            import torch  # type: ignore
 
-        return "cuda" if torch.cuda.is_available() else "cpu"
-    except Exception:
-        return "cpu"
+            if not torch.cuda.is_available():
+                logger.info("LAYA: PyTorch sin CUDA; se usa la CPU.")
+                return "cpu"
+        except Exception:  # noqa: BLE001
+            return "cpu"
+    logger.info("LAYA en %s: %s", device, reason)
+    return device
 
 
 class LayaDecisionPrimitives(BaseModel):
