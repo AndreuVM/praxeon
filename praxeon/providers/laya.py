@@ -33,6 +33,7 @@ from praxeon.policy.loop_detector import estimate_loop_probability
 from praxeon.providers.action_record import build_action_record
 from praxeon.providers.context import ProviderContext, ProviderContextBuilder
 from praxeon.providers.hardware import laya_device
+from praxeon.providers.supervisor_trace import record_supervisor_step, trace_path
 from praxeon.providers.systemone import QUESTIONS, parse_answers
 
 logger = logging.getLogger("praxeon.providers.laya")
@@ -472,6 +473,12 @@ class LayaProvider(BaseReasoningProvider):
         try:
             primitives = self._infer_primitives(ctx)
             elapsed_ms = (time.perf_counter() - start_t) * 1000.0
+            if trace_path() is not None:
+                fit = (primitives.choice or {}).get("state_fit") or {}
+                record_supervisor_step(
+                    state=build_laya_state(ctx, int(fit.get("steps", _STATE_FITS[0][0])), int(fit.get("obs_chars", _STATE_FITS[0][1]))),
+                    questions=QUESTIONS, primitives=primitives, ctx=ctx, provider=self.name, backend=self.backend,
+                    extra={"state_fit": fit})
 
             choice_data = primitives.choice
             score_val = primitives.score

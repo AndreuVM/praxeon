@@ -6,6 +6,10 @@ Todas las modificaciones notables de este proyecto están documentadas en este a
 
 ## [Unreleased]
 
+### Added
+- `PRAXEON_TRACE_SUPERVISOR` (`1` o ruta): volcado local, redactado, del estado exacto y la decisión cruda del supervisor por paso;
+  el benchmark añade la etiqueta de la ejecución. Base para el ajuste fino de LAYA (`docs/plans/laya_finetuning.md`).
+
 ### Cambiado (interfaz)
 - **Rediseño completo de la interfaz web («Sereno», `redesign/sereno`)**: la conversación con el agente ocupa el centro; decisión, evidencia, política y recibo pasan a un cajón lateral (pestañas *Mapa*, *Paso* y *Eventos*) y el árbol de decisiones deja de ocupar el lienzo. Navegación en un riel de iconos con el selector de workspace; paleta de comandos (`Ctrl K`); aprobación humana como ventana emergente sobre el compositor con motivo de rechazo obligatorio; etiquetas permanentes para Full Access, modo degradado y falta de conexión. Sistema de diseño único en `index.css` (9 tokens de color, Geist y Geist Mono, sin sombras ni brillos, `prefers-reduced-motion`), todas las vistas y modales adaptados con su funcionalidad completa, textos íntegramente en español y avisos/confirmaciones propios en lugar de `alert()`/`confirm()`. Se elimina código sin uso (`MissionLauncher`, `Sidebar`).
 

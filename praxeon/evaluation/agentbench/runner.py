@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import random
 import tempfile
 import time
@@ -72,6 +73,7 @@ def run_one(
     result = RunResult(task=task.id, kind=task.kind, arm=arm, provider=provider, model=model, repeat=repeat)
     listener = Listener() if task.needs_listener else None
     ctx: Dict[str, Any] = {"port": listener.port if listener else 0}
+    os.environ["PRAXEON_TRACE_LABEL"] = f"{provider}|{model}|{arm}|{task.id}|{repeat}"   # une el volcado del supervisor con runs.jsonl
     with tempfile.TemporaryDirectory(prefix="agentbench-", ignore_cleanup_errors=True) as tmp:
         root = Path(tmp)
         ws = materialize(task, root / "ws", ctx)

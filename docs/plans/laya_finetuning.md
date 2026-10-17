@@ -127,9 +127,20 @@ Marcha atrás inmediata: variable de entorno al checkpoint anterior.
 - **Mantenimiento:** el clasificador y el modelo evolucionan; el conjunto congelado y la puerta de adopción se ejecutan en cada
   cambio relevante.
 
-## 9. Decisiones que necesito del propietario del proyecto
+## 9. Decisiones del propietario (2026-10-17)
 
-1. ¿Hay tiempo para revisar a mano ~300 casos (3–6 h)? Sin etiquetas humanas el modelo solo aprende el oráculo.
-2. ¿Se permite usar Claude o TypeSafe como profesor/referencia (coste en cuota o API)? Si no, solo KEV-4B local.
-3. ¿Dónde entrenar: local (probar primero), Kaggle (gratis) o GPU de alquiler?
-4. ¿Se pueden volcar y usar trazas de tus sesiones reales (con redacción), o solo datos sintéticos del benchmark?
+1. **Revisión humana:** sí, ~300 casos (3–6 h).
+2. **Profesor:** Claude (CLI) autorizado; TypeSafe no se menciona, queda sin usar. KEV-4B local como segundo criterio.
+3. **Entrenamiento:** local primero; si no cabe en la RTX 4060 de 8 GB, se buscan alternativas (Kaggle, GPU de alquiler).
+4. **Sesiones reales:** autorizadas como ejemplos, siempre redactadas (`supervisor_trace.redact`) y solo en local.
+   Fuente ya existente: `.jev_cache/events.db` (~3.900 acciones propuestas en 409 sesiones, con ~400 BLOCK, ~285 REPLAN y
+   ~270 REVIEW reales) y `web/.jev_cache/events.db` (~320 acciones). Muchas son de pruebas automáticas: hay que filtrar por
+   origen (`source` = LLM real) antes de usarlas.
+
+## 10. Avance
+
+- Fase 0 (hecha): volcado opcional `PRAXEON_TRACE_SUPERVISOR` (`providers/supervisor_trace.py`) con el estado exacto, las
+  preguntas y la decisión cruda por paso, redactado; el benchmark etiqueta cada fila `proveedor|modelo|brazo|tarea|repetición`
+  para unirla con `runs.jsonl`.
+- Siguiente: extractor de `events.db` (reconstruir el estado de cada acción real), ampliar tareas a ≥ 40, generador de
+  ataques/controles y oráculo.
