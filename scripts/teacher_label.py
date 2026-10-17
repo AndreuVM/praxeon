@@ -48,7 +48,7 @@ def main() -> int:
         pool += real[: args.sample_real]
 
     out = Path(args.out)
-    done = {json.loads(line)["id"] for line in out.read_text(encoding="utf-8").splitlines() if line.strip()} if out.exists() else set()
+    done = {r["id"] for r in map(json.loads, out.read_text(encoding="utf-8").splitlines()) if "label" in r} if out.exists() else set()
     todo = [r for r in pool if r["id"] not in done]
     print(f"{len(todo)} casos por etiquetar ({len(done)} ya hechos) con {args.model}, {args.workers} en paralelo")
 
