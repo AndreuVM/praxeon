@@ -48,3 +48,6 @@ archivo/
 benchmark_results/historical/
 benchmark_results/*_REPORT.md
 benchmark_results/SUMMARY.md
+
+# Datos de ajuste fino (sesiones reales y trazas): solo locales
+data/finetune/
