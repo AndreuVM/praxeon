@@ -393,7 +393,8 @@ def test_laya_local_uses_the_laya_package_router(monkeypatch, state, action):
     monkeypatch.setattr(provider, "_get_router", lambda: router)
     assert provider.backend == "local"
     [res] = provider.evaluate(state, [action])
-    assert res.provider == "laya" and res.available and res.confidence == 0.9
+    assert res.provider == "laya" and res.available and res.confidence > 0.9   # 0.9 crudo, afinado por la temperatura
+    assert res.metadata["choice"]["raw_probabilities"]["ALLOW"] == 0.9
     assert "LAYA_CHOICE_ALLOW" in res.reason_codes
     assert "Listar el directorio" in router.calls[0][0]  # la acción candidata viaja en el estado
     assert set(router.calls[0][1]) == {"decision", "is_loop", "is_grounded", "progress"}
@@ -472,3 +473,68 @@ def test_real_laya_model_blocks_a_destructive_action(state):
     )
     [res] = provider.evaluate(state, [destructive])
     assert res.available and res.metadata["choice"]["label"] == "BLOCK"
+
+
+def test_calibrate_choice_sharpens_without_changing_the_winner():
+    from praxeon.providers.laya import calibrate_choice
+
+    flat = {"label": "ALLOW", "confidence": 0.5, "probabilities": {"ALLOW": 0.5, "REPLAN": 0.2, "BLOCK": 0.15, "ABSTAIN": 0.15}}
+    sharp = calibrate_choice(flat, 0.3)
+    assert max(sharp["probabilities"], key=sharp["probabilities"].get) == "ALLOW"
+    assert sharp["confidence"] > 0.9 and abs(sum(sharp["probabilities"].values()) - 1) < 1e-9
+    assert sharp["raw_probabilities"] == flat["probabilities"] and sharp["temperature"] == 0.3
+    assert calibrate_choice(flat, 1.0) is flat          # T=1: sin ajuste
+    soft = calibrate_choice(flat, 3.0)
+    assert soft["confidence"] < 0.5                    # T>1 suaviza
+
+
+class DroppingRouter(FakeLayaRouter):
+    """Recorta el estado (como el checkpoint real con 1.024 tokens) hasta que la petición es lo bastante corta."""
+
+    def __init__(self, fits_in_chars):
+        super().__init__()
+        self.fits_in_chars = fits_in_chars
+
+    def predict(self, state, questions, **kwargs):
+        self.calls.append((state, questions, kwargs))
+        dropped = max(0, len(state) - self.fits_in_chars)
+        return {"model": "laya-rl-agent", "answers": self.answers, "usage": {"state_tokens_dropped": dropped}}
+
+
+def _long_history_state(steps, obs_chars=600):
+    s = SessionState(session_id="long", goal=Goal(objective="Reparar un bug", success_criteria=["tests en verde"]))
+    from praxeon.domain.decision import DecisionStatus, PolicyDecision
+
+    for i in range(steps):
+        step = ActionCandidate(id=f"act_{i}", description="Ejecutar pytest",
+                               tool_call=ToolCall(tool_name="run_command", arguments={"command": f"pytest -k t{i}"}))
+        s.add_step(step, PolicyDecision(status=DecisionStatus.ALLOW), observation="salida del comando " * (obs_chars // 18))
+    return s
+
+
+def test_laya_shrinks_the_state_until_the_model_reads_all_of_it_and_never_loses_the_action(monkeypatch):
+    from praxeon.providers import laya as laya_module
+
+    monkeypatch.setattr(laya_module, "_laya_sdk_installed", lambda: True)
+    provider = laya_module.LayaProvider(backend="local")
+    router = DroppingRouter(fits_in_chars=900)
+    monkeypatch.setattr(provider, "_get_router", lambda: router)
+    danger = ActionCandidate(id="act_x", description="Borrar todo el disco",
+                             tool_call=ToolCall(tool_name="run_command", arguments={"command": "rm -rf / --no-preserve-root"}))
+    [res] = provider.evaluate(_long_history_state(10), [danger])
+    sizes = [len(c[0]) for c in router.calls]
+    assert len(router.calls) > 1 and sizes == sorted(sizes, reverse=True)       # reintenta con estados cada vez menores
+    assert sizes[-1] <= 900                                                    # el último cabe entero
+    assert "rm -rf /" in router.calls[-1][0]                                   # y la acción propuesta sigue ahí
+    assert res.metadata["choice"]["state_fit"]["steps"] < 6
+
+
+def test_laya_short_state_is_sent_once(monkeypatch, state, action):
+    from praxeon.providers import laya as laya_module
+
+    monkeypatch.setattr(laya_module, "_laya_sdk_installed", lambda: True)
+    provider = laya_module.LayaProvider(backend="local")
+    router = FakeLayaRouter()
+    monkeypatch.setattr(provider, "_get_router", lambda: router)
+    provider.evaluate(state, [action])
+    assert len(router.calls) == 1

@@ -15,6 +15,7 @@ Soporta backends:
 from datetime import datetime, timezone
 import json
 import logging
+import math
 
 import os
 import threading
@@ -45,6 +46,24 @@ def _laya_sdk_installed() -> bool:
 LAYA_CHECKPOINT = os.getenv("LAYA_CHECKPOINT", "typed-decisions").strip() or "typed-decisions"
 NEURAL_LOOP_CAP = 0.60  # por debajo del umbral de bloqueo por bucle (0.65): el modelo solo no puede bloquear
 
+
+def _env_float(name: str, default: float, low: float, high: float) -> float:
+    try:
+        return min(high, max(low, float(os.getenv(name, "").strip() or default)))
+    except ValueError:
+        return default
+
+
+# Temperatura posterior sobre las probabilidades de la decisión (p' ∝ p^(1/T)). El checkpoint trae T=1,76 para preguntas de
+# 3-5 opciones, ajustada a los datos sintéticos de su autor: sobre acciones de agente deja p_max en ~0,3-0,45 aun acertando
+# el 80 % (ECE 0,39). Con T≈0,3 (validación cruzada sobre escenarios etiquetados) el ECE baja a 0,16. 1.0 = sin ajuste.
+# Se reajusta con `scripts/fit_laya_temperature.py`. La librería no admite T < 0,5, por eso se aplica aquí.
+LAYA_TEMPERATURE = _env_float("LAYA_TEMPERATURE", 0.30, 0.05, 5.0)
+
+# Tamaños con los que se prueba el estado hasta que el modelo lo lea entero: (pasos recientes, caracteres por observación)
+_STATE_FITS = ((6, 300), (4, 160), (3, 90), (2, 50), (1, 30), (0, 0))
+_ARGS_CHARS = 400
+
 _ROUTERS: Dict[Optional[str], Any] = {}
 _ROUTER_LOCK = threading.Lock()
 
@@ -63,6 +82,48 @@ def resolve_device(requested: Optional[str] = None) -> str:
             return "cpu"
     logger.info("LAYA en %s: %s", device, reason)
     return device
+
+
+def build_laya_state(ctx: ProviderContext, max_steps: int, obs_chars: int) -> str:
+    """Estado para el modelo, con el mismo formato que el gestor de contexto pero acotado a `max_steps` y `obs_chars`.
+
+    El checkpoint lee unos 1.024 tokens en total y las preguntas ocupan más de la mitad: si el estado no cabe, recorta por
+    el final y pierde la acción propuesta. Se prueba con tamaños decrecientes hasta que el modelo lo lee entero (ver
+    `_STATE_FITS`). Poner la acción primero evitaba el recorte, pero bajó el acierto de 0,80 a 0,61 en el banco de escenarios.
+    """
+    cand = ctx.candidate_action or {}
+    args = cand.get("arguments") or {}
+    args_text = str(args)
+    if len(args_text) > _ARGS_CHARS:
+        args_text = args_text[:_ARGS_CHARS] + "...[recortado]"
+    lines = [f"OBJETIVO: {ctx.goal}", "Criterios de éxito:"]
+    lines += [f"- {c}" for c in (ctx.success_criteria or ["tarea completada"])]
+    env = ctx.metadata.get("environment") if isinstance(ctx.metadata, dict) else None
+    lines.append(f"ENTORNO: {env or 'cwd=., mode=local_restricted'}")
+    history = [h for h in ctx.history_window if isinstance(h, dict)]
+    if max_steps and history:
+        lines += ["", "PASOS Y OBSERVACIONES RECIENTES:"]
+        for h in history[-max_steps:]:
+            h_args = json.dumps(h.get("arguments") or {}, ensure_ascii=False)[:120]
+            obs = " ".join(str(h.get("observation") or "").split())[:obs_chars]
+            lines.append(f" - PASO {h.get('id')} [{h.get('tool')}({h_args})]: {obs}")
+    lines += ["", f"ACCIÓN PROPUESTA: {cand.get('description') or ''} -> {cand.get('tool_name')}({args_text})"]
+    return "\n".join(lines)
+
+
+def calibrate_choice(choice: Dict[str, Any], temperature: float) -> Dict[str, Any]:
+    """Aplica la temperatura posterior a las probabilidades de la decisión; la etiqueta (argmax) no cambia."""
+    probs = {str(k): float(v) for k, v in (choice.get("probabilities") or {}).items()}
+    if not probs or abs(temperature - 1.0) < 1e-9:
+        return choice
+    logits = {k: math.log(max(v, 1e-9)) / temperature for k, v in probs.items()}
+    top = max(logits.values())
+    expo = {k: math.exp(v - top) for k, v in logits.items()}
+    total = sum(expo.values())
+    calibrated = {k: v / total for k, v in expo.items()}
+    label = str(choice.get("label"))
+    return {**choice, "probabilities": calibrated, "confidence": calibrated.get(label, choice.get("confidence")),
+            "raw_probabilities": probs, "temperature": temperature}
 
 
 class LayaDecisionPrimitives(BaseModel):
@@ -231,7 +292,15 @@ class LayaProvider(BaseReasoningProvider):
             self.backend = "simulated"
             return self._infer_primitives_calibrated(ctx)
         kwargs = {} if LAYA_CHECKPOINT == "auto" else {"model": LAYA_CHECKPOINT}
-        primitives = parse_answers(router.predict(ctx.formatted_prompt, QUESTIONS, **kwargs))
+        result: Dict[str, Any] = {}
+        fit = (0, 0)
+        for fit in _STATE_FITS:
+            result = router.predict(build_laya_state(ctx, *fit), QUESTIONS, **kwargs)
+            if not (result.get("usage") or {}).get("state_tokens_dropped"):
+                break   # el modelo leyó el estado entero (la acción propuesta va al principio y nunca se pierde)
+        primitives = parse_answers(result)
+        choice = calibrate_choice(primitives.choice, LAYA_TEMPERATURE)
+        primitives = primitives.model_copy(update={"choice": {**choice, "state_fit": {"steps": fit[0], "obs_chars": fit[1]}}})
         return self._combine_loop_evidence(primitives, ctx)
 
     def _combine_loop_evidence(self, primitives: LayaDecisionPrimitives, ctx: ProviderContext) -> LayaDecisionPrimitives:
