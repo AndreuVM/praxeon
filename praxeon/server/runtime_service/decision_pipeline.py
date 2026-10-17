@@ -32,6 +32,7 @@ from praxeon.domain.models import (
     RiskLevel,
     ToolCall,
 )
+from praxeon.policy.loop_detector import estimate_loop_probability
 from praxeon.runtime.executor import PolicyViolation
 from praxeon.runtime.state import SessionState, StepRecord
 from praxeon.server.schemas.action import ProposeActionRequest
@@ -374,6 +375,22 @@ class DecisionPipelineMixin:
             progress_probability=None,
             reason_codes=["PROVIDER_NO_EVALUATION"],
         )
+        # Bucle: lo calcula el arnés con reglas (igual para cualquier supervisor); el valor final es el mayor de los dos
+        if proposal.tool and proposal.tool not in ("finish", "complete_task", "done"):
+            history = []
+            for step in getattr(eval_state, "steps", []) or []:
+                call = getattr(getattr(step, "action", None), "tool_call", None)
+                history.append({
+                    "tool": getattr(call, "tool_name", None), "arguments": getattr(call, "arguments", None) or {},
+                    "observation": getattr(step, "observation", "") or "",
+                })
+            harness_loop = estimate_loop_probability(history, proposal.tool, proposal.arguments or {})
+            if harness_loop > (assessment.loop_probability or 0.0):
+                codes = list(assessment.reason_codes or [])
+                if harness_loop >= 0.65 and "HARNESS_LOOP_DETECTED" not in codes:
+                    codes.append("HARNESS_LOOP_DETECTED")
+                assessment = assessment.model_copy(update={"loop_probability": harness_loop, "reason_codes": codes})
+
         if is_missing_resource or is_premature_finish:
             current_reasons = list(assessment.reason_codes or [])
             if is_missing_resource and f"UNGROUNDED_FILE_NOT_FOUND ({missing_resource_name})" not in current_reasons:

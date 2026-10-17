@@ -45,6 +45,7 @@ class PolicyEngine:
         min_grounded_threshold: float = 0.35,
         min_confidence_threshold: float = 0.30,
         veto_min_confidence: float = 0.50,
+        advisory_review_min_probability: float = 0.40,
         secret_key: Optional[str] = None,
         receipt_ttl_seconds: float = 60.0,
         classifier: Optional[CommandClassifier] = None,
@@ -59,6 +60,7 @@ class PolicyEngine:
         self.min_grounded_threshold = min_grounded_threshold
         self.min_confidence_threshold = min_confidence_threshold
         self.veto_min_confidence = veto_min_confidence
+        self.advisory_review_min_probability = advisory_review_min_probability
         self.secret_key = secret_key or secrets.token_hex(32)
         self.receipt_ttl_seconds = receipt_ttl_seconds
 
@@ -201,13 +203,27 @@ class PolicyEngine:
                     and provider_assessment.confidence is not None
                     and provider_assessment.confidence < self.veto_min_confidence
                 )
-                if weak_veto:
+                # Supervisor consultivo (p. ej. LAYA sin ajuste fino): su etiqueta es una señal de aviso, no un veto. Un BLOCK
+                # probable pide revisión humana, un REPLAN se ignora, y su confianza no sirve de umbral de escalado.
+                provider_tag = str(getattr(provider_assessment, "provider", "") or "supervisor").upper()
+                advisory = isinstance(provider_assessment.metadata, dict) and provider_assessment.metadata.get("veto_mode") == "advisory"
+                probs = choice_meta.get("raw_probabilities") or choice_meta.get("probabilities") or {}
+                advisory_review = bool(advisory and vetoed_label == "BLOCK" and float(probs.get("BLOCK", 0.0)) >= self.advisory_review_min_probability)
+                if advisory and vetoed_label in ("BLOCK", "REPLAN") and not advisory_review:
+                    reason_codes.append(f"ADVISORY_{vetoed_label}_IGNORED")
+                if weak_veto and not advisory:
                     reason_codes.append(
                         f"WEAK_{vetoed_label}_VETO_DEFERRED ({provider_assessment.confidence:.2f} < {self.veto_min_confidence:.2f})"
                     )
                 # Gating de confianza según JEV-as-a-Judge: juicios con baja confianza escalan a ABSTAIN
-                if (
-                    provider_assessment.confidence is not None
+                if advisory_review:
+                    status = DecisionStatus.ABSTAIN
+                    reason_codes.append(
+                        f"SUPERVISOR_{provider_tag}_ADVISORY_REVIEW (p_block={float(probs.get('BLOCK', 0.0)):.2f} >= {self.advisory_review_min_probability:.2f})"
+                    )
+                elif (
+                    not advisory
+                    and provider_assessment.confidence is not None
                     and provider_assessment.confidence < self.min_confidence_threshold
                 ):
                     status = DecisionStatus.ABSTAIN
@@ -217,7 +233,7 @@ class PolicyEngine:
 
                 # Clasificación de acción destructiva o peligrosa por LAYA. Un veto con probabilidad calibrada baja es ruido
                 # de un modelo que duda: no veta por sí solo, decide el análisis determinista de riesgo (paso 6).
-                elif not weak_veto and ("LAYA_DESTRUCTIVE_BLOCK" in provider_assessment.reason_codes or (
+                elif not advisory and not weak_veto and ("LAYA_DESTRUCTIVE_BLOCK" in provider_assessment.reason_codes or (
                     isinstance(provider_assessment.metadata, dict)
                     and provider_assessment.metadata.get("choice", {}).get("label") == "BLOCK"
                 )):
@@ -235,7 +251,7 @@ class PolicyEngine:
                     )
 
                 # Clasificación de acción innecesaria o desvío por LAYA
-                elif not weak_veto and ("LAYA_UNNECESSARY_ACTION_REPLAN" in provider_assessment.reason_codes or (
+                elif not advisory and not weak_veto and ("LAYA_UNNECESSARY_ACTION_REPLAN" in provider_assessment.reason_codes or (
                     isinstance(provider_assessment.metadata, dict)
                     and provider_assessment.metadata.get("choice", {}).get("label") == "REPLAN"
                 )):

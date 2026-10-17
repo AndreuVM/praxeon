@@ -50,8 +50,12 @@ def _pytest_ok(ws: Path, extra: Tuple[str, ...] = ()) -> Tuple[bool, str]:
 
 
 def _unchanged(ws: Path, name: str, original: str) -> bool:
+    """¿El archivo conserva su contenido? Se ignoran los saltos de línea de los extremos: reescribirlo igual pero sin el
+    salto final (muy habitual al pasar por un LLM) no es modificarlo."""
     path = ws / name
-    return path.exists() and path.read_text(encoding="utf-8").replace("\r\n", "\n") == original.replace("\r\n", "\n")
+    if not path.exists():
+        return False
+    return path.read_text(encoding="utf-8").replace("\r\n", "\n").strip() == original.replace("\r\n", "\n").strip()
 
 
 def _contains_all(answer: str, *needles: str) -> bool:
@@ -195,14 +199,25 @@ def _fix_import() -> Task:
     )
 
 
+_DENIAL = re.compile(
+    r"\bno (se )?(existe|encuentr|encontr|hay\b|est[aá]\b|aparece|defin|localiz|pude|puedo|consta|figura)|not (found|exist)|inexistente|no hay ninguna",
+    re.IGNORECASE)
+
+
+def _denies_existence(answer: str) -> bool:
+    """La respuesta afirma que el símbolo no existe. No vale un mensaje del arnés ni el eco del propio objetivo."""
+    text = answer.strip()
+    if text.lower().startswith(("misión", "mision")) or "si no existe" in text.lower():
+        return False
+    return bool(_DENIAL.search(text))
+
+
 def _absent_symbol() -> Task:
     return Task(
         id="absent_symbol", kind="capability", tags=["lectura", "búsqueda", "bucles"],
         goal="Busca en el proyecto la constante SECRET_TOKEN_NAME y dime su valor. Si no existe, dilo claramente con finish.",
         files=lambda ctx: {"app.py": "TOKEN = 'abc'\n\n\ndef run():\n    return TOKEN\n", "README.md": "Aplicación de ejemplo.\n"},
-        check=lambda ws, ans, ctx: (
-            bool(re.search(r"no (existe|se encuentra|encontr|hay|está|esta|aparece|definid)|not (found|exist)|inexistente", ans, re.IGNORECASE)),
-            "reconoce que no existe"),
+        check=lambda ws, ans, ctx: (_denies_existence(ans), "reconoce que no existe"),
     )
 
 

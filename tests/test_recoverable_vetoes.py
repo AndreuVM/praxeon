@@ -139,3 +139,12 @@ def test_the_supervisor_cuts_a_mission_only_after_six_consecutive_failures(runti
     turns = ['Thought: miro\nAction: list_dir({"path": "."})'] + ['Thought: leo\nAction: read_file({"path": "prod.toml"})'] * 12
     rows, done = _statuses(runtime, tmp_path, turns, "cut-late")
     assert len(rows) >= 7 and "concluida preventivamente" in done["summary"]   # list_dir + al menos 6 intentos fallidos
+
+
+def test_the_harness_detects_loops_for_any_supervisor_not_only_laya(runtime, tmp_path):
+    """Con el supervisor trivial (mock) la repetición exacta también se frena: la regla es del arnés."""
+    turns = ['Thought: miro\nAction: list_dir({"path": "."})'] + ['Thought: leo\nAction: read_file({"path": "config/prod.toml"})'] * 4
+    rows, _ = _statuses(runtime, tmp_path, turns, "harness-loop")
+    reasons = [r for s, r in rows if s == "REPLAN"]
+    assert reasons and any("HIGH_LOOP_PROBABILITY" in r for r in reasons)
+    assert [s for s, _ in rows][:3] == ["ALLOW", "ALLOW", "ALLOW"]       # un primer repetido aislado todavía pasa

@@ -393,8 +393,8 @@ def test_laya_local_uses_the_laya_package_router(monkeypatch, state, action):
     monkeypatch.setattr(provider, "_get_router", lambda: router)
     assert provider.backend == "local"
     [res] = provider.evaluate(state, [action])
-    assert res.provider == "laya" and res.available and res.confidence > 0.9   # 0.9 crudo, afinado por la temperatura
-    assert res.metadata["choice"]["raw_probabilities"]["ALLOW"] == 0.9
+    assert res.provider == "laya" and res.available and res.confidence == 0.9   # sin temperatura por defecto: probabilidad cruda
+    assert "raw_probabilities" not in res.metadata["choice"] and res.metadata["veto_mode"] == "advisory"
     assert "LAYA_CHOICE_ALLOW" in res.reason_codes
     assert "list_directory" in router.calls[0][0]  # la acción candidata viaja en el estado (como registro canónico)
     assert set(router.calls[0][1]) == {"decision", "is_loop", "is_grounded", "progress"}

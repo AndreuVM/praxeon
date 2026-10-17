@@ -25,7 +25,7 @@ class CommandClassifier:
 
     # 0. Reglas deterministas para ADVERSARIAL_EVASION (precedencia máxima)
     ADVERSARIAL_EVASION_PATTERNS = [
-        r"\|\s*(ba?sh|zsh|dash|ksh|csh|tcsh|powershell|cmd|sh\.exe|bash\.exe)\b",
+        r"\|\s*((?:ba)?sh|zsh|dash|ksh|csh|tcsh|powershell|pwsh|cmd|sh\.exe|bash\.exe|iex|invoke-expression)\b",
         r"\$\{(?:ifs|IFS)\}",
 
         r"base64\s+(-d|--decode)\s*\|",
@@ -37,6 +37,13 @@ class CommandClassifier:
         r"system\s*override\s*:\s*approved",
         r"execute\s+without\s+policy\s+checks",
     ]
+
+    # 0b. Código Python en línea (`python -c`, también con la ruta completa del intérprete o `& 'x\\python.exe'`): inocuo
+    # para una prueba, peligroso si abre la red, ejecuta código construido o borra. No es «BUILD_TEST».
+    PYTHON_INLINE = re.compile(r"python[0-9.]*(?:\.exe)?['\"]?\s+-c\b")
+    PYTHON_DYNAMIC_CODE = re.compile(r"\b(exec|eval|compile)\s*\(|__import__|b64decode|base64\.|marshal\.loads|pickle\.loads")
+    PYTHON_DESTRUCTIVE_CODE = re.compile(r"rmtree|os\.(remove|unlink|rmdir|removedirs)|\.unlink\(|shutil\.move|os\.system|subprocess|os\.popen")
+    PYTHON_NETWORK_CODE = re.compile(r"urlopen|urllib|requests\.|http\.client|httpx|aiohttp|\bsocket\b|ftplib|smtplib|paramiko")
 
     # 1. Reglas deterministas para PRIVILEGE (precedencia máxima)
     PRIVILEGE_PATTERNS = [
@@ -69,6 +76,9 @@ class CommandClassifier:
         r"\bmkfs\b",
         r"\bfdisk\b",
         r"\bdd\s+if=.*\sof=/dev/",
+        # PowerShell / cmd: borrado recursivo o forzado (equivale a `rm -rf`)
+        r"\b(remove-item|ri|del|erase|rd|rmdir)\b.*(-recurse|-r\b|-force|-fo\b|/s\b|/q\b)",
+        r"\bremove-item\b.*-recurse",
     ]
 
     # 3. Reglas deterministas para REMOTE_MUTATION
@@ -163,6 +173,22 @@ class CommandClassifier:
         r"\bdig\b",
         r"\binvoke-webrequest\b",
         r"\binvoke-restmethod\b",
+        r"(^|[\s;&|(])(iwr|irm)\b",
+        r"\bcurl\.exe\b",
+        r"\bstart-bitstransfer\b",
+        r"\bnet\.webclient\b",
+        r"\b(downloadstring|downloadfile|uploadfile|uploaddata)\b",
+    ]
+
+    # Indicios de que la petición de red ENVÍA datos (exfiltración): cuerpo, fichero, método de escritura
+    # Opciones cortas de curl que envían datos; distinguen mayúsculas (`-D` vuelca cabeceras y `-f` falla en silencio: no envían)
+    NETWORK_SEND_SHORT_FLAGS = re.compile(r"\bcurl(?:\.exe)?\b.*\s(?:-d|-F|-T)(?:\s|$|[\"'@])")
+
+    NETWORK_SEND_PATTERNS = [
+        r"\bcurl(\.exe)?\b.*(--data|--data-binary|--data-raw|--data-urlencode|--form|--upload-file|-x\s*(post|put|patch|delete))",
+        r"\b(wget)\b.*(--post-data|--post-file|--method=(post|put))",
+        r"\b(invoke-webrequest|invoke-restmethod|iwr|irm)\b.*(-body|-infile|-method\s+(post|put|patch|delete))",
+        r"\b(uploadfile|uploaddata|uploadstring)\b",
     ]
 
     # 9. Reglas deterministas para LOCAL_MUTATION
@@ -403,6 +429,25 @@ class CommandClassifier:
                     context_hash=ctx_hash,
                 )
 
+        # Regla 0b: código Python en línea que abre la red, construye código o borra
+        if self.PYTHON_INLINE.search(op_lower):
+            if self.PYTHON_DYNAMIC_CODE.search(op_lower) or self.PYTHON_DESTRUCTIVE_CODE.search(op_lower):
+                return CommandRiskAssessment(
+                    operation=op_clean, category=CommandCategory.DESTRUCTIVE, risk_level=RiskLevel.CRITICAL, read_only=False,
+                    reversible=False, destructive=True, external_side_effect=True, network_access=bool(self.PYTHON_NETWORK_CODE.search(op_lower)),
+                    privilege_escalation=False, confidence=0.95,
+                    reasons=["Código Python en línea que ejecuta código construido, lanza procesos o borra archivos."],
+                    matched_rules=["RULE_PYTHON_INLINE_DYNAMIC_OR_DESTRUCTIVE"], classifier="deterministic", context_hash=ctx_hash,
+                )
+            if self.PYTHON_NETWORK_CODE.search(op_lower):
+                return CommandRiskAssessment(
+                    operation=op_clean, category=CommandCategory.NETWORK, risk_level=RiskLevel.HIGH, read_only=False,
+                    reversible=False, destructive=False, external_side_effect=True, network_access=True,
+                    privilege_escalation=False, confidence=0.9,
+                    reasons=["Código Python en línea que abre conexiones de red."],
+                    matched_rules=["RULE_PYTHON_INLINE_NETWORK"], classifier="deterministic", context_hash=ctx_hash,
+                )
+
         # Regla 1: PRIVILEGE (Criticidad absoluta)
         for pat in self.PRIVILEGE_PATTERNS:
 
@@ -549,6 +594,15 @@ class CommandClassifier:
         # Regla 8: NETWORK (Llamadas de red y egress)
         for pat in self.NETWORK_PATTERNS:
             if re.search(pat, op_lower):
+                if any(re.search(send, op_lower) for send in self.NETWORK_SEND_PATTERNS) or self.NETWORK_SEND_SHORT_FLAGS.search(op_clean):
+                    # La petición ENVÍA datos (cuerpo, fichero, método de escritura): no es una lectura
+                    return CommandRiskAssessment(
+                        operation=op_clean, category=CommandCategory.NETWORK, risk_level=RiskLevel.HIGH, read_only=False,
+                        reversible=False, destructive=False, external_side_effect=True, network_access=True,
+                        privilege_escalation=False, confidence=0.92,
+                        reasons=["Petición de red que envía datos o archivos a un destino externo (posible exfiltración)."],
+                        matched_rules=["RULE_NETWORK_SENDS_DATA"], classifier="deterministic", context_hash=ctx_hash,
+                    )
                 return CommandRiskAssessment(
                     operation=op_clean,
                     category=CommandCategory.NETWORK,

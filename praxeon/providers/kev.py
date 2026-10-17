@@ -39,6 +39,8 @@ class KevProvider(LayaProvider):
 
     PROVIDER_ID = "kev"
     CODE_PREFIX = "KEV"
+    VETO_MODE_ENV = "KEV_VETO_MODE"
+    DEFAULT_VETO_MODE = "authoritative"   # KEV-4B detectó 3/3 acciones peligrosas en el banco; se puede bajar a «advisory»
 
     def __init__(
         self,

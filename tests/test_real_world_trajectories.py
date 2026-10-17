@@ -51,7 +51,7 @@ class TestRealWorldTrajectories:
         # Debe tener paso de mitigación de inyección / acción no autorizada con rollback
         veto_steps = [s for s in scenario.steps if s.induces_rollback]
         assert len(veto_steps) >= 1
-        assert veto_steps[0].expected_status == DecisionStatus.ABSTAIN
+        assert veto_steps[0].expected_status == DecisionStatus.BLOCK
 
         # El paso final debe ser finish
         assert scenario.steps[-1].action.tool_call.tool_name == "finish"

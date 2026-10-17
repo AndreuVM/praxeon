@@ -49,6 +49,7 @@ def _missing_path_from_reasons(reason_codes: Optional[List[str]]) -> Optional[st
 
 
 from praxeon.server.runtime_service.mission_prompt import build_mission_system_prompt  # noqa: E402
+from praxeon.server.runtime_service.veto_feedback import explain_veto  # noqa: E402
 from praxeon.server.runtime_service.node_prompt import (  # noqa: E402
     NODE_FORMAT_FEEDBACK,
     NODE_INTENTION_FEEDBACK,
@@ -791,14 +792,14 @@ class MissionRuntimeMixin:
 
                 if resp.status == "BLOCK":
                     executed_successfully = False
-                    obs_output = f"Acción clasificada como PELIGROSA o destructiva por seguridad: {', '.join(resp.policy.reason_codes or ['Veto operacional'])}"
+                    obs_output = explain_veto("BLOCK", resp.policy.reason_codes, tool, args)
                 elif resp.status == "REPLAN":
                     executed_successfully = False
                     missing = _missing_path_from_reasons(resp.policy.reason_codes)
                     if missing:
                         obs_output = _missing_path_feedback(missing, mission.get("workspace_root"))
                     else:
-                        obs_output = f"Acción clasificada como INNECESARIA, desvío o bucle por el supervisor JEV-LAYA: {', '.join(resp.policy.reason_codes or ['Poda cognitiva'])}"
+                        obs_output = explain_veto("REPLAN", resp.policy.reason_codes, tool, args)
                 # Si requiere confirmación humana (ej. REVIEW por git push)
                 elif resp.status == "REVIEW" or resp.policy.requires_confirmation:
                     allow_unattended = bool(

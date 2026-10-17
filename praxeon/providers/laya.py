@@ -29,6 +29,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from praxeon.domain.action import ActionCandidate
 from praxeon.domain.assessment import ProviderAssessment
 from praxeon.providers.base import BaseReasoningProvider
+from praxeon.policy.loop_detector import estimate_loop_probability
 from praxeon.providers.action_record import build_action_record
 from praxeon.providers.context import ProviderContext, ProviderContextBuilder
 from praxeon.providers.hardware import laya_device
@@ -55,11 +56,11 @@ def _env_float(name: str, default: float, low: float, high: float) -> float:
         return default
 
 
-# Temperatura posterior sobre las probabilidades de la decisión (p' ∝ p^(1/T)). El checkpoint trae T=1,76 para preguntas de
-# 3-5 opciones, ajustada a los datos sintéticos de su autor: sobre acciones de agente deja p_max en ~0,3-0,45 aun acertando
-# el 80 % (ECE 0,39). Con T≈0,3 (validación cruzada sobre escenarios etiquetados) el ECE baja a 0,16. 1.0 = sin ajuste.
-# Se reajusta con `scripts/fit_laya_temperature.py`. La librería no admite T < 0,5, por eso se aplica aquí.
-LAYA_TEMPERATURE = _env_float("LAYA_TEMPERATURE", 0.30, 0.05, 5.0)
+# Temperatura posterior sobre las probabilidades de la decisión (p' ∝ p^(1/T)). Por defecto 1.0 (sin ajuste): las
+# probabilidades de un checkpoint sin ajuste fino al dominio son casi uniformes y una T<1 ajustada sobre un banco sintético
+# las convierte en «confianza» que no existe (0,33 -> 0,56 supera el umbral de veto). Solo debe fijarse con trazas reales:
+# `scripts/fit_laya_temperature.py` propone un valor (con el banco sintético sale ~0,3). La librería no admite T < 0,5.
+LAYA_TEMPERATURE = _env_float("LAYA_TEMPERATURE", 1.0, 0.05, 5.0)
 
 # Tamaños con los que se prueba el estado hasta que el modelo lo lea entero: (pasos recientes, caracteres por observación)
 # Qué ve el modelo de la acción propuesta: «record» (registro canónico construido por el arnés, por defecto) o «thought»
@@ -89,19 +90,6 @@ def resolve_device(requested: Optional[str] = None) -> str:
     logger.info("LAYA en %s: %s", device, reason)
     return device
 
-
-
-def _is_mutation(tool: str, args: Dict[str, Any]) -> bool:
-    """¿Esta acción cambia el estado del proyecto (escribe un archivo o ejecuta algo que modifica)?"""
-    tool = (tool or "").lower()
-    if tool in ("edit_file", "write_file", "create_file", "write_to_file", "save_file", "replace_file_content"):
-        return True
-    if tool in ("run_command", "run_script", "git"):
-        from praxeon.providers.action_record import _classify
-
-        command = str((args or {}).get("command") or (args or {}).get("cmd") or (args or {}).get("raw") or "")
-        return bool(command) and not _classify(command).read_only
-    return False
 
 
 def build_laya_state(ctx: ProviderContext, max_steps: int, obs_chars: int) -> str:
@@ -171,6 +159,11 @@ class LayaProvider(BaseReasoningProvider):
 
     PROVIDER_ID = "laya"
     CODE_PREFIX = "LAYA"
+    # `advisory`: su etiqueta es una señal de aviso (un BLOCK probable pide revisión humana, un REPLAN se ignora) y nunca
+    # veta por sí sola; `authoritative`: la política obedece su BLOCK/REPLAN. LAYA sin ajuste fino a trazas de agente
+    # decide casi al azar (ver informe de auditoría), por eso es consultivo por defecto.
+    VETO_MODE_ENV = "LAYA_VETO_MODE"
+    DEFAULT_VETO_MODE = "advisory"
 
     def __init__(
         self,
@@ -291,6 +284,14 @@ class LayaProvider(BaseReasoningProvider):
             noul=noul_data,
         )
 
+    @property
+    def veto_mode(self) -> str:
+        explicit = (os.getenv(self.VETO_MODE_ENV, "") or "").strip().lower()
+        if explicit in ("advisory", "authoritative"):
+            return explicit
+        # El motor de reglas calibrado (backend simulated) es determinista y se obedece; el consultivo es para el modelo neuronal
+        return "authoritative" if self.backend == "simulated" else self.DEFAULT_VETO_MODE
+
     def _get_router(self):
         """Carga (una vez por proceso y dispositivo) el Router del paquete `laya`, que elige el checkpoint por idioma."""
         with _ROUTER_LOCK:
@@ -348,61 +349,12 @@ class LayaProvider(BaseReasoningProvider):
         req_evidence = cand.get("requires_evidence") or []
         evidence_lower = [e.lower() for e in ctx.active_evidence]
 
-        # 1. Comprobación de repetición o bucle frente a pasos previos.
-        # Un bucle es repetir la MISMA acción sobre el MISMO objetivo (mismo archivo, mismo comando), no usar
-        # varias veces una herramienta: crear cinco archivos distintos con edit_file es progreso, no un ciclo.
-        write_tools = ("edit_file", "write_file")
-
-        def _target(a: Dict[str, Any]) -> str:
-            return str(
-                a.get("path") or a.get("file") or a.get("command") or a.get("cmd") or a.get("raw") or a.get("query") or ""
-            ).strip().lower()
-
-        def _content(a: Dict[str, Any]) -> str:
-            return str(a.get("content") or a.get("diff") or "")
-
         cmd_str = str(args.get("command") or args.get("cmd") or args.get("raw") or desc).strip().lower()
         target_path = str(args.get("path") or args.get("file") or "").strip().lower()
-        my_target = _target(args)
 
+        # 1. Bucle: la detección es del arnés (policy/loop_detector.py), común a todos los supervisores
         history = [h for h in ctx.history_window if isinstance(h, dict)]
-
-        # Un cambio de estado (editar un archivo, un comando que modifica) invalida lo observado antes: releer o volver a
-        # lanzar los tests DESPUÉS de editar no es repetir. Para acciones de solo lectura solo cuentan las repeticiones
-        # posteriores al último cambio; para las que modifican, el historial completo (reescribir lo mismo sí es repetir).
-        candidate_mutates = _is_mutation(tool_name, args)
-        last_change = max((i for i, h in enumerate(history) if _is_mutation(str(h.get("tool") or ""), h.get("arguments") or {})), default=-1)
-        window = history if candidate_mutates else history[last_change + 1:]
-
-        same_target = [
-            h for h in window
-            if (h.get("tool") or "") == tool_name and _target(h.get("arguments") or {}) == my_target
-        ]
-        if tool_name in write_tools:
-            # Reescribir un archivo con contenido distinto es refinar; solo el contenido idéntico es repetición
-            same_target = [h for h in same_target if _content(h.get("arguments") or {}) == _content(args)]
-        repetition_count = len(same_target) if (tool_name and my_target) else 0
-
-        # Una repetición aislada es un reintento razonable (0,5, por debajo del umbral de veto); la segunda ya es un bucle
-        is_loop = 0.05
-        if repetition_count >= 2:
-            is_loop = 0.88
-        elif repetition_count >= 1:
-            is_loop = 0.50
-
-        # Estancamiento: fallos seguidos SIN que el agente haya cambiado nada entre medias. Los mensajes de fallo de las
-        # herramientas son cortos o empiezan por «error»; el contenido de un archivo largo puede contener «error» o «failed»
-        # (código, tests, logs) sin que la lectura haya fallado.
-        def _is_failure(obs: str) -> bool:
-            obs = obs.strip().lower()
-            if not any(err in obs for err in ("no existe", "error", "failed", "fail", "not found")):
-                return False
-            return len(obs) <= 300 or obs.startswith(("error", "fallo", "traceback"))
-
-        recent_obs = [str(h.get("observation", "")) for h in window[-3:]]
-        recent_failures = [obs for obs in recent_obs if _is_failure(obs)]
-        if len(recent_failures) >= 2 and repetition_count >= 1:
-            is_loop = max(is_loop, 0.85)
+        is_loop = estimate_loop_probability(history, tool_name, args)
 
         # 2. Comprobación de grounding (fundamentación fáctica y verificación de recursos en disco)
         is_grounded = 0.95
@@ -559,6 +511,7 @@ class LayaProvider(BaseReasoningProvider):
                 "choice": choice_data,
                 "score": score_val,
                 "noul": noul_data,
+                "veto_mode": self.veto_mode,
                 "memory_mb": self._get_resident_memory_mb(),
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             }

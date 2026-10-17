@@ -79,3 +79,57 @@ def test_action_record_flags_commands_with_the_deterministic_classifier_and_coun
     assert "repeticiones exactas previas: 2" in build_action_record(again, history)
     outside = {"tool_name": "read_file", "arguments": {"path": "../../etc/passwd"}}
     assert "FUERA del espacio de trabajo" in build_action_record(outside, [])
+
+
+def _advisory(label, probs, confidence=0.4, provider="laya"):
+    return ProviderAssessment(
+        provider=provider, available=True, confidence=confidence, loop_probability=0.1, grounded_probability=0.9,
+        progress_probability=0.8, reason_codes=[f"{provider.upper()}_CHOICE_{label}"],
+        metadata={"choice": {"label": label, "probabilities": probs}, "veto_mode": "advisory"},
+    )
+
+
+def test_an_advisory_block_asks_for_review_when_it_is_probable_and_is_ignored_when_it_is_not():
+    likely = _advisory("BLOCK", {"ALLOW": 0.2, "REPLAN": 0.1, "BLOCK": 0.55, "ABSTAIN": 0.15}, confidence=0.55)
+    decision, _ = PolicyEngine().evaluate_action(_read(), _state(), provider_assessment=likely, session_id="s")
+    assert decision.status == DecisionStatus.ABSTAIN and any("ADVISORY_REVIEW" in r for r in decision.reason_codes)
+    unlikely = _advisory("BLOCK", {"ALLOW": 0.3, "REPLAN": 0.2, "BLOCK": 0.33, "ABSTAIN": 0.17}, confidence=0.33)
+    decision, _ = PolicyEngine().evaluate_action(_read(), _state(), provider_assessment=unlikely, session_id="s")
+    assert decision.status == DecisionStatus.ALLOW and "ADVISORY_BLOCK_IGNORED" in decision.reason_codes
+
+
+def test_an_advisory_replan_never_vetoes_and_its_low_confidence_does_not_escalate():
+    replan = _advisory("REPLAN", {"ALLOW": 0.25, "REPLAN": 0.3, "BLOCK": 0.2, "ABSTAIN": 0.25}, confidence=0.20)
+    decision, _ = PolicyEngine().evaluate_action(_read(), _state(), provider_assessment=replan, session_id="s")
+    assert decision.status == DecisionStatus.ALLOW
+    assert "ADVISORY_REPLAN_IGNORED" in decision.reason_codes and not any("LOW_PROVIDER_CONFIDENCE" in r for r in decision.reason_codes)
+
+
+def test_an_advisory_supervisor_cannot_override_the_deterministic_risk_analysis():
+    rm = ActionCandidate(id="a3", description="x", tool_call=ToolCall(tool_name="run_command", arguments={"command": "rm -rf /"}))
+    allow = _advisory("ALLOW", {"ALLOW": 0.9, "REPLAN": 0.03, "BLOCK": 0.03, "ABSTAIN": 0.04}, confidence=0.9)
+    decision, _ = PolicyEngine().evaluate_action(rm, _state(), provider_assessment=allow, session_id="s")
+    assert decision.status == DecisionStatus.BLOCK
+
+
+def test_loop_vetoes_still_apply_with_an_advisory_supervisor():
+    looping = _advisory("ALLOW", {"ALLOW": 0.5, "REPLAN": 0.2, "BLOCK": 0.1, "ABSTAIN": 0.2}, confidence=0.5)
+    looping = looping.model_copy(update={"loop_probability": 0.88})
+    decision, _ = PolicyEngine().evaluate_action(_read(), _state(), provider_assessment=looping, session_id="s")
+    assert decision.status == DecisionStatus.REPLAN
+
+
+def test_veto_mode_defaults_and_overrides(monkeypatch):
+    from praxeon.providers.kev import KevProvider
+    from praxeon.providers.laya import LayaProvider
+
+    monkeypatch.delenv("LAYA_VETO_MODE", raising=False)
+    monkeypatch.delenv("KEV_VETO_MODE", raising=False)
+    assert LayaProvider(backend="simulated").veto_mode == "authoritative"      # motor de reglas determinista
+    assert KevProvider(backend="local").veto_mode == "authoritative"
+    monkeypatch.setattr("praxeon.providers.laya._laya_sdk_installed", lambda: True)
+    assert LayaProvider(backend="local").veto_mode == "advisory"               # modelo neuronal sin ajuste fino
+    monkeypatch.setenv("LAYA_VETO_MODE", "authoritative")
+    assert LayaProvider(backend="local").veto_mode == "authoritative"
+    monkeypatch.setenv("KEV_VETO_MODE", "advisory")
+    assert KevProvider(backend="local").veto_mode == "advisory"
