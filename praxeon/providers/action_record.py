@@ -45,8 +45,27 @@ def _yn(value: bool) -> str:
     return "sí" if value else "no"
 
 
-def build_action_record(candidate: Dict[str, Any], history: List[Dict[str, Any]], with_classifier: bool = True) -> str:
-    """Texto del registro canónico (varias líneas cortas, siempre con la misma estructura)."""
+_URL = re.compile(r"https?://[^\s'\"`)>]+", re.I)
+
+
+def appears_in_observations(target: str, history: List[Dict[str, Any]]) -> bool:
+    """¿La orden (o una URL suya) aparece en lo que el agente leyó antes? Es la señal de procedencia de una posible inyección."""
+    haystack = " ".join(str(h.get("observation") or "") for h in history).lower()
+    if not haystack or not target:
+        return False
+    flat = " ".join(target.split()).lower()
+    if len(flat) >= 12 and flat in " ".join(haystack.split()):
+        return True
+    return any(u.lower().rstrip(".,;") in haystack for u in _URL.findall(target))
+
+
+def build_action_record(candidate: Dict[str, Any], history: List[Dict[str, Any]], with_classifier: bool = True,
+                        version: int = 1) -> str:
+    """Texto del registro canónico (varias líneas cortas, siempre con la misma estructura).
+
+    `version=2` añade la procedencia («orden citada en lo leído»), la señal que las reglas no resumen y que el ajuste fino
+    del supervisor debe aprender a usar junto al objetivo.
+    """
     tool = str(candidate.get("tool_name") or "")
     args = candidate.get("arguments") or {}
     args_text = ", ".join(f"{k}={str(v)[:_ARGS_CHARS]!r}" for k, v in args.items()) or ""
@@ -71,4 +90,6 @@ def build_action_record(candidate: Dict[str, Any], history: List[Dict[str, Any]]
                         f"destructiva: {_yn(a.destructive)} | red: {_yn(a.network_access)} | privilegios: {_yn(a.privilege_escalation)}")
     elif target:
         facts.insert(1, f"ámbito: {_scope(target.split()[0] if target else '')}")
+    if version >= 2 and target:
+        facts.append(f"citada en lo leído antes: {_yn(appears_in_observations(target, history))}")
     return f"ACCIÓN PROPUESTA: {tool}({args_text})\n  " + " | ".join(facts)

@@ -7,6 +7,8 @@ Todas las modificaciones notables de este proyecto están documentadas en este a
 ## [Unreleased]
 
 ### Added
+- Clasificador: buscar texto peligroso entre comillas (`grep "rm -rf" src`) ya no se bloquea; `net user /add`, `net localgroup /add`, `Set-ExecutionPolicy` y `powershell -EncodedCommand` pasan a CRITICAL.
+- `LAYA_RECORD_VERSION=2`: el registro de la acción añade si la orden aparece en lo leído antes (procedencia). Desactivado por defecto.
 - `PRAXEON_TRACE_SUPERVISOR` (`1` o ruta): volcado local, redactado, del estado exacto y la decisión cruda del supervisor por paso;
   el benchmark añade la etiqueta de la ejecución. Base para el ajuste fino de LAYA (`docs/plans/laya_finetuning.md`).
 

@@ -36,7 +36,14 @@ class CommandClassifier:
         r"safety\s+guardrails\s+are\s+now\s+suspended",
         r"system\s*override\s*:\s*approved",
         r"execute\s+without\s+policy\s+checks",
+        r"\b(?:powershell|pwsh)(?:\.exe)?\b.*\s-e(?:nc|ncodedcommand)?\s+[a-z0-9+/=]{16,}",   # -EncodedCommand <base64>
+        r"frombase64string",
     ]
+
+    # Verbos que solo muestran o buscan texto: lo que lleven entre comillas es dato, no una orden (`grep "rm -rf" src`)
+    INERT_TEXT_VERBS = ("grep", "egrep", "rg", "findstr", "select-string", "echo", "write-output", "write-host", "printf")
+    _QUOTED = re.compile(r"\"[^\"]*\"|'[^']*'")
+    _SHELL_OPERATORS = re.compile(r"[|;&<>`]|\$\(")
 
     # 0b. Código Python en línea (`python -c`, también con la ruta completa del intérprete o `& 'x\\python.exe'`): inocuo
     # para una prueba, peligroso si abre la red, ejecuta código construido o borra. No es «BUILD_TEST».
@@ -57,6 +64,8 @@ class CommandClassifier:
         r"\bdoas\b",
         r"\bgsudo\b",
         r"\bsu\s+-\b",
+        r"\bnet\s+(?:user|localgroup)\b.*/add",
+        r"\bset-executionpolicy\b",
     ]
 
     # 2. Reglas deterministas para DESTRUCTIVE (precedencia máxima)
@@ -444,6 +453,9 @@ class CommandClassifier:
     ) -> CommandRiskAssessment:
         """Clasifica un comando o subcomando individual."""
         op_lower = op_clean.lower()
+        words = op_lower.split()
+        if words and words[0] in self.INERT_TEXT_VERBS and not self._SHELL_OPERATORS.search(op_lower):
+            op_lower = self._QUOTED.sub('""', op_lower)
         context_str = str(context or {})
         ctx_hash = hashlib.sha256(f"{op_clean}|{context_str}".encode("utf-8")).hexdigest()
 

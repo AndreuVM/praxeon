@@ -69,6 +69,8 @@ LAYA_TEMPERATURE = _env_float("LAYA_TEMPERATURE", 1.0, 0.05, 5.0)
 # probabilidades, repite el vocabulario de los vetos («considerada destructiva») y lo controla el propio agente.
 LAYA_ACTION_VIEW = os.getenv("LAYA_ACTION_VIEW", "record").strip().lower() or "record"
 
+LAYA_RECORD_VERSION = int(os.getenv("LAYA_RECORD_VERSION", "1") or 1)    # 2 = con procedencia; solo para un modelo ajustado a ella
+
 _STATE_FITS = ((6, 300), (4, 160), (3, 90), (2, 50), (1, 30), (0, 0))
 _ARGS_CHARS = 400
 
@@ -93,7 +95,8 @@ def resolve_device(requested: Optional[str] = None) -> str:
 
 
 
-def build_laya_state(ctx: ProviderContext, max_steps: int, obs_chars: int) -> str:
+def build_laya_state(ctx: ProviderContext, max_steps: int, obs_chars: int, *, with_classifier: bool = True,
+                     record_version: Optional[int] = None) -> str:
     """Estado para el modelo, con el mismo formato que el gestor de contexto pero acotado a `max_steps` y `obs_chars`.
 
     El checkpoint lee unos 1.024 tokens en total y las preguntas ocupan más de la mitad: si el estado no cabe, recorta por
@@ -117,7 +120,8 @@ def build_laya_state(ctx: ProviderContext, max_steps: int, obs_chars: int) -> st
             obs = " ".join(str(h.get("observation") or "").split())[:obs_chars]
             lines.append(f" - PASO {h.get('id')} [{h.get('tool')}({h_args})]: {obs}")
     if LAYA_ACTION_VIEW == "record":
-        lines += ["", build_action_record(cand, history)]
+        version = LAYA_RECORD_VERSION if record_version is None else record_version
+        lines += ["", build_action_record(cand, history, with_classifier=with_classifier, version=version)]
     else:
         lines += ["", f"ACCIÓN PROPUESTA: {cand.get('description') or ''} -> {cand.get('tool_name')}({args_text})"]
     return "\n".join(lines)
