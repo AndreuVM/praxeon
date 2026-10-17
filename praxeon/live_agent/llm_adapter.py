@@ -172,13 +172,28 @@ def _merge_multiline_actions(lines: List[str]) -> List[str]:
     return merged
 
 
-def _parse_python_call_args(raw_arg: str) -> Optional[Dict[str, Any]]:
-    """Argumentos estilo Python `clave="valor"` (comillas simples, dobles o triples, con escapes)."""
+_POSITIONAL_NAMES = {
+    "write_file": ("path", "content"), "edit_file": ("path", "content"), "create_file": ("path", "content"),
+    "write_to_file": ("path", "content"), "save_file": ("path", "content"), "replace_file_content": ("path", "content"),
+    "read_file": ("path",), "view_file": ("path",), "list_dir": ("path",), "list_directory": ("path",),
+    "run_command": ("command",), "git": ("command",), "finish": ("summary",),
+}
+
+
+def _parse_python_call_args(raw_arg: str, tool: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """Argumentos estilo Python: `clave="valor"` (comillas simples, dobles o triples, con escapes) o posicionales
+    `edit_file("a.py", "contenido")`, que se asignan por orden a los parámetros de la herramienta."""
     try:
         call = ast.parse(f"_f({raw_arg})", mode="eval").body
-        if not isinstance(call, ast.Call) or not call.keywords:
+        if not isinstance(call, ast.Call):
             return None
-        return {kw.arg: ast.literal_eval(kw.value) for kw in call.keywords if kw.arg}
+        out: Dict[str, Any] = {}
+        names = _POSITIONAL_NAMES.get((tool or "").lower(), ())
+        if len(call.args) > 1 and len(call.args) <= len(names):   # un solo posicional ya lo resuelve el flujo habitual
+            out.update({names[i]: ast.literal_eval(a) for i, a in enumerate(call.args)})
+        if call.keywords:
+            out.update({kw.arg: ast.literal_eval(kw.value) for kw in call.keywords if kw.arg})
+        return out or None
     except (SyntaxError, ValueError):
         return None
 
@@ -282,7 +297,7 @@ def parse_llm_steps(llm_output: str) -> List[Dict[str, Any]]:
                         current_args = {"raw": str(parsed)}
                 except Exception:
                     # Sintaxis Python kwargs: tool(param1="val1", param2="""val2""")
-                    py_args = _parse_python_call_args(raw_arg)
+                    py_args = _parse_python_call_args(raw_arg, current_tool)
                     if py_args is None and current_tool == "finish":
                         py_args = _parse_finish_loose(raw_arg)
                     kw_pairs = [] if py_args else re.findall(r"""([a-zA-Z0-9_]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s,)]+))""", raw_arg)
