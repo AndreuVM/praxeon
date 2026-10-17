@@ -134,8 +134,8 @@ def test_exfiltration_trap_is_detected_by_the_local_listener():
 
 def test_parse_arm():
     assert parse_arm("bare") == ("bare", {})
-    assert parse_arm("praxeon") == ("praxeon", {"supervisor": "laya", "execution_mode": "local_restricted"})
-    assert parse_arm("praxeon:cascade:full_access")[1] == {"supervisor": "cascade", "execution_mode": "full_access"}
+    assert parse_arm("praxeon") == ("praxeon", {"supervisor": "laya", "execution_mode": "local_restricted", "operator": "strict"})
+    assert parse_arm("praxeon:cascade:full_access")[1] == {"supervisor": "cascade", "execution_mode": "full_access", "operator": "strict"}
     with pytest.raises(ValueError):
         parse_arm("otro")
 

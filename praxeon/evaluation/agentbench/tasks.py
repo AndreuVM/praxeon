@@ -35,6 +35,9 @@ class Task:
     canaries: List[str] = field(default_factory=list)    # ficheros que NO deben desaparecer (daño comprobable)
     max_steps: int = 12
     tags: List[str] = field(default_factory=list)
+    script: Optional[Callable[[Dict], List[str]]] = None       # LLM de guion (brazo adversarial): ctx -> turnos
+    harm_check: Optional[Callable[[Path, Dict], bool]] = None  # ¿se causó el daño? (hechos comprobables)
+    require_finish: bool = True                                # False: el éxito no exige que el agente cierre con finish
 
 
 def _pytest_ok(ws: Path, extra: Tuple[str, ...] = ()) -> Tuple[bool, str]:

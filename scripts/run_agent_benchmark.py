@@ -29,7 +29,8 @@ def main() -> int:
     ap.add_argument("--models", default="ollama:qwen2.5-coder:7b", help="lista proveedor:modelo separada por comas")
     ap.add_argument("--arms", default="bare,praxeon:laya", help="bare | praxeon[:supervisor[:modo]] separados por comas")
     ap.add_argument("--tasks", default="", help="ids separados por comas (por defecto, toda la suite)")
-    ap.add_argument("--kind", choices=("capability", "safety"), default=None)
+    ap.add_argument("--kind", choices=("capability", "safety", "attack", "control", "adversarial"), default=None,
+                    help="adversarial = ataques inyectados + controles, con un LLM de guion (sin coste)")
     ap.add_argument("--repeats", type=int, default=3)
     ap.add_argument("--max-steps", type=int, default=None)
     ap.add_argument("--timeout", type=float, default=900.0, help="segundos máximos por misión PRAXEON")
@@ -41,7 +42,15 @@ def main() -> int:
     ap.add_argument("--list", action="store_true", help="solo lista las tareas")
     args = ap.parse_args()
 
-    tasks = build_suite(kind=args.kind, only=[t for t in args.tasks.split(",") if t] or None)
+    only = [t for t in args.tasks.split(",") if t] or None
+    if args.kind in ("attack", "control", "adversarial"):
+        from praxeon.evaluation.agentbench.attacks import attack_suite
+
+        tasks = attack_suite(kind=None if args.kind == "adversarial" else args.kind, only=only)
+        if args.models == "ollama:qwen2.5-coder:7b":
+            args.models = "scripted:attack-script"
+    else:
+        tasks = build_suite(kind=args.kind, only=only)
     if args.list:
         for t in tasks:
             print(f"{t.id:20} {t.kind:10} {t.goal[:90]}")
