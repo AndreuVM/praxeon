@@ -251,6 +251,24 @@ class DecisionPipelineMixin:
                             missing_resource_name = script_part
                     break
 
+        # Pedir por primera vez un archivo o script que no existe es inofensivo y el error de la herramienta («no existe…»)
+        # orienta al agente mejor que un veto (en el benchmark, sin veto rectificaba; con veto repetía la ruta hasta el
+        # corte). Solo se veta la insistencia: la misma ruta ya intentada antes.
+        if is_missing_resource and state is not None:
+            def _step_target(step: Any) -> str:
+                call = getattr(getattr(step, "action", None), "tool_call", None)
+                a = getattr(call, "arguments", None) or {}
+                return str(a.get("path") or a.get("file") or a.get("command") or a.get("cmd") or "").strip()
+
+            wanted = target_path or str(proposal.arguments.get("command") or proposal.arguments.get("cmd") or "").strip()
+            already_tried = any(
+                getattr(getattr(getattr(s, "action", None), "tool_call", None), "tool_name", None) == proposal.tool
+                and _step_target(s) == wanted
+                for s in getattr(state, "steps", [])
+            )
+            if not already_tried:
+                is_missing_resource = False
+
         # Detección de conclusión prematura / evasiva (finish con texto evasivo o vacío)
         is_premature_finish = False
         if proposal.tool in ("finish", "complete_task", "done") and state:

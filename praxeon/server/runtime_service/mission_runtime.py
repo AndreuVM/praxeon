@@ -36,6 +36,10 @@ _MISSING_PREFIX = "UNGROUNDED_FILE_NOT_FOUND ("
 # El resumen de pasos antiguos solo se rehace cada tantos pasos: entre medias la conversación solo crece por el final
 COMPRESS_BATCH = 6
 
+# Fallos seguidos (vetos o errores) tras los que el supervisor corta la misión. Con 4 cortaba a modelos pequeños que aún
+# podían rectificar (en el banco, un tercio de las misiones fallidas); el aviso de «cambia de enfoque» sale a los 2.
+MAX_CONSECUTIVE_FAILURES = max(3, int(os.getenv("PRAXEON_MAX_CONSECUTIVE_FAILURES", "6") or 6))
+
 
 def _missing_path_from_reasons(reason_codes: Optional[List[str]]) -> Optional[str]:
     for code in reason_codes or []:
@@ -881,6 +885,13 @@ class MissionRuntimeMixin:
                 obs_output = str(err)
                 executed_successfully = False
 
+            if not executed_successfully and _targets_missing_path(tool, args, mission.get("workspace_root")):
+                # La primera petición de una ruta inexistente se ejecuta (no se veta): el error que recibe el agente incluye
+                # lo que sí existe en el ancestro más cercano, para que rectifique en lugar de insistir
+                missing_arg = str(args.get("path") or args.get("file") or "").strip()
+                if missing_arg:
+                    obs_output = _missing_path_feedback(missing_arg, mission.get("workspace_root"))
+
             step_verdict = getattr(resp, "status", "ERROR") if 'resp' in locals() and resp else "ERROR"
             step_reasons = ", ".join(getattr(getattr(resp, "policy", None), "reason_codes", []) or []) if 'resp' in locals() and resp else ""
 
@@ -1020,8 +1031,8 @@ class MissionRuntimeMixin:
                     time.sleep(delay_sec)
                     continue
 
-                elif consecutive_failures >= 4:
-                    logger.warning("Terminación preventiva por supervisor JEV en sesión %s tras 4 fallos continuos.", sid)
+                elif consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
+                    logger.warning("Terminación preventiva por supervisor JEV en sesión %s tras %d fallos continuos.", sid, consecutive_failures)
                     stop_missing = (
                         "UNGROUNDED_FILE_NOT_FOUND" in (step_reasons or "")
                         or "no existe" in (obs_output or "").lower()

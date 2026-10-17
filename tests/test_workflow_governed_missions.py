@@ -549,7 +549,13 @@ def test_writing_several_different_files_is_progress_not_a_loop():
 
     assert loop_prob("src/f4.js", "nuevo") < 0.65             # archivo nuevo tras tres escrituras seguidas
     assert loop_prob("src/f1.js", "versión mejorada") < 0.65  # reescribir un archivo con contenido nuevo
-    assert loop_prob("src/f1.js", "v1") >= 0.65               # mismo archivo y mismo contenido: repetición
+    assert loop_prob("src/f1.js", "v1") < 0.65                # una repetición aislada es un reintento razonable
+    state.add_step(
+        action=ActionCandidate(id="w3", description="Escribir archivo",
+                               tool_call=ToolCall(tool_name="edit_file", arguments={"path": "src/f1.js", "content": "v1"})),
+        decision=PolicyDecision(status=DecisionStatus.ALLOW), observation="Archivo modificado satisfactoriamente",
+    )
+    assert loop_prob("src/f1.js", "v1") >= 0.65               # mismo archivo y mismo contenido por segunda vez: bucle
 
 
 def _interventions(runtime, sid, name):

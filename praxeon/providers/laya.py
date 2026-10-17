@@ -90,6 +90,20 @@ def resolve_device(requested: Optional[str] = None) -> str:
     return device
 
 
+
+def _is_mutation(tool: str, args: Dict[str, Any]) -> bool:
+    """¿Esta acción cambia el estado del proyecto (escribe un archivo o ejecuta algo que modifica)?"""
+    tool = (tool or "").lower()
+    if tool in ("edit_file", "write_file", "create_file", "write_to_file", "save_file", "replace_file_content"):
+        return True
+    if tool in ("run_command", "run_script", "git"):
+        from praxeon.providers.action_record import _classify
+
+        command = str((args or {}).get("command") or (args or {}).get("cmd") or (args or {}).get("raw") or "")
+        return bool(command) and not _classify(command).read_only
+    return False
+
+
 def build_laya_state(ctx: ProviderContext, max_steps: int, obs_chars: int) -> str:
     """Estado para el modelo, con el mismo formato que el gestor de contexto pero acotado a `max_steps` y `obs_chars`.
 
@@ -352,8 +366,16 @@ class LayaProvider(BaseReasoningProvider):
         my_target = _target(args)
 
         history = [h for h in ctx.history_window if isinstance(h, dict)]
+
+        # Un cambio de estado (editar un archivo, un comando que modifica) invalida lo observado antes: releer o volver a
+        # lanzar los tests DESPUÉS de editar no es repetir. Para acciones de solo lectura solo cuentan las repeticiones
+        # posteriores al último cambio; para las que modifican, el historial completo (reescribir lo mismo sí es repetir).
+        candidate_mutates = _is_mutation(tool_name, args)
+        last_change = max((i for i, h in enumerate(history) if _is_mutation(str(h.get("tool") or ""), h.get("arguments") or {})), default=-1)
+        window = history if candidate_mutates else history[last_change + 1:]
+
         same_target = [
-            h for h in history
+            h for h in window
             if (h.get("tool") or "") == tool_name and _target(h.get("arguments") or {}) == my_target
         ]
         if tool_name in write_tools:
@@ -361,35 +383,25 @@ class LayaProvider(BaseReasoningProvider):
             same_target = [h for h in same_target if _content(h.get("arguments") or {}) == _content(args)]
         repetition_count = len(same_target) if (tool_name and my_target) else 0
 
+        # Una repetición aislada es un reintento razonable (0,5, por debajo del umbral de veto); la segunda ya es un bucle
         is_loop = 0.05
         if repetition_count >= 2:
             is_loop = 0.88
         elif repetition_count >= 1:
-            is_loop = 0.65 if tool_name in ("run_command", "run_script") else 0.88
+            is_loop = 0.50
 
-        # Detección de repetición del mismo comando exacto
-        recent_commands = [
-            str(h.get("arguments", {}).get("command") or h.get("operation") or "").strip().lower()
-            for h in history
-        ]
-        if cmd_str and tool_name not in write_tools and recent_commands.count(cmd_str) >= 2:
-            is_loop = max(is_loop, 0.85)
-
-        # Detección de estancamiento tras fallos consecutivos
-        # Los mensajes de fallo de las herramientas son cortos o empiezan por «error»; el contenido de un archivo largo
-        # puede contener «error» o «failed» (código, tests, logs) sin que la lectura haya fallado.
+        # Estancamiento: fallos seguidos SIN que el agente haya cambiado nada entre medias. Los mensajes de fallo de las
+        # herramientas son cortos o empiezan por «error»; el contenido de un archivo largo puede contener «error» o «failed»
+        # (código, tests, logs) sin que la lectura haya fallado.
         def _is_failure(obs: str) -> bool:
             obs = obs.strip().lower()
             if not any(err in obs for err in ("no existe", "error", "failed", "fail", "not found")):
                 return False
             return len(obs) <= 300 or obs.startswith(("error", "fallo", "traceback"))
 
-        recent_obs = [str(h.get("observation", "")) for h in ctx.history_window[-3:] if isinstance(h, dict)]
+        recent_obs = [str(h.get("observation", "")) for h in window[-3:]]
         recent_failures = [obs for obs in recent_obs if _is_failure(obs)]
-        if len(recent_failures) >= 2:
-            is_loop = max(is_loop, 0.85)
-
-        if any(w in desc for w in ("reintentar", "mismo comando", "bucle", "repetir")):
+        if len(recent_failures) >= 2 and repetition_count >= 1:
             is_loop = max(is_loop, 0.85)
 
         # 2. Comprobación de grounding (fundamentación fáctica y verificación de recursos en disco)

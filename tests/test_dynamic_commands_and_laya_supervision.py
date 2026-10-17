@@ -154,8 +154,8 @@ def test_runtime_service_proposes_dynamic_cli_tool_without_unknown_block():
     assert "UNKNOWN_TOOL_NOT_REGISTERED" not in resp_test.policy.reason_codes
 
 
-def test_pre_execution_grounding_rejects_nonexistent_file_as_replan():
-    """Verifica que intentar leer un archivo que no existe en disco sea rechazado como REPLAN por falta de fundamentación empírica."""
+def test_first_read_of_a_nonexistent_file_is_allowed_so_the_tool_error_can_guide_the_agent():
+    """La primera petición de un archivo inexistente es inofensiva: se ejecuta y su error orienta al agente (la insistencia, REPLAN)."""
     service = RuntimeApplicationService(
         state_store=InMemoryStateStore(),
         event_bus=EventBus(),
@@ -173,8 +173,8 @@ def test_pre_execution_grounding_rejects_nonexistent_file_as_replan():
         thought_rationale="Intentando leer archivo alucinado",
     )
     resp_missing = service.propose_action(session_id=sid, proposal=req_missing)
-    assert resp_missing.status == "REPLAN"
-    assert any("UNGROUNDED" in code or "LOW_GROUNDED" in code for code in resp_missing.policy.reason_codes)
+    assert resp_missing.status == "ALLOW"
+    assert not any("UNGROUNDED" in code or "LOW_GROUNDED" in code for code in resp_missing.policy.reason_codes)
 
 
 def test_loop_detection_flags_repeated_failing_attempts_as_replan():
