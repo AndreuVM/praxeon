@@ -44,6 +44,7 @@ class PolicyEngine:
         loop_threshold: float = 0.65,
         min_grounded_threshold: float = 0.35,
         min_confidence_threshold: float = 0.30,
+        veto_min_confidence: float = 0.50,
         secret_key: Optional[str] = None,
         receipt_ttl_seconds: float = 60.0,
         classifier: Optional[CommandClassifier] = None,
@@ -57,6 +58,7 @@ class PolicyEngine:
         self.loop_threshold = loop_threshold
         self.min_grounded_threshold = min_grounded_threshold
         self.min_confidence_threshold = min_confidence_threshold
+        self.veto_min_confidence = veto_min_confidence
         self.secret_key = secret_key or secrets.token_hex(32)
         self.receipt_ttl_seconds = receipt_ttl_seconds
 
@@ -190,6 +192,19 @@ class PolicyEngine:
 
             # 5. Evaluación semántica probabilística de JEV / LAYA (si está disponible)
             elif provider_assessment is not None:
+                choice_meta = provider_assessment.metadata.get("choice", {}) if isinstance(provider_assessment.metadata, dict) else {}
+                vetoed_label = choice_meta.get("label")
+                # solo proveedores cuya confianza es la probabilidad de la opción elegida (LAYA, KEV); la de TypeSafe está normalizada
+                weak_veto = (
+                    str(getattr(provider_assessment, "provider", "")).lower() in ("laya", "kev")
+                    and vetoed_label in ("BLOCK", "REPLAN")
+                    and provider_assessment.confidence is not None
+                    and provider_assessment.confidence < self.veto_min_confidence
+                )
+                if weak_veto:
+                    reason_codes.append(
+                        f"WEAK_{vetoed_label}_VETO_DEFERRED ({provider_assessment.confidence:.2f} < {self.veto_min_confidence:.2f})"
+                    )
                 # Gating de confianza según JEV-as-a-Judge: juicios con baja confianza escalan a ABSTAIN
                 if (
                     provider_assessment.confidence is not None
@@ -200,11 +215,12 @@ class PolicyEngine:
                         f"LOW_PROVIDER_CONFIDENCE_ESCALATE ({provider_assessment.confidence:.2f} < {self.min_confidence_threshold:.2f})"
                     )
 
-                # Clasificación de acción destructiva o peligrosa por LAYA
-                elif "LAYA_DESTRUCTIVE_BLOCK" in provider_assessment.reason_codes or (
+                # Clasificación de acción destructiva o peligrosa por LAYA. Un veto con probabilidad calibrada baja es ruido
+                # de un modelo que duda: no veta por sí solo, decide el análisis determinista de riesgo (paso 6).
+                elif not weak_veto and ("LAYA_DESTRUCTIVE_BLOCK" in provider_assessment.reason_codes or (
                     isinstance(provider_assessment.metadata, dict)
                     and provider_assessment.metadata.get("choice", {}).get("label") == "BLOCK"
-                ):
+                )):
                     status = DecisionStatus.BLOCK
                     reason_codes.append("SUPERVISOR_LAYA_DESTRUCTIVE_BLOCK")
 
@@ -219,10 +235,10 @@ class PolicyEngine:
                     )
 
                 # Clasificación de acción innecesaria o desvío por LAYA
-                elif "LAYA_UNNECESSARY_ACTION_REPLAN" in provider_assessment.reason_codes or (
+                elif not weak_veto and ("LAYA_UNNECESSARY_ACTION_REPLAN" in provider_assessment.reason_codes or (
                     isinstance(provider_assessment.metadata, dict)
                     and provider_assessment.metadata.get("choice", {}).get("label") == "REPLAN"
-                ):
+                )):
                     status = DecisionStatus.REPLAN
                     reason_codes.append("SUPERVISOR_LAYA_UNNECESSARY_ACTION_REPLAN")
 

@@ -29,6 +29,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from praxeon.domain.action import ActionCandidate
 from praxeon.domain.assessment import ProviderAssessment
 from praxeon.providers.base import BaseReasoningProvider
+from praxeon.providers.action_record import build_action_record
 from praxeon.providers.context import ProviderContext, ProviderContextBuilder
 from praxeon.providers.hardware import laya_device
 from praxeon.providers.systemone import QUESTIONS, parse_answers
@@ -61,6 +62,11 @@ def _env_float(name: str, default: float, low: float, high: float) -> float:
 LAYA_TEMPERATURE = _env_float("LAYA_TEMPERATURE", 0.30, 0.05, 5.0)
 
 # Tamaños con los que se prueba el estado hasta que el modelo lo lea entero: (pasos recientes, caracteres por observación)
+# Qué ve el modelo de la acción propuesta: «record» (registro canónico construido por el arnés, por defecto) o «thought»
+# (la descripción libre del agente). Medido sobre el banco con razonamientos reales: el texto libre hace casi uniformes las
+# probabilidades, repite el vocabulario de los vetos («considerada destructiva») y lo controla el propio agente.
+LAYA_ACTION_VIEW = os.getenv("LAYA_ACTION_VIEW", "record").strip().lower() or "record"
+
 _STATE_FITS = ((6, 300), (4, 160), (3, 90), (2, 50), (1, 30), (0, 0))
 _ARGS_CHARS = 400
 
@@ -107,7 +113,10 @@ def build_laya_state(ctx: ProviderContext, max_steps: int, obs_chars: int) -> st
             h_args = json.dumps(h.get("arguments") or {}, ensure_ascii=False)[:120]
             obs = " ".join(str(h.get("observation") or "").split())[:obs_chars]
             lines.append(f" - PASO {h.get('id')} [{h.get('tool')}({h_args})]: {obs}")
-    lines += ["", f"ACCIÓN PROPUESTA: {cand.get('description') or ''} -> {cand.get('tool_name')}({args_text})"]
+    if LAYA_ACTION_VIEW == "record":
+        lines += ["", build_action_record(cand, history)]
+    else:
+        lines += ["", f"ACCIÓN PROPUESTA: {cand.get('description') or ''} -> {cand.get('tool_name')}({args_text})"]
     return "\n".join(lines)
 
 

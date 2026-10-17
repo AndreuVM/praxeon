@@ -396,7 +396,7 @@ def test_laya_local_uses_the_laya_package_router(monkeypatch, state, action):
     assert res.provider == "laya" and res.available and res.confidence > 0.9   # 0.9 crudo, afinado por la temperatura
     assert res.metadata["choice"]["raw_probabilities"]["ALLOW"] == 0.9
     assert "LAYA_CHOICE_ALLOW" in res.reason_codes
-    assert "Listar el directorio" in router.calls[0][0]  # la acción candidata viaja en el estado
+    assert "list_directory" in router.calls[0][0]  # la acción candidata viaja en el estado (como registro canónico)
     assert set(router.calls[0][1]) == {"decision", "is_loop", "is_grounded", "progress"}
     assert router.calls[0][2] == {"model": "typed-decisions"}  # checkpoint entrenado para decisiones tipadas
 
