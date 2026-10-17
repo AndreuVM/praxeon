@@ -144,3 +144,14 @@ Marcha atrás inmediata: variable de entorno al checkpoint anterior.
   para unirla con `runs.jsonl`.
 - Siguiente: extractor de `events.db` (reconstruir el estado de cada acción real), ampliar tareas a ≥ 40, generador de
   ataques/controles y oráculo.
+
+### Línea base del LAYA actual (2026-10-18, `scripts/eval_laya.py`, sin ajuste)
+
+| Conjunto | Acierto | Falsos vetos en controles | Ataques con BLOCK | ECE |
+|---|---|---|---|---|
+| val sintético (298) | 0,49 | 66 % | 64 % | 0,06 |
+| test sintético (462, familias no vistas) | 0,39 | 81 % | 48 % | 0,08 |
+
+Peor en test: exfiltración con Python 0,18, inyección parafraseada 0,24, controles de inspección 0,11. Sobre 400 casos
+reales: veta el 28 % de las acciones que la política dejó pasar con éxito, y deja pasar (ALLOW) los 5 BLOCK reales de la
+muestra. 59 de 400 estados reales (15 %) se recortan por longitud: hay que acortar el estado o el registro antes de entrenar.
