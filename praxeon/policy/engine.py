@@ -279,6 +279,14 @@ class PolicyEngine:
             if risk.level == RiskLevel.CRITICAL:
                 status = DecisionStatus.BLOCK
                 reason_codes.append("CRITICAL_OPERATIONAL_RISK")
+            elif operation_assessment is not None and "RULE_WORKSPACE_DELETE_REVIEW" in (operation_assessment.matched_rules or []):
+                # Borrado recursivo acotado al workspace: no se veta, lo decide una persona
+                if self.permission_manager.is_action_confirmed(action.id, action_hash=action_hash):
+                    status = DecisionStatus.ALLOW
+                    reason_codes.append("HUMAN_CONFIRMED_ACTION")
+                else:
+                    status = DecisionStatus.ABSTAIN
+                    reason_codes.append("WORKSPACE_DELETE_REQUIRES_REVIEW")
             elif (
                 operation_assessment is not None
                 and operation_assessment.category in (CommandCategory.REMOTE_MUTATION, CommandCategory.NETWORK)

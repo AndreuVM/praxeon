@@ -200,6 +200,68 @@ class CommandClassifier:
         r">>",     # redirección append
     ]
 
+    # Borrado recursivo/forzado reconocible (rm, cmd, PowerShell) y sus objetivos
+    _DELETE_RECURSIVE = re.compile(
+        r"^\s*(?:rm\s+-[a-z]*[rf][a-z]*|(?:remove-item|ri|del|erase|rd|rmdir)\b(?=.*(?:-recurse|\s-r\b|-force|\s-fo\b|/s\b|/q\b)))",
+        re.IGNORECASE)
+    _DELETE_VERB = re.compile(r"^\s*(?:remove-item|ri|rm|rmdir|rd|del|erase)\b", re.IGNORECASE)
+    _PS_PARAMS_WITH_VALUE = {"-erroraction", "-include", "-exclude", "-filter", "-credential", "-stream", "-ea"}
+    _SHELL_CONTROL = re.compile(r";|&&|\|\||\||`|\$\(|>|<|\n")
+    _PROTECTED_SEGMENT = re.compile(
+        r"^(\.git|\.env(\..*)?|\.ssh|\.aws|\.gnupg|\.kube|id_(rsa|dsa|ecdsa|ed25519).*|.*\.(pem|key|p12|pfx)|secrets?(\..*)?|credentials?(\..*)?)$",
+        re.IGNORECASE)
+
+    @classmethod
+    def _delete_targets(cls, op: str) -> Optional[List[str]]:
+        """Objetivos de un borrado simple (sin encadenar nada más), o None si no es un borrado reconocible."""
+        if not cls._DELETE_VERB.match(op) or cls._SHELL_CONTROL.search(op):
+            return None
+        rest = cls._DELETE_VERB.sub("", op, count=1)
+        targets: List[str] = []
+        take_value = False
+        take_skip = False
+        for token in re.findall(r"\"[^\"]*\"|'[^']*'|\S+", rest):
+            bare = token.strip("\"'")
+            low = bare.lower()
+            if take_skip:
+                take_skip = False
+                continue
+            if take_value:
+                take_value = False
+                targets.extend(p for p in bare.split(",") if p)
+                continue
+            if low in ("-path", "-literalpath"):
+                take_value = True
+                continue
+            if low in cls._PS_PARAMS_WITH_VALUE:
+                take_skip = True
+                continue
+            if low.startswith("-") or re.fullmatch(r"/[a-z]", low):
+                continue
+            targets.extend(p for p in bare.split(",") if p)
+        return targets
+
+    @classmethod
+    def _is_safe_delete_target(cls, target: str) -> bool:
+        path = target.strip().strip("\"'").replace("\\", "/")
+        if not path:
+            return False
+        if path.startswith(("/", "~", "$", "%")) or re.match(r"^[a-zA-Z]:", path):
+            return False                                                    # absoluta, home, variable o unidad
+        segments = [s for s in path.split("/") if s]
+        if not segments or any(s == ".." for s in segments):
+            return False                                                    # escapa del workspace
+        if all(s in (".", "*", "*.*") for s in segments):
+            return False                                                    # el workspace entero
+        return not any(cls._PROTECTED_SEGMENT.match(s) for s in segments)
+
+    @classmethod
+    def _is_scoped_workspace_delete(cls, op: str) -> bool:
+        if not cls._DELETE_RECURSIVE.match(op):
+            return False
+        targets = cls._delete_targets(op)
+        return bool(targets) and all(cls._is_safe_delete_target(t) for t in targets)
+
     def _split_compound_command(self, cmd: str) -> List[str]:
         """Divide un comando compuesto en subcomandos respetando comillas y delimitadores shell."""
         if not any(sep in cmd for sep in ("&&", "||", ";", "\n", "|")):
@@ -468,6 +530,17 @@ class CommandClassifier:
                     classifier="deterministic",
                     context_hash=ctx_hash,
                 )
+
+        # Regla 2-previa: borrado recursivo o forzado ACOTADO al workspace (rutas relativas, sin rutas protegidas): lo decide
+        # una persona (REVIEW), no se veta. Raíz, home, unidades, `..`, `.git`, `.env`, claves o el workspace entero siguen en CRITICAL.
+        if self._is_scoped_workspace_delete(op_clean):
+            return CommandRiskAssessment(
+                operation=op_clean, category=CommandCategory.LOCAL_MUTATION, risk_level=RiskLevel.HIGH, read_only=False,
+                reversible=False, destructive=False, external_side_effect=False, network_access=False,
+                privilege_escalation=False, confidence=0.9,
+                reasons=["Borrado recursivo dentro del workspace sobre rutas no protegidas: requiere confirmación humana."],
+                matched_rules=["RULE_WORKSPACE_DELETE_REVIEW"], classifier="deterministic", context_hash=ctx_hash,
+            )
 
         # Regla 2: DESTRUCTIVE (Veto determinista irrevocable)
         for pat in self.DESTRUCTIVE_PATTERNS:
