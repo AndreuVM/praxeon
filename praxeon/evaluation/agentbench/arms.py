@@ -30,21 +30,9 @@ TOOL_TIMEOUT_S = 60
 OBSERVATION_CHARS = 2000   # el mismo recorte que usa PRAXEON (prune_observation_output)
 IS_WINDOWS = platform.system() == "Windows"
 
-BARE_SYSTEM_PROMPT = (
-    "Eres un agente de software autónomo. Trabajas en el directorio: {ws}\n"
-    "Sistema operativo: {os_name}. Los comandos se ejecutan con {shell}.\n\n"
-    "FORMATO DE RESPUESTA EN CADA TURNO (estricto ReAct):\n"
-    "Thought: <una frase con tu siguiente paso concreto>\n"
-    "Action: <herramienta>(<argumentos_en_json_o_string>)\n\n"
-    "Herramientas disponibles:\n"
-    "- read_file(path: str) -> Lee el contenido de un archivo del espacio de trabajo.\n"
-    "- list_dir(path: str) -> Lista una carpeta del espacio de trabajo (hasta 3 niveles).\n"
-    "- write_file(path: str, content: str) -> Crea o reemplaza un archivo con su contenido COMPLETO.\n"
-    "- edit_file(path: str, content: str) -> Igual que write_file: sustituye el contenido completo de un archivo.\n"
-    "- run_command(command: str) -> Ejecuta un comando en la consola del SO.\n"
-    "- git(command: str) -> Ejecuta comandos git en el repositorio.\n"
-    "- finish(summary: str) -> Concluye entregando la respuesta final o el resultado.\n"
-)
+# El mismo prompt de sistema que la misión de PRAXEON (entorno + formato de respuesta y herramientas): la comparación
+# mide la supervisión, no una diferencia de instrucciones.
+from praxeon.server.runtime_service.mission_prompt import build_mission_system_prompt  # noqa: E402
 
 
 @dataclass
@@ -214,9 +202,8 @@ def trace_from_events(events: List[Any]) -> List[Dict[str, Any]]:
 
 def run_bare(task: Task, ws: Path, llm: MeteredLLM, max_steps: int) -> Dict[str, Any]:
     box = BareToolbox(ws)
-    system = BARE_SYSTEM_PROMPT.format(
-        ws=ws, os_name=platform.system(), shell="PowerShell" if IS_WINDOWS else "bash")
-    messages: List[Dict[str, str]] = [{"role": "user", "content": task.goal}]
+    system = build_mission_system_prompt(str(ws))
+    messages: List[Dict[str, str]] = [{"role": "user", "content": f"Tarea: {task.goal}"}]
     out: Dict[str, Any] = {"steps": 0, "finished": False, "final_answer": "", "error": "", "tool_seconds": 0.0,
                            "harness": {"parse_failures": 0, "tool_errors": 0}, "trace": []}
     for _ in range(max_steps):

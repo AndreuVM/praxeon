@@ -27,7 +27,7 @@ def test_context_manager_assemble_mission_prompt_empty_history():
     assert len(prompt) >= 1
     assert prompt[0]["role"] == "user"
     assert "Diseñar arquitectura de microservicios" in prompt[0]["content"]
-    assert "finish" in prompt[0]["content"]
+    assert "finish" not in prompt[0]["content"]   # el mensaje solo lleva la tarea: las instrucciones no se repiten ahí
 
 
 def test_context_manager_assemble_mission_prompt_compression_and_supervision():

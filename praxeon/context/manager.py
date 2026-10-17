@@ -516,21 +516,13 @@ class ContextManager:
                         messages.append({"role": role, "content": content})
 
         # 2. Mensaje de usuario raíz con la tarea
-        root_content = f"Tarea/Pregunta: {goal}"
+        root_content = f"Tarea: {goal}"
         if node_mode:
             # El briefing del nodo ya va en las instrucciones de sistema: no se repite (ahorra tokens) ni se
             # le sugiere responder directamente con finish
             root_content = "Comienza tu misión siguiendo el briefing y las reglas de tus instrucciones. Responde con Thought y Action."
         if environment_info:
             root_content += f"\n\nContexto del Entorno y Espacio de Trabajo:\n{environment_info}"
-        if not node_mode:
-            root_content += (
-            "\n\nResponde directamente a mi petición concreta con tu criterio técnico. "
-            "Si es una pregunta, opinión, diseño conceptual, especificación, user stories o informe, "
-            "entrégala directamente con finish(summary=...). "
-            "Si requieres interactuar con código o archivos existentes de este entorno local, "
-            "utiliza las herramientas pertinentes sobre los archivos reales."
-        )
         messages.append({"role": "user", "content": root_content})
 
         total_steps = len(steps)

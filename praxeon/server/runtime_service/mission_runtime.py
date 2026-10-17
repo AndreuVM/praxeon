@@ -48,6 +48,7 @@ def _missing_path_from_reasons(reason_codes: Optional[List[str]]) -> Optional[st
     return None
 
 
+from praxeon.server.runtime_service.mission_prompt import build_mission_system_prompt  # noqa: E402
 from praxeon.server.runtime_service.node_prompt import (  # noqa: E402
     NODE_FORMAT_FEEDBACK,
     NODE_INTENTION_FEEDBACK,
@@ -449,38 +450,13 @@ class MissionRuntimeMixin:
         root_id = root_id or f"root_{sid}"
         step_idx = 0
         if system_prompt is None:
-            # Recolectar información detallada del sistema operativo y espacio de trabajo real
             ws_root = mission.get("workspace_root") or get_default_workspace_root()
-            from praxeon.core.session_context import SessionContextManager
-            ctx_mgr = SessionContextManager()
-            env_info = ctx_mgr.get_environment_info(root_dir=ws_root)
-
-            system_prompt = role_preamble + (
-                "Eres un asistente y agente de software autónomo supervisado cognitivamente en tiempo real por PRAXEON (JEV Reasoning Navigator).\n"
-                f"OBJETIVO O PREGUNTA DEL USUARIO: {goal}\n"
-                f"DIRECTORIO DE TRABAJO BASE PARA ESTA SESIÓN: '{ws_root}'\n\n"
-                f"{env_info}\n\n"
-                "FORMATO DE RESPUESTA EN CADA TURNO (Estricto ReAct):\n"
-                "Thought: <una frase con tu siguiente paso concreto>\n"
-                "Action: <herramienta>(<argumentos_en_json_o_string>)\n\n"
-                "Herramientas disponibles:\n"
-                "- read_file(path: str) -> Lee el contenido de un archivo del espacio de trabajo local si la tarea requiere auditar código o configuración existente.\n"
-                "- list_dir(path: str) -> Lista una carpeta del espacio de trabajo (hasta 3 niveles)." + "\n"
-                "- write_file(path: str, content: str) -> Crea o reemplaza un archivo con su contenido COMPLETO (crea las carpetas necesarias)." + "\n"
-                "- edit_file(path: str, content: str) -> Igual que write_file: sustituye el contenido completo de un archivo." + "\n"
-                "- run_command(command: str) -> Ejecuta un comando en la consola del SO (PowerShell en Windows, bash en Unix).\n"
-                "- git(command: str) -> Ejecuta comandos git en el repositorio (status, diff, log, etc.).\n"
-                "- finish(summary: str) -> Concluye entregando la respuesta directa a la pregunta, especificación, diseño, informe o solución solicitada por el usuario.\n\n"
-                "PRINCIPIOS OPERATIVOS Y RAZONAMIENTO COGNITIVO:\n"
-                "1. COMPRENSIÓN DEL ÁMBITO DEL PROYECTO (ANTI-SESGO DETERMINISTA): Atiende estrictamente a lo que el usuario solicita. Si el usuario te pide un informe, especificación, arquitectura, estructura de carpetas, requisitos funcionales/no funcionales o user stories para OTRO proyecto externo, una nueva aplicación o una propuesta puramente conceptual, NO asumas que se refiere al proyecto local ni leas archivos locales innecesariamente. Elabora y entrega el diseño de dicho proyecto directamente mediante finish(summary=\"...\").\n"
-                "2. AUDITORÍA Y ANÁLISIS DE ESTE PROYECTO / REPOSITORIO LOCAL: Si el usuario te pide explícitamente analizar, inspeccionar, explicar o auditar archivos, módulos o flujos del proyecto local ('analiza los archivos', 'cómo funciona el workflow', 'inspecciona el código', 'explica la arquitectura', etc.), DEBES obligatoriamente usar 'read_file' o 'run_command' para examinar las evidencias reales. El supervisor cognitivo PRAXEON VETARÁ (con REPLAN por falta de evidencia empírica / LOW_GROUNDED_PROBABILITY) cualquier llamada prematura a 'finish' que no haya consultado previamente los archivos requeridos.\n"
-                "3. PREGUNTAS Y VALORACIONES CONCEPTUALES: Si te consultan tu opinión general, teoría o valoraciones abstractas sin referencia a archivos de este entorno, responde de forma crítica y fundamentada directamente con finish(summary=\"...\").\n"
-                "4. TAREAS DE CÓDIGO TÉCNICO SOBRE EL REPOSITORIO LOCAL: Si la tarea solicita implementar código, corregir un bug o ejecutar pruebas sobre archivos existentes de este entorno, utiliza read_file, edit_file o run_command antes de dar por resuelta la tarea.\n"
-                "5. COMPATIBILIDAD DE SO: En Windows, NO uses comandos Unix/Linux como 'ls', 'cat', 'grep'. Utiliza 'read_file(path)' o comandos de PowerShell en run_command.\n"
-                "6. RETROCESO Y VETOS DEL SUPERVISOR: Si una acción (incluido un intento de 'finish') es vetada por el supervisor o rechazada por falta de evidencia, reflexiona en 'Thought:' sobre la observación de veto recibida y ejecuta la herramienta de inspección correspondiente (ej. read_file) para fundamentar empíricamente tu razonamiento antes de intentar finalizar de nuevo."
-            )
             if trace is not None:
+                from praxeon.core.session_context import SessionContextManager
+                env_info = SessionContextManager().get_environment_info(root_dir=ws_root)
                 system_prompt = role_preamble + build_node_system_prompt(ws_root, env_info, goal)
+            else:
+                system_prompt = role_preamble + build_mission_system_prompt(ws_root)
             mcp = getattr(self, "mcp", None)
             if mcp is not None:
                 try:
