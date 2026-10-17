@@ -280,7 +280,9 @@ class DecisionPipelineMixin:
                 is_evasive = explicit_evasion or not summary_text
                 is_local_codebase_investigation = False
             else:
-                is_evasive = len(summary_text) < 30 or explicit_evasion
+                # Una respuesta corta ("8123") es legítima si el agente ya reunió observaciones; solo es evasiva sin evidencia
+                has_observations = any(s.observation and len(str(s.observation).strip()) > 20 for s in state.steps)
+                is_evasive = explicit_evasion or not summary_text or (len(summary_text) < 30 and not has_observations)
 
             successful_obs = [s for s in state.steps if s.observation and len(str(s.observation).strip()) > 20]
             if is_evasive or (is_local_codebase_investigation and len(successful_obs) == 0 and len(summary_text) < 250):
