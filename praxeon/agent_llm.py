@@ -156,6 +156,8 @@ class BaseAgentLLM(ABC):
     stateful_session = False
     # Tokens reales de la última llamada ({prompt_tokens, output_tokens, cached_tokens}); None si no se informaron
     last_usage: Optional[Dict[str, int]] = None
+    # Coste en USD de la última llamada si el proveedor lo informa (p. ej. la CLI de Claude); None si no
+    last_cost_usd: Optional[float] = None
 
     def _record_usage(self, prompt: Any, output: Any, cached: Any = 0) -> None:
         def _n(value: Any) -> int:
@@ -534,6 +536,7 @@ class _CliSession:
         self.workdir = workdir
         self.users: List[str] = []   # textos user ya entregados al proceso (para validar que la conversación continúa)
         self.n_turns = 0             # nº de mensajes de la conversación que el proceso ya conoce
+        self.cost_total = 0.0        # coste acumulado (USD) que informa la CLI en este proceso
         self._lines: "queue.Queue[Optional[str]]" = queue.Queue()
         self.proc = subprocess.Popen(
             cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
@@ -708,6 +711,11 @@ class ClaudeCLILLM(BaseAgentLLM):
                 (usage.get("input_tokens") or 0) + read + (usage.get("cache_creation_input_tokens") or 0),
                 usage.get("output_tokens"), read,
             )
+            total_cost = data.get("total_cost_usd")
+            if isinstance(total_cost, (int, float)):
+                # la CLI informa el coste acumulado del proceso: el de este turno es la diferencia
+                self.last_cost_usd = max(0.0, float(total_cost) - session.cost_total)
+                session.cost_total = float(total_cost)
             session.n_turns = len(turns)
             session.users = [t for r, t in turns if r == "user"]
             return str(data.get("result") or "").strip()
