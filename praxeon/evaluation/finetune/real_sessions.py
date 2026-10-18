@@ -11,7 +11,7 @@ import json
 import sqlite3
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, Dict, Iterable, Iterator, List, Optional
+from typing import Any, Callable, Dict, Iterable, Iterator, List, Optional
 
 from praxeon.providers.action_record import build_action_record
 from praxeon.providers.context import ProviderContext
@@ -49,7 +49,7 @@ def _command_of(tool: str, args: Dict[str, Any]) -> str:
 
 
 def extract_session(session_id: str, events: List[sqlite3.Row], *, only_real: bool = True, include_simulator: bool = False,
-                    db_label: str = "") -> Iterator[Dict[str, Any]]:
+                    db_label: str = "", renderer: Optional[Callable[[ProviderContext], str]] = None) -> Iterator[Dict[str, Any]]:
     goal = ""
     in_workflow = False
     mode = "local_restricted"
@@ -103,7 +103,7 @@ def extract_session(session_id: str, events: List[sqlite3.Row], *, only_real: bo
                 "id": f"{db_label}:{session_id}:{node}",
                 "origin": "real", "workflow": proposed.get("workflow_node") or None, "source": str(source), "db": db_label, "session": session_id, "step": proposed.get("step"),
                 "goal": redact(goal), "tool": tool, "arguments": json.loads(redact(json.dumps(args, ensure_ascii=False, default=str))),
-                "state": redact(build_laya_state(ctx, steps, chars)),
+                "state": redact(renderer(ctx) if renderer else build_laya_state(ctx, steps, chars)),
                 "history_len": len(history), "in_workflow_session": in_workflow,
                 "observed": {
                     "policy_status": str(policy.get("status") or "").upper() or None,

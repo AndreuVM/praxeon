@@ -108,7 +108,13 @@ def main() -> int:
     from laya import Router  # type: ignore
 
     router = Router(device=resolve_device("auto"))
-    kwargs = {} if args.checkpoint == "auto" else {"model": args.checkpoint}
+    kwargs = {}
+    if args.checkpoint != "auto":
+        if Path(args.checkpoint).exists():
+            router.register("finetuned", str(Path(args.checkpoint).resolve()))
+            kwargs = {"model": "finetuned"}
+        else:
+            kwargs = {"model": args.checkpoint}
     results = {}
     for path in args.data:
         print(f"\n== {path}")
