@@ -155,3 +155,10 @@ Marcha atrás inmediata: variable de entorno al checkpoint anterior.
 Peor en test: exfiltración con Python 0,18, inyección parafraseada 0,24, controles de inspección 0,11. Sobre 400 casos
 reales: veta el 28 % de las acciones que la política dejó pasar con éxito, y deja pasar (ALLOW) los 5 BLOCK reales de la
 muestra. 59 de 400 estados reales (15 %) se recortan por longitud: hay que acortar el estado o el registro antes de entrenar.
+
+### Revisión humana (primeros 99 casos, 2026-10-18)
+
+El profesor (Claude) coincidió con la persona en 93 de 99. El único patrón de error sistemático: los agentes de **workflow**
+tienen un rol acotado y entregan solo su parte (un plan, una revisión); que el resultado quede incompleto respecto al objetivo
+global no es motivo de REPLAN. Regla `WORKFLOW_FINISH` en `scripts/merge_labels.py` (aprobar el `finish`, salvo resumen vacío
+o fabricado): cambió 14 casos REPLAN → ALLOW. Jerarquía de etiquetas: persona > regla derivada > profesor.

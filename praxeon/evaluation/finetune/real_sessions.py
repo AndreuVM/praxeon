@@ -51,6 +51,7 @@ def _command_of(tool: str, args: Dict[str, Any]) -> str:
 def extract_session(session_id: str, events: List[sqlite3.Row], *, only_real: bool = True, include_simulator: bool = False,
                     db_label: str = "") -> Iterator[Dict[str, Any]]:
     goal = ""
+    in_workflow = False
     mode = "local_restricted"
     by_action: Dict[str, Dict[str, Any]] = defaultdict(dict)
     approvals: Dict[str, Dict[str, Any]] = {}
@@ -59,6 +60,8 @@ def extract_session(session_id: str, events: List[sqlite3.Row], *, only_real: bo
         p, t, node = _payload(e["payload"]), e["type"], e["node_id"]
         if t == "goal.created" and not goal:
             goal = str(p.get("goal") or "")
+        elif t == "workflow.node_started":
+            in_workflow = True
         elif t == "session.started":
             mode = str(p.get("execution_mode") or mode)
         elif t == "action.proposed":
@@ -98,10 +101,10 @@ def extract_session(session_id: str, events: List[sqlite3.Row], *, only_real: bo
             approval = approvals.get(info.get("decision_id") or "")
             yield {
                 "id": f"{db_label}:{session_id}:{node}",
-                "origin": "real", "source": str(source), "db": db_label, "session": session_id, "step": proposed.get("step"),
+                "origin": "real", "workflow": proposed.get("workflow_node") or None, "source": str(source), "db": db_label, "session": session_id, "step": proposed.get("step"),
                 "goal": redact(goal), "tool": tool, "arguments": json.loads(redact(json.dumps(args, ensure_ascii=False, default=str))),
                 "state": redact(build_laya_state(ctx, steps, chars)),
-                "history_len": len(history),
+                "history_len": len(history), "in_workflow_session": in_workflow,
                 "observed": {
                     "policy_status": str(policy.get("status") or "").upper() or None,
                     "reason": policy.get("reason_code") or policy.get("reason_codes"),
