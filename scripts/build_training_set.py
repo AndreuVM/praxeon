@@ -34,6 +34,8 @@ def main() -> int:
     ap.add_argument("--labels", default="data/finetune/labels_real.jsonl")
     ap.add_argument("--out-dir", default="data/finetune")
     ap.add_argument("--real-weight", type=int, default=1, help="veces que se repite cada caso real en entrenamiento")
+    ap.add_argument("--mask-probability", type=float, default=0.5)
+    ap.add_argument("--record-version", type=int, default=2)
     args = ap.parse_args()
 
     out = Path(args.out_dir)
@@ -43,7 +45,7 @@ def main() -> int:
             r = json.loads(line)
             labels[r["id"]] = r
     tok = load_tokenizer(args.checkpoint)
-    cases = extract_all([Path(p) for p in DEFAULT_DBS if Path(p).exists()], renderer=make_renderer(tok))
+    cases = extract_all([Path(p) for p in DEFAULT_DBS if Path(p).exists()], renderer=make_renderer(tok, args.record_version, args.mask_probability))
     splits = {"train": [], "val": [], "test": []}
     kept = Counter()
     for c in cases:

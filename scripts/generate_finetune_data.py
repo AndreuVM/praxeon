@@ -18,9 +18,11 @@ def main() -> int:
     ap.add_argument("--seed", type=int, default=7)
     ap.add_argument("--scale", type=float, default=1.0)
     ap.add_argument("--out-dir", default="data/finetune")
+    ap.add_argument("--mask-probability", type=float, default=0.5, help="1.0 = sin banderas del clasificador (ablación)")
+    ap.add_argument("--record-version", type=int, default=2, help="1 = sin procedencia «citada en lo leído antes» (ablación)")
     args = ap.parse_args()
 
-    rows = generate(args.seed, args.scale)
+    rows = generate(args.seed, args.scale, args.mask_probability, args.record_version)
     out = Path(args.out_dir)
     out.mkdir(parents=True, exist_ok=True)
     for split in ("train", "val", "test"):

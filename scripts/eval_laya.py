@@ -41,15 +41,23 @@ def ece(pairs, bins=10):
     return err
 
 
-def predict_all(router, rows, kwargs):
+def pred_from_result(res, ms=0.0):
+    prim = parse_answers(res)
+    return {"label": prim.choice["label"], "probs": prim.choice["probabilities"], "loop": prim.noul["is_loop"],
+            "grounded": prim.noul["is_grounded"], "score": prim.score,
+            "dropped": (res.get("usage") or {}).get("state_tokens_dropped", 0), "ms": ms}
+
+
+def predict_all(router, rows, kwargs, raw_path=None):
+    """Con `raw_path` (resultados crudos de `router.predict` guardados en otra máquina, p. ej. Colab) no carga el modelo."""
+    if raw_path is not None:
+        raw = json.loads(Path(raw_path).read_text(encoding="utf-8"))
+        return [pred_from_result(res) for res in raw]
     out = []
     for i, row in enumerate(rows):
         t0 = time.perf_counter()
         res = router.predict(row["state"], QUESTIONS, **kwargs)
-        prim = parse_answers(res)
-        out.append({"label": prim.choice["label"], "probs": prim.choice["probabilities"], "loop": prim.noul["is_loop"],
-                    "grounded": prim.noul["is_grounded"], "score": prim.score,
-                    "dropped": (res.get("usage") or {}).get("state_tokens_dropped", 0), "ms": (time.perf_counter() - t0) * 1000})
+        out.append(pred_from_result(res, (time.perf_counter() - t0) * 1000))
         if (i + 1) % 100 == 0:
             print(f"  {i + 1}/{len(rows)}", flush=True)
     return out
@@ -103,13 +111,16 @@ def main() -> int:
     ap.add_argument("--real-sample", type=int, default=400)
     ap.add_argument("--checkpoint", default="auto")
     ap.add_argument("--out", default="")
+    ap.add_argument("--raw-dir", default="", help="carpeta con <nombre del conjunto>.json (resultados crudos del router calculados en Colab)")
     args = ap.parse_args()
 
-    from laya import Router  # type: ignore
+    router = None
+    if not args.raw_dir:
+        from laya import Router  # type: ignore
 
-    router = Router(device=resolve_device("auto"))
+        router = Router(device=resolve_device("auto"))
     kwargs = {}
-    if args.checkpoint != "auto":
+    if args.checkpoint != "auto" and router is not None:
         if Path(args.checkpoint).exists():
             router.register("finetuned", str(Path(args.checkpoint).resolve()))
             kwargs = {"model": "finetuned"}
@@ -119,8 +130,9 @@ def main() -> int:
     for path in args.data:
         print(f"\n== {path}")
         rows = load([path])
-        results[path] = report_labelled(rows, predict_all(router, rows, kwargs))
-    if args.real and Path(args.real).exists():
+        raw = str(Path(args.raw_dir) / f"{Path(path).stem}.json") if args.raw_dir else None
+        results[path] = report_labelled(rows, predict_all(router, rows, kwargs, raw))
+    if args.real and Path(args.real).exists() and not args.raw_dir:
         import random
 
         real = load([args.real])
