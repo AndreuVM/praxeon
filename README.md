@@ -267,6 +267,7 @@ praxeon/
 │   ├── live_agent/               # Agente autónomo en vivo (multiproveedor) supervisado en tiempo real
 │   └── dashboard.py              # Monitor visual interactivo TUI en tiempo real
 ├── web/                          # Interfaz React (Vite); se compila a praxeon/server/static
+├── landing/                      # Página de presentación (HTML, CSS y JS sin dependencias)
 ├── docs/
 │   ├── FULL_ACCESS_POLICY.md     # Política de gobernanza del modo Full Access
 │   └── MCP_CLIENT.md             # PRAXEON como cliente MCP: alta, aprobación, seguridad

@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PRAXEON · Supervisión en tiempo real para agentes de IA</title>
+<meta name="description" content="El modelo propone, PRAXEON decide. Cada acción de un agente de IA se evalúa, se firma y se ejecuta en un sandbox solo si la política lo permite. Pruébalo gratis y sin claves de API.">
+<meta name="theme-color" content="#0b0e12">
+<meta property="og:title" content="PRAXEON · El modelo propone. El runtime decide.">
+<meta property="og:description" content="Supervisión formal en tiempo real para agentes de IA autónomos. Sandbox, aprobación humana y recibos firmados.">
+<meta property="og:type" content="website">
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="styles.css">
+<script>document.documentElement.classList.add('js')</script>
+</head>
+<body>
+<a class="skip" href="#probar">Ir a la instalación</a>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="logo" viewBox="0 0 417.66 62.04">
+    <rect x="0" y="0" width="14.60" height="62.04" fill="currentColor"/>
+    <path d="M21.89 0H32.84A19.16 19.16 0 0 1 32.84 38.32H21.89Z" fill="currentColor"/>
+    <path d="M82.68 50V11.78H95.78Q102.96 11.78 106.89 15.24Q110.81 18.69 110.81 24.62V25.45Q110.81 31.38 106.89 34.87Q102.96 38.35 95.78 38.35H90.06V50ZM96.41 18.17H90.06V31.95H96.41Q99.74 31.95 101.53 30.03Q103.32 28.11 103.32 25.04Q103.32 21.97 101.53 20.07Q99.74 18.17 96.41 18.17ZM129.38 50V11.78H143.47Q150.28 11.78 154.34 14.85Q158.39 17.91 158.39 24.15V25.04Q158.39 29.3 156.44 32.06Q154.49 34.81 151.06 36.11L161.2 50H152.57L143.62 37.31H143.47H136.76V50ZM144.25 18.07H136.76V31.33H144.25Q147.26 31.33 149.08 29.51Q150.9 27.69 150.9 24.73Q150.9 21.76 149.08 19.92Q147.26 18.07 144.25 18.07ZM175.55 50 188.5 12.04H200.56L213.88 50H206.28L202.8 39.91H186.26L182.94 50ZM188.34 33.67H200.67L195.42 18.23H193.49ZM227.71 50 240.81 30.19 228.85 12.04H237.07L245.28 24.78H246.38L254.54 12.04H262.44L250.28 30.45L263.59 50H255.42L245.86 35.75H244.76L235.61 50ZM281.37 50V12.04H304.36V18.28H288.6V27.59H303.42V33.83H288.6V43.76H304.77V50ZM342.32 50.99Q337.17 50.99 333.37 49.17Q329.58 47.35 327.11 44.41Q324.64 41.47 323.44 38.06Q322.24 34.66 322.24 31.49V30.34Q322.24 26.86 323.49 23.43Q324.74 19.99 327.26 17.16Q329.78 14.33 333.53 12.64Q337.27 10.95 342.32 10.95Q347.26 10.95 351.03 12.64Q354.8 14.33 357.29 17.16Q359.79 19.99 361.06 23.43Q362.34 26.86 362.34 30.34V31.49Q362.34 34.66 361.11 38.06Q359.89 41.47 357.42 44.41Q354.95 47.35 351.18 49.17Q347.41 50.99 342.32 50.99ZM342.32 44.12Q346.16 44.12 348.97 42.33Q351.78 40.53 353.31 37.52Q354.85 34.5 354.85 30.97Q354.85 27.22 353.31 24.23Q351.78 21.24 348.97 19.53Q346.16 17.81 342.32 17.81Q338.42 17.81 335.61 19.53Q332.8 21.24 331.27 24.23Q329.73 27.22 329.73 30.97Q329.73 34.5 331.24 37.52Q332.75 40.53 335.58 42.33Q338.42 44.12 342.32 44.12ZM381.94 50V12.04H394.06L410.02 43.86H410.7V12.04H417.66V50H405.5L389.53 18.17H388.8V50Z" fill="currentColor"/>
+  </symbol>
+  <symbol id="iso" viewBox="0 0 52 62.04">
+    <rect x="0" y="0" width="14.60" height="62.04" fill="currentColor"/>
+    <path d="M21.89 0H32.84A19.16 19.16 0 0 1 32.84 38.32H21.89Z" fill="currentColor"/>
+  </symbol>
+  <symbol id="gh" viewBox="0 0 24 24"><path fill="currentColor" d="M12 .5A11.5 11.5 0 0 0 .5 12c0 5.08 3.29 9.39 7.86 10.91.58.1.79-.25.79-.56v-2c-3.2.7-3.87-1.37-3.87-1.37-.52-1.33-1.28-1.69-1.28-1.69-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.83 1.19 3.09 0 4.42-2.69 5.39-5.25 5.68.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.79.56A11.5 11.5 0 0 0 23.5 12 11.5 11.5 0 0 0 12 .5Z"/></symbol>
+</svg>
+
+<header class="nav" id="nav">
+  <div class="wrap">
+    <a class="brand" href="#top" aria-label="PRAXEON, inicio"><svg viewBox="0 0 417.66 62.04" role="img" aria-hidden="true"><use href="#logo"/></svg></a>
+    <nav class="nav-links" aria-label="Secciones">
+      <a href="#como">Cómo funciona</a>
+      <a href="#producto">Producto</a>
+      <a href="#seguridad">Seguridad</a>
+      <a href="#probar">Probar</a>
+    </nav>
+    <a class="btn sm" href="https://github.com/AndreuVM/praxeon" target="_blank" rel="noopener"><svg><use href="#gh"/></svg>GitHub</a>
+  </div>
+</header>
+
+<main id="top">
+<!-- ===================== HERO ===================== -->
+<section class="hero" id="hero">
+  <div class="wrap hero-copy">
+    <span class="eyebrow"><i></i>Código abierto · v1.1 · funciona sin conexión</span>
+    <h1>El modelo propone.<br><em>PRAXEON</em> decide.</h1>
+    <p class="lead">Supervisión en tiempo real para agentes de IA. Cada acción se evalúa, se firma y se ejecuta en un sandbox, solo si la política lo permite.</p>
+    <div class="cta">
+      <a class="btn primary" href="#probar">Probar PRAXEON</a>
+      <a class="btn" href="https://github.com/AndreuVM/praxeon" target="_blank" rel="noopener"><svg><use href="#gh"/></svg>Ver en GitHub</a>
+    </div>
+    <p class="hero-note">Sin registro y sin claves de API: arranca con un simulador local. <code>praxeon app</code></p>
+  </div>
+
+  <div class="stage" id="stage" role="img" aria-label="Vista previa de la aplicación de PRAXEON: una conversación con un agente, una solicitud de aprobación, el detalle de una decisión con su recibo firmado y el mapa de decisiones.">
+    <div class="fit" id="fit">
+      <div class="scene" id="scene">
+
+        <div class="layer floor" aria-hidden="true"></div>
+
+        <!-- Ventana de la aplicación -->
+        <div class="layer window" aria-hidden="true">
+          <div class="w-rail">
+            <b style="color:var(--text)"><svg viewBox="0 0 52 62" style="fill:currentColor;stroke:none;width:12px;height:14px"><use href="#iso"/></svg></b>
+            <span class="sep"></span>
+            <b class="on"><svg viewBox="0 0 24 24"><path d="M3 12h4l3-7 4 14 3-7h4"/></svg></b>
+            <b><svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg></b>
+            <b><svg viewBox="0 0 24 24"><circle cx="6" cy="5" r="2"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="12" r="2"/><path d="M6 7v10M8 12h8"/></svg></b>
+            <b><svg viewBox="0 0 24 24"><rect x="4" y="8" width="16" height="11" rx="3"/><path d="M12 4v4M9 13h.01M15 13h.01"/></svg></b>
+            <b><svg viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/></svg></b>
+            <span class="sp"></span>
+            <b><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/></svg></b>
+          </div>
+          <div class="w-main">
+            <div class="w-top"><span class="dot run" id="wdot"></span><span class="t">Auditar el proyecto y ejecutar pytest</span><span class="chip">s-7f3a2c</span></div>
+            <div class="w-thread" id="thread">
+              <div class="bubble seq" data-t="400">Audita el proyecto y ejecuta pytest</div>
+              <div class="say seq" data-t="1500">Empiezo revisando la estructura de la suite de pruebas.</div>
+              <div class="step seq" data-t="2200"><span class="dot"></span><span class="nm"><span>Inspeccionar suite</span></span><span class="tl">read_file</span></div>
+              <div class="say seq" data-t="3500">Quiero una visión global, así que intento ejecutar toda la suite.</div>
+              <div class="step blocked seq" data-t="4300"><span class="dot bad"></span><span class="nm"><span>Ejecutar suite global</span><small>Bloqueado por política · ruta fuera del workspace</small></span><span class="tl">run_shell</span></div>
+              <div class="say seq" data-t="5800">La política lo bloqueó. Sigo con una ejecución acotada al sandbox.</div>
+              <div class="step seq" data-t="6600"><span class="dot"></span><span class="nm"><span>Validar suite</span></span><span class="tl">pytest</span></div>
+              <div class="say seq" data-t="8000">Misión completada: 0 regresiones. Cada paso tiene su recibo firmado.</div>
+            </div>
+            <div class="w-comp"><span class="dim">Escribe un mensaje o da una nueva misión…</span><div class="crow"><span>Simulado ▾</span><span>LAYA ▾</span><span>Local restringido ▾</span><span class="go">Enviar</span></div></div>
+          </div>
+        </div>
+
+        <!-- Detalle de decisión -->
+        <div class="layer card3d detail bob" aria-hidden="true">
+          <h4>Paso 3 · Validar suite</h4>
+          <span class="v">Permitido</span>
+          <div class="code">pytest tests/ -q</div>
+          <div class="kv"><span>Riesgo</span><span style="color:var(--ok)">Bajo · 0.15</span></div>
+          <div class="kv"><span>LAYA</span><span class="mono">0.88</span></div>
+          <div class="kv"><span>TypeSafe</span><span class="mono">0.82</span></div>
+          <div class="kv"><span>Recibo</span><span class="mono">4f1c…a9d2</span></div>
+        </div>
+
+        <!-- Aprobación humana -->
+        <div class="layer card3d approval bob" style="--d:-3s" aria-hidden="true">
+          <b>Necesita tu aprobación</b>
+          <p>Ejecutar <code>git push origin main</code> · riesgo alto · LAYA 0.34</p>
+          <div class="btns"><span class="b ring">Rechazar</span><span class="b main">Aprobar</span></div>
+        </div>
+
+        <!-- Mapa -->
+        <div class="layer card3d map bob" aria-hidden="true">
+          <h4>Mapa de decisiones</h4>
+          <svg viewBox="0 0 200 128">
+            <path class="e" d="M100 14 C100 26 100 26 100 34"/><path class="e" d="M100 52 C100 64 56 62 56 76"/><path class="e" d="M100 52 C100 64 146 62 146 76"/><path class="e" d="M146 94 C146 104 146 104 146 112"/>
+            <rect class="n" x="78" y="2" width="44" height="12" rx="6"/>
+            <rect class="n" x="66" y="34" width="68" height="18" rx="6"/>
+            <rect class="n x" x="20" y="76" width="72" height="18" rx="6" style="stroke:var(--bad)"/>
+            <rect class="n" x="110" y="76" width="72" height="18" rx="6"/>
+            <rect class="n s" x="110" y="112" width="72" height="16" rx="6"/>
+            <text x="86" y="11">Inicio</text><text x="74" y="46">1 Inspeccionar</text><text x="26" y="88">2 Suite global</text><text x="116" y="88">3 Aserciones</text><text x="116" y="123">4 Validar</text>
+          </svg>
+        </div>
+
+        <!-- Recibo firmado -->
+        <div class="layer card3d sig bob" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M9 12l2 2 4-4"/></svg>HMAC-SHA256 verificado</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== CÓMO FUNCIONA ===================== -->
+<section class="sec" id="como">
+  <div class="wrap">
+    <p class="kicker rv">Cómo funciona</p>
+    <h2 class="rv">Ninguna acción se ejecuta por sí sola.</h2>
+    <p class="sub rv">Los modelos de lenguaje proponen acciones con probabilidades, no con garantías. PRAXEON separa proponer de ejecutar y pone un runtime determinista en medio.</p>
+    <div class="flow">
+      <div class="rv"><span class="num">01</span><h3>Propone</h3><p>El agente sugiere una acción. No tiene autoridad sobre tu sistema y su propuesta no se ejecuta.</p><span class="tag">agente</span></div>
+      <div class="rv" style="--rd:.08s"><span class="num">02</span><h3>Evalúa</h3><p>Se comprueba la evidencia, se mide el riesgo y un supervisor semántico (LAYA o TypeSafe) emite su juicio.</p><span class="tag">evidencia · riesgo · juicio</span></div>
+      <div class="rv" style="--rd:.16s"><span class="num">03</span><h3>Decide</h3><p>Una política determinista permite, bloquea o te pide aprobación. Lo más estricto siempre gana.</p><span class="tag">permitir · bloquear · preguntar</span></div>
+      <div class="rv" style="--rd:.24s"><span class="num">04</span><h3>Ejecuta</h3><p>La acción corre confinada en un sandbox y deja un recibo firmado con HMAC-SHA256 que no se puede reutilizar.</p><span class="tag">sandbox · recibo</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== PRODUCTO ===================== -->
+<section class="sec" id="producto" style="padding-top:0">
+  <div class="wrap">
+    <p class="kicker rv">Lo que ves al trabajar</p>
+    <h2 class="rv">Una conversación, no un panel de control.</h2>
+
+    <div class="row">
+      <div class="copy rv">
+        <h3>Cada paso, con su razonamiento.</h3>
+        <p>El agente explica lo que intenta y el hilo muestra cada decisión como una tarjeta. Pulsas una y se abre el detalle completo: veredicto, evidencia, política y recibo.</p>
+        <ul><li>Bloqueos explicados en el momento</li><li>Mapa de decisiones y registro de eventos a un clic</li><li>Historial por sesión que sobrevive al reinicio</li></ul>
+      </div>
+      <div class="visual rv" style="--rd:.1s">
+        <div class="card3d" aria-hidden="true">
+          <div class="say" style="margin-bottom:10px">Quiero una visión global, así que intento ejecutar toda la suite.</div>
+          <div class="step blocked"><span class="dot bad"></span><span class="nm"><span>Ejecutar suite global</span><small>Bloqueado por política · ruta fuera del workspace</small></span><span class="tl">run_shell</span></div>
+          <div class="say" style="margin:14px 0 10px">La política lo bloqueó. Sigo con una ejecución acotada.</div>
+          <div class="step"><span class="dot"></span><span class="nm"><span>Validar suite</span></span><span class="tl">pytest</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="copy rv">
+        <h3>Tú tienes la última palabra.</h3>
+        <p>Cuando una política retiene una acción de riesgo, la solicitud aparece sobre el campo de texto, sin cambiar de pantalla. Aprobar es un clic. Rechazar exige un motivo y queda registrado.</p>
+        <ul><li>Una solicitud a la vez, con el detalle a mano</li><li>Etiqueta permanente si activas Full Access</li><li>Sin aprobación, nada que mute el sistema se ejecuta</li></ul>
+      </div>
+      <div class="visual rv" style="--rd:.1s">
+        <div class="card3d" aria-hidden="true">
+          <b style="font-weight:600;font-size:15px">Necesita tu aprobación</b>
+          <p style="color:var(--muted);margin:4px 0 16px;max-width:none">Ejecutar <code style="color:var(--text);font-size:12.5px">git push origin main</code> · riesgo alto · LAYA 0.34 · <u>Ver detalle</u></p>
+          <div style="display:flex;justify-content:flex-end;gap:8px"><span class="b ring">Rechazar</span><span class="b main">Aprobar</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="copy rv">
+        <h3>Todo queda firmado.</h3>
+        <p>Cada decisión genera un recibo que liga la acción y el estado del sistema con una firma HMAC. Un nonce de un solo uso impide reutilizarlo. Puedes auditar qué pasó y por qué.</p>
+        <ul><li>Hash de la acción y del estado</li><li>Capacidades con caducidad de 300 s</li><li>Registro auditable y reproducible</li></ul>
+      </div>
+      <div class="visual rv" style="--rd:.1s">
+        <div class="card3d" aria-hidden="true">
+          <div style="color:var(--ok);margin-bottom:6px">Firmado y verificado con HMAC</div>
+          <div class="kv"><span>Decisión</span><span class="mono">d_7f3a2c-4</span></div>
+          <div class="kv"><span>Acción</span><span class="mono">sha256:7e9b04fc…2d43</span></div>
+          <div class="kv"><span>Estado</span><span class="mono">sha256:4b81c201…9b02</span></div>
+          <div class="kv"><span>Nonce</span><span class="mono">89a01f7c</span></div>
+          <div class="kv"><span>Reutilización</span><span style="color:var(--ok)">Disponible, un solo uso</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== SEGURIDAD ===================== -->
+<section class="sec" id="seguridad" style="padding-top:0">
+  <div class="wrap">
+    <p class="kicker rv">Seguridad por diseño</p>
+    <h2 class="rv">Seis barreras que no dependen del modelo.</h2>
+    <p class="sub rv">Son reglas deterministas. Un modelo manipulado, confundido o simplemente equivocado no puede saltárselas.</p>
+    <div class="guards">
+      <div class="rv"><svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg><h3>Aislamiento del workspace</h3><p>Resolución canónica de rutas. Cualquier intento de salir de la carpeta del proyecto se veta.</p></div>
+      <div class="rv" style="--rd:.06s"><svg viewBox="0 0 24 24"><path d="M4 17l6-6-6-6M12 19h8"/></svg><h3>Comandos destructivos</h3><p>rm -rf, format, drop table y similares se interceptan antes de llegar al sistema.</p></div>
+      <div class="rv" style="--rd:.12s"><svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg><h3>Secretos protegidos</h3><p>Los archivos .env, claves y credenciales no se pueden modificar sin autorización.</p></div>
+      <div class="rv"><svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 11-3-6.7M21 4v5h-5"/></svg><h3>Anti-repetición</h3><p>Nonces de un solo uso con caducidad. Una capacidad ya consumida no vuelve a valer.</p></div>
+      <div class="rv" style="--rd:.06s"><svg viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M9 12l2 2 4-4"/></svg><h3>Recibos HMAC-SHA256</h3><p>Cada autorización queda firmada y ligada a la acción y al estado del sistema.</p></div>
+      <div class="rv" style="--rd:.12s"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 010 18M12 3a14 14 0 000 18"/></svg><h3>Salida de red controlada</h3><p>Barrera contra conexiones no autorizadas y contra consultas a metadatos de la nube.</p></div>
+    </div>
+
+    <div class="rv" style="margin-top:80px">
+      <p class="kicker">Compatible con tus modelos</p>
+      <p class="models">Ollama<i>·</i>Claude<i>·</i>OpenAI<i>·</i>Gemini<i>·</i>Groq<i>·</i>OpenRouter<i>·</i>servidores MCP</p>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== PROBAR ===================== -->
+<section class="sec" id="probar" style="padding-top:0">
+  <div class="wrap try">
+    <div class="rv">
+      <p class="kicker">Pruébalo</p>
+      <h2>En dos minutos, en tu equipo.</h2>
+      <p class="sub">Arranca con un simulador determinista: sin coste, sin registro y sin enviar nada fuera de tu máquina. Cuando quieras, conectas tu modelo.</p>
+      <ol>
+        <li><b>01</b><span>Clona el repositorio e instala.</span></li>
+        <li><b>02</b><span>Abre la aplicación de escritorio.</span></li>
+        <li><b>03</b><span>Dale una misión al agente y mira cómo decide PRAXEON.</span></li>
+      </ol>
+    </div>
+    <div class="term rv" style="--rd:.1s">
+      <div class="term-bar" role="tablist" aria-label="Forma de probar">
+        <button role="tab" aria-selected="true" data-tab="app">Aplicación</button>
+        <button role="tab" aria-selected="false" data-tab="demo">Demo en terminal</button>
+        <button class="copy" id="copy" type="button">Copiar</button>
+      </div>
+<pre id="code" data-app="git clone https://github.com/AndreuVM/praxeon.git
+cd praxeon
+pip install -e &quot;.[desktop]&quot;
+praxeon app" data-demo="git clone https://github.com/AndreuVM/praxeon.git
+cd praxeon
+pip install -e &quot;.[dev]&quot;
+python demo.py"><span class="c"># requiere Python 3.11 o superior</span>
+<span class="p">$ </span>git clone https://github.com/AndreuVM/praxeon.git
+<span class="p">$ </span>cd praxeon
+<span class="p">$ </span>pip install -e ".[desktop]"
+<span class="p">$ </span>praxeon app</pre>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== CTA FINAL ===================== -->
+<section class="final">
+  <div class="wrap rv">
+    <h2>Deja que el modelo proponga.</h2>
+    <p class="sub" style="margin-inline:auto">Tú decides qué se ejecuta.</p>
+    <div class="cta">
+      <a class="btn primary" href="#probar">Probar PRAXEON</a>
+      <a class="btn" href="https://github.com/AndreuVM/praxeon" target="_blank" rel="noopener"><svg><use href="#gh"/></svg>Ver en GitHub</a>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <a class="brand" href="#top" aria-label="PRAXEON"><svg viewBox="0 0 417.66 62.04" aria-hidden="true"><use href="#logo"/></svg></a>
+    <span>Runtime supervision for autonomous AI agents · MIT</span>
+    <nav aria-label="Enlaces">
+      <a href="https://github.com/AndreuVM/praxeon" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://github.com/AndreuVM/praxeon/blob/main/SECURITY.md" target="_blank" rel="noopener">Seguridad</a>
+      <a href="https://github.com/AndreuVM/praxeon/blob/main/docs/MCP_CLIENT.md" target="_blank" rel="noopener">Documentación MCP</a>
+      <a href="https://github.com/AndreuVM/praxeon/blob/main/CHANGELOG.md" target="_blank" rel="noopener">Cambios</a>
+    </nav>
+  </div>
+</footer>
+
+<script src="main.js"></script>
+</body>
+</html>
