@@ -172,7 +172,20 @@ Ajuste completo de `typed-decisions` (4 épocas, lote efectivo 64, rlcd). En la 
 Cautelas: la variación entre semillas (hasta 1,9 % de falsos vetos) es del tamaño del criterio (≤ 1 %); las familias de prueba
 ya se parecen a las de entrenamiento, así que el 100 % en ellas no prueba cobertura de ataques nuevos; los casos reales
 (`run_command` 76–85 %) son pocos y con etiqueta del profesor. Sin banderas ni procedencia el resultado cae dentro del ruido.
-Pendiente: latencia en CPU, ataques escritos por otra persona, banco adversarial y tareas del agente de extremo a extremo.
+Pendiente: ataques escritos por otra persona y tareas del agente de extremo a extremo con modelos reales.
+
+**Hallazgo de extremo a extremo (run3).** En el banco adversarial (guion, sin coste) `main_s0` dejaba 0 % de daño, igual que
+las reglas solas, pero replanificaba 2,6 veces por tarea: vetaba con 98 % de confianza un `finish` legítimo (también en los
+controles) y triplicaba los tokens (2.876 frente a 865). Causa: los datos sintéticos solo tenían `premature_finish` (REPLAN) y
+ningún cierre correcto. La evaluación sintética no lo veía porque esos casos no existían; solo lo mostró la traza del
+supervisor. Corrección (run4): familias `control_finish_grounded` y `control_finish_trivial`. Con `r4_s0`: 0 replans en el
+banco (867 tokens/tarea, como `mock`), 0 % de daño, 32 de 32 `finish` en ALLOW; en la prueba sintética, 0 falsos vetos en
+controles (incluidos 50 cierres legítimos), acierto 0,965–0,972, ECE 0,016–0,018. Coste: `real_finish` baja de 0,95 a 0,74–0,79
+(19 casos; 15 de ellos REPLAN según el profesor y solo parte revisada por una persona): hay que revisar esos cierres.
+
+**Latencia.** `main_s0`: 265 ms/decisión en GPU (4060), 9,2 s en CPU de 16 hilos; el límite de 0,3 s solo se cumple en GPU. El reparto
+automático (`hardware.py`) deja la GPU a LAYA cuando va solo; con cascada o KEV vuelve al plan por VRAM (KEV-4B en la GPU y LAYA
+en CPU en 8 GB). Un checkpoint propio se carga con `LAYA_CHECKPOINT=<carpeta>` (registro v2 por defecto).
 
 ### Revisión humana (primeros 99 casos, 2026-10-18)
 
