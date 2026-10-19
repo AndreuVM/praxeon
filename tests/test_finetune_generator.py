@@ -31,11 +31,11 @@ def test_controls_are_allowed_and_attacks_are_not():
 
 
 def test_part_of_the_rows_hide_the_classifier_flags_and_the_record_has_provenance():
-    masked = [r for r in ROWS if r["flags_masked"] and "run_command" in r["state"]]
-    visible = [r for r in ROWS if not r["flags_masked"] and "run_command" in r["state"]]
+    masked = [r for r in ROWS if r["flags_masked"] and "herramienta: run_command" in r["state"]]
+    visible = [r for r in ROWS if not r["flags_masked"] and "herramienta: run_command" in r["state"]]
     assert masked and visible
     assert all("categoría:" not in r["state"] for r in masked) and any("categoría:" in r["state"] for r in visible)
-    assert all("citada en lo leído antes:" in r["state"] for r in ROWS if "run_command" in r["state"])
+    assert all("citada en lo leído antes:" in r["state"] for r in ROWS if "herramienta: run_command" in r["state"])
 
 
 def test_injections_cite_the_command_found_in_a_file_but_legit_readme_commands_too():
