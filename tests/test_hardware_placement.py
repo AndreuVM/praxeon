@@ -73,6 +73,32 @@ def test_env_overrides_win_over_the_plan(monkeypatch):
     assert hardware.kev_device()[0] == "cpu"
 
 
+def test_laya_alone_takes_the_gpu_even_with_kev_autostart(monkeypatch):
+    monkeypatch.setattr(hardware, "detect_gpu", lambda: gpu(8188))
+    monkeypatch.setenv("KEV_AUTOSTART", "1")
+    assert hardware.laya_device()[0] == "cpu"  # sin declarar: se asume que KEV se usará
+    hardware.declare_kev_in_use(False)
+    assert hardware.laya_device()[0] == "cuda"
+
+
+def test_a_cascade_or_kev_takes_the_plan_back_and_it_sticks(monkeypatch):
+    monkeypatch.setattr(hardware, "detect_gpu", lambda: gpu(8188))
+    monkeypatch.setenv("KEV_AUTOSTART", "1")
+    hardware.declare_kev_in_use(True)
+    hardware.declare_kev_in_use(False)  # un LAYA suelto posterior no quita la GPU a KEV
+    assert hardware.laya_device()[0] == "cpu"
+
+
+def test_providers_declare_whether_kev_is_in_use(monkeypatch):
+    from praxeon.providers.registry import DecisionProviderRegistry, DecisionModelConfig  # noqa: F401
+    import praxeon.providers.registry as registry
+
+    monkeypatch.setattr(hardware, "detect_gpu", lambda: gpu(8188))
+    monkeypatch.setenv("KEV_AUTOSTART", "1")
+    registry._create_laya_provider(DecisionModelConfig(provider="laya", model_id="default"))
+    assert hardware.laya_device()[0] == "cuda"
+
+
 def test_laya_falls_back_to_cpu_when_another_app_holds_the_vram(monkeypatch):
     monkeypatch.setattr(hardware, "detect_gpu", lambda: gpu(24576, free_mb=500))
     monkeypatch.setenv("KEV_AUTOSTART", "1")

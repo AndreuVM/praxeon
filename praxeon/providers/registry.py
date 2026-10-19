@@ -206,7 +206,10 @@ def _create_replay_provider(config: DecisionModelConfig) -> DecisionProvider:
 
 
 def _create_laya_provider(config: DecisionModelConfig) -> DecisionProvider:
+    from praxeon.providers.hardware import declare_kev_in_use
     from praxeon.providers.laya import LayaProvider
+
+    declare_kev_in_use(False)  # no cambia nada si una cascada o KEV ya se declararon antes
 
     backend = config.backend or "auto"
     endpoint = config.endpoint or config.custom_params.get("endpoint_url")
@@ -237,7 +240,10 @@ def _create_typesafe_provider(config: DecisionModelConfig) -> DecisionProvider:
 
 
 def _create_kev_provider(config: DecisionModelConfig) -> DecisionProvider:
+    from praxeon.providers.hardware import declare_kev_in_use
     from praxeon.providers.kev import KevProvider
+
+    declare_kev_in_use(True)
 
     model = config.model_id if config.model_id and config.model_id not in ("default", "kev") else "kev-latest"
     return KevProvider(
@@ -323,10 +329,12 @@ def _build_cascade_level(reg: "DecisionProviderRegistry", level: str, raw: Any, 
 
 def _create_cascade_provider(config: DecisionModelConfig, reg: "DecisionProviderRegistry") -> DecisionProvider:
     """Cascada en dos niveles: el primero responde si su confianza supera el umbral; si no, escala al segundo."""
+    from praxeon.providers.hardware import declare_kev_in_use
     from praxeon.providers.router import ConfidenceAwareRouter, RoutingStrategy
 
     params = config.custom_params or {}
-    primary = _build_cascade_level(reg, "primary", params.get("primary"), DEFAULT_CASCADE_PRIMARY)
+    declare_kev_in_use(True)  # antes de crear los niveles: LAYA debe ver el reparto con KEV
+    primary =_build_cascade_level(reg, "primary", params.get("primary"), DEFAULT_CASCADE_PRIMARY)
     secondary = _build_cascade_level(reg, "secondary", params.get("secondary"), DEFAULT_CASCADE_SECONDARY)
     try:
         strategy = RoutingStrategy(params.get("strategy", RoutingStrategy.CASCADE_CONFIDENCE.value))

@@ -72,8 +72,25 @@ def estimate_kev_vram_mb(run: Optional[str]) -> int:
     return int(billions * KEV_MB_PER_BILLION + KEV_BASE_MB)
 
 
+_KEV_IN_USE: Optional[bool] = None  # None: nadie lo ha declarado; False: solo LAYA; True: KEV o cascada en uso (no se revierte)
+
+
+def declare_kev_in_use(in_use: bool) -> None:
+    """Los proveedores declaran si este proceso usa KEV. Solo LAYA (False) deja la GPU para LAYA aunque KEV_AUTOSTART esté activo.
+
+    «En uso» es permanente: una vez creada una cascada o un KEV, el reparto sigue el plan por hardware. «Solo LAYA» solo se
+    declara si nadie había declarado antes, para no quitarle la GPU a un KEV ya previsto.
+    """
+    global _KEV_IN_USE
+    if in_use:
+        _KEV_IN_USE = True
+    elif _KEV_IN_USE is None:
+        _KEV_IN_USE = False
+
+
 def _kev_wanted() -> bool:
-    return os.getenv("KEV_AUTOSTART", "").strip().lower() in ("1", "true", "yes")
+    autostart = os.getenv("KEV_AUTOSTART", "").strip().lower() in ("1", "true", "yes")
+    return autostart and _KEV_IN_USE is not False
 
 
 def plan_placement(

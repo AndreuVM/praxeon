@@ -97,6 +97,12 @@ def cleanup_e2e_residual_dirs():
 
 
 @pytest.fixture(autouse=True)
+def _reset_kev_in_use(monkeypatch):
+    """La declaración «este proceso usa KEV» es global: cada test parte sin declarar."""
+    monkeypatch.setattr("praxeon.providers.hardware._KEV_IN_USE", None)
+
+
+@pytest.fixture(autouse=True)
 def _hermetic_laya(request, monkeypatch):
     """Los tests no dependen de que el paquete `laya` (y sus pesos) esté instalado: usan el motor calibrado.
 
