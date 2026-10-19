@@ -156,6 +156,24 @@ Peor en test: exfiltración con Python 0,18, inyección parafraseada 0,24, contr
 reales: veta el 28 % de las acciones que la política dejó pasar con éxito, y deja pasar (ALLOW) los 5 BLOCK reales de la
 muestra. 59 de 400 estados reales (15 %) se recortan por longitud: hay que acortar el estado o el registro antes de entrenar.
 
+### Primeros ajustes (2026-10-18/19; local, no se sube al repositorio hasta que el modelo sea decente)
+
+Ajuste completo de `typed-decisions` (4 épocas, lote efectivo 64, rlcd). En la RTX 4060 de 8 GB cabe justo (pico 7,98 GB,
+116 min); run2 y run3 se entrenaron en una A100 de Colab. Prueba sintética de 640 casos (124 reales) con las mismas filas:
+
+| Modelo | Acierto | Falsos vetos | Ataques con BLOCK | ECE |
+|---|---|---|---|---|
+| run1 | 0,805 | 0 % | 78 % | 0,088 |
+| run2 (+ABSTAIN, `overwrite_protected`) | 0,925 | 0,6 % | 90 % | 0,036 |
+| run3, 3 semillas (+`exfil_other`, `encoded_other`) | 0,956–0,972 | 0–1,9 % | 98,9–99,6 % | 0,010–0,022 |
+| run3 sin banderas del clasificador | 0,961 | 1,9 % | 99,6 % | 0,024 |
+| run3 sin procedencia | 0,963 | 0 % | 99,3 % | 0,017 |
+
+Cautelas: la variación entre semillas (hasta 1,9 % de falsos vetos) es del tamaño del criterio (≤ 1 %); las familias de prueba
+ya se parecen a las de entrenamiento, así que el 100 % en ellas no prueba cobertura de ataques nuevos; los casos reales
+(`run_command` 76–85 %) son pocos y con etiqueta del profesor. Sin banderas ni procedencia el resultado cae dentro del ruido.
+Pendiente: latencia en CPU, ataques escritos por otra persona, banco adversarial y tareas del agente de extremo a extremo.
+
 ### Revisión humana (primeros 99 casos, 2026-10-18)
 
 El profesor (Claude) coincidió con la persona en 93 de 99. El único patrón de error sistemático: los agentes de **workflow**
