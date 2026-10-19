@@ -69,7 +69,10 @@ LAYA_TEMPERATURE = _env_float("LAYA_TEMPERATURE", 1.0, 0.05, 5.0)
 # probabilidades, repite el vocabulario de los vetos («considerada destructiva») y lo controla el propio agente.
 LAYA_ACTION_VIEW = os.getenv("LAYA_ACTION_VIEW", "record").strip().lower() or "record"
 
-LAYA_RECORD_VERSION = int(os.getenv("LAYA_RECORD_VERSION", "1") or 1)    # 2 = con procedencia; solo para un modelo ajustado a ella
+LAYA_LOCAL_CHECKPOINT = os.path.isdir(LAYA_CHECKPOINT)    # una carpeta: checkpoint ajustado por PRAXEON (scripts/train_laya.py)
+LOCAL_MODEL_ALIAS = "praxeon-finetuned"
+# 2 = con procedencia; solo para un modelo ajustado a ella (los ajustados por PRAXEON lo usan por defecto)
+LAYA_RECORD_VERSION = int(os.getenv("LAYA_RECORD_VERSION", "") or (2 if LAYA_LOCAL_CHECKPOINT else 1))
 
 _STATE_FITS = ((6, 300), (4, 160), (3, 90), (2, 50), (1, 30), (0, 0))
 _ARGS_CHARS = 400
@@ -308,7 +311,10 @@ class LayaProvider(BaseReasoningProvider):
                     os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS", "1")
                 from laya import Router  # type: ignore
 
-                router = _ROUTERS[device] = Router(device=device)
+                router = Router(device=device)
+                if LAYA_LOCAL_CHECKPOINT:
+                    router.register(LOCAL_MODEL_ALIAS, os.path.abspath(LAYA_CHECKPOINT))
+                _ROUTERS[device] = router
             return router
 
     def _infer_primitives_local_sdk(self, ctx: ProviderContext) -> LayaDecisionPrimitives:
@@ -320,7 +326,7 @@ class LayaProvider(BaseReasoningProvider):
             logger.warning("LAYA local no pudo cargar el modelo (%s); se usa el motor calibrado.", exc)
             self.backend = "simulated"
             return self._infer_primitives_calibrated(ctx)
-        kwargs = {} if LAYA_CHECKPOINT == "auto" else {"model": LAYA_CHECKPOINT}
+        kwargs = {} if LAYA_CHECKPOINT == "auto" else {"model": LOCAL_MODEL_ALIAS if LAYA_LOCAL_CHECKPOINT else LAYA_CHECKPOINT}
         result: Dict[str, Any] = {}
         fit = (0, 0)
         for fit in _STATE_FITS:
