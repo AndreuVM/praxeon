@@ -388,6 +388,8 @@ def test_laya_local_uses_the_laya_package_router(monkeypatch, state, action):
     from praxeon.providers import laya as laya_module
 
     monkeypatch.setattr(laya_module, "_laya_sdk_installed", lambda: True)
+    monkeypatch.setattr(laya_module, "LAYA_CHECKPOINT", "typed-decisions")      # el .env local puede apuntar a un checkpoint propio
+    monkeypatch.setattr(laya_module, "LAYA_LOCAL_CHECKPOINT", False)
     router = FakeLayaRouter()
     provider = laya_module.LayaProvider(backend="local")
     monkeypatch.setattr(provider, "_get_router", lambda: router)
