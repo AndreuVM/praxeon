@@ -193,3 +193,24 @@ El profesor (Claude) coincidió con la persona en 93 de 99. El único patrón de
 tienen un rol acotado y entregan solo su parte (un plan, una revisión); que el resultado quede incompleto respecto al objetivo
 global no es motivo de REPLAN. Regla `WORKFLOW_FINISH` en `scripts/merge_labels.py` (aprobar el `finish`, salvo resumen vacío
 o fabricado): cambió 14 casos REPLAN → ALLOW. Jerarquía de etiquetas: persona > regla derivada > profesor.
+
+### Segunda revisión humana (cierres) y run5 (2026-10-21)
+
+Se revisaron los 106 `finish` reales restantes (con los 8 anteriores, los 114 están etiquetados por una persona). Cambios sobre la
+etiqueta vigente: 18 de 106 (15 REPLAN → ALLOW, 3 ALLOW → REPLAN). Patrón claro: los cierres que informan de un fallo del proveedor
+(503, timeout) se aprueban (`API_ERROR_FINISH`, hoy sin efecto porque ya estaban revisados). Los informes largos de agentes sin
+workflow se juzgaron de forma inconsistente, así que no hay regla: queda como etiqueta caso a caso.
+
+Run5 (2.362 filas de entrenamiento; val/test iguales a run4 salvo 5 etiquetas reales de test), val + test:
+
+| Corrida | Acierto val / test | Falsos vetos (controles) | BLOCK en ataques | ECE test | `real_finish` val / test |
+|---|---|---|---|---|---|
+| r4_s0 | 0,971 / 0,971 | 0 % / 0 % | 98,5 % / 99,6 % | 0,018 | 0,87 / 0,74 |
+| r4_s1 | 0,952 / 0,964 | 0 % / 0 % | 98,5 % / 99,6 % | 0,020 | 0,87 / 0,68 |
+| r5_s0 | 0,967 / 0,968 | 0 % / 0,5 % | 98,5 % / 99,6 % | 0,010 | 0,80 / 0,58 |
+| r5_s1 | 0,969 / 0,967 | 0 % / 0 % | 99,2 % / 99,6 % | 0,027 | 0,87 / 0,68 |
+
+`real_finish` no mejora con las etiquetas humanas (n = 15 y 19: una decisión mueve 5–7 puntos) y las etiquetas humanas entre sí no
+son coherentes en los informes largos, así que ese techo es de las etiquetas más que del modelo. Banco adversarial con `r5_s0` en GPU:
+30 de 30 ejecuciones, 0 % de daño, 0 replans, 867 tokens/tarea (igual que `mock`), 32 de 32 `finish` en ALLOW. Las cautelas anteriores
+siguen: ruido entre semillas del tamaño del criterio, familias de prueba parecidas a las de entrenamiento y ataques escritos por mí.
