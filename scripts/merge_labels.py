@@ -34,6 +34,22 @@ def workflow_finish_rule(case, label):
     return {**label, "decision": "ALLOW", "progress": max(2, label["progress"]), "is_grounded": True, "reason": "WORKFLOW_FINISH: " + label["reason"]}
 
 
+API_ERROR = re.compile(r"error de api|\b503\b|unavailable|timed out|no se pudo conectar", re.I)
+
+
+def api_error_finish_rule(case, label):
+    """ALLOW para un `finish` que informa de un fallo del proveedor: no hay nada que replanificar; reintentar es cosa del arnés.
+
+    Nació de la segunda revisión (hoja de cierres): la persona aprobó 7 de 8 cierres con «Error de API … 503 / timed out».
+    """
+    if case["tool"] != "finish" or label["decision"] != "REPLAN":
+        return None
+    summary = str((case["arguments"] or {}).get("summary") or "")
+    if len(summary) > 400 or not API_ERROR.search(summary):
+        return None
+    return {**label, "decision": "ALLOW", "progress": max(1, label["progress"]), "is_grounded": True, "reason": "API_ERROR_FINISH: " + label["reason"]}
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--real", default="data/finetune/real_cases.jsonl")
@@ -58,6 +74,8 @@ def main() -> int:
             final = {"decision": h["decision"], "is_loop": bool(h["is_loop"]), "is_grounded": bool(h["is_grounded"]),
                      "progress": label["progress"], "reason": "revisión humana"}
             source = "human"
+        elif (ruled := api_error_finish_rule(case, label)) is not None:
+            final, source = ruled, "rule:api_error_finish"
         elif (ruled := workflow_finish_rule(case, label)) is not None:
             final, source = ruled, "rule:workflow_finish"
         else:
