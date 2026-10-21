@@ -38,13 +38,16 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--real", default="data/finetune/real_cases.jsonl")
     ap.add_argument("--teacher", default="data/finetune/teacher_real.jsonl")
-    ap.add_argument("--human", default="data/finetune/review_labels.json")
+    ap.add_argument("--human", nargs="*", default=["data/finetune/review_labels.json", "data/finetune/review_finish_labels.json"])
     ap.add_argument("--out", default="data/finetune/labels_real.jsonl")
     args = ap.parse_args()
 
     cases = {c["id"]: c for c in read(args.real)}
     teacher = {t["id"]: t["label"] for t in read(args.teacher) if "label" in t}
-    human = json.loads(Path(args.human).read_text(encoding="utf-8")) if Path(args.human).exists() else {}
+    human = {}
+    for path in args.human:                                  # varias hojas; la última gana si repiten un caso
+        if Path(path).exists():
+            human.update(json.loads(Path(path).read_text(encoding="utf-8")))
     rows, sources = [], Counter()
     for cid, label in teacher.items():
         case = cases.get(cid)

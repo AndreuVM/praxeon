@@ -24,13 +24,17 @@ def read(path):
     return [json.loads(line) for line in p.read_text(encoding="utf-8").splitlines() if line.strip()] if p.exists() else []
 
 
-def build_items(real, teacher, n, seed):
+def build_items(real, teacher, n, seed, tool=None, skip_ids=frozenset(), final_labels=None):
+    """`tool`: solo casos de esa herramienta. `skip_ids`: ya revisados. `final_labels`: id -> etiqueta vigente (muestra la que
+    entrenará el modelo en lugar de la del profesor, y prioriza los REPLAN)."""
     by_id = {t["id"]: t for t in teacher if "label" in t}
     items = []
     for r in real:
         t = by_id.get(r["id"])
-        if not t:
+        if not t or r["id"] in skip_ids or (tool and r["tool"] != tool):
             continue
+        if final_labels is not None:
+            t = {**t, "label": {**t["label"], "decision": final_labels[r["id"]]["decision"], "reason": final_labels[r["id"]].get("reason", t["label"]["reason"])}} if r["id"] in final_labels else t
         policy = POLICY_TO_DECISION.get(str(r["observed"]["policy_status"]), "ALLOW")
         teach = t["label"]["decision"]
         score = 0
@@ -42,7 +46,9 @@ def build_items(real, teacher, n, seed):
             score += 2                                         # clases raras
         if t["label"]["confidence"] < 0.6:
             score += 1
-        items.append({"id": r["id"], "score": score, "policy": policy, "teacher": teach, "teacher_reason": t["label"]["reason"],
+        if tool and teach == "REPLAN":
+            score += 4                                         # al revisar una herramienta, primero lo que se veta
+        items.append({"id": r["id"], "score": score, "workflow": bool(r.get("in_workflow_session") or r.get("workflow")), "policy": policy, "teacher": teach, "teacher_reason": t["label"]["reason"],
                       "teacher_conf": t["label"]["confidence"], "is_loop": t["label"]["is_loop"], "is_grounded": t["label"]["is_grounded"],
                       "progress": t["label"]["progress"], "goal": r["goal"], "tool": r["tool"], "arguments": r["arguments"],
                       "state": r["state"], "human": r["observed"].get("approved_by_human"), "success": r["observed"].get("success"),
@@ -50,6 +56,8 @@ def build_items(real, teacher, n, seed):
     rng = random.Random(seed)
     rng.shuffle(items)
     items.sort(key=lambda x: -x["score"])
+    if tool:
+        return items[:n]                                       # revisión de una herramienta: todos, en orden de prioridad
     top = items[: int(n * 0.8)]
     rest = items[int(n * 0.8):]
     top += rng.sample(rest, min(len(rest), n - len(top)))      # 20 % de coincidencias, para medir al profesor
@@ -79,7 +87,7 @@ button.sel{background:var(--acc);color:#fff;border-color:var(--acc)} button:focu
 <div id="card" class="card"></div>
 </main>
 <script>
-const ITEMS=__ITEMS__;let i=0;const KEY="laya-review-v1";
+const ITEMS=__ITEMS__;let i=0;const KEY="__KEY__";
 let ans={};try{ans=JSON.parse(localStorage.getItem(KEY)||"{}")}catch(e){}
 const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(ans))}catch(e){}};
 const $=s=>document.querySelector(s);const esc=s=>String(s).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
@@ -88,7 +96,7 @@ function render(){const it=ITEMS[i];const a=ans[it.id]||{};
 $("#pos").textContent=`${i+1} / ${ITEMS.length}`;$("#done").textContent=`revisados: ${Object.keys(ans).length}`;
 $("#card").innerHTML=`<div class="mut">Objetivo</div><div>${esc(it.goal)}</div>
 <div class="mut" style="margin-top:10px">Acción propuesta</div><div class="act">${esc(it.tool)} ${esc(JSON.stringify(it.arguments))}</div>
-<div class="chips" style="margin-top:8px"><span>política real: <b>${it.policy}</b></span><span>profesor: <b>${it.teacher}</b> (${it.teacher_conf})</span>${it.human===null?"":`<span>persona: ${it.human?"aprobó":"denegó"}</span>`}${it.success===null?"":`<span>ejecución: ${it.success?"ok":"falló"}</span>`}</div>
+<div class="chips" style="margin-top:8px">${it.workflow?"<span>agente de workflow</span>":""}<span>política real: <b>${it.policy}</b></span><span>profesor: <b>${it.teacher}</b> (${it.teacher_conf})</span>${it.human===null?"":`<span>persona: ${it.human?"aprobó":"denegó"}</span>`}${it.success===null?"":`<span>ejecución: ${it.success?"ok":"falló"}</span>`}</div>
 <div class="mut">Motivo del profesor</div><div>${esc(it.teacher_reason)}</div>
 <details style="margin-top:10px"><summary class="mut">Estado completo y resultado</summary><pre>${esc(it.state)}</pre><pre>${esc(it.output)}</pre></details>
 <div class="row">${Object.keys(LAB).map(k=>`<button data-k="${k}" class="${a.decision===k?"sel":""}">${LAB[k]}</button>`).join("")}</div>
@@ -98,7 +106,7 @@ document.querySelectorAll("[data-k]").forEach(b=>b.onclick=()=>set(b.dataset.k))
 function set(k){const it=ITEMS[i];ans[it.id]={decision:k,is_loop:$("#loop").checked,is_grounded:$("#gr").checked,teacher:it.teacher,policy:it.policy};save();if(i<ITEMS.length-1)i++;render();}
 const go=d=>{i=Math.max(0,Math.min(ITEMS.length-1,i+d));render()};
 $("#prev").onclick=()=>go(-1);$("#next").onclick=()=>go(1);
-$("#exp").onclick=()=>{const b=new Blob([JSON.stringify(ans,null,1)],{type:"application/json"});const u=URL.createObjectURL(b);const l=document.createElement("a");l.href=u;l.download="review_labels.json";l.click()};
+$("#exp").onclick=()=>{const b=new Blob([JSON.stringify(ans,null,1)],{type:"application/json"});const u=URL.createObjectURL(b);const l=document.createElement("a");l.href=u;l.download="__FILE__";l.click()};
 addEventListener("keydown",e=>{if(e.target.tagName==="INPUT")return;const m={a:"ALLOW",r:"REPLAN",b:"BLOCK",s:"ABSTAIN"}[e.key.toLowerCase()];if(m)set(m);else if(e.key==="ArrowRight")go(1);else if(e.key==="ArrowLeft")go(-1)});
 render();
 </script></html>"""
@@ -111,10 +119,17 @@ def main() -> int:
     ap.add_argument("--n", type=int, default=300)
     ap.add_argument("--seed", type=int, default=11)
     ap.add_argument("--out", default="data/finetune/review.html")
+    ap.add_argument("--tool", default=None, help="solo esta herramienta (p. ej. finish); muestra la etiqueta vigente y excluye lo ya revisado")
+    ap.add_argument("--reviewed", default="data/finetune/review_labels.json", help="JSON de revisiones previas cuyos ids se omiten")
+    ap.add_argument("--labels", default="data/finetune/labels_real.jsonl", help="etiquetas vigentes (se muestran en lugar de las del profesor)")
+    ap.add_argument("--key", default=None, help="clave de localStorage (distinta por hoja)")
     args = ap.parse_args()
-    items = build_items(read(args.real), read(args.teacher), args.n, args.seed)
+    skip = set(json.loads(Path(args.reviewed).read_text(encoding="utf-8"))) if args.tool and Path(args.reviewed).exists() else set()
+    final = {r["id"]: r for r in read(args.labels)} if args.tool else None
+    items = build_items(read(args.real), read(args.teacher), args.n, args.seed, args.tool, skip, final)
+    key = args.key or (f"laya-review-{args.tool}-v1" if args.tool else "laya-review-v1")
     data = json.dumps(items, ensure_ascii=False).replace("</", "<\\/")
-    Path(args.out).write_text(PAGE.replace("__ITEMS__", data), encoding="utf-8")
+    Path(args.out).write_text(PAGE.replace("__ITEMS__", data).replace("__KEY__", key).replace("__FILE__", f"review_{args.tool}_labels.json" if args.tool else "review_labels.json"), encoding="utf-8")
     print(f"{len(items)} casos -> {args.out}  (política distinta del profesor: {sum(i['policy'] != i['teacher'] for i in items)})")
     return 0
 
