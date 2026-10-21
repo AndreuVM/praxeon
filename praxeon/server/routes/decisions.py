@@ -18,6 +18,21 @@ from praxeon.server.schemas.decision import (
 router = APIRouter(prefix="/v1/decisions", tags=["Decisions"])
 
 
+def _operator_token(body_token: Optional[str], request: Optional[Request]) -> Optional[str]:
+    """Token de operador: el del cuerpo, `X-Operator-Token` o, si no, la propia credencial con la que se autenticó la petición.
+
+    La UI ya envía la clave maestra (`X-API-Key` / `Bearer`); el servidor la compara después con el secreto esperado
+    (`hmac.compare_digest`), así que reutilizarla no abre ningún camino nuevo: una clave incorrecta sigue sin verificar.
+    """
+    if body_token:
+        return body_token
+    if request is None:
+        return None
+    headers = request.headers
+    bearer = (headers.get("authorization") or "").removeprefix("Bearer ").strip()
+    return headers.get("x-operator-token") or headers.get("x-api-key") or bearer or None
+
+
 @router.get("", response_model=APIResponse[List[Dict[str, Any]]])
 def list_decisions(
     session_id: Optional[str] = None,
@@ -53,7 +68,7 @@ def confirm_decision(
 ):
     """Aprueba o deniega una decisión humana en estado REVIEW."""
     try:
-        op_token = req.operator_token or (request.headers.get("x-operator-token") if request else None)
+        op_token = _operator_token(req.operator_token, request)
         prof = None
         if request and hasattr(request, "app") and hasattr(request.app, "state"):
             prof = getattr(request.app.state, "security_profile", None)
@@ -100,7 +115,7 @@ def reject_decision(
 ):
     """Rechaza explícitamente una decisión en estado REVIEW con justificación obligatoria del operador."""
     try:
-        op_token = req.operator_token or (request.headers.get("x-operator-token") if request else None)
+        op_token = _operator_token(req.operator_token, request)
         prof = None
         if request and hasattr(request, "app") and hasattr(request.app, "state"):
             prof = getattr(request.app.state, "security_profile", None)

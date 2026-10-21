@@ -114,7 +114,8 @@ export async function authFetch(url, options = {}) {
 
   const res = await fetch(url, { ...options, headers });
 
-  if (res.status === 401 || res.status === 403) {
+  // 401 = credencial ausente o inválida. Un 403 con clave ya enviada es un permiso denegado (no se arregla pidiendo la clave otra vez).
+  if (res.status === 401 || (res.status === 403 && !key)) {
     if (typeof window !== 'undefined') {
       window.dispatchEvent(
         new CustomEvent('praxeon:unauthorized', {
