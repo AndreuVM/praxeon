@@ -41,6 +41,14 @@ COMPRESS_BATCH = 6
 MAX_CONSECUTIVE_FAILURES = max(3, int(os.getenv("PRAXEON_MAX_CONSECUTIVE_FAILURES", "6") or 6))
 
 
+def _llm_observation_limit() -> int:
+    """Caracteres de una observación que se entregan íntegros al LLM (`PRAXEON_LLM_OBSERVATION_CHARS`, 150.000 por defecto)."""
+    try:
+        return max(5_000, int(os.getenv("PRAXEON_LLM_OBSERVATION_CHARS", "") or 150_000))
+    except ValueError:
+        return 150_000
+
+
 def _missing_path_from_reasons(reason_codes: Optional[List[str]]) -> Optional[str]:
     for code in reason_codes or []:
         if str(code).startswith(_MISSING_PREFIX) and str(code).endswith(")"):
@@ -893,10 +901,11 @@ class MissionRuntimeMixin:
                 consecutive_failures = 0
                 active_parent_id = action_node_id
                 raw_obs = obs_output or "Acción ejecutada correctamente."
-                if len(raw_obs) > 50_000:
-                    keep_h = 35_000
-                    keep_t = 15_000
-                    omitted = len(raw_obs) - 50_000
+                obs_limit = _llm_observation_limit()
+                if len(raw_obs) > obs_limit:
+                    keep_h = obs_limit * 7 // 10
+                    keep_t = obs_limit - keep_h
+                    omitted = len(raw_obs) - obs_limit
                     llm_obs = f"{raw_obs[:keep_h]}\n\n[... Truncado: {omitted} caracteres intermedios omitidos por JEV para optimizar contexto del LLM ...]\n\n{raw_obs[-keep_t:]}"
                 else:
                     llm_obs = raw_obs

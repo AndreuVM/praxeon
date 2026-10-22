@@ -99,7 +99,7 @@ class SecurityConfig(BaseModel):
     """Políticas de privacidad, enmascaramiento de secretos y delimitación de confianza."""
     redact_secrets: bool = Field(default=True, description="Enmascarar tokens, credenciales y API keys")
     redact_pii: bool = Field(default=True, description="Enmascarar emails y direcciones IP sensibles")
-    max_payload_bytes: int = Field(default=100_000, description="Límite máximo de bytes por payload de herramienta")
+    max_payload_bytes: int = Field(default=1_000_000, description="Límite máximo de bytes por payload de herramienta")
     max_history_steps: int = Field(default=50, description="Número máximo de pasos retenidos en contexto")
     allow_custom_endpoints: bool = Field(
         default=False,

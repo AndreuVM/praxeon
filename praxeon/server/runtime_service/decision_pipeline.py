@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 import hmac
 import logging
 import os
+from praxeon.policy.sanitizer import payload_limit_from_env
 import re
 from typing import Any, Dict, List, Optional
 import uuid
@@ -1268,7 +1269,7 @@ class DecisionPipelineMixin:
                 event_type=EventType.OBSERVATION_RECORDED,
                 node_id=record["action_id"],
                 decision_id=decision_id,
-                payload={"output": observation.output[:100_000] if len(observation.output) > 100_000 else observation.output},
+                payload={"output": observation.output[:payload_limit_from_env()]},
             )
 
             # Si es finish o herramienta de conclusión de ciclo de vida

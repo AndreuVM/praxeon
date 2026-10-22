@@ -7,8 +7,9 @@ Implementa los requisitos de las Secciones 12 y 22 de la Auditoría Técnica:
 - Control y truncamiento seguro de payloads voluminosos
 """
 
+import os
 import re
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 # Patrones regex de secretos comunes
 SECRET_PATTERNS = [
@@ -38,13 +39,25 @@ SENSITIVE_KEY_NAMES = {
 }
 
 
+DEFAULT_MAX_PAYLOAD_BYTES = 1_000_000
+
+
+def payload_limit_from_env() -> int:
+    """Límite de bytes por salida de herramienta: `PRAXEON_MAX_PAYLOAD_BYTES` o 1 MB."""
+    try:
+        return max(1_000, int(os.getenv("PRAXEON_MAX_PAYLOAD_BYTES", "") or DEFAULT_MAX_PAYLOAD_BYTES))
+    except ValueError:
+        return DEFAULT_MAX_PAYLOAD_BYTES
+
+
 class DataSanitizer:
     """Sanitiza strings y diccionarios para evitar fugas de información sensible."""
 
-    def __init__(self, redact_secrets: bool = True, redact_pii: bool = True, max_payload_bytes: int = 100_000):
+    def __init__(self, redact_secrets: bool = True, redact_pii: bool = True, max_payload_bytes: Optional[int] = None):
         self.redact_secrets = redact_secrets
         self.redact_pii = redact_pii
-        self.max_payload_bytes = max_payload_bytes
+        # Un listado grande de un servidor MCP (p. ej. el árbol de un proyecto) pesa cientos de KB: con 100 KB quedaba cortado a mitad de JSON.
+        self.max_payload_bytes = max_payload_bytes if max_payload_bytes is not None else payload_limit_from_env()
 
     def redact_text(self, text: str) -> str:
         """Aplica sustitución regex de secretos y PII en un texto."""
@@ -93,7 +106,8 @@ class DataSanitizer:
             return content
 
         truncated_bytes = content_bytes[:self.max_payload_bytes]
-        return truncated_bytes.decode("utf-8", errors="ignore") + "\n... [PAYLOAD_TRUNCATED_DUE_TO_SIZE_LIMIT]"
+        return (truncated_bytes.decode("utf-8", errors="ignore")
+                + f"\n... [PAYLOAD_TRUNCATED_DUE_TO_SIZE_LIMIT] (se conservan {self.max_payload_bytes} de {len(content_bytes)} bytes)")
 
     @staticmethod
     def wrap_untrusted(content: str, source: str = "tool_output") -> str:
