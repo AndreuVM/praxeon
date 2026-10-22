@@ -9,6 +9,12 @@ import { deriveChatState } from '../utils/chatFromEvents';
 import { PROVIDERS, saveChoice, savedChoice } from '../utils/modelCatalog';
 import { Maximize2, Minimize2, Play, Pause, Square, Settings, AlertTriangle, Copy, Check } from 'lucide-react';
 
+/** Posición del último mensaje del asistente (-1 si no hay): los mensajes del operador pueden ir detrás. */
+function lastAssistantIndex(messages) {
+  for (let i = messages.length - 1; i >= 0; i--) if (messages[i].role === 'assistant') return i;
+  return -1;
+}
+
 export default function Conversation({
   session = {},
   isRunning = false,
@@ -213,10 +219,12 @@ export default function Conversation({
 
     queueMicrotask(() => {
       setMessages((prev) => {
-        const lastMsg = prev[prev.length - 1];
-        if (lastMsg && lastMsg.role === 'assistant' && (lastMsg.status === 'running' || isRunning)) {
+        // El mensaje del asistente en curso no tiene por qué ser el último: una aprobación o una intervención añade mensajes del operador detrás
+        const idx = lastAssistantIndex(prev);
+        const lastMsg = idx >= 0 ? prev[idx] : null;
+        if (lastMsg && (lastMsg.status === 'running' || isRunning)) {
           return [
-            ...prev.slice(0, -1),
+            ...prev.slice(0, idx),
             {
               ...lastMsg,
               thoughts: thoughts.length > 0 ? thoughts : lastMsg.thoughts,
@@ -226,6 +234,7 @@ export default function Conversation({
               status: session.status === 'Completed' || session.finalAnswer ? 'completed' : 'running',
               finalAnswer: session.finalAnswer || lastMsg.finalAnswer,
             },
+            ...prev.slice(idx + 1),
           ];
         }
         return prev;
@@ -238,15 +247,17 @@ export default function Conversation({
     if (session.status === 'Completed' || session.finalAnswer) {
       queueMicrotask(() => {
         setMessages((prev) => {
-          const lastMsg = prev[prev.length - 1];
-          if (lastMsg && lastMsg.role === 'assistant' && lastMsg.status !== 'completed') {
+          const idx = lastAssistantIndex(prev);
+          const lastMsg = idx >= 0 ? prev[idx] : null;
+          if (lastMsg && lastMsg.status !== 'completed') {
             return [
-              ...prev.slice(0, -1),
+              ...prev.slice(0, idx),
               {
                 ...lastMsg,
                 status: 'completed',
                 finalAnswer: session.finalAnswer || lastMsg.finalAnswer || 'Misión completada satisfactoriamente bajo la supervisión de PRAXEON.',
               },
+              ...prev.slice(idx + 1),
             ];
           }
           return prev;
