@@ -1,6 +1,8 @@
 import React, { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { X, Save, Eye, Code2 } from 'lucide-react';
 import Markdown from '../Markdown';
+import { fetchWorkspace } from '../../services/api';
+import { notify } from '../Dialogs';
 import { readWorkspaceFile, saveWorkspaceFile, fetchWorkspaceBlob } from '../../services/workspaceFiles';
 
 // Monaco va en su propio chunk (code splitting, AUDIT-P2): solo se descarga al abrir un archivo.
@@ -71,6 +73,25 @@ export default function FileViewer({ openRequest = null }) {
   useEffect(() => {
     if (openRequest?.path) open(openRequest.path);
   }, [openRequest, open]);
+
+  // Al cambiar de workspace las pestañas abiertas dejan de corresponder a él: guardar una de ellas escribiría la misma ruta
+  // relativa en el workspace nuevo. Se cierran todas y se avisa de lo que no estaba guardado (FE-002 ↔ FE-003).
+  const workspacePathRef = useRef(null);
+  useEffect(() => {
+    let alive = true;
+    fetchWorkspace().then((w) => { if (alive && workspacePathRef.current === null) workspacePathRef.current = w?.path ?? ''; }).catch(() => {});
+    const onChange = (e) => {
+      const next = e.detail?.path;
+      if (next === undefined || workspacePathRef.current === null || next === workspacePathRef.current) return;
+      workspacePathRef.current = next;
+      const unsaved = tabsRef.current.filter((t) => t.kind === 'text' && t.content !== t.original).length;
+      setTabs([]);
+      setActivePath(null);
+      if (unsaved) notify(`Se cerraron ${unsaved} archivo${unsaved === 1 ? '' : 's'} con cambios sin guardar al cambiar de workspace.`);
+    };
+    window.addEventListener('praxeon:workspace-changed', onChange);
+    return () => { alive = false; window.removeEventListener('praxeon:workspace-changed', onChange); };
+  }, []);
 
   const save = useCallback(async (force = false) => {
     const tab = tabsRef.current.find((t) => t.path === activeRef.current);

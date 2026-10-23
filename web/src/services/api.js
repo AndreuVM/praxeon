@@ -787,3 +787,21 @@ export const restartMcpServer = (name) => mcpCall(`/servers/${enc(name)}/restart
 export const approveMcpServer = (name, toolsHash) => mcpCall(`/servers/${enc(name)}/approve`, jsonBody('POST', { tools_hash: toolsHash }));
 export const setMcpToolOverride = (name, tool, override) =>
   mcpCall(`/servers/${enc(name)}/tools/${enc(tool)}`, jsonBody('PUT', override));
+
+// ---------------------------------------------------------------- skills (SKILL.md)
+async function skillsCall(path, options) {
+  const res = await authFetch(`${API_BASE}/skills${path}`, options);
+  if (!res.ok) {
+    let detail = `HTTP ${res.status}`;
+    try {
+      const body = await res.json();
+      detail = typeof body.detail === 'string' ? body.detail : JSON.stringify(body.detail || body);
+    } catch { /* cuerpo no JSON */ }
+    throw new Error(detail);
+  }
+  return (await res.json()).data;
+}
+
+export const fetchSkills = () => skillsCall('');
+export const fetchSkill = (name) => skillsCall(`/${encodeURIComponent(name)}`);
+export const setSkillEnabled = (name, enabled) => skillsCall(`/${encodeURIComponent(name)}/${enabled ? 'enable' : 'disable'}`, { method: 'POST' });

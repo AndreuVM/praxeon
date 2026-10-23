@@ -27,6 +27,8 @@ const DecisionsView = React.lazy(() => import('./components/views/DecisionsView'
 const AgentsView = React.lazy(() => import('./components/views/AgentsView'));
 const ProvidersView = React.lazy(() => import('./components/views/ProvidersView'));
 const McpView = React.lazy(() => import('./components/views/McpView'));
+const FilesView = React.lazy(() => import('./components/views/FilesView'));
+const SkillsView = React.lazy(() => import('./components/views/SkillsView'));
 const SecurityView = React.lazy(() => import('./components/views/SecurityView'));
 const SettingsView = React.lazy(() => import('./components/views/SettingsView'));
 const WorkflowsView = React.lazy(() => import('./components/views/WorkflowsView'));
@@ -1662,6 +1664,10 @@ export default function App() {
               {activeNav === 'providers' && <ProvidersView />}
 
               {activeNav === 'mcp' && <McpView />}
+
+              {activeNav === 'files' && <FilesView workspace={workspace} />}
+
+              {activeNav === 'skills' && <SkillsView />}
 
               {activeNav === 'security' && (
                 <SecurityView

@@ -476,6 +476,15 @@ class MissionRuntimeMixin:
                     mcp_section = ""
                 if mcp_section:
                     system_prompt = system_prompt + "\n\n" + mcp_section
+            skills = getattr(self, "skills", None)
+            if skills is not None:
+                try:
+                    skills_section = skills.prompt_section(ws_root)
+                except Exception as skill_err:   # una skill rota nunca debe impedir la misión
+                    logger.warning("No se pudieron preparar las skills: %s", skill_err)
+                    skills_section = ""
+                if skills_section:
+                    system_prompt = system_prompt + "\n\n" + skills_section
 
         step_records: List[Dict[str, Any]] = []
         forced_termination = False

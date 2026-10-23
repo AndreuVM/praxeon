@@ -18,7 +18,7 @@ def ws(tmp_path, monkeypatch):
     root = tmp_path / "ws"
     root.mkdir()
     (root / "src").mkdir()
-    (root / "src" / "main.py").write_text("print('hola')\n", encoding="utf-8")
+    (root / "src" / "main.py").write_bytes(b"print('hola')\n")   # bytes: write_text traduciría \n a \r\n en Windows
     (root / "README.md").write_text("# Titulo\n", encoding="utf-8")
     (root / ".git").mkdir()
     (root / "node_modules").mkdir()

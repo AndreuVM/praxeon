@@ -26,6 +26,7 @@ from praxeon.domain.models import (
     Goal,
 )
 from praxeon.policy.engine import PolicyEngine
+from praxeon.skills import SkillStore
 from praxeon.integrations.mcp_client import McpConfigStore, McpManager
 from praxeon.policy.registry import ToolRegistry
 from praxeon.providers.base import BaseReasoningProvider
@@ -134,6 +135,8 @@ class RuntimeApplicationService(DecisionPipelineMixin, MissionRuntimeMixin):
         )
         # Herramientas de servidores MCP: se registran en el mismo ToolRegistry/Executor que las nativas
         self.mcp = McpManager(McpConfigStore(), self.registry, self.executor)
+        # Skills (SKILL.md) habilitadas por el operador: sus instrucciones se añaden al prompt de las misiones
+        self.skills = SkillStore()
         self.risk_engine = RiskEngine(registry=self.registry)
         self.command_classifier = CommandClassifier()
         self.evidence_engine = EvidenceEngine()

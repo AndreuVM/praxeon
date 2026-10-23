@@ -12,6 +12,7 @@ import {
   Settings,
   FolderOpen,
   Search,
+  Sparkles,
   UserRound,
 } from 'lucide-react';
 
@@ -25,6 +26,7 @@ export const NAV_ITEMS = [
   { id: 'workflows', label: 'Flujos', icon: Workflow },
   { id: 'providers', label: 'Proveedores', icon: Cpu },
   { id: 'mcp', label: 'Herramientas (MCP)', icon: Plug },
+  { id: 'skills', label: 'Skills', icon: Sparkles },
   { id: 'security', label: 'Seguridad', icon: Shield },
   { id: 'settings', label: 'Ajustes', icon: Settings },
 ];
