@@ -758,8 +758,10 @@ export default function App() {
             });
             // El finish de un nodo de workflow (ids «nodo_iN_act_M») no cierra la misión: es un hito del nodo
             const isWorkflowStep = /_i\d+_act_\d+$/.test(actId || '');
-            if (!isWorkflowStep && output && (output.includes('Tarea concluida:') || output.includes('conclu') || output.includes('finaliz'))) {
-              const cleanAnswer = output.replace('Tarea concluida:', '').trim();
+            // Solo el cierre explícito del agente («Tarea concluida: …», lo que devuelve `finish`) es la respuesta de la misión:
+            // buscar «conclu»/«finaliz» en cualquier salida tomaba por respuesta el contenido de un archivo leído.
+            if (!isWorkflowStep && /^\s*Tarea concluida:/.test(output)) {
+              const cleanAnswer = output.replace(/^\s*Tarea concluida:/, '').trim();
               setSession((prevSess) => ({
                 ...prevSess,
                 status: 'Completed',
