@@ -48,6 +48,14 @@ export const renameWorkspaceEntry = (relPath, newPath) =>
 /** Elimina un archivo o una carpeta con todo su contenido. */
 export const deleteWorkspaceEntry = (relPath) => call(`/entry?path=${encodeURIComponent(relPath)}`, { method: 'DELETE' });
 
+/** Sube un archivo (File/Blob) a `relPath` creando las carpetas que falten. 409 si existe y no se pide `overwrite`. */
+export const uploadWorkspaceFile = (relPath, file, overwrite = false) =>
+  call(`/upload?path=${encodeURIComponent(relPath)}&overwrite=${overwrite}`, {
+    method: 'POST',
+    headers: { 'Content-Type': file.type || 'application/octet-stream' },
+    body: file,
+  });
+
 /** Descarga los bytes (PDF, imágenes) como Blob para previsualizar sin exponer la API key en la URL. */
 export async function fetchWorkspaceBlob(relPath) {
   const res = await authFetch(`${BASE}/file/raw?path=${encodeURIComponent(relPath)}`);

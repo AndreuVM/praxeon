@@ -5,6 +5,7 @@ import {
   createWorkspaceEntry,
   renameWorkspaceEntry,
   deleteWorkspaceEntry,
+  uploadWorkspaceFile,
 } from '../../services/workspaceFiles';
 import { confirmDialog, notify } from '../Dialogs';
 
@@ -13,6 +14,44 @@ const iconBtn = { background: 'none', border: 0, color: 'inherit', cursor: 'poin
 
 const parentOf = (p) => (p.includes('/') ? p.slice(0, p.lastIndexOf('/')) : '');
 const joinPath = (dir, name) => (dir ? `${dir}/${name}` : name);
+
+const hasFiles = (e) => Array.from(e.dataTransfer?.types || []).includes('Files');
+
+const readFile = (entry) => new Promise((resolve, reject) => entry.file(resolve, reject));
+const readAll = async (reader) => {
+  const all = [];
+  for (;;) {
+    const batch = await new Promise((resolve, reject) => reader.readEntries(resolve, reject));
+    if (!batch.length) return all;
+    all.push(...batch);
+  }
+};
+
+/** Recorre lo soltado (archivos y carpetas, con su contenido) y lo devuelve como lista plana con rutas relativas. */
+async function walk(entry, prefix, out) {
+  const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
+  if (entry.isFile) {
+    out.push({ kind: 'file', rel, file: await readFile(entry) });
+    return;
+  }
+  const children = await readAll(entry.createReader());
+  if (!children.length) out.push({ kind: 'dir', rel });          // las carpetas vacías también se crean
+  for (const child of children) await walk(child, rel, out);
+}
+
+/** Debe llamarse dentro del evento `drop`: pasado el evento el navegador vacía `dataTransfer.items`. */
+function grabDropped(dt) {
+  const entries = Array.from(dt.items || []).filter((i) => i.kind === 'file').map((i) => (i.webkitGetAsEntry ? i.webkitGetAsEntry() : null));
+  if (entries.length && entries.every(Boolean)) return { entries, files: null };
+  return { entries: null, files: Array.from(dt.files || []) };   // navegadores sin webkitGetAsEntry: solo archivos sueltos
+}
+
+async function listDropped({ entries, files }) {
+  if (files) return files.map((file) => ({ kind: 'file', rel: file.name, file }));
+  const out = [];
+  for (const entry of entries) await walk(entry, '', out);
+  return out;
+}
 
 /** Avisa a otros componentes (el editor) de que una entrada cambió de sitio o ya no existe. */
 function announce(detail) {
@@ -65,7 +104,8 @@ function Node({ entry, depth, selectedPath, onOpenFile, reloadKey, ctx }) {
   const [hover, setHover] = useState(false);
   const [state, setState] = useState({ loading: false, error: null, entries: null, truncated: false });
   const isDir = entry.type === 'dir';
-  const { creating, renaming, startCreate, startRename, commitCreate, commitRename, cancel, remove, focusDir } = ctx;
+  const { creating, renaming, startCreate, startRename, commitCreate, commitRename, cancel, remove, focusDir, dragDir, setDragDir, drop } = ctx;
+  const dropDir = isDir ? entry.rel_path : parentOf(entry.rel_path);
 
   const load = useCallback(async () => {
     setState((s) => ({ ...s, loading: true, error: null }));
@@ -121,8 +161,10 @@ function Node({ entry, depth, selectedPath, onOpenFile, reloadKey, ctx }) {
           aria-expanded={isDir ? open : undefined}
           aria-selected={selected}
           tabIndex={0}
-          style={{ ...ROW, paddingLeft: 8 + depth * 14, background: selected ? 'var(--hover, rgba(127,127,127,.18))' : 'transparent' }}
+          style={{ ...ROW, paddingLeft: 8 + depth * 14, background: dragDir === dropDir && isDir ? 'rgba(110,160,255,.22)' : selected ? 'var(--hover, rgba(127,127,127,.18))' : 'transparent' }}
           onClick={toggle}
+          onDragOver={(e) => { if (hasFiles(e)) { e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = 'copy'; if (dragDir !== dropDir) setDragDir(dropDir); } }}
+          onDrop={(e) => { if (hasFiles(e)) { e.preventDefault(); e.stopPropagation(); drop(e, dropDir); } }}
           onMouseEnter={() => setHover(true)}
           onMouseLeave={() => setHover(false)}
           onFocus={() => setHover(true)}
@@ -190,6 +232,8 @@ export default function FileTree({ selectedPath = null, onOpenFile, workspaceNam
   const [creating, setCreating] = useState(null);   // { dir, kind }
   const [renaming, setRenaming] = useState(null);   // rel_path
   const [currentDir, setCurrentDir] = useState(''); // carpeta donde crean los botones de la cabecera
+  const [dragDir, setDragDir] = useState(null);     // carpeta que se resalta al arrastrar archivos encima ('' = raíz)
+  const [uploading, setUploading] = useState(null); // { done, total } mientras se suben archivos
 
   const loadRoot = useCallback(async () => {
     setRoot((r) => ({ ...r, loading: true, error: null }));
@@ -225,7 +269,58 @@ export default function FileTree({ selectedPath = null, onOpenFile, workspaceNam
 
   const fail = (err) => notify(err.message || 'No se pudo completar la operación.');
 
+  const upload = async (grabbed, dir) => {
+    let items;
+    try {
+      items = await listDropped(grabbed);
+    } catch (err) {
+      fail(err);
+      return;
+    }
+    if (!items.length) return;
+    const total = items.length;
+    const failures = [];
+    const conflicts = [];
+    let done = 0;
+    setUploading({ done, total });
+    for (const item of items) {
+      const path = joinPath(dir, item.rel);
+      try {
+        if (item.kind === 'dir') await createWorkspaceEntry(path, 'dir');
+        else await uploadWorkspaceFile(path, item.file, false);
+      } catch (err) {
+        if (err.status === 409 && item.kind === 'file') conflicts.push(item);
+        else if (!(err.status === 409 && item.kind === 'dir')) failures.push(`${item.rel}: ${err.message}`);
+      }
+      done += 1;
+      setUploading({ done, total });
+    }
+    if (conflicts.length) {
+      const names = conflicts.slice(0, 3).map((c) => `«${c.rel}»`).join(', ') + (conflicts.length > 3 ? ` y ${conflicts.length - 3} más` : '');
+      const replace = await confirmDialog(`${conflicts.length === 1 ? 'Ya existe' : 'Ya existen'} ${names} en el destino. ¿Reemplazar${conflicts.length === 1 ? 'lo' : 'los'}?`, { confirmLabel: 'Reemplazar', danger: true });
+      if (replace) {
+        for (const item of conflicts) {
+          try {
+            await uploadWorkspaceFile(joinPath(dir, item.rel), item.file, true);
+          } catch (err) {
+            failures.push(`${item.rel}: ${err.message}`);
+          }
+        }
+      }
+    }
+    setUploading(null);
+    refresh();
+    if (failures.length) fail(new Error(`No se pudo subir: ${failures.slice(0, 3).join(' · ')}${failures.length > 3 ? ` (y ${failures.length - 3} más)` : ''}`));
+  };
+
   const ctx = {
+    dragDir,
+    setDragDir,
+    drop: (e, dir) => {
+      const grabbed = grabDropped(e.dataTransfer);     // síncrono: dentro del evento
+      setDragDir(null);
+      upload(grabbed, dir);
+    },
     creating,
     renaming,
     focusDir: setCurrentDir,
@@ -290,7 +385,14 @@ export default function FileTree({ selectedPath = null, onOpenFile, workspaceNam
           <button type="button" aria-label="Actualizar árbol" title="Actualizar" onClick={refresh} style={iconBtn}><RefreshCw size={13} /></button>
         </span>
       </div>
-      <div role="tree" style={{ flex: 1, overflowY: 'auto' }}>
+      {uploading && <div role="status" style={{ padding: '2px 10px 6px', fontSize: 12, color: 'var(--muted)' }}>Subiendo {uploading.done}/{uploading.total}…</div>}
+      <div
+        role="tree"
+        style={{ flex: 1, overflowY: 'auto', outline: dragDir === '' ? '2px dashed rgba(110,160,255,.7)' : 'none', outlineOffset: -2 }}
+        onDragOver={(e) => { if (hasFiles(e)) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; if (dragDir !== '') setDragDir(''); } }}
+        onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setDragDir(null); }}
+        onDrop={(e) => { if (hasFiles(e)) { e.preventDefault(); ctx.drop(e, ''); } }}
+      >
         {creatingAtRoot && (
           <NameInput depth={-1} icon={creating.kind === 'dir' ? Folder : File} onSubmit={(name) => ctx.commitCreate(name)} onCancel={cancel} />
         )}

@@ -14,13 +14,14 @@ import os
 import shutil
 import tempfile
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterable, List, Optional
 
 from praxeon import workspace_store
 
 MAX_TREE_ENTRIES = 1000
 MAX_TEXT_BYTES = 2 * 1024 * 1024
 MAX_BINARY_BYTES = 25 * 1024 * 1024
+MAX_UPLOAD_BYTES = 100 * 1024 * 1024
 IGNORED_DIRS = {".git", "node_modules", ".venv", "venv", "__pycache__", "dist", ".mypy_cache", ".pytest_cache"}
 
 
@@ -316,3 +317,33 @@ def rename_entry(rel_path: str, new_rel_path: str) -> Dict[str, Any]:
         raise WorkspaceFileNotFound("La carpeta de destino no existe.")
     os.rename(source, dest)
     return {"rel_path": _rel(dest, root), "old_rel_path": _rel(source, root)}
+
+
+def save_upload(rel_path: str, chunks: Iterable[bytes], overwrite: bool = False, max_bytes: int = MAX_UPLOAD_BYTES) -> Dict[str, Any]:
+    """Guarda un archivo subido (arrastrar y soltar) en `rel_path`, creando las carpetas intermedias dentro del workspace.
+
+    Escribe en un temporal y lo renombra al terminar: un corte a mitad de subida nunca deja un archivo a medias.
+    WorkspaceExists si ya existe y no se pidió sobrescribir; WorkspaceTooLarge si supera `max_bytes`.
+    """
+    root = workspace_root()
+    target = _entry_path(rel_path, root)
+    exists = os.path.lexists(target)
+    if exists and not overwrite:
+        raise WorkspaceExists("Ya existe un archivo o carpeta con ese nombre.")
+    if exists and (target.is_dir() or target.is_symlink()):
+        raise WorkspacePathError("No se puede sobrescribir una carpeta ni un enlace simbólico.")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(dir=str(target.parent), prefix=".praxeon-", suffix=".upload")
+    size = 0
+    try:
+        with os.fdopen(fd, "wb") as fh:
+            for chunk in chunks:
+                size += len(chunk)
+                if size > max_bytes:
+                    raise WorkspaceTooLarge(f"El archivo supera el límite de {max_bytes // (1024 * 1024)} MB.")
+                fh.write(chunk)
+        os.replace(tmp_name, target)
+    finally:
+        if os.path.exists(tmp_name):
+            os.unlink(tmp_name)
+    return {"rel_path": _rel(target, root), "size": size, "replaced": exists}

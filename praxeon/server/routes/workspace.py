@@ -2,7 +2,7 @@
 
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
@@ -173,3 +173,18 @@ def rename_workspace_entry(req: RenameEntryRequest):
 def delete_workspace_entry(path: str):
     """Elimina un archivo o una carpeta con todo su contenido. No se puede deshacer."""
     return _manage(workspace_files.delete_entry, path)
+
+
+@router.post("/upload", response_model=APIResponse[Dict[str, Any]], status_code=status.HTTP_201_CREATED)
+async def upload_workspace_file(request: Request, path: str, overwrite: bool = False):
+    """Sube un archivo (cuerpo = bytes en bruto) a `path`, creando las carpetas que falten. 409 si existe y no se sobrescribe."""
+    declared = request.headers.get("content-length")
+    if declared and declared.isdigit() and int(declared) > workspace_files.MAX_UPLOAD_BYTES:
+        raise _http_error(workspace_files.WorkspaceTooLarge(f"El archivo supera el límite de {workspace_files.MAX_UPLOAD_BYTES // (1024 * 1024)} MB."))
+    chunks, received = [], 0
+    async for chunk in request.stream():           # se corta en cuanto pasa del límite, aunque no declare Content-Length
+        received += len(chunk)
+        if received > workspace_files.MAX_UPLOAD_BYTES:
+            raise _http_error(workspace_files.WorkspaceTooLarge(f"El archivo supera el límite de {workspace_files.MAX_UPLOAD_BYTES // (1024 * 1024)} MB."))
+        chunks.append(chunk)
+    return _manage(workspace_files.save_upload, path, chunks, overwrite)

@@ -177,3 +177,59 @@ def test_http_create_rename_delete_and_conflicts(ws, monkeypatch, tmp_path):
     assert c.delete("/v1/workspace/entry", params={"path": "z.txt"}).json()["data"]["removed"] == 1
     assert c.delete("/v1/workspace/entry", params={"path": "z.txt"}).status_code == 404
     assert c.delete("/v1/workspace/entry", params={"path": ""}).status_code in (400, 422)
+
+
+# ---- subida (arrastrar y soltar) -------------------------------------------------------------------------------
+
+def test_upload_creates_intermediate_folders_and_is_atomic(ws):
+    res = workspace_files.save_upload("docs/img/logo.png", [PNG[:10], PNG[10:]])
+    assert res == {"rel_path": "docs/img/logo.png", "size": len(PNG), "replaced": False}
+    assert (ws / "docs" / "img" / "logo.png").read_bytes() == PNG
+    assert not [p for p in (ws / "docs" / "img").iterdir() if p.suffix == ".upload"]
+
+
+def test_upload_refuses_existing_unless_overwrite(ws):
+    workspace_files.save_upload("a.txt", [b"uno"])
+    with pytest.raises(WorkspaceExists):
+        workspace_files.save_upload("a.txt", [b"dos"])
+    assert (ws / "a.txt").read_bytes() == b"uno"
+    assert workspace_files.save_upload("a.txt", [b"dos"], overwrite=True)["replaced"] is True
+    assert (ws / "a.txt").read_bytes() == b"dos"
+
+
+def test_upload_cannot_escape_or_replace_a_folder(ws, tmp_path):
+    for bad in ("../fuera.bin", "carpeta/../../fuera.bin", "/abs.bin", "C:/abs.bin", ""):
+        with pytest.raises(WorkspacePathError):
+            workspace_files.save_upload(bad, [b"x"])
+    with pytest.raises(WorkspacePathError):
+        workspace_files.save_upload("carpeta", [b"x"], overwrite=True)
+    assert not (tmp_path / "fuera.bin").exists()
+
+
+def test_upload_over_the_limit_leaves_nothing_behind(ws):
+    with pytest.raises(workspace_files.WorkspaceTooLarge):
+        workspace_files.save_upload("grande.bin", [b"x" * 600, b"x" * 600], max_bytes=1000)
+    assert not (ws / "grande.bin").exists() and not list(ws.glob(".praxeon-*"))
+
+
+def test_http_upload(ws, monkeypatch, tmp_path):
+    from fastapi.testclient import TestClient
+
+    from praxeon.server import dependencies as deps
+    from praxeon.server.app import create_app
+
+    monkeypatch.setenv("PRAXEON_CACHE_DIR", str(tmp_path / "cache"))
+    app = create_app()
+    app.dependency_overrides[deps.get_current_tenant] = lambda: deps.TenantContext(
+        tenant_id="t", user_id="u", role=deps.Role.ADMIN, permissions=deps.ROLE_PERMISSIONS[deps.Role.ADMIN])
+    c = TestClient(app)
+    h = {"Content-Type": "application/octet-stream"}
+    r = c.post("/v1/workspace/upload", params={"path": "assets/foto.png"}, content=PNG, headers=h)
+    assert r.status_code == 201 and (ws / "assets" / "foto.png").read_bytes() == PNG
+    assert c.post("/v1/workspace/upload", params={"path": "assets/foto.png"}, content=b"nuevo", headers=h).status_code == 409
+    assert c.post("/v1/workspace/upload", params={"path": "assets/foto.png", "overwrite": "true"}, content=b"nuevo", headers=h).status_code == 201
+    assert (ws / "assets" / "foto.png").read_bytes() == b"nuevo"
+    assert c.post("/v1/workspace/upload", params={"path": "../x.bin"}, content=b"x", headers=h).status_code == 400
+    monkeypatch.setattr(workspace_files, "MAX_UPLOAD_BYTES", 10)
+    assert c.post("/v1/workspace/upload", params={"path": "big.bin"}, content=b"x" * 50, headers=h).status_code == 413
+    assert not (ws / "big.bin").exists()
