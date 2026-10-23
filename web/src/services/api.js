@@ -804,4 +804,5 @@ async function skillsCall(path, options) {
 
 export const fetchSkills = () => skillsCall('');
 export const fetchSkill = (name) => skillsCall(`/${encodeURIComponent(name)}`);
+export const openSkillsFolder = (scope = 'user') => skillsCall(`/open-folder?scope=${scope}`, { method: 'POST' });
 export const setSkillEnabled = (name, enabled) => skillsCall(`/${encodeURIComponent(name)}/${enabled ? 'enable' : 'disable'}`, { method: 'POST' });

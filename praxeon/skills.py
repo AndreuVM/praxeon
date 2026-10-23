@@ -79,6 +79,21 @@ class SkillStore:
 
         return Path(self._cache_dir or resolve_cache_dir())      # se resuelve al usarla, como mcp.json
 
+    # ------------------------------------------------------------------ carpetas
+    def user_dir(self) -> Path:
+        """Carpeta de skills del usuario (se crea si no existe, para poder abrirla y dejar ahí las nuevas)."""
+        path = self.cache_dir / "skills"
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    def project_dir(self, workspace_root: Optional[str]) -> Optional[Path]:
+        """Carpeta `.praxeon/skills` del workspace activo (se crea si no existe); None si no hay workspace."""
+        if not workspace_root or not Path(workspace_root).is_dir():
+            return None
+        path = Path(workspace_root) / ".praxeon" / "skills"
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
     # ------------------------------------------------------------------ descubrimiento
     def roots(self, workspace_root: Optional[str] = None) -> List[Tuple[str, Path]]:
         roots: List[Tuple[str, Path]] = [("user", self.cache_dir / "skills")]

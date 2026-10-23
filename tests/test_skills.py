@@ -113,3 +113,28 @@ def test_skills_endpoints(tmp_path, monkeypatch):
     assert "Usa pytest." in client.get("/v1/skills/python-tests").json()["data"]["body"]
     assert client.post("/v1/skills/no-existe/enable").status_code == 404
     assert client.post("/v1/skills/python-tests/disable").json()["data"]["status"] == "disabled"
+
+
+def test_open_folder_creates_and_opens_the_skills_folder_only_for_local_clients(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from praxeon.server import dependencies as deps
+    from praxeon.server.app import create_app
+    from praxeon.server.routes import skills as skills_routes
+
+    monkeypatch.setenv("PRAXEON_CACHE_DIR", str(tmp_path / "cache"))
+    opened = []
+    monkeypatch.setattr(skills_routes, "open_in_file_manager", opened.append)
+    app = create_app()
+    app.dependency_overrides[deps.get_current_tenant] = lambda: deps.TenantContext(
+        tenant_id="t", user_id="u", role=deps.Role.ADMIN, permissions=deps.ROLE_PERMISSIONS[deps.Role.ADMIN])
+
+    local = TestClient(app)                         # el cliente de pruebas cuenta como local
+    res = local.post("/v1/skills/open-folder")
+    assert res.status_code == 200
+    expected = str(tmp_path / "cache" / "skills")
+    assert res.json()["data"]["path"] == expected and opened == [expected] and (tmp_path / "cache" / "skills").is_dir()
+
+    remote = TestClient(app, client=("203.0.113.9", 5000))
+    assert remote.post("/v1/skills/open-folder").status_code == 403
+    assert opened == [expected]                     # el cliente remoto no abrió nada

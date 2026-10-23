@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { ChevronDown, ChevronRight, RefreshCw } from 'lucide-react';
+import { ChevronDown, ChevronRight, FolderOpen, RefreshCw } from 'lucide-react';
 import * as api from '../../services/api';
 import Markdown from '../Markdown';
 import { ViewPage, ViewHeader, EmptyState } from '../ui';
@@ -24,6 +24,7 @@ export default function SkillsView() {
   const [busy, setBusy] = useState('');
   const [open, setOpen] = useState({});
   const [bodies, setBodies] = useState({});
+  const [opened, setOpened] = useState('');
 
   const load = useCallback(async () => {
     try {
@@ -52,6 +53,17 @@ export default function SkillsView() {
     }
   };
 
+  // Abre la carpeta en el explorador del sistema para dejar ahí las nuevas skills; al volver, «Actualizar» las descubre.
+  const openFolder = async (scope) => {
+    try {
+      const res = await api.openSkillsFolder(scope);
+      setOpened(res.path);
+      setError('');
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
   const setEnabled = async (skill, enabled) => {
     setBusy(skill.name);
     try {
@@ -73,8 +85,23 @@ export default function SkillsView() {
       <ViewHeader
         title="Skills"
         description="Instrucciones de trabajo reutilizables (carpetas con SKILL.md). Una skill solo llega a los agentes cuando la habilitas; si su archivo cambia, deja de aplicarse hasta que la vuelvas a habilitar."
-        actions={<button type="button" style={btn} onClick={load}><RefreshCw size={13} style={{ verticalAlign: '-2px', marginRight: 6 }} />Actualizar</button>}
+        actions={(
+          <>
+            <button type="button" style={btn} onClick={() => openFolder('user')} title="Abre la carpeta de skills en el explorador de archivos">
+              <FolderOpen size={13} style={{ verticalAlign: '-2px', marginRight: 6 }} />Abrir carpeta de skills
+            </button>
+            <button type="button" style={btn} onClick={() => openFolder('project')} title="Skills del workspace activo (.praxeon/skills)">
+              <FolderOpen size={13} style={{ verticalAlign: '-2px', marginRight: 6 }} />Carpeta del proyecto
+            </button>
+            <button type="button" style={btn} onClick={load}><RefreshCw size={13} style={{ verticalAlign: '-2px', marginRight: 6 }} />Actualizar</button>
+          </>
+        )}
       />
+      {opened && (
+        <div style={{ ...card, color: 'var(--muted)', fontSize: 'var(--fs-secondary)' }}>
+          Carpeta abierta: <code>{opened}</code>. Deja ahí una carpeta por skill con su <code>SKILL.md</code> y pulsa «Actualizar».
+        </div>
+      )}
       {error && <div role="alert" style={{ ...card, color: 'var(--bad)' }}>{error}</div>}
       {skills && skills.length === 0 && (
         <EmptyState title="No hay skills">
