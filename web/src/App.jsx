@@ -1398,7 +1398,6 @@ export default function App() {
     setNodes((prev) =>
       prev.map((n) => (n.id === nodeId ? { ...n, status: 'ALLOW' } : n))
     );
-    operatorMessage('Aprobado');
 
     setSession((prev) => ({
       ...prev,

@@ -1,11 +1,12 @@
-"""Workspace del proyecto: consultar, elegir, explorar carpetas y gestionar recientes."""
+"""Workspace del proyecto: consultar, elegir, explorar carpetas, gestionar recientes y acceder a sus archivos."""
 
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, HTTPException, status
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from praxeon import workspace_store
+from praxeon import workspace_files, workspace_store
 from praxeon.server.schemas.common import APIResponse
 
 router = APIRouter(prefix="/v1/workspace", tags=["Workspace"])
@@ -17,6 +18,22 @@ class SelectWorkspaceRequest(BaseModel):
 
 class ForgetWorkspaceRequest(BaseModel):
     path: str = Field(..., min_length=1)
+
+
+class SaveFileRequest(BaseModel):
+    path: str = Field(..., min_length=1, description="Ruta relativa al workspace")
+    content: str
+    etag: Optional[str] = Field(None, description="etag leído; si ya no coincide se devuelve 409")
+
+
+def _http_error(exc: Exception) -> HTTPException:
+    if isinstance(exc, workspace_files.WorkspaceFileNotFound):
+        return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+    if isinstance(exc, workspace_files.WorkspaceTooLarge):
+        return HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail=str(exc))
+    if isinstance(exc, workspace_files.WorkspaceConflict):
+        return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
+    return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
 
 
 @router.get("", response_model=APIResponse[Dict[str, Any]])
@@ -70,3 +87,48 @@ def browse_workspace(path: Optional[str] = None, show_hidden: bool = False):
         return APIResponse(data=workspace_store.browse_directory(path, show_hidden=show_hidden))
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+# --- FE-001: árbol de archivos del workspace activo ---------------------------------------
+
+
+@router.get("/tree", response_model=APIResponse[Dict[str, Any]])
+def workspace_tree(path: str = "", show_hidden: bool = False):
+    """Entradas de una carpeta del workspace (carga perezosa, carpetas primero)."""
+    try:
+        return APIResponse(data=workspace_files.list_tree(path, show_hidden=show_hidden))
+    except workspace_files.WorkspacePathError as exc:
+        raise _http_error(exc) from exc
+
+
+# --- FE-003: visor y editor de archivos ---------------------------------------------------
+
+
+@router.get("/file", response_model=APIResponse[Dict[str, Any]])
+def read_workspace_file(path: str):
+    """Contenido de texto y etag de un archivo; los binarios devuelven solo metadatos."""
+    try:
+        return APIResponse(data=workspace_files.read_file(path))
+    except workspace_files.WorkspacePathError as exc:
+        raise _http_error(exc) from exc
+
+
+@router.get("/file/raw")
+def raw_workspace_file(path: str):
+    """Bytes del archivo con su Content-Type (PDF, imágenes) para previsualizar."""
+    try:
+        target, mime = workspace_files.read_raw(path)
+    except workspace_files.WorkspacePathError as exc:
+        raise _http_error(exc) from exc
+    return FileResponse(target, media_type=mime, headers={"X-Content-Type-Options": "nosniff"})
+
+
+@router.put("/file", response_model=APIResponse[Dict[str, Any]])
+def save_workspace_file(req: SaveFileRequest):
+    """Guarda el archivo de forma atómica; 409 si cambió en disco desde la lectura."""
+    try:
+        return APIResponse(data=workspace_files.write_file(req.path, req.content, req.etag))
+    except workspace_files.WorkspaceConflict as exc:
+        raise _http_error(exc) from exc
+    except workspace_files.WorkspacePathError as exc:
+        raise _http_error(exc) from exc

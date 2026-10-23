@@ -270,7 +270,12 @@ class McpManager:
             if ann.get("readOnlyHint") is True:
                 risk, read_only, confirm = RiskLevel.LOW, True, False
             elif ann.get("destructiveHint", True) is not False:
-                risk = RiskLevel.HIGH
+                # Sin la anotación, «destructivo» es solo el valor por defecto del protocolo: si el operador desactivó
+                # expresamente la confirmación de esta herramienta, esa decisión manda. Un destructiveHint=True anunciado
+                # por el servidor sigue elevando el riesgo (y forzando la confirmación) pase lo que pase.
+                operator_trusts = override is not None and override.confirm is False and "destructiveHint" not in ann
+                if not operator_trusts:
+                    risk = RiskLevel.HIGH
         if override is not None:
             if override.risk:
                 risk = RiskLevel(override.risk)

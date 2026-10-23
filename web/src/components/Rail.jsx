@@ -2,6 +2,7 @@ import React from 'react';
 import {
   Activity,
   FolderKanban,
+  FileCode2,
   GitFork,
   Bot,
   Workflow,
@@ -17,6 +18,7 @@ import {
 // Todas las vistas son accesibles directamente desde el riel (RD-5.2)
 export const NAV_ITEMS = [
   { id: 'live', label: 'Conversación', icon: Activity },
+  { id: 'files', label: 'Archivos', icon: FileCode2 },
   { id: 'sessions', label: 'Sesiones', icon: FolderKanban },
   { id: 'decisions', label: 'Decisiones', icon: GitFork },
   { id: 'agents', label: 'Agentes', icon: Bot },
