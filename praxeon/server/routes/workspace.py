@@ -24,6 +24,17 @@ class SaveFileRequest(BaseModel):
     path: str = Field(..., min_length=1, description="Ruta relativa al workspace")
     content: str
     etag: Optional[str] = Field(None, description="etag leído; si ya no coincide se devuelve 409")
+    encoding: str = Field("utf-8", description="Codificación con la que se leyó (se conserva al guardar)")
+
+
+class CreateEntryRequest(BaseModel):
+    path: str = Field(..., min_length=1, description="Ruta relativa del archivo o carpeta nuevos")
+    kind: str = Field(..., pattern="^(file|dir)$")
+
+
+class RenameEntryRequest(BaseModel):
+    path: str = Field(..., min_length=1)
+    new_path: str = Field(..., min_length=1)
 
 
 def _http_error(exc: Exception) -> HTTPException:
@@ -31,7 +42,7 @@ def _http_error(exc: Exception) -> HTTPException:
         return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
     if isinstance(exc, workspace_files.WorkspaceTooLarge):
         return HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail=str(exc))
-    if isinstance(exc, workspace_files.WorkspaceConflict):
+    if isinstance(exc, (workspace_files.WorkspaceConflict, workspace_files.WorkspaceExists)):
         return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
     return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
 
@@ -127,8 +138,38 @@ def raw_workspace_file(path: str):
 def save_workspace_file(req: SaveFileRequest):
     """Guarda el archivo de forma atómica; 409 si cambió en disco desde la lectura."""
     try:
-        return APIResponse(data=workspace_files.write_file(req.path, req.content, req.etag))
+        return APIResponse(data=workspace_files.write_file(req.path, req.content, req.etag, req.encoding))
     except workspace_files.WorkspaceConflict as exc:
         raise _http_error(exc) from exc
     except workspace_files.WorkspacePathError as exc:
         raise _http_error(exc) from exc
+
+
+# --- gestión: crear, renombrar y eliminar archivos y carpetas -------------------------------------------------------
+
+
+def _manage(action, *args):
+    try:
+        return APIResponse(data=action(*args))
+    except (workspace_files.WorkspacePathError, workspace_files.WorkspaceExists, workspace_files.WorkspaceConflict) as exc:
+        raise _http_error(exc) from exc
+    except OSError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"No se pudo completar la operación: {exc}") from exc
+
+
+@router.post("/entry", response_model=APIResponse[Dict[str, Any]], status_code=status.HTTP_201_CREATED)
+def create_workspace_entry(req: CreateEntryRequest):
+    """Crea un archivo vacío o una carpeta (409 si ya existe)."""
+    return _manage(workspace_files.create_entry, req.path, req.kind)
+
+
+@router.patch("/entry", response_model=APIResponse[Dict[str, Any]])
+def rename_workspace_entry(req: RenameEntryRequest):
+    """Renombra o mueve dentro del workspace (409 si el destino existe)."""
+    return _manage(workspace_files.rename_entry, req.path, req.new_path)
+
+
+@router.delete("/entry", response_model=APIResponse[Dict[str, Any]])
+def delete_workspace_entry(path: str):
+    """Elimina un archivo o una carpeta con todo su contenido. No se puede deshacer."""
+    return _manage(workspace_files.delete_entry, path)

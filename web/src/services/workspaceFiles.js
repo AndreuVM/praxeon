@@ -34,8 +34,19 @@ export const fetchWorkspaceTree = (relPath = '', showHidden = false) =>
 export const readWorkspaceFile = (relPath) => call(`/file?path=${encodeURIComponent(relPath)}`);
 
 /** Guarda; lanza WorkspaceFileError con status 409 si el archivo cambió en disco. */
-export const saveWorkspaceFile = (relPath, content, etag = null) =>
-  call('/file', { method: 'PUT', body: JSON.stringify({ path: relPath, content, etag }) });
+export const saveWorkspaceFile = (relPath, content, etag = null, encoding = 'utf-8') =>
+  call('/file', { method: 'PUT', body: JSON.stringify({ path: relPath, content, etag, encoding }) });
+
+/** Crea un archivo vacío (`kind` 'file') o una carpeta ('dir'). 409 si ya existe. */
+export const createWorkspaceEntry = (relPath, kind) =>
+  call('/entry', { method: 'POST', body: JSON.stringify({ path: relPath, kind }) });
+
+/** Renombra o mueve dentro del workspace. 409 si el destino ya existe. */
+export const renameWorkspaceEntry = (relPath, newPath) =>
+  call('/entry', { method: 'PATCH', body: JSON.stringify({ path: relPath, new_path: newPath }) });
+
+/** Elimina un archivo o una carpeta con todo su contenido. */
+export const deleteWorkspaceEntry = (relPath) => call(`/entry?path=${encodeURIComponent(relPath)}`, { method: 'DELETE' });
 
 /** Descarga los bytes (PDF, imágenes) como Blob para previsualizar sin exponer la API key en la URL. */
 export async function fetchWorkspaceBlob(relPath) {

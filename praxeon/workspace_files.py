@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import mimetypes
 import os
+import shutil
 import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -119,19 +120,42 @@ def _etag(data: bytes, mtime_ns: int) -> str:
     return hashlib.sha1(data).hexdigest()[:16] + f"-{mtime_ns}"
 
 
-def _is_binary(sample: bytes) -> bool:
-    if b"\x00" in sample:
-        return True
+def _decode_text(data: bytes) -> Optional[tuple]:
+    """(texto, codificación) si `data` es texto; None si es binario.
+
+    Reconoce BOM UTF-8/UTF-16 y, como último recurso, Windows-1252 (los .txt de Windows con acentos), para poder leerlos y
+    volver a guardarlos con la misma codificación sin estropearlos.
+    """
+    if data.startswith(b"\xef\xbb\xbf"):
+        return data[3:].decode("utf-8", errors="replace"), "utf-8-sig"
+    if data.startswith((b"\xff\xfe", b"\xfe\xff")):
+        try:
+            return data.decode("utf-16"), "utf-16"
+        except UnicodeDecodeError:
+            return None
+    if b"\x00" in data[:8192]:
+        return None
     try:
-        sample.decode("utf-8")
-    except UnicodeDecodeError as exc:
-        # un corte en mitad de un carácter multibyte no cuenta como binario
-        return exc.start < len(sample) - 4
-    return False
+        return data.decode("utf-8"), "utf-8"
+    except UnicodeDecodeError:
+        pass
+    try:
+        return data.decode("cp1252"), "cp1252"
+    except UnicodeDecodeError:
+        return None
+
+
+def _media_kind(mime: str, name: str) -> Optional[str]:
+    """Tipos que se previsualizan como bytes: pdf o imagen (el SVG es texto: se edita y además se previsualiza)."""
+    if mime == "application/pdf":
+        return "pdf"
+    if mime.startswith("image/") and not name.lower().endswith(".svg"):
+        return "image"
+    return None
 
 
 def read_file(rel_path: str) -> Dict[str, Any]:
-    """Metadatos y contenido (texto) de un archivo. Los binarios devuelven `kind` sin contenido."""
+    """Metadatos y contenido (texto) de un archivo. PDF e imágenes devuelven `kind` sin contenido (se ven con /file/raw)."""
     root = workspace_root()
     target = resolve_inside(rel_path, root)
     if not target.exists():
@@ -147,20 +171,24 @@ def read_file(rel_path: str) -> Dict[str, Any]:
         "mtime": st.st_mtime,
         "mime": mime,
     }
+    media = _media_kind(mime, target.name)
+    if media:
+        info.update(kind=media, content=None, etag=None)
+        return info
     with open(target, "rb") as fh:
         head = fh.read(8192)
-    if mime == "application/pdf" or _is_binary(head):
-        info.update(kind="pdf" if mime == "application/pdf" else "binary", content=None, etag=None)
-        return info
     if st.st_size > MAX_TEXT_BYTES:
+        if _decode_text(head) is None:
+            info.update(kind="binary", content=None, etag=None)
+            return info
         raise WorkspaceTooLarge(f"El archivo supera el límite de {MAX_TEXT_BYTES // (1024 * 1024)} MB para edición.")
     data = target.read_bytes()
-    try:
-        text = data.decode("utf-8")
-    except UnicodeDecodeError:
+    decoded = _decode_text(data)
+    if decoded is None:
         info.update(kind="binary", content=None, etag=None)
         return info
-    info.update(kind="text", content=text, etag=_etag(data, st.st_mtime_ns))
+    text, encoding = decoded
+    info.update(kind="text", content=text, etag=_etag(data, st.st_mtime_ns), encoding=encoding)
     return info
 
 
@@ -174,13 +202,23 @@ def read_raw(rel_path: str) -> tuple[Path, str]:
     return target, mimetypes.guess_type(target.name)[0] or "application/octet-stream"
 
 
-def write_file(rel_path: str, content: str, expected_etag: Optional[str] = None) -> Dict[str, Any]:
-    """Guarda de forma atómica; WorkspaceConflict si el etag esperado ya no coincide."""
+def _encode(content: str, encoding: str) -> tuple:
+    """(bytes, codificación usada). Si el texto ya no cabe en la codificación original, se pasa a UTF-8."""
+    if encoding not in ("utf-8", "utf-8-sig", "utf-16", "cp1252"):
+        encoding = "utf-8"
+    try:
+        return content.encode(encoding), encoding
+    except UnicodeEncodeError:
+        return content.encode("utf-8"), "utf-8"
+
+
+def write_file(rel_path: str, content: str, expected_etag: Optional[str] = None, encoding: str = "utf-8") -> Dict[str, Any]:
+    """Guarda de forma atómica; WorkspaceConflict si el etag esperado ya no coincide. Conserva la codificación leída."""
     root = workspace_root()
     target = resolve_inside(rel_path, root)
     if target.exists() and not target.is_file():
         raise WorkspacePathError("La ruta no es un archivo.")
-    payload = content.encode("utf-8")
+    payload, used = _encode(content, encoding)
     if len(payload) > MAX_TEXT_BYTES:
         raise WorkspaceTooLarge("El contenido supera el límite de tamaño.")
     if target.exists() and expected_etag is not None:
@@ -202,4 +240,79 @@ def write_file(rel_path: str, content: str, expected_etag: Optional[str] = None)
         "size": st.st_size,
         "mtime": st.st_mtime,
         "etag": _etag(payload, st.st_mtime_ns),
+        "encoding": used,
     }
+
+
+# --- gestión de archivos y carpetas ----------------------------------------------------------------------------------
+
+
+class WorkspaceExists(Exception):
+    """Ya existe algo con ese nombre (HTTP 409)."""
+
+
+def _entry_path(rel_path: str, root: Path) -> Path:
+    """Ruta de una entrada **sin resolver el último componente**: borrar o renombrar un enlace simbólico actúa sobre el
+    enlace, nunca sobre aquello a lo que apunta. La carpeta que la contiene sí se confina al workspace."""
+    if (rel_path or "").replace("\\", "/").startswith("/") or os.path.isabs(rel_path or ""):
+        raise WorkspacePathError("Ruta absoluta no permitida.")
+    rel = (rel_path or "").replace("\\", "/").strip("/")
+    name = rel.rsplit("/", 1)[-1]
+    if not rel or name in (".", ".."):
+        raise WorkspacePathError("Indica un nombre de archivo o carpeta.")
+    parent = resolve_inside(rel.rsplit("/", 1)[0] if "/" in rel else "", root)
+    if any(c in name for c in '<>:"|?*') or name.endswith((" ", ".")):
+        raise WorkspacePathError("El nombre contiene caracteres no válidos.")
+    return parent / name
+
+
+def create_entry(rel_path: str, kind: str) -> Dict[str, Any]:
+    """Crea un archivo vacío o una carpeta; WorkspaceExists si ya hay algo con ese nombre."""
+    if kind not in ("file", "dir"):
+        raise WorkspacePathError("El tipo debe ser «file» o «dir».")
+    root = workspace_root()
+    target = _entry_path(rel_path, root)
+    if os.path.lexists(target):
+        raise WorkspaceExists("Ya existe un archivo o carpeta con ese nombre.")
+    if not target.parent.is_dir():
+        raise WorkspaceFileNotFound("La carpeta de destino no existe.")
+    if kind == "dir":
+        target.mkdir()
+    else:
+        with open(target, "xb"):
+            pass
+    return {"rel_path": _rel(target, root), "type": kind}
+
+
+def delete_entry(rel_path: str) -> Dict[str, Any]:
+    """Elimina un archivo o una carpeta con todo su contenido (o un enlace simbólico, sin tocar su destino)."""
+    root = workspace_root()
+    target = _entry_path(rel_path, root)
+    if not os.path.lexists(target):
+        raise WorkspaceFileNotFound("No existe.")
+    if target.name == ".git" and target.parent == root:
+        raise WorkspacePathError("No se permite eliminar la carpeta .git desde aquí.")
+    rel = _rel(target, root)
+    if target.is_symlink() or target.is_file():
+        target.unlink()
+        return {"rel_path": rel, "type": "file", "removed": 1}
+    removed = sum(len(files) + len(dirs) for _, dirs, files in os.walk(target)) + 1
+    shutil.rmtree(target)
+    return {"rel_path": rel, "type": "dir", "removed": removed}
+
+
+def rename_entry(rel_path: str, new_rel_path: str) -> Dict[str, Any]:
+    """Renombra o mueve dentro del workspace; WorkspaceExists si el destino ya existe."""
+    root = workspace_root()
+    source = _entry_path(rel_path, root)
+    dest = _entry_path(new_rel_path, root)
+    if not os.path.lexists(source):
+        raise WorkspaceFileNotFound("No existe.")
+    if os.path.lexists(dest):
+        raise WorkspaceExists("Ya existe un archivo o carpeta con ese nombre.")
+    if source.is_dir() and not source.is_symlink() and (dest == source or source in dest.parents):
+        raise WorkspacePathError("No se puede mover una carpeta dentro de sí misma.")
+    if not dest.parent.is_dir():
+        raise WorkspaceFileNotFound("La carpeta de destino no existe.")
+    os.rename(source, dest)
+    return {"rel_path": _rel(dest, root), "old_rel_path": _rel(source, root)}
