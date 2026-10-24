@@ -20,6 +20,16 @@ class ForgetWorkspaceRequest(BaseModel):
     path: str = Field(..., min_length=1)
 
 
+class PinWorkspaceRequest(BaseModel):
+    path: str = Field(..., min_length=1)
+    pinned: bool = True
+
+
+class AliasWorkspaceRequest(BaseModel):
+    path: str = Field(..., min_length=1)
+    alias: str = Field("", description="Nombre corto; vacío lo quita")
+
+
 class SaveFileRequest(BaseModel):
     path: str = Field(..., min_length=1, description="Ruta relativa al workspace")
     content: str
@@ -74,6 +84,26 @@ def clear_workspace():
 def forget_workspace(req: ForgetWorkspaceRequest):
     """Quita una carpeta de la lista de recientes."""
     workspace_store.forget_recent(req.path)
+    return APIResponse(data=workspace_store.describe_workspace())
+
+
+@router.post("/pin", response_model=APIResponse[Dict[str, Any]])
+def pin_workspace(req: PinWorkspaceRequest):
+    """Fija (o quita) un workspace como favorito para el acceso rápido Alt+1…9. Fijar uno nuevo lo añade sin elegirlo."""
+    try:
+        workspace_store.pin_workspace(req.path, req.pinned)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return APIResponse(data=workspace_store.describe_workspace())
+
+
+@router.post("/alias", response_model=APIResponse[Dict[str, Any]])
+def alias_workspace(req: AliasWorkspaceRequest):
+    """Pone o quita un nombre corto a un workspace de la lista."""
+    try:
+        workspace_store.set_alias(req.path, req.alias)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return APIResponse(data=workspace_store.describe_workspace())
 
 

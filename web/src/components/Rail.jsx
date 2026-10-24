@@ -40,6 +40,7 @@ export default function Rail({
   workspaceMismatch = false,
   workspaceOpen = false,
   onOpenWorkspace,
+  onSwitchWorkspace,
   onOpenPalette,
   onOpenAccount,
   operatorId = 'operator_admin',
@@ -48,7 +49,8 @@ export default function Rail({
 }) {
   const main = NAV_ITEMS.filter((i) => i.id !== 'settings');
   const settings = NAV_ITEMS.find((i) => i.id === 'settings');
-  const wsLabel = workspace?.path ? `Workspace: ${wsName(workspace.path)}` : 'Elegir workspace';
+  const wsLabel = workspace?.path ? `Workspace: ${workspace.name || wsName(workspace.path)}` : 'Elegir workspace';
+  const pinned = (workspace?.recent || []).filter((w) => w.pinned);
 
   const NavButton = ({ item }) => {
     const Icon = item.icon;
@@ -81,6 +83,33 @@ export default function Rail({
         <FolderOpen size={16} strokeWidth={1.6} />
         {workspaceMismatch && <span className="rail-dot bad" />}
       </button>
+      {pinned.length > 0 && (
+        <div role="group" aria-label="Workspaces favoritos" style={{ display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'center' }}>
+          {pinned.map((w) => {
+            const on = w.path === workspace?.path;
+            return (
+              <button
+                key={w.path}
+                type="button"
+                disabled={!w.exists}
+                onClick={() => !on && onSwitchWorkspace?.(w.path)}
+                aria-label={`${w.name}${on ? ' (actual)' : ''}, Alt+${w.slot}`}
+                aria-current={on ? 'true' : undefined}
+                title={`${w.name} · Alt+${w.slot}${w.exists ? '' : ' (la carpeta ya no existe)'}`}
+                data-label={`${w.name} · Alt+${w.slot}`}
+                style={{
+                  width: 26, height: 22, borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: w.exists ? 'pointer' : 'not-allowed',
+                  border: `1px solid ${on ? 'var(--accent, #6ea0ff)' : 'var(--line)'}`,
+                  background: on ? 'var(--hover, rgba(127,127,127,.18))' : 'transparent',
+                  color: on ? 'var(--text)' : 'var(--muted)', opacity: w.exists ? 1 : 0.5,
+                }}
+              >
+                {w.slot}
+              </button>
+            );
+          })}
+        </div>
+      )}
       <span className="rail-sep" />
 
       {main.map((item) => (

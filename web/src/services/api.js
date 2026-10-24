@@ -594,6 +594,8 @@ async function workspaceMutation(path, options) {
 export const fetchWorkspace = () => workspaceCall('');
 export const selectWorkspace = (path) => workspaceMutation('', { method: 'PUT', body: JSON.stringify({ path }) });
 export const clearWorkspace = () => workspaceMutation('', { method: 'DELETE' });
+export const pinWorkspace = (path, pinned = true) => workspaceMutation('/pin', { method: 'POST', body: JSON.stringify({ path, pinned }) });
+export const aliasWorkspace = (path, alias) => workspaceMutation('/alias', { method: 'POST', body: JSON.stringify({ path, alias }) });
 export const forgetWorkspace = (path) => workspaceMutation('/forget', { method: 'POST', body: JSON.stringify({ path }) });
 export const validateWorkspacePath = (path) => workspaceCall(`/validate?path=${encodeURIComponent(path)}`);
 export const browseWorkspace = (path = '', showHidden = false) =>

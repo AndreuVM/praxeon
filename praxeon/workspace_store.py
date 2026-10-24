@@ -2,7 +2,11 @@
 
 El workspace es la carpeta sobre la que trabajan las misiones: base de las rutas relativas,
 límite de contención del sandbox y raíz de las comprobaciones de existencia. Se guarda en
-`<caché>/workspace.json` junto con los últimos usados, de modo que sobrevive a los reinicios.
+`<caché>/workspace.json` junto con la lista de workspaces conocidos, de modo que sobrevive a los reinicios.
+
+Varios workspaces con acceso rápido (FE-002): cada workspace conocido puede **fijarse** como favorito (hasta 9, en un orden
+estable que ocupa los atajos Alt+1…9), tener un **alias** para distinguirlo de otras carpetas con el mismo nombre, y el
+anterior se recuerda para alternar entre dos. Los favoritos nunca se expulsan de la lista; los recientes sí (los 12 últimos).
 
 Orden de resolución del workspace por defecto:
     1. el elegido por el operador (este módulo),
@@ -24,6 +28,8 @@ from praxeon.config import resolve_cache_dir
 
 STORE_FILENAME = "workspace.json"
 MAX_RECENT = 12
+MAX_PINNED = 9          # uno por atajo numérico
+MAX_ALIAS_CHARS = 40
 MAX_BROWSE_ENTRIES = 500
 PROJECT_MARKERS = (".git", "pyproject.toml", "package.json", "Cargo.toml", "go.mod", "pom.xml")
 
@@ -42,12 +48,13 @@ def _load() -> Dict[str, Any]:
     try:
         data = json.loads(_store_path().read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return {"current": None, "recent": []}
+        return {"current": None, "previous": None, "recent": []}
     if not isinstance(data, dict):
-        return {"current": None, "recent": []}
+        return {"current": None, "previous": None, "recent": []}
     recent = [r for r in data.get("recent", []) if isinstance(r, dict) and isinstance(r.get("path"), str)]
     current = data.get("current") if isinstance(data.get("current"), str) else None
-    return {"current": current, "recent": recent}
+    previous = data.get("previous") if isinstance(data.get("previous"), str) else None
+    return {"current": current, "previous": previous, "recent": recent}
 
 
 def _save(data: Dict[str, Any]) -> None:
@@ -116,20 +123,91 @@ def resolve_default_workspace() -> Tuple[str, str]:
     return _auto_root(), SOURCE_AUTO
 
 
+def _key(path: str) -> str:
+    return os.path.normcase(path)
+
+
+def _find(recent: List[Dict[str, Any]], path: str) -> Optional[Dict[str, Any]]:
+    key = _key(path)
+    return next((r for r in recent if _key(r["path"]) == key), None)
+
+
+def _trim_recent(recent: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Conserva todos los favoritos y solo los MAX_RECENT recientes más usados."""
+    pinned = [r for r in recent if r.get("pinned")]
+    others = sorted((r for r in recent if not r.get("pinned")), key=lambda r: r.get("last_used") or 0, reverse=True)[:MAX_RECENT]
+    keep = {id(r) for r in pinned} | {id(r) for r in others}
+    return [r for r in recent if id(r) in keep]
+
+
 def select_workspace(path: str) -> str:
-    """Fija el workspace por defecto y lo recuerda entre los recientes. ValueError si no es válido."""
+    """Fija el workspace por defecto y lo recuerda en la lista. ValueError si no es válido.
+
+    Un favorito conserva su posición (los atajos numéricos no se mueven); el anterior queda guardado para alternar.
+    """
     norm, reason = validate_directory(path)
     if reason:
         raise ValueError(reason)
     with _lock:
         data = _load()
+        if data["current"] and _key(data["current"]) != _key(norm):
+            data["previous"] = data["current"]
         data["current"] = norm
-        key = os.path.normcase(norm)
-        recent = [r for r in data["recent"] if os.path.normcase(r["path"]) != key]
-        recent.insert(0, {"path": norm, "last_used": time.time()})
-        data["recent"] = recent[:MAX_RECENT]
+        entry = _find(data["recent"], norm)
+        if entry is None:
+            data["recent"].append({"path": norm, "last_used": time.time()})
+        else:
+            entry["path"] = norm
+            entry["last_used"] = time.time()
+        data["recent"] = _trim_recent(data["recent"])
         _save(data)
     return norm
+
+
+def pin_workspace(path: str, pinned: bool = True) -> None:
+    """Fija o desfija un workspace como favorito (hasta MAX_PINNED). Fijar uno desconocido lo añade sin elegirlo.
+
+    ValueError si la carpeta no es válida al añadirla, o si ya hay MAX_PINNED favoritos.
+    """
+    with _lock:
+        data = _load()
+        entry = _find(data["recent"], _norm(path))
+        if pinned:
+            if entry is None:
+                norm, reason = validate_directory(path)
+                if reason:
+                    raise ValueError(reason)
+                entry = {"path": norm, "last_used": time.time()}
+                data["recent"].append(entry)
+            if not entry.get("pinned"):
+                if sum(1 for r in data["recent"] if r.get("pinned")) >= MAX_PINNED:
+                    raise ValueError(f"Solo puede haber {MAX_PINNED} favoritos (uno por atajo Alt+1…{MAX_PINNED}). Quita alguno primero.")
+                # al fijarse pasa al final de los favoritos: el orden de los demás no cambia
+                data["recent"].remove(entry)
+                entry["pinned"] = True
+                last_pinned = max((i for i, r in enumerate(data["recent"]) if r.get("pinned")), default=-1)
+                data["recent"].insert(last_pinned + 1, entry)
+        elif entry is not None:
+            entry.pop("pinned", None)
+        data["recent"] = _trim_recent(data["recent"])
+        _save(data)
+
+
+def set_alias(path: str, alias: str) -> None:
+    """Nombre corto para distinguir workspaces con la misma carpeta final; vacío lo quita. ValueError si no está en la lista."""
+    alias = " ".join((alias or "").split())
+    if len(alias) > MAX_ALIAS_CHARS:
+        raise ValueError(f"El alias no puede pasar de {MAX_ALIAS_CHARS} caracteres.")
+    with _lock:
+        data = _load()
+        entry = _find(data["recent"], _norm(path))
+        if entry is None:
+            raise ValueError("Ese workspace no está en la lista.")
+        if alias:
+            entry["alias"] = alias
+        else:
+            entry.pop("alias", None)
+        _save(data)
 
 
 def clear_selection() -> None:
@@ -147,32 +225,56 @@ def forget_recent(path: str) -> None:
         data["recent"] = [r for r in data["recent"] if os.path.normcase(r["path"]) != key]
         if data["current"] and os.path.normcase(data["current"]) == key:
             data["current"] = None
+        if data.get("previous") and os.path.normcase(data["previous"]) == key:
+            data["previous"] = None
         _save(data)
 
 
+def _display_name(entry: Dict[str, Any]) -> str:
+    return entry.get("alias") or os.path.basename(entry["path"].rstrip("\\/")) or entry["path"]
+
+
 def list_recent() -> List[Dict[str, Any]]:
+    """Workspaces conocidos: primero los favoritos (orden fijo, con su `slot` 1…9) y luego los recientes por último uso."""
     with _lock:
         recent = _load()["recent"]
-    return [
-        {
+    pinned = [r for r in recent if r.get("pinned")]
+    others = sorted((r for r in recent if not r.get("pinned")), key=lambda r: r.get("last_used") or 0, reverse=True)
+    out = []
+    for index, r in enumerate([*pinned, *others]):
+        is_pinned = index < len(pinned)
+        out.append({
             "path": r["path"],
-            "name": os.path.basename(r["path"].rstrip("\\/")) or r["path"],
+            "name": _display_name(r),
+            "folder": os.path.basename(r["path"].rstrip("\\/")) or r["path"],
+            "alias": r.get("alias"),
+            "pinned": is_pinned,
+            "slot": index + 1 if is_pinned else None,
             "exists": os.path.isdir(r["path"]),
             "last_used": r.get("last_used"),
-        }
-        for r in recent
-    ]
+        })
+    return out
+
+
+def get_previous_workspace() -> Optional[str]:
+    """Workspace anterior (para alternar entre dos), si sigue existiendo."""
+    with _lock:
+        previous = _load().get("previous")
+    return previous if previous and os.path.isdir(previous) else None
 
 
 def describe_workspace() -> Dict[str, Any]:
     path, source = resolve_default_workspace()
+    with _lock:
+        entry = _find(_load()["recent"], path)
     return {
         "path": path,
-        "name": os.path.basename(path.rstrip("\\/")) or path,
+        "name": _display_name(entry) if entry else (os.path.basename(path.rstrip("\\/")) or path),
         "source": source,
         "exists": os.path.isdir(path),
         "hints": project_hints(path),
         "recent": list_recent(),
+        "previous": get_previous_workspace(),
     }
 
 

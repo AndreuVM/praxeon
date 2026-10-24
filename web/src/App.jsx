@@ -95,7 +95,36 @@ export default function App() {
   const [isWorkspaceOpen, setIsWorkspaceOpen] = useState(false);
   const [isPaletteOpen, setIsPaletteOpen] = useState(false);
   const [isWsFlyoutOpen, setIsWsFlyoutOpen] = useState(false);
-  const { workspace, choose: chooseWorkspace, forget: forgetWorkspace } = useWorkspace();
+  const { workspace, choose: chooseWorkspace, forget: forgetWorkspace, pin: pinWorkspace, alias: aliasWorkspace } = useWorkspace();
+  const workspaceRef = useRef(null);
+  workspaceRef.current = workspace;
+
+  // Cambio rápido de workspace (atajos, riel y paleta): avisa del destino y de cualquier fallo
+  const switchWorkspace = useCallback(async (path) => {
+    const target = (workspaceRef.current?.recent || []).find((w) => w.path === path);
+    try {
+      await chooseWorkspace(path);
+      notify(`Workspace: ${target?.name || path}`, { tone: 'info' });
+    } catch (err) {
+      notify(err.message || 'No se pudo cambiar el workspace.');
+    }
+  }, [chooseWorkspace]);
+
+  // Alt+1…9: ir al favorito con ese número · Alt+0: alternar con el anterior.
+  // No se usa Ctrl: en teclado español Ctrl+Alt es AltGr y escribe @ # |.
+  useEffect(() => {
+    const onKey = (e) => {
+      if (!e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || !/^Digit\d$/.test(e.code)) return;
+      const ws = workspaceRef.current;
+      const n = Number(e.code.slice(5));
+      const target = n === 0 ? ws?.previous : (ws?.recent || []).find((w) => w.slot === n && w.exists)?.path;
+      if (!target) return;
+      e.preventDefault();
+      if (target !== ws?.path) switchWorkspace(target);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [switchWorkspace]);
   // Cajón de detalle: null (cerrado) | 'map' | 'step' | 'events'
   const [drawerTab, setDrawerTab] = useState(null);
   const [drawerWide, setDrawerWide] = useState(false);
@@ -1523,6 +1552,12 @@ export default function App() {
         ]
       : []),
     { id: 'workspace', group: 'Proyecto y cuenta', label: 'Cambiar de workspace', icon: FolderOpen, run: () => setIsWsFlyoutOpen(true) },
+    ...(workspace?.previous
+      ? [{ id: 'workspace-previous', group: 'Workspaces', label: 'Volver al workspace anterior (Alt+0)', icon: FolderOpen, run: () => switchWorkspace(workspace.previous) }]
+      : []),
+    ...(workspace?.recent || [])
+      .filter((w) => w.exists && w.path !== workspace?.path)
+      .map((w) => ({ id: `workspace-${w.path}`, group: 'Workspaces', label: `Ir a ${w.name}${w.slot ? ` (Alt+${w.slot})` : ''}`, icon: FolderOpen, run: () => switchWorkspace(w.path) })),
     { id: 'api-key', group: 'Proyecto y cuenta', label: 'Configurar la clave de API', icon: KeyRound, run: () => setIsAuthModalOpen(true) },
     ...NAV_ITEMS.filter((i) => i.id !== 'live').map((i) => ({ id: `view-${i.id}`, group: 'Vistas', label: i.label, icon: i.icon, run: () => setActiveNav(i.id) })),
   ];
@@ -1541,6 +1576,7 @@ export default function App() {
         workspace={workspace}
         workspaceMismatch={workspaceMismatch}
         workspaceOpen={isWsFlyoutOpen}
+        onSwitchWorkspace={switchWorkspace}
         onOpenWorkspace={() => setIsWsFlyoutOpen((v) => !v)}
         onOpenPalette={() => setIsPaletteOpen(true)}
         onOpenAccount={() => setIsAuthModalOpen(true)}
@@ -1740,6 +1776,8 @@ export default function App() {
         sessionWorkspace={sessionWorkspace}
         onSelect={chooseWorkspace}
         onForget={forgetWorkspace}
+        onPin={pinWorkspace}
+        onAlias={aliasWorkspace}
         onBrowse={() => {
           setIsWsFlyoutOpen(false);
           setIsWorkspaceOpen(true);

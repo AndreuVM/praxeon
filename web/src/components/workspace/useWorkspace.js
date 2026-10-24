@@ -22,8 +22,10 @@ export default function useWorkspace() {
 
   const choose = useCallback((path) => api.selectWorkspace(path), []);
   const forget = useCallback((path) => api.forgetWorkspace(path), []);
+  const pin = useCallback((path, pinned = true) => api.pinWorkspace(path, pinned), []);
+  const alias = useCallback((path, name) => api.aliasWorkspace(path, name), []);
 
-  return { workspace, refresh, choose, forget };
+  return { workspace, refresh, choose, forget, pin, alias };
 }
 
 export const SOURCE_LABELS = {
