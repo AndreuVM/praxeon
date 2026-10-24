@@ -39,6 +39,8 @@ class LocalServer:
     port: int
     token: str
     saved_env: Dict[str, Optional[str]] = field(default_factory=dict)
+    # Distinto en cada arranque: una caché de la ventana de una versión anterior no puede servir el HTML viejo
+    build: str = field(default_factory=lambda: str(int(time.time())))
 
     @property
     def base_url(self) -> str:
@@ -47,7 +49,7 @@ class LocalServer:
     @property
     def window_url(self) -> str:
         # El token viaja en el fragmento (#): no se envía al servidor ni queda en logs de acceso.
-        return f"{self.base_url}/#token={quote(self.token, safe='')}"
+        return f"{self.base_url}/?v={self.build}#token={quote(self.token, safe='')}"
 
     def stop(self, timeout: float = 5.0) -> None:
         """Detiene el servidor y restaura las variables de entorno modificadas al arrancar."""

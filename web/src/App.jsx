@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback, Suspense } from 'react';
+import ErrorBoundary from './components/ErrorBoundary';
 import {
   Activity, FolderOpen,
   Plus, Map as MapIcon, ScrollText, History, FlaskConical, SquarePen, KeyRound, Pause, Play, Square,
@@ -1602,6 +1603,7 @@ export default function App() {
 
             {activeNav !== 'live' && (
               <div style={{ display: 'flex', flex: 1, overflow: 'hidden', minWidth: 0 }}>
+                <ErrorBoundary key={activeNav}>
                 <Suspense fallback={<div style={{ flex: 1, display: 'grid', placeItems: 'center', color: 'var(--muted)' }}>Cargando…</div>}>
               {activeNav === 'sessions' && (
                 <SessionsView
@@ -1692,6 +1694,7 @@ export default function App() {
                 />
               )}
             </Suspense>
+                </ErrorBoundary>
               </div>
             )}
           </main>

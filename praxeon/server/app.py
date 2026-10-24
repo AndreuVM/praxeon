@@ -129,7 +129,23 @@ def create_app(
 
     if target_static_dir:
         from fastapi.staticfiles import StaticFiles
-        app.mount("/", StaticFiles(directory=target_static_dir, html=True), name="frontend")
+
+        class FrontendFiles(StaticFiles):
+            """Interfaz web con caché correcta.
+
+            Sin `Cache-Control`, el navegador embebido (que guarda su caché entre arranques) aplica caché heurística y puede servir
+            un `index.html` de hace horas: apunta a archivos con hash que ya no existen y la pantalla se queda en blanco.
+            El HTML se revalida siempre; los archivos con hash en su nombre (`assets/`) no cambian nunca, así que se cachean.
+            """
+
+            async def get_response(self, path, scope):
+                response = await super().get_response(path, scope)
+                if response.status_code in (200, 304):
+                    hashed = path.replace("\\", "/").startswith("assets/")
+                    response.headers["Cache-Control"] = "public, max-age=31536000, immutable" if hashed else "no-cache"
+                return response
+
+        app.mount("/", FrontendFiles(directory=target_static_dir, html=True), name="frontend")
 
     if service is not None:
         app.dependency_overrides[get_runtime_service] = lambda: service
