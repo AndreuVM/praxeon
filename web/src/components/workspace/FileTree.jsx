@@ -16,6 +16,11 @@ const parentOf = (p) => (p.includes('/') ? p.slice(0, p.lastIndexOf('/')) : '');
 const joinPath = (dir, name) => (dir ? `${dir}/${name}` : name);
 
 const hasFiles = (e) => Array.from(e.dataTransfer?.types || []).includes('Files');
+// Arrastre interno: una entrada del propio árbol que se mueve a otra carpeta (distinto de soltar archivos de Windows)
+const ENTRY_MIME = 'application/x-praxeon-entry';
+const isInternal = (e) => Array.from(e.dataTransfer?.types || []).includes(ENTRY_MIME);
+const accepts = (e) => hasFiles(e) || isInternal(e);
+const baseNameOf = (p) => p.split('/').pop();
 
 const readFile = (entry) => new Promise((resolve, reject) => entry.file(resolve, reject));
 const readAll = async (reader) => {
@@ -163,8 +168,14 @@ function Node({ entry, depth, selectedPath, onOpenFile, reloadKey, ctx }) {
           tabIndex={0}
           style={{ ...ROW, paddingLeft: 8 + depth * 14, background: dragDir === dropDir && isDir ? 'rgba(110,160,255,.22)' : selected ? 'var(--hover, rgba(127,127,127,.18))' : 'transparent' }}
           onClick={toggle}
-          onDragOver={(e) => { if (hasFiles(e)) { e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = 'copy'; if (dragDir !== dropDir) setDragDir(dropDir); } }}
-          onDrop={(e) => { if (hasFiles(e)) { e.preventDefault(); e.stopPropagation(); drop(e, dropDir); } }}
+          draggable
+          onDragStart={(e) => {
+            e.dataTransfer.setData(ENTRY_MIME, entry.rel_path);
+            e.dataTransfer.effectAllowed = 'move';
+          }}
+          onDragEnd={() => setDragDir(null)}
+          onDragOver={(e) => { if (accepts(e)) { e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = isInternal(e) ? 'move' : 'copy'; if (dragDir !== dropDir) setDragDir(dropDir); } }}
+          onDrop={(e) => { if (accepts(e)) { e.preventDefault(); e.stopPropagation(); drop(e, dropDir); } }}
           onMouseEnter={() => setHover(true)}
           onMouseLeave={() => setHover(false)}
           onFocus={() => setHover(true)}
@@ -269,6 +280,22 @@ export default function FileTree({ selectedPath = null, onOpenFile, workspaceNam
 
   const fail = (err) => notify(err.message || 'No se pudo completar la operación.');
 
+  // Mueve una entrada del árbol a otra carpeta (arrastrar dentro del explorador)
+  const move = async (source, dir) => {
+    if (!source || parentOf(source) === dir) return;                       // ya está ahí
+    if (dir === source || dir.startsWith(`${source}/`)) {
+      fail(new Error('No se puede mover una carpeta dentro de sí misma.'));
+      return;
+    }
+    try {
+      const res = await renameWorkspaceEntry(source, joinPath(dir, baseNameOf(source)));
+      announce({ action: 'rename', path: res.old_rel_path, newPath: res.rel_path });
+      refresh();
+    } catch (err) {
+      fail(err);
+    }
+  };
+
   const upload = async (grabbed, dir) => {
     let items;
     try {
@@ -317,6 +344,12 @@ export default function FileTree({ selectedPath = null, onOpenFile, workspaceNam
     dragDir,
     setDragDir,
     drop: (e, dir) => {
+      if (isInternal(e)) {
+        const source = e.dataTransfer.getData(ENTRY_MIME);
+        setDragDir(null);
+        move(source, dir);
+        return;
+      }
       const grabbed = grabDropped(e.dataTransfer);     // síncrono: dentro del evento
       setDragDir(null);
       upload(grabbed, dir);
@@ -389,9 +422,9 @@ export default function FileTree({ selectedPath = null, onOpenFile, workspaceNam
       <div
         role="tree"
         style={{ flex: 1, overflowY: 'auto', outline: dragDir === '' ? '2px dashed rgba(110,160,255,.7)' : 'none', outlineOffset: -2 }}
-        onDragOver={(e) => { if (hasFiles(e)) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; if (dragDir !== '') setDragDir(''); } }}
+        onDragOver={(e) => { if (accepts(e)) { e.preventDefault(); e.dataTransfer.dropEffect = isInternal(e) ? 'move' : 'copy'; if (dragDir !== '') setDragDir(''); } }}
         onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setDragDir(null); }}
-        onDrop={(e) => { if (hasFiles(e)) { e.preventDefault(); ctx.drop(e, ''); } }}
+        onDrop={(e) => { if (accepts(e)) { e.preventDefault(); ctx.drop(e, ''); } }}
       >
         {creatingAtRoot && (
           <NameInput depth={-1} icon={creating.kind === 'dir' ? Folder : File} onSubmit={(name) => ctx.commitCreate(name)} onCancel={cancel} />
