@@ -125,6 +125,36 @@ export default function App() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [switchWorkspace]);
+
+  // Cada workspace tiene su propia conversación: al cambiar de workspace no se conserva la sesión actual (sigue en el servidor y
+  // en la lista de sesiones), se carga la última usada en el workspace nuevo o, si no tiene ninguna, se abre una sesión limpia.
+  const activeNavRef = useRef(activeNav);
+  activeNavRef.current = activeNav;
+  const lastWorkspacePathRef = useRef(null);
+  useEffect(() => {
+    const path = workspace?.path;
+    if (!path) return undefined;
+    const previous = lastWorkspacePathRef.current;
+    lastWorkspacePathRef.current = path;
+    if (previous === null || previous === path) return undefined;   // primera lectura al arrancar, o el mismo workspace
+    let cancelled = false;
+    (async () => {
+      const nav = activeNavRef.current;
+      const same = (a, b) => Boolean(a && b) && a.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase() === b.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+      let target = null;
+      try {
+        const res = await api.fetchSessions();
+        target = (res?.data || [])
+          .filter((sess) => same(sess.workspace_root, path))
+          .sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at))[0] || null;
+      } catch { /* sin lista de sesiones: se abre una limpia */ }
+      if (cancelled) return;
+      if (target) await handleLoadSession(target.session_id);
+      else handleNewCleanSession();
+      if (nav !== 'live') setActiveNav(nav);                          // cambiar de workspace no te saca de la vista en que estabas
+    })();
+    return () => { cancelled = true; };
+  }, [workspace?.path]); // eslint-disable-line react-hooks/exhaustive-deps
   // Cajón de detalle: null (cerrado) | 'map' | 'step' | 'events'
   const [drawerTab, setDrawerTab] = useState(null);
   const [drawerWide, setDrawerWide] = useState(false);
