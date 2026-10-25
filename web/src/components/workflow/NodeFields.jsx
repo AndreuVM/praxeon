@@ -243,6 +243,12 @@ export default function NodeFields({ form, setForm, nodes, outgoingEdges, agents
             excludeNodeId={form.node_id}
             lastResultLabel="El nodo anterior"
           />
+          {/^(approved|aprobado|ok|passed|done|complete[d]?)$/i.test((form.cond?.key || '').trim()) && form.cond?.operator === 'is_true' && (
+            <div role="alert" style={{ ...hintStyle, color: 'var(--bad)' }}>
+              Atención: este bucle <strong>repite mientras «{form.cond.key}» sea verdadero</strong>, es decir, seguirá dando vueltas cuando el revisor
+              apruebe. Para repetir hasta que apruebe, elige la condición «es falso (no)».
+            </div>
+          )}
           <Field label="Primer nodo que se repite">
             <NodeSelect value={form.body_entry} onChange={(v) => set({ body_entry: v })} nodes={nodes} excludeId={form.node_id} emptyLabel="Elige un nodo…" />
           </Field>
