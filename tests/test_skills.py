@@ -138,3 +138,12 @@ def test_open_folder_creates_and_opens_the_skills_folder_only_for_local_clients(
     remote = TestClient(app, client=("203.0.113.9", 5000))
     assert remote.post("/v1/skills/open-folder").status_code == 403
     assert opened == [expected]                     # el cliente remoto no abrió nada
+
+
+def test_a_loose_markdown_file_in_the_skills_folder_is_a_skill(store, tmp_path):
+    (tmp_path / "skills").mkdir(exist_ok=True)
+    (tmp_path / "skills" / "MARQ.md").write_text("---\nname: marq\ndescription: usa marq\n---\nInstrucciones sueltas\n", encoding="utf-8")
+    found = {s["name"]: s for s in store.list() if s["valid"]}
+    assert found["marq"]["status"] == "disabled"
+    store.set_enabled("marq", True)
+    assert "Instrucciones sueltas" in store.prompt_section()

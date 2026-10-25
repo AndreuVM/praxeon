@@ -1,5 +1,5 @@
-"""Skills compatibles con SKILL.md (SK-001): una carpeta por skill con `SKILL.md`, frontmatter YAML (`name`, `description`)
-y el cuerpo en Markdown con las instrucciones.
+"""Skills compatibles con SKILL.md (SK-001): una carpeta por skill con `SKILL.md` (o un `.md` suelto), frontmatter YAML
+(`name`, `description`) y el cuerpo en Markdown con las instrucciones.
 
 El contenido de una skill son instrucciones que acaban en el prompt del agente, así que:
 - nada se activa solo: una skill descubierta empieza **deshabilitada** y la habilita el operador;
@@ -105,8 +105,8 @@ class SkillStore:
     @staticmethod
     def _read(skill_dir: Path, root: Path) -> Dict[str, Any]:
         """Lee y valida una carpeta de skill; devuelve el registro (con `error` si no es válida)."""
-        info: Dict[str, Any] = {"folder": skill_dir.name, "valid": False, "error": None}
-        path = skill_dir / SKILL_FILE
+        info: Dict[str, Any] = {"folder": skill_dir.stem if skill_dir.is_file() else skill_dir.name, "valid": False, "error": None}
+        path = skill_dir if skill_dir.is_file() else skill_dir / SKILL_FILE      # también vale un `.md` suelto en la carpeta
         try:
             resolved = path.resolve()
             if not resolved.is_relative_to(root.resolve()):
@@ -133,7 +133,7 @@ class SkillStore:
         invalid: List[Dict[str, Any]] = []
         for source, root in self.roots(workspace_root):
             try:
-                children = sorted(p for p in root.iterdir() if p.is_dir()) if root.is_dir() else []
+                children = sorted(p for p in root.iterdir() if p.is_dir() or (p.is_file() and p.suffix.lower() == ".md")) if root.is_dir() else []
             except OSError:
                 children = []
             for child in children:
