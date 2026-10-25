@@ -39,6 +39,17 @@ COMPRESS_BATCH = 6
 # Fallos seguidos (vetos o errores) tras los que el supervisor corta la misión. Con 4 cortaba a modelos pequeños que aún
 # podían rectificar (en el banco, un tercio de las misiones fallidas); el aviso de «cambia de enfoque» sale a los 2.
 MAX_CONSECUTIVE_FAILURES = max(3, int(os.getenv("PRAXEON_MAX_CONSECUTIVE_FAILURES", "6") or 6))
+NODE_BUDGET_WARN_AT = (4, 1)   # pasos que le quedan a un nodo de workflow cuando se le avisa de que concluya
+_MUTATING_TOOLS = ("edit_file", "write_file", "create_file", "apply_patch", "delete_file")
+_MCP_WRITE_HINTS = ("create", "update", "write", "delete", "report", "add", "set", "move", "release", "acquire")
+
+
+def _made_progress(record: Dict[str, Any]) -> bool:
+    """Un paso correcto que cambió algo: escribió/ejecutó, o llamó a una herramienta MCP de escritura."""
+    if not record.get("success"):
+        return False
+    tool = str(record.get("tool") or "")
+    return tool in _MUTATING_TOOLS or (tool.startswith("mcp__") and any(h in tool.lower() for h in _MCP_WRITE_HINTS))
 MAX_FINISH_REJECTIONS = 4   # veces que un nodo de workflow puede ver rechazado su finish por faltar campos antes de aceptarlo
 
 
@@ -517,6 +528,15 @@ class MissionRuntimeMixin:
                     self.state_store.save_mission(dict(mission))
                 except Exception as save_err:
                     logger.debug("Error persistiendo misión en SQLite: %s", save_err)
+
+            # Un nodo de workflow con presupuesto de pasos avisa de que queda poco, para que concluya con lo hecho en vez de agotarlo
+            if trace is not None and max_steps > 0 and step_records and (max_steps - step_idx) in NODE_BUDGET_WARN_AT:
+                left = max_steps - step_idx + 1
+                last = step_records[-1]
+                last["observation"] = (
+                    f"{last.get('observation') or ''}\n\n⏳ [PRAXEON]: te quedan {left} pasos en este nodo. Si no puedes terminar todo, "
+                    "llama ya a finish con lo hecho y lo que falta; el flujo te devolverá el trabajo pendiente en la siguiente pasada."
+                )
 
             # ContextManager como única autoridad de ensamblado de prompt y compresión semántica
             conversation = self.context_manager.assemble_mission_prompt(
@@ -1136,6 +1156,24 @@ class MissionRuntimeMixin:
                     continue
 
             time.sleep(delay_sec)
+
+        if (
+            trace is not None and final_answer is None and max_steps > 0 and step_idx >= max_steps
+            and not mission.get("stopped") and not forced_termination
+        ):
+            # Presupuesto agotado trabajando (no atascado): el nodo entrega lo hecho y el flujo decide, en vez de fallar y repetirlo todo
+            done = [r for r in step_records if _made_progress(r)]
+            if done:
+                touched = []
+                for r in done:
+                    target = (r.get("arguments") or {}).get("path") or (r.get("arguments") or {}).get("command")
+                    if target and str(target)[:120] not in touched:
+                        touched.append(str(target)[:120])
+                final_answer = (
+                    f"[Nodo interrumpido por límite de {max_steps} pasos, con trabajo hecho: {len(done)} acciones de escritura.]\n"
+                    "Acciones realizadas: " + "; ".join(touched[:25]) + ("; …" if len(touched) > 25 else "") + ".\n"
+                    "El trabajo NO está terminado: continúa desde lo ya hecho (usa list_dir/read_file para verlo) sin repetir lo existente."
+                )
 
         return {
             "step_records": step_records,

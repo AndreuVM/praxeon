@@ -673,3 +673,18 @@ def test_reviewer_verdict_in_prose_drives_the_loop_and_incomplete_results_are_re
     # el desarrollador de la 2.ª pasada recibe el informe del revisor
     assert "BUG_CRITICO_1" in llm.calls[3]["system"]
     assert execution.node_outputs["reviewer"]["approved"] is True
+
+
+def test_node_that_runs_out_of_steps_while_writing_delivers_what_it_did_instead_of_failing(runtime, tmp_path):
+    """Un Dev que agota el presupuesto trabajando (no atascado) entrega lo hecho y el flujo sigue; antes fallaba y repetía todo."""
+    _single_agent_workflow(runtime)      # max_steps = 8
+    llm = ScriptedLLM(
+        ['Thought: sigo\nAction: write_file(%s)' % json.dumps({"path": f"g{i}.txt", "content": str(i)}) for i in range(12)]
+    )
+    _run_full_access(runtime, tmp_path, llm, "wf-budget")
+    execution = runtime.workflow_service.get_execution("wfx-wf-budget")
+    assert execution.status.value == "COMPLETED"
+    response = execution.node_outputs["dev"]["response"]
+    assert "límite de 8 pasos" in response and "g0.txt" in response and "NO está terminado" in response
+    assert any("te quedan" in c["messages"] for c in llm.calls)            # se le avisó antes de agotarlo
+
