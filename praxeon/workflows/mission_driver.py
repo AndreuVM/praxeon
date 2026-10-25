@@ -21,6 +21,7 @@ import re
 import time
 from typing import Any, Callable, Dict, List, Optional, Set
 
+from praxeon.agents.definition import tool_matches
 from praxeon.workflows.engine import WorkflowEngine
 from praxeon.workflows.models import (
     NodeStatus,
@@ -380,9 +381,9 @@ class WorkflowMissionDriver:
 
         def check(tool: str) -> Optional[str]:
             t = (tool or "").lower()
-            if t in forbidden:
+            if tool_matches(forbidden, t):
                 return f"❌ El agente «{agent.name}» tiene PROHIBIDA la herramienta '{tool}'. Usa otra de las permitidas o concluye con finish."
-            if "*" not in allowed and t not in allowed:
+            if not tool_matches(allowed, t):
                 return (
                     f"❌ La herramienta '{tool}' no está permitida para el agente «{agent.name}». "
                     f"Herramientas permitidas: {', '.join(agent.allowed_tools)} (y finish)."

@@ -19,6 +19,19 @@ from praxeon.domain.decision_provider import DecisionModelConfig
 from praxeon.domain.models import RiskLevel
 
 
+def tool_matches(patterns: Any, tool_name: str) -> bool:
+    """¿Cubre alguno de los patrones a la herramienta? Un patrón es un nombre exacto, «*» (todas) o un prefijo con «*»
+    final (p. ej. «mcp__marq__*» = todas las herramientas del MCP marq)."""
+    name = (tool_name or "").strip().lower()
+    for pattern in patterns or []:
+        p = str(pattern).strip().lower()
+        if not p:
+            continue
+        if p == "*" or p == name or (p.endswith("*") and name.startswith(p[:-1])):
+            return True
+    return False
+
+
 class AgentStatus(str, Enum):
     """Estados del ciclo de vida de un agente dentro del pool del runtime."""
     ACTIVE = "ACTIVE"              # Listo para recibir y ejecutar tareas
@@ -116,13 +129,13 @@ class AgentDefinition(BaseModel):
         """Evalúa si una herramienta está permitida para este agente según sus políticas."""
         t_clean = tool_name.strip()
         # 1. Lista negra explícita prevalece siempre
-        if t_clean in self.forbidden_tools or "*" in self.forbidden_tools:
+        if t_clean in self.forbidden_tools or tool_matches(self.forbidden_tools, t_clean):
             return False
 
         # 2. Lista blanca
         if "*" in self.allowed_tools:
             return True
-        return t_clean in self.allowed_tools
+        return t_clean in self.allowed_tools or tool_matches(self.allowed_tools, t_clean)
 
     def clone(
         self,

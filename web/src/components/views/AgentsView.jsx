@@ -19,6 +19,8 @@ import {
   fetchAgentVersions,
 } from '../../services/api';
 import McpToolPicker from '../McpToolPicker';
+import AgentModelSelect from '../AgentModelSelect';
+import { modelsFor } from '../../utils/modelCatalog';
 import { notify, confirmDialog } from '../Dialogs';
 import { ViewPage, ViewHeader, Chip, Segmented, SearchField, EmptyState } from '../ui';
 
@@ -717,7 +719,7 @@ export default function AgentsView({
                   </label>
                   <select
                     value={formData.provider}
-                    onChange={(e) => setFormData({ ...formData, provider: e.target.value })}
+                    onChange={(e) => setFormData({ ...formData, provider: e.target.value, model_name: modelsFor(e.target.value)[0] || '' })}
                     style={{
                       width: '100%',
                       backgroundColor: 'var(--bg)',
@@ -741,20 +743,10 @@ export default function AgentsView({
                   <label style={{ fontSize: 'var(--fs-secondary)', color: 'var(--muted)', display: 'block', marginBottom: '4px' }}>
                     Modelo
                   </label>
-                  <input
-                    type="text"
+                  <AgentModelSelect
+                    provider={formData.provider}
                     value={formData.model_name}
-                    onChange={(e) => setFormData({ ...formData, model_name: e.target.value })}
-                    placeholder="gemini-1.5-pro"
-                    style={{
-                      width: '100%',
-                      backgroundColor: 'var(--bg)',
-                      border: '1px solid var(--line)',
-                      borderRadius: '9px',
-                      padding: '7px 10px',
-                      fontSize: '12.5px',
-                      color: 'var(--text)',
-                    }}
+                    onChange={(model) => setFormData({ ...formData, model_name: model })}
                   />
                 </div>
 
