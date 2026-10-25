@@ -13,6 +13,7 @@ from collections import deque
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Union
+import re
 import uuid
 from pydantic import BaseModel, ConfigDict, Field
 import yaml
@@ -73,6 +74,21 @@ class RetryPolicy(BaseModel):
     max_retries: int = Field(default=0, ge=0)
     delay_seconds: float = Field(default=1.0, ge=0.0)
     backoff_multiplier: float = Field(default=2.0, ge=1.0)
+
+
+_FIELD_PATH = re.compile(r"^[A-Za-z_][\w\-]*(\.[\w\-]+)*$")
+_CONST_FIELDS = {"_const_true", "_const_false", "true", "True", "false", "False"}
+
+
+def invalid_condition_field(field: Any) -> Optional[str]:
+    """Devuelve por qué `field` no es una ruta de campo válida (o None). Una ruta es `outputs.<nodo>.<clave>`, sin valores ni comillas."""
+    text = str(field or "").strip()
+    if not text or text in _CONST_FIELDS or _FIELD_PATH.match(text):
+        return None
+    return (
+        f"el campo de la condición «{text}» no es una ruta válida: debe ser solo la ruta (p. ej. outputs.<nodo>.approved); "
+        "el valor a comparar va en «valor esperado» y el operador (is_true, ==…) en su propio campo"
+    )
 
 
 class EdgeCondition(BaseModel):
@@ -259,6 +275,20 @@ class WorkflowDefinition(BaseModel):
             if edge.to_node not in node_ids:
                 errors.append(f"Arista '{edge.edge_id}' referencia un nodo destino inexistente: '{edge.to_node}'.")
 
+        if errors:
+            return errors
+
+        # 3b. Las condiciones (aristas, bucles, decisiones) deben apuntar a un campo con ruta válida
+        for edge in self.edges:
+            problem = invalid_condition_field(getattr(edge.condition, "field", None) if edge.condition else None)
+            if problem:
+                errors.append(f"Arista '{edge.edge_id}': {problem}.")
+        for nid, node in self.nodes.items():
+            cond = (node.control_config or {}).get("condition") if isinstance(node.control_config, dict) else None
+            if isinstance(cond, dict):
+                problem = invalid_condition_field(cond.get("field"))
+                if problem:
+                    errors.append(f"Nodo «{node.name}» ({nid}): {problem}.")
         if errors:
             return errors
 

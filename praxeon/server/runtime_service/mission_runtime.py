@@ -39,6 +39,7 @@ COMPRESS_BATCH = 6
 # Fallos seguidos (vetos o errores) tras los que el supervisor corta la misión. Con 4 cortaba a modelos pequeños que aún
 # podían rectificar (en el banco, un tercio de las misiones fallidas); el aviso de «cambia de enfoque» sale a los 2.
 MAX_CONSECUTIVE_FAILURES = max(3, int(os.getenv("PRAXEON_MAX_CONSECUTIVE_FAILURES", "6") or 6))
+MAX_FINISH_REJECTIONS = 4   # veces que un nodo de workflow puede ver rechazado su finish por faltar campos antes de aceptarlo
 
 
 def _llm_observation_limit() -> int:
@@ -491,6 +492,7 @@ class MissionRuntimeMixin:
         anchor_id = start_parent_id or root_id
         active_parent_id = anchor_id
         consecutive_failures = 0
+        finish_rejections = 0   # finish rechazados por faltar campos del grafo: tras MAX_FINISH_REJECTIONS se acepta y el grafo decide
         final_answer: Optional[str] = None
         technical_failures = 0
         semantic_fixations = 0
@@ -751,7 +753,10 @@ class MissionRuntimeMixin:
 
             if finish_check is not None and tool in ("finish", "complete_task", "done", "complete", "task_completed"):
                 rejection = finish_check(str(args.get("summary") or args.get("final_answer") or ""))
+                if rejection and finish_rejections >= MAX_FINISH_REJECTIONS:
+                    rejection = None    # el agente no consigue dar el formato: se acepta lo entregado y el flujo sigue (sin el campo, la condición no se cumple)
                 if rejection:
+                    finish_rejections += 1
                     step_records.append({
                         "step": step_idx,
                         "thought": thought,
