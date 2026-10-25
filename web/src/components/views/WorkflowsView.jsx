@@ -308,7 +308,16 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
     }
   };
 
-  // Sincronizar formulario de edición de nodo cuando cambia la selección
+  // Sincronizar formulario de edición de nodo cuando cambia la selección o la definición guardada del nodo.
+  // No depende de `nodesArray`: ese array se rehace cada segundo con el estado en vivo de la misión y pisaba lo que se estaba escribiendo.
+  const selectedNodeSignature = useMemo(() => {
+    if (!selectedNodeId) return '';
+    const raw = Array.isArray(workflow?.nodes) ? workflow.nodes : Object.values(workflow?.nodes || {});
+    const node = raw.find((n) => (n.node_id || n.id) === selectedNodeId);
+    if (!node) return '';
+    const { position, status, outputs, ...definition } = node;   // moverlo en el lienzo o su estado de ejecución no cambian su configuración
+    return JSON.stringify(definition);
+  }, [selectedNodeId, workflow]);
   useEffect(() => {
     if (!selectedNodeId) {
       setNodeEditForm(null);
@@ -319,7 +328,7 @@ export default function WorkflowsView({ session: _session = {}, events: _events 
       setNodeEditForm(nodeToForm(node, nodesArray.map((n) => n.node_id || n.id)));
       setSelectedEdgeId(null);
     }
-  }, [selectedNodeId, nodesArray]);
+  }, [selectedNodeId, selectedNodeSignature]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Sincronizar formulario de edición de arista cuando cambia la selección
   useEffect(() => {
