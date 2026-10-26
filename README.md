@@ -683,3 +683,8 @@ Recomendamos actualizar scripts, integraciones de CI/CD y automatizaciones a los
 
 Distribuido bajo licencia MIT. Consulta `LICENSE` para más detalles.
 
+
+## Apoya el proyecto
+
+PRAXEON es y seguirá siendo gratuito y de código abierto. Si te resulta útil, puedes apoyar su desarrollo con una donación
+voluntaria en [GitHub Sponsors](https://github.com/sponsors/AndreuVM) ❤️ o, simplemente, dándole una estrella al repositorio.
