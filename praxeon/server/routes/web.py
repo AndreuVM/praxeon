@@ -3,7 +3,7 @@
 La clave se guarda pero la API nunca la devuelve. Toda la ruta exige permisos de administración.
 """
 
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
@@ -18,6 +18,7 @@ router = APIRouter(prefix="/v1/web", tags=["Web"])
 class WebSettingsRequest(BaseModel):
     enabled: Optional[bool] = None
     allowed_domains: Optional[List[str]] = Field(default=None, max_length=200)
+    search_provider: Optional[Literal["auto", "brave", "duckduckgo"]] = Field(default=None, description="auto: Brave si hay clave, si no DuckDuckGo")
     brave_api_key: Optional[str] = Field(default=None, max_length=300, description="Vacío borra la guardada; ausente la conserva")
 
 
@@ -32,14 +33,14 @@ def get_settings(web=Depends(_web)):
 
 @router.put("/settings", response_model=APIResponse[dict])
 def put_settings(req: WebSettingsRequest, web=Depends(_web)):
-    return APIResponse(data=web.settings.update(req.enabled, req.allowed_domains, req.brave_api_key))
+    return APIResponse(data=web.settings.update(req.enabled, req.allowed_domains, req.brave_api_key, req.search_provider))
 
 
 @router.post("/test", response_model=APIResponse[dict])
 def test_search(web=Depends(_web)):
     """Hace una búsqueda de prueba para comprobar la clave y la conexión."""
     try:
-        results = web._provider_factory(web.settings.api_key()).search("praxeon", 1)
+        results, used, note = web.run_search("praxeon", 1)
     except WebError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
-    return APIResponse(data={"ok": True, "results": len(results)})
+    return APIResponse(data={"ok": True, "results": len(results), "provider": used, "note": note.strip()})

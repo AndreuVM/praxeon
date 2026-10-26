@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 KEY_ENV = "BRAVE_API_KEY"
+PROVIDERS = ("auto", "brave", "duckduckgo")
 
 
 def _clean_domain(value: str) -> str:
@@ -46,6 +47,11 @@ class WebSettingsStore:
     def allowed_domains(self) -> List[str]:
         return [d for d in (_clean_domain(x) for x in self._load().get("allowed_domains", [])) if d]
 
+    def search_provider(self) -> str:
+        """auto (Brave si hay clave, si no DuckDuckGo), brave o duckduckgo."""
+        value = str(self._load().get("search_provider") or "auto")
+        return value if value in PROVIDERS else "auto"
+
     def api_key(self) -> str:
         return str(self._load().get("brave_api_key") or os.environ.get(KEY_ENV) or "").strip()
 
@@ -55,15 +61,26 @@ class WebSettingsStore:
         own = bool(str(data.get("brave_api_key") or "").strip())
         return {
             "enabled": self.enabled(),
+            "search_provider": self.search_provider(),
             "allowed_domains": self.allowed_domains(),
             "has_key": bool(self.api_key()),
             "key_source": "settings" if own else ("env" if os.environ.get(KEY_ENV) else None),
         }
 
-    def update(self, enabled: Optional[bool] = None, allowed_domains: Optional[List[str]] = None, brave_api_key: Optional[str] = None) -> Dict[str, Any]:
+    def update(
+        self,
+        enabled: Optional[bool] = None,
+        allowed_domains: Optional[List[str]] = None,
+        brave_api_key: Optional[str] = None,
+        search_provider: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """`brave_api_key`: None conserva la guardada, cadena vacía la borra."""
+        if search_provider is not None and search_provider not in PROVIDERS:
+            raise ValueError(f"Proveedor de búsqueda desconocido: {search_provider!r} (válidos: {', '.join(PROVIDERS)}).")
         with self._lock:
             data = self._load()
+            if search_provider is not None:
+                data["search_provider"] = search_provider
             if enabled is not None:
                 data["enabled"] = bool(enabled)
             if allowed_domains is not None:

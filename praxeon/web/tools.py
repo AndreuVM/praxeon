@@ -9,14 +9,14 @@ from __future__ import annotations
 
 import threading
 from datetime import datetime, timezone
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from praxeon.domain.models import RiskLevel
 from praxeon.policy.registry import ToolSpec
 from praxeon.policy.sanitizer import DataSanitizer
 from praxeon.web.context import CALL_CONTEXT
 from praxeon.web.fetcher import WebError, fetch_page
-from praxeon.web.search import BraveSearch
+from praxeon.web.search import BraveSearch, DuckDuckGoSearch, SearchResult
 from praxeon.web.settings import WebSettingsStore
 
 FULL_ACCESS = "full_access"
@@ -36,6 +36,7 @@ class WebTools:
         self.settings = settings or WebSettingsStore()
         self._allow_private = allow_private      # solo pruebas con un servidor local
         self._provider_factory: Callable[[str], BraveSearch] = lambda key: BraveSearch(key, allow_private=allow_private)
+        self._ddg_factory: Callable[[], DuckDuckGoSearch] = lambda: DuckDuckGoSearch(allow_private=allow_private)
         self._sanitizer = DataSanitizer()
         self._lock = threading.Lock()
         self._used: Dict[str, Dict[str, int]] = {}
@@ -90,11 +91,27 @@ class WebTools:
         except (TypeError, ValueError):
             count = 5
         self._spend("búsqueda", MAX_SEARCHES_PER_SESSION)
-        results = self._provider_factory(self.settings.api_key()).search(query, count)
+        results, used, note = self.run_search(query, count)
+        what = f"búsqueda con {used}"
         if not results:
-            return f"{HEADER.format(what='búsqueda')}\nSin resultados para «{query}»."
+            return f"{HEADER.format(what=what)}\n{note}Sin resultados para «{query}»."
         lines = [f"{i}. {r.title}\n   {r.url}" + (f"  ({r.age})" if r.age else "") + (f"\n   {r.snippet}" if r.snippet else "") for i, r in enumerate(results, 1)]
-        return f"{HEADER.format(what='búsqueda')}\nBúsqueda «{query}»:\n" + "\n".join(lines)
+        return f"{HEADER.format(what=what)}\n{note}Búsqueda «{query}»:\n" + "\n".join(lines)
+
+    def run_search(self, query: str, count: int) -> Tuple[List[SearchResult], str, str]:
+        """(resultados, proveedor usado, nota). `auto`: Brave si hay clave y, si falla, DuckDuckGo; sin clave, DuckDuckGo."""
+        choice, key = self.settings.search_provider(), self.settings.api_key()
+        if choice == "brave":
+            return self._provider_factory(key).search(query, count), "Brave", ""
+        if choice == "auto" and key:
+            try:
+                return self._provider_factory(key).search(query, count), "Brave", ""
+            except WebError as exc:
+                return self._ddg_factory().search(query, count), "DuckDuckGo", f"(Brave falló: {exc} Se usó DuckDuckGo.)\n"
+        return self._ddg_factory().search(query, count), "DuckDuckGo", ""
+
+    def search_available(self) -> bool:
+        return self.settings.search_provider() != "brave" or bool(self.settings.api_key())
 
     def _fetch(self, args: Dict[str, Any]) -> str:
         self._ensure_enabled()
@@ -120,7 +137,7 @@ class WebTools:
         if not self.settings.enabled():
             return ""
         lines = []
-        if self.settings.api_key() and not (allowed and allowed("web_search")):
+        if self.search_available() and not (allowed and allowed("web_search")):
             lines.append("- web_search(query, max_results=5) -> busca en la web y devuelve títulos, URLs y extractos")
         if not (allowed and allowed("web_fetch")):
             lines.append("- web_fetch(url, max_chars=8000) -> lee el texto de una página web pública")

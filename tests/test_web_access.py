@@ -206,7 +206,9 @@ def test_calls_per_session_are_limited(web, server, monkeypatch):
 
 
 def test_prompt_lists_only_what_is_usable_and_allowed(web):
-    assert "web_search" not in web.prompt_section() and "web_fetch" in web.prompt_section()      # sin clave no hay búsqueda
+    assert "web_search" in web.prompt_section()          # sin clave se busca con DuckDuckGo
+    web.settings.update(search_provider="brave")
+    assert "web_search" not in web.prompt_section() and "web_fetch" in web.prompt_section()      # Brave obligatorio y sin clave
     web.settings.update(brave_api_key="K")
     section = web.prompt_section()
     assert "web_search" in section and "web_fetch" in section and "Cita la URL" in section
@@ -228,7 +230,7 @@ def test_the_executor_hands_the_execution_mode_and_session_to_the_handler(web, s
 def test_settings_never_expose_the_key_and_clean_domains(tmp_path, monkeypatch):
     monkeypatch.delenv("BRAVE_API_KEY", raising=False)
     store = WebSettingsStore(str(tmp_path))
-    assert store.public() == {"enabled": True, "allowed_domains": [], "has_key": False, "key_source": None}
+    assert store.public() == {"enabled": True, "search_provider": "auto", "allowed_domains": [], "has_key": False, "key_source": None}
     pub = store.update(allowed_domains=["https://Docs.Python.org/3/", " python.org ", ""], brave_api_key="SECRETA")
     assert pub["allowed_domains"] == ["docs.python.org", "python.org"] and pub["has_key"] and "SECRETA" not in json.dumps(pub)
     assert store.update(enabled=False)["has_key"] and store.api_key() == "SECRETA"      # None conserva la clave
@@ -291,3 +293,90 @@ def test_a_mission_reads_a_web_page_as_a_harmless_inspection_and_answers_from_it
     assert [e.payload.get("status", "").upper() for e in events if e.type.value == "policy.decided"][0] == "ALLOW"
     assert any("2.350" in str(e.payload.get("output", "")) for e in events if e.type.value == "observation.recorded")
     assert "web_fetch(url" in seen[0]                       # el modelo sabe que existe la herramienta
+
+
+# --------------------------------------------------------------------------- DuckDuckGo
+DDG_HTML = """<html><body>
+<div class="result results_links result--ad"><h2 class="result__title"><a class="result__a" href="//duckduckgo.com/y.js?ad=1">Anuncio</a></h2>
+<a class="result__snippet" href="x">texto del anuncio</a></div>
+<div class="result"><h2 class="result__title"><a rel="nofollow" class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fejemplo.es%2Foro%3Fa%3D1&amp;rut=abc">Precio del <b>oro</b> hoy</a></h2>
+<a class="result__snippet" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fejemplo.es%2Foro">Cotiza a <b>2.350</b> dolares</a></div>
+<div class="result"><h2 class="result__title"><a class="result__a" href="https://directo.com/x">Directo</a></h2>
+<div class="result__snippet">Enlace sin redireccion</div></div>
+</body></html>"""
+
+
+class _DdgHandler(BaseHTTPRequestHandler):
+    def log_message(self, *a):
+        pass
+
+    def do_GET(self):
+        body = (DDG_HTML if "captcha" not in self.path else "<html>anomaly detected, please complete the captcha</html>").encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+
+@pytest.fixture(scope="module")
+def ddg_server():
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), _DdgHandler)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    yield f"http://127.0.0.1:{srv.server_address[1]}/html/"
+    srv.shutdown()
+
+
+def test_duckduckgo_results_are_parsed_ads_skipped_and_redirects_unwrapped(ddg_server):
+    from praxeon.web.search import DuckDuckGoSearch
+
+    results = DuckDuckGoSearch(endpoint=ddg_server, allow_private=True).search("oro", 5)
+    assert [(r.title, r.url, r.snippet) for r in results] == [
+        ("Precio del oro hoy", "https://ejemplo.es/oro?a=1", "Cotiza a 2.350 dolares"),
+        ("Directo", "https://directo.com/x", "Enlace sin redireccion"),
+    ]
+    assert len(DuckDuckGoSearch(endpoint=ddg_server, allow_private=True).search("oro", 1)) == 1
+
+
+def test_duckduckgo_captcha_is_reported_clearly(ddg_server):
+    from praxeon.web.search import DuckDuckGoSearch
+
+    with pytest.raises(WebError, match="captcha"):
+        DuckDuckGoSearch(endpoint=ddg_server + "?captcha", allow_private=True).search("oro")
+
+
+def _fake(results=None, error=None, name="X"):
+    def search(self, q, n):
+        if error:
+            raise WebError(error)
+        return results
+    return type("P", (), {"search": search, "name": name})()
+
+
+def test_auto_uses_brave_with_a_key_and_duckduckgo_without_it(web):
+    brave, ddg = [SearchResult("B", "https://b.test", "")], [SearchResult("D", "https://d.test", "")]
+    web._provider_factory, web._ddg_factory = (lambda key: _fake(brave)), (lambda: _fake(ddg))
+    assert web.run_search("q", 3)[1] == "DuckDuckGo"                  # sin clave
+    web.settings.update(brave_api_key="K")
+    assert web.run_search("q", 3)[1] == "Brave"
+
+
+def test_auto_falls_back_to_duckduckgo_when_brave_fails_and_says_so(web):
+    ddg = [SearchResult("D", "https://d.test", "")]
+    web._provider_factory, web._ddg_factory = (lambda key: _fake(error="cuota agotada.")), (lambda: _fake(ddg))
+    web.settings.update(brave_api_key="K")
+    results, used, note = web.run_search("q", 3)
+    assert used == "DuckDuckGo" and "cuota agotada" in note
+    out = _run(web, "web_search", {"query": "oro"}, mode="full_access")
+    assert "búsqueda con DuckDuckGo" in out and "Brave falló" in out and "https://d.test" in out
+
+
+def test_a_forced_provider_does_not_fall_back(web):
+    web._provider_factory, web._ddg_factory = (lambda key: _fake(error="mal.")), (lambda: _fake([SearchResult("D", "https://d.test", "")]))
+    web.settings.update(search_provider="brave", brave_api_key="K")
+    with pytest.raises(WebError, match="mal"):
+        web.run_search("q", 3)
+    web.settings.update(search_provider="duckduckgo")
+    assert web.run_search("q", 3)[1] == "DuckDuckGo"
+    with pytest.raises(ValueError):
+        web.settings.update(search_provider="google")

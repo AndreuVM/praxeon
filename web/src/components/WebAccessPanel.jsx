@@ -43,8 +43,8 @@ export default function WebAccessPanel() {
   const test = async () => {
     setBusy(true);
     try {
-      await api.testWebSearch();
-      setMsg({ ok: true, text: 'La búsqueda funciona: Brave respondió correctamente.' });
+      const res = await api.testWebSearch();
+      setMsg({ ok: true, text: `La búsqueda funciona (${res.provider}).${res.note ? ` ${res.note}` : ''}` });
     } catch (e) {
       setMsg({ ok: false, text: e.message });
     } finally {
@@ -61,7 +61,7 @@ export default function WebAccessPanel() {
         <strong style={{ fontSize: 13 }}>Acceso a internet de los agentes</strong>
       </div>
       <p style={hint}>
-        Solo lectura: <code>web_search</code> (busca con Brave) y <code>web_fetch</code> (lee el texto de una página). Sirve para dar datos actuales como
+        Solo lectura: <code>web_search</code> (busca con DuckDuckGo o Brave) y <code>web_fetch</code> (lee el texto de una página). Sirve para dar datos actuales como
         contexto; lo que se lee nunca se trata como instrucciones ni concede permisos. En <b>Full Access</b> se puede leer cualquier dominio público; en los
         demás modos, solo los dominios de la lista. Nunca se accede a localhost ni a redes privadas.
       </p>
@@ -72,11 +72,24 @@ export default function WebAccessPanel() {
       </label>
 
       <div>
-        <label htmlFor="web-brave-key" style={{ fontSize: 13, fontWeight: 600 }}>Clave de Brave Search</label>
+        <label htmlFor="web-provider" style={{ fontSize: 13, fontWeight: 600 }}>Buscador</label>
         <p style={{ ...hint, margin: '4px 0 8px' }}>
-          Necesaria para <code>web_search</code> (<code>web_fetch</code> funciona sin ella). {cfg.has_key
+          <b>Automático</b>: Brave si hay clave (y DuckDuckGo si Brave falla); sin clave, DuckDuckGo. DuckDuckGo es gratis y no necesita clave, pero no
+          es una API oficial: puede dejar de funcionar si cambia su página o limita las búsquedas automáticas.
+        </p>
+        <select id="web-provider" style={input} value={cfg.search_provider} disabled={busy} onChange={(e) => save({ search_provider: e.target.value }, 'Buscador actualizado.')}>
+          <option value="auto">Automático (recomendado)</option>
+          <option value="duckduckgo">Solo DuckDuckGo (sin clave)</option>
+          <option value="brave">Solo Brave Search (con clave)</option>
+        </select>
+      </div>
+
+      <div>
+        <label htmlFor="web-brave-key" style={{ fontSize: 13, fontWeight: 600 }}>Clave de Brave Search (opcional)</label>
+        <p style={{ ...hint, margin: '4px 0 8px' }}>
+          {cfg.has_key
             ? `Hay una clave configurada${cfg.key_source === 'env' ? ' (variable de entorno BRAVE_API_KEY)' : ''}.`
-            : 'Aún no hay clave: sin ella los agentes solo pueden leer páginas cuya URL ya conozcan.'}
+            : 'Sin clave se busca con DuckDuckGo. Con clave, Brave da resultados más estables.'}
         </p>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <input id="web-brave-key" type="password" autoComplete="off" style={{ ...input, flex: 1, minWidth: 220, fontFamily: 'var(--font-mono)' }} value={key} placeholder={cfg.has_key ? '•••••••• (déjalo vacío para conservarla)' : 'BSA…'} onChange={(e) => setKey(e.target.value)} />
@@ -84,7 +97,7 @@ export default function WebAccessPanel() {
           {cfg.has_key && cfg.key_source === 'settings' && (
             <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => save({ brave_api_key: '' }, 'Clave borrada.')}>Borrar</button>
           )}
-          <button type="button" className="btn btn-secondary" disabled={busy || !cfg.has_key} onClick={test}>Probar búsqueda</button>
+          <button type="button" className="btn btn-secondary" disabled={busy || (cfg.search_provider === 'brave' && !cfg.has_key)} onClick={test}>Probar búsqueda</button>
         </div>
       </div>
 

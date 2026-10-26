@@ -138,7 +138,7 @@ Las fases 1–3 son el mínimo útil; 4 y 5 pueden ir justo después.
 
 ## 9. Decisiones tomadas
 
-1. Proveedor de búsqueda: Brave Search (clave en Ajustes → Internet o `BRAVE_API_KEY`).
+1. Proveedor de búsqueda: Brave Search (clave en Ajustes → Internet o `BRAVE_API_KEY`) y, añadido después porque Brave no es gratuito, **DuckDuckGo sin clave** (página HTML, no API oficial: puede romperse o limitar las búsquedas). Ajuste `search_provider`: `auto` (Brave si hay clave y, si falla, DuckDuckGo; sin clave, DuckDuckGo), `brave` o `duckduckgo`.
 2. Activado por defecto. Full Access: abierto (cualquier dominio público). Otros modos: lista de dominios permitidos.
 3. Alcance: solo lectura (GET). Nada de POST ni autenticación; eso, vía MCP.
 4. Los datos web son contexto: no hay herramientas específicas por tipo de dato.
