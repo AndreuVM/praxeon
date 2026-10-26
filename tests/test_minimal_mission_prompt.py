@@ -45,7 +45,10 @@ def test_a_real_mission_sends_that_prompt_and_only_the_task_as_first_message(tmp
     finally:
         set_runtime_service(None)
     system, messages = seen[0]
-    assert system == build_mission_system_prompt(str(tmp_path))
+    base = build_mission_system_prompt(str(tmp_path))
+    assert system.startswith(base)
+    extra = system[len(base):]      # lo único que se añade es la sección de herramientas web (activadas por defecto)
+    assert extra.startswith("\n\nHerramientas web (solo lectura)") and "web_fetch(url" in extra
     assert messages == [{"role": "user", "content": "Tarea: Di hola"}]
 
 

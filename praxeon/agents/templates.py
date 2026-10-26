@@ -143,7 +143,7 @@ def create_researcher_template() -> AgentDefinition:
             "las decisiones de ingeniería del equipo."
         ),
         model=ModelConfig(provider="gemini", model_name="gemini-1.5-flash", temperature=0.3),
-        allowed_tools=["search_web", "read_url_content", "read_file", "view_file", "list_dir"],
+        allowed_tools=["web_search", "web_fetch", "search_web", "read_url_content", "read_file", "view_file", "list_dir"],
         forbidden_tools=["write_file", "edit_file", "run_command", "delete_file"],
         capabilities=["web_research", "literature_search", "synthesis"],
         skills=["arxiv-search", "documentation-lookup"],

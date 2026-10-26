@@ -808,3 +808,21 @@ export const fetchSkills = () => skillsCall('');
 export const fetchSkill = (name) => skillsCall(`/${encodeURIComponent(name)}`);
 export const openSkillsFolder = (scope = 'user') => skillsCall(`/open-folder?scope=${scope}`, { method: 'POST' });
 export const setSkillEnabled = (name, enabled) => skillsCall(`/${encodeURIComponent(name)}/${enabled ? 'enable' : 'disable'}`, { method: 'POST' });
+
+// ---------------------------------------------------------------- acceso a internet de los agentes
+async function webCall(path, options) {
+  const res = await authFetch(`${API_BASE}/web${path}`, options);
+  if (!res.ok) {
+    let detail = `HTTP ${res.status}`;
+    try {
+      const body = await res.json();
+      detail = typeof body.detail === 'string' ? body.detail : JSON.stringify(body.detail || body);
+    } catch { /* cuerpo no JSON */ }
+    throw new Error(detail);
+  }
+  return (await res.json()).data;
+}
+
+export const fetchWebSettings = () => webCall('/settings');
+export const saveWebSettings = (patch) => webCall('/settings', { method: 'PUT', body: JSON.stringify(patch) });
+export const testWebSearch = () => webCall('/test', { method: 'POST' });

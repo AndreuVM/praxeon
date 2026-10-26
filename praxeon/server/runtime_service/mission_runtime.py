@@ -488,6 +488,15 @@ class MissionRuntimeMixin:
                     mcp_section = ""
                 if mcp_section:
                     system_prompt = system_prompt + "\n\n" + mcp_section
+            web = getattr(self, "web", None)
+            if web is not None:
+                try:
+                    web_section = web.prompt_section(tool_filter)
+                except Exception as web_err:   # el acceso web nunca debe impedir la misión
+                    logger.warning("No se pudieron preparar las herramientas web: %s", web_err)
+                    web_section = ""
+                if web_section:
+                    system_prompt = system_prompt + "\n\n" + web_section
             skills = getattr(self, "skills", None)
             if skills is not None:
                 try:

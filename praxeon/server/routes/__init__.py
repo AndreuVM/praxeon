@@ -14,6 +14,7 @@ from praxeon.server.routes.metrics import router as metrics_router
 from praxeon.server.routes.providers import router as providers_router
 from praxeon.server.routes.sessions import router as sessions_router
 from praxeon.server.routes.skills import router as skills_router
+from praxeon.server.routes.web import router as web_router
 from praxeon.server.routes.workflows import router as workflows_router
 from praxeon.server.routes.workspace import router as workspace_router
 
@@ -29,6 +30,7 @@ api_router.include_router(providers_router, dependencies=[Depends(require_route_
 api_router.include_router(workflows_router, dependencies=[Depends(require_route_permission(P.WORKFLOW_READ, P.WORKFLOW_WRITE))])
 api_router.include_router(mcp_router, dependencies=[Depends(require_route_permission(P.ADMIN_SETTINGS, P.ADMIN_SETTINGS))])
 api_router.include_router(skills_router, dependencies=[Depends(require_route_permission(P.ADMIN_SETTINGS, P.ADMIN_SETTINGS))])
+api_router.include_router(web_router, dependencies=[Depends(require_route_permission(P.ADMIN_SETTINGS, P.ADMIN_SETTINGS))])
 api_router.include_router(workspace_router, dependencies=[Depends(require_route_permission(P.SESSION_READ, P.ADMIN_SETTINGS))])
 
 

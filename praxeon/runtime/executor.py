@@ -37,6 +37,7 @@ from praxeon.runtime.sandbox import (
     get_default_workspace_root,
 )
 from praxeon.runtime.state import SessionState
+from praxeon.web.context import CALL_CONTEXT
 
 
 class PolicyViolation(Exception):
@@ -283,6 +284,8 @@ class SecureExecutor(Executor):
         # 5. Despacho a controlador personalizado si existe
         if tool_name in self._custom_handlers:
             start_t = time.perf_counter()
+            call_mode = getattr(receipt, "execution_mode", None) or state.metadata.get("execution_mode")
+            ctx_token = CALL_CONTEXT.set({"mode": call_mode, "session_id": state.session_id})
             try:
                 out = self._custom_handlers[tool_name](tool_args)
                 elapsed = (time.perf_counter() - start_t) * 1000.0
@@ -302,6 +305,8 @@ class SecureExecutor(Executor):
                     tool_name=tool_name,
                     is_error=True,
                 )
+            finally:
+                CALL_CONTEXT.reset(ctx_token)
 
         # 6. Ejecución física según el ExecutionMode resuelto
         start_t = time.perf_counter()

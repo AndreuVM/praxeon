@@ -129,7 +129,7 @@ class PolicyEngine:
         is_read_only = (
             (operation_assessment.read_only if operation_assessment else False)
             or (spec.read_only if spec else False)
-            or (tool_name in ("read_file", "view_file", "list_dir", "grep_search", "search_web"))
+            or (tool_name in ("read_file", "view_file", "list_dir", "grep_search", "search_web", "web_search", "web_fetch", "read_url_content"))
         )
 
         reason_codes: List[str] = []

@@ -211,7 +211,7 @@ class RiskReconciler:
                 reasons=[f"Herramienta observacional segura registrada: '{tool_name}'."],
             )
 
-        if tool_name in ("read_file", "view_file", "list_dir", "grep_search", "search_web"):
+        if tool_name in ("read_file", "view_file", "list_dir", "grep_search", "search_web", "web_search", "web_fetch", "read_url_content"):
             return RiskAssessment(
                 level=RiskLevel.LOW,
                 requires_confirmation=False,

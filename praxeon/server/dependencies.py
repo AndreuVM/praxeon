@@ -27,6 +27,7 @@ from praxeon.domain.models import (
 )
 from praxeon.policy.engine import PolicyEngine
 from praxeon.skills import SkillStore
+from praxeon.web import WebSettingsStore, WebTools
 from praxeon.integrations.mcp_client import McpConfigStore, McpManager
 from praxeon.policy.registry import ToolRegistry
 from praxeon.providers.base import BaseReasoningProvider
@@ -137,6 +138,9 @@ class RuntimeApplicationService(DecisionPipelineMixin, MissionRuntimeMixin):
         self.mcp = McpManager(McpConfigStore(), self.registry, self.executor)
         # Skills (SKILL.md) habilitadas por el operador: sus instrucciones se añaden al prompt de las misiones
         self.skills = SkillStore()
+        # Acceso a internet de solo lectura (web_search con Brave, web_fetch): activado por defecto, abierto en Full Access
+        self.web = WebTools(self.registry, self.executor, WebSettingsStore())
+        self.web.register()
         self.risk_engine = RiskEngine(registry=self.registry)
         self.command_classifier = CommandClassifier()
         self.evidence_engine = EvidenceEngine()

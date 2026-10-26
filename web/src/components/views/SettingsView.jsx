@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import WorkspaceField from '../workspace/WorkspaceField';
+import WebAccessPanel from '../WebAccessPanel';
 import {
   Save,
   Check,
@@ -181,6 +182,7 @@ export default function SettingsView({
           { id: 'auth', label: 'Autenticación' },
           { id: 'supervisor', label: 'Supervisor y bucles' },
           { id: 'models', label: 'Modelos y endpoints' },
+          { id: 'web', label: 'Internet' },
           { id: 'sandbox', label: 'Sandbox y aislamiento' },
           { id: 'circuit', label: 'Resiliencia' },
         ].map((tab) => (
@@ -447,6 +449,8 @@ export default function SettingsView({
         )}
 
         {/* Tab 2: Proveedores LLM & Endpoints */}
+        {activeTab === 'web' && <WebAccessPanel />}
+
         {activeTab === 'models' && (
           <div style={{
             backgroundColor: 'var(--surface)',

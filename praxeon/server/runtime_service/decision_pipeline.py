@@ -81,7 +81,7 @@ class DecisionPipelineMixin:
         veto del clasificador (destructivo, privilegios…) se respeta, y lo demás sigue pidiendo confirmación.
         """
         spec = self.registry.get_tool(tool) if tool else None
-        if spec is None or not (spec.source or "").startswith("mcp:") or assessment.category != CommandCategory.UNKNOWN:
+        if spec is None or not ((spec.source or "").startswith("mcp:") or spec.source == "web") or assessment.category != CommandCategory.UNKNOWN:
             return assessment
         if not spec.read_only and not spec.requires_confirmation:
             # El operador desactivó expresamente la confirmación de esta herramienta: sigue bajo el supervisor y la
@@ -840,7 +840,7 @@ class DecisionPipelineMixin:
             elif tool_name in ("read_file", "write_file", "delete_file", "patch_file"):
                 target_p = args.get("path") or args.get("file_path") or ""
                 command = f"{tool_name}: {target_p}" if target_p else (description or tool_name)
-            elif tool_name == "search_web":
+            elif tool_name in ("search_web", "web_search"):
                 query_p = args.get("query") or args.get("q") or ""
                 command = f"search: {query_p}" if query_p else (description or "search_web")
             else:

@@ -157,7 +157,7 @@ class ToolRegistry:
 
     def is_observational(self, name: str, tool_args: Optional[Dict[str, Any]] = None) -> bool:
         """Determina si la herramienta o comando es puramente observacional / de lectura."""
-        if name in ("read_file", "view_file", "list_dir", "grep_search", "search_web"):
+        if name in ("read_file", "view_file", "list_dir", "grep_search", "search_web", "web_search", "web_fetch", "read_url_content"):
             return True
         if name == "run_command" and tool_args:
             cmd = str(tool_args.get("command") or "").strip()
