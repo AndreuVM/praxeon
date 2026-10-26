@@ -133,3 +133,11 @@ def test_veto_mode_defaults_and_overrides(monkeypatch):
     assert LayaProvider(backend="local").veto_mode == "authoritative"
     monkeypatch.setenv("KEV_VETO_MODE", "advisory")
     assert KevProvider(backend="local").veto_mode == "advisory"
+
+
+def test_an_advisory_supervisor_with_low_groundedness_does_not_veto_reading_a_file():
+    # sin esto el supervisor exigía inspeccionar y vetaba cada inspección: la misión se cortaba sin hacer nada
+    low = _advisory("ALLOW", {"ALLOW": 0.9, "REPLAN": 0.03, "BLOCK": 0.03, "ABSTAIN": 0.04}, confidence=0.9)
+    low = low.model_copy(update={"grounded_probability": 0.02})
+    decision, _ = PolicyEngine().evaluate_action(_read(), _state(), provider_assessment=low, session_id="s")
+    assert decision.status == DecisionStatus.ALLOW and not any("LOW_GROUNDED" in r for r in decision.reason_codes)

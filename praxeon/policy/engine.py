@@ -258,9 +258,11 @@ class PolicyEngine:
                     status = DecisionStatus.REPLAN
                     reason_codes.append("SUPERVISOR_LAYA_UNNECESSARY_ACTION_REPLAN")
 
-                # Detección de premisa no fundamentada o alucinación semántica
+                # Detección de premisa no fundamentada o alucinación semántica. Un supervisor consultivo solo avisa: si vetara
+                # por esto, bloquearía hasta las lecturas con las que el agente reúne la evidencia que se le exige.
                 elif (
-                    provider_assessment.grounded_probability is not None
+                    not advisory
+                    and provider_assessment.grounded_probability is not None
                     and provider_assessment.grounded_probability < self.min_grounded_threshold
                 ):
                     status = DecisionStatus.REPLAN
