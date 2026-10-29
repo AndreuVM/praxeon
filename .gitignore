@@ -55,5 +55,10 @@ data/finetune/
 # proyectos y renders de vídeos promocionales (solo en local)
 videos/
 
-# documentación interna (solo en local)
-docs/
+# documentación interna (solo en local), salvo la que enlazan README, SECURITY, CHANGELOG y la landing
+docs/*
+!docs/MCP_CLIENT.md
+!docs/FULL_ACCESS_POLICY.md
+!docs/benchmarks/
+docs/benchmarks/*
+!docs/benchmarks/agentbench.md
