@@ -51,3 +51,6 @@ benchmark_results/SUMMARY.md
 
 # Datos de ajuste fino (sesiones reales y trazas): solo locales
 data/finetune/
+
+# proyectos y renders de vídeos promocionales (solo en local)
+videos/
