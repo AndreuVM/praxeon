@@ -54,3 +54,6 @@ data/finetune/
 
 # proyectos y renders de vídeos promocionales (solo en local)
 videos/
+
+# documentación interna (solo en local)
+docs/
