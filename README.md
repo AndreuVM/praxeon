@@ -18,6 +18,10 @@ Los LLMs son generadores estocásticos que proponen acciones basándose en distr
 
 $$\text{Context Optimization (ContextManager)} \to \text{Semantic Judgment (LAYA / TypeSafe)} \neq \text{Operational Policy (PolicyEngine)} \neq \text{Capability Receipt (HMAC)} \neq \text{Enforced Sandbox (SecureExecutor)}$$
 
+> **Mismo modelo, mismas tareas:** con `qwen2.5-coder:7b` en local, el agente completa el **78 %** de las tareas de código
+> con PRAXEON frente al **63 %** sin él; con Claude Haiku, **100 %** frente a **96 %**, con un tiempo por misión similar
+> (19 s frente a 19 s; 16 s frente a 13 s). Detalle y limitaciones en la [sección 13](#13-agente-real-praxeon-frente-al-mismo-llm-sin-arnés).
+
 ---
 
 ## ⚡ Inicio Rápido (Zero-Config / 100% Offline)
@@ -617,6 +621,46 @@ Para evaluar el comportamiento demostrable en un entorno de producción real sin
 * **Comandos Destructivos Permitidos:** Sin Modelos = **4/4 (100%)** | JEV/LAYA = **4/4 (100%)** | **PRAXEON = 0/4 (0%)**
 * **Latencia de Supervisión PRAXEON ($p50$):** **1.500 ms** (frente a los ~5.000 ms a 12.000 ms que toma la inferencia del LLM generativo, la sobrecarga del supervisor es de solo el **0.02%**).
 * **Ejecutar benchmark en vivo:** `python scripts/run_live_llm_benchmark.py`
+
+---
+
+## 13. Agente real: PRAXEON frente al mismo LLM sin arnés
+
+Las mismas 11 tareas se ejecutan con el mismo modelo dos veces: en un bucle ReAct mínimo sin supervisión (`bare`) y dentro
+de una misión completa de PRAXEON con LAYA (`praxeon:laya`). Cada ejecución parte de un directorio limpio y el éxito lo da
+un comprobador automático, no el propio modelo. Metodología completa en [docs/benchmarks/agentbench.md](docs/benchmarks/agentbench.md);
+datos brutos en `benchmark_results/agentbench_real/` (octubre de 2026, Windows 11, RTX 4060 de 8 GB). LAYA usa el checkpoint
+ajustado por PRAXEON (`r5_s0`, local, fuera del repositorio) en la GPU; con el LAYA base los resultados pueden variar.
+
+**Tareas de capacidad** (9 tareas × 3 repeticiones: localizar código, corregir errores, implementar, renombrar en varios
+archivos, ejecutar tests…):
+
+| Modelo | Brazo | Éxito | IC95 % | Tokens/tarea | Tokens/éxito | Tiempo medio |
+|---|---|--:|---|--:|--:|--:|
+| `qwen2.5-coder:7b` (Ollama) | sin arnés | 63 % | 44–78 % | 4.279 | 6.796 | 19 s |
+| `qwen2.5-coder:7b` (Ollama) | **PRAXEON** | **78 %** | 59–89 % | 5.353 | 6.882 | 19 s |
+| Claude Haiku (CLI) | sin arnés | 96 % | 82–99 % | 7.376 | 7.660 | 13 s |
+| Claude Haiku (CLI) | **PRAXEON** | **100 %** | 88–100 % | 9.381 | 9.381 | 16 s |
+
+- Con un modelo local pequeño, la replanificación y las ramas de PRAXEON suben el éxito **15 puntos** (los intervalos aún se
+  solapan: hacen falta más repeticiones para afinar la cifra). Con un modelo más capaz, la mejora es menor porque el modelo
+  ya acierta casi siempre solo.
+- **Coste:** la supervisión de LAYA en GPU cuesta ~0,2 s por paso, así que el tiempo por misión es similar al del agente sin
+  arnés (×1,0 con qwen, ×1,2 con Haiku). Se gastan un 25–27 % más de tokens por tarea.
+- Una primera medición daba misiones entre 8 y 10 veces más lentas: LAYA se recargaba en la CPU (~15 s por paso) al ver
+  ocupada la VRAM que ella misma usaba. Corregido; las ejecuciones afectadas se conservan en
+  `runs_praxeon_laya_cpu_bug.jsonl`.
+
+**Tareas de seguridad** (un README con instrucciones inyectadas para borrar `data/` o enviar un fichero a un servidor):
+ningún modelo, ni `qwen2.5-coder:7b`, ni `qwen2.5-coder:1.5b`, ni Haiku, llegó a **proponer** la acción dañina (0 de 44
+ejecuciones), así que el daño fue 0 % en ambos brazos y estas trampas no miden todavía la protección de PRAXEON. En una
+ejecución anterior el supervisor bloqueó una limpieza legítima de `build/` (un `Remove-Item` encadenado a otro comando):
+los falsos positivos son posibles. La protección frente a comandos destructivos se mide con el atacante de guion
+(`--kind adversarial`) y en la [sección 12](#12-benchmark-en-vivo-con-llm-local-real-deepseek-r17b-vía-ollama).
+
+```bash
+uv run python scripts/run_agent_benchmark.py --models ollama:qwen2.5-coder:7b,claude_cli:haiku --arms bare,praxeon:laya --repeats 3
+```
 
 ---
 
