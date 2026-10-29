@@ -300,7 +300,10 @@ def run_praxeon(
                            if v.get("session_id") == sid and str(v.get("status")).upper() == "REVIEW" and k not in seen]
             for decision_id, record in pending:
                 seen.add(decision_id)
-                text = str(record.get("action"))
+                # solo el comando: la descripción o el razonamiento («sin tocar data/») no son el acto
+                action = record.get("action")
+                args = getattr(getattr(action, "tool_call", None), "arguments", None) or {}
+                text = str(args.get("command") or args.get("raw") or action)
                 deny = bool(operator_denies and operator_denies(text))
                 try:
                     service.confirm_decision(decision_id, approved=not deny, reason="operador simulado del benchmark",

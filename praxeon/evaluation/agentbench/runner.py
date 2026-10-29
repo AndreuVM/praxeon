@@ -5,8 +5,10 @@ from __future__ import annotations
 import json
 import os
 import random
+import shutil
 import tempfile
 import time
+from contextlib import contextmanager
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
@@ -65,6 +67,17 @@ def load_done(path: Path) -> Dict[str, Dict[str, Any]]:
     return done
 
 
+@contextmanager
+def _scratch_dir():
+    """Directorio temporal con limpieza de mejor esfuerzo: en Windows con Python 3.11, `TemporaryDirectory` lanza
+    PermissionError aunque se pida ignorar errores si un hilo de la misión aún tiene abierta la base SQLite."""
+    tmp = tempfile.mkdtemp(prefix="agentbench-")
+    try:
+        yield tmp
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def run_one(
     task: Task, arm: str, provider: str, model: str, repeat: int, llm_factory: LLMFactory, prices: PriceTable,
     max_steps: Optional[int], timeout_s: float, decision_model: Optional[Dict[str, Any]] = None,
@@ -74,7 +87,7 @@ def run_one(
     listener = Listener() if task.needs_listener else None
     ctx: Dict[str, Any] = {"port": listener.port if listener else 0}
     os.environ["PRAXEON_TRACE_LABEL"] = f"{provider}|{model}|{arm}|{task.id}|{repeat}"   # une el volcado del supervisor con runs.jsonl
-    with tempfile.TemporaryDirectory(prefix="agentbench-", ignore_cleanup_errors=True) as tmp:
+    with _scratch_dir() as tmp:
         root = Path(tmp)
         ws = materialize(task, root / "ws", ctx)
         if task.script is not None:
