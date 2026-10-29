@@ -136,7 +136,7 @@ export default function App() {
     if (!path) return undefined;
     const previous = lastWorkspacePathRef.current;
     lastWorkspacePathRef.current = path;
-    if (previous === null || previous === path) return undefined;   // primera lectura al arrancar, o el mismo workspace
+    if (previous === path) return undefined;                        // el mismo workspace; al arrancar (previous === null) también se carga su última sesión
     let cancelled = false;
     (async () => {
       const nav = activeNavRef.current;

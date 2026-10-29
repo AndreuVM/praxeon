@@ -7,7 +7,7 @@ import Markdown from './Markdown';
 import { presentAnswer } from '../utils/answerText';
 import { deriveChatState } from '../utils/chatFromEvents';
 import { PROVIDERS, saveChoice, savedChoice } from '../utils/modelCatalog';
-import { Maximize2, Minimize2, Play, Pause, Square, Settings, AlertTriangle, Copy, Check } from 'lucide-react';
+import { Maximize2, Minimize2, Play, Pause, Square, Settings, AlertTriangle, Copy, Check, ArrowDown } from 'lucide-react';
 
 /** Posición del último mensaje del asistente (-1 si no hay): los mensajes del operador pueden ir detrás. */
 function lastAssistantIndex(messages) {
@@ -133,8 +133,21 @@ export default function Conversation({
     }
   };
 
+  // Botón flotante «ir al final»: aparece cuando hay más de ~un cuarto de pantalla por debajo
+  const [showJump, setShowJump] = useState(false);
+  const updateJump = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    setShowJump(el.scrollHeight - el.scrollTop - el.clientHeight > Math.max(240, el.clientHeight * 0.4));
+  };
+  const jumpToBottom = () => {
+    const el = scrollRef.current;
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+  };
+
   useEffect(() => {
     scrollToBottom();
+    updateJump();
   }, [messages, isRunning, events.length]);
 
   // Si cambia la sesión (ej. carga de demo o nueva sesión desde otro sitio)
@@ -570,7 +583,19 @@ export default function Conversation({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minWidth: 0, overflow: 'hidden' }}>
-      <div ref={scrollRef} role="log" aria-live="polite" aria-label="Conversación con el agente" style={{ flex: 1, overflowY: 'auto' }}>
+      <div style={{ flex: 1, minHeight: 0, position: 'relative', display: 'flex', flexDirection: 'column' }}>
+      {showJump && (
+        <button
+          type="button"
+          onClick={jumpToBottom}
+          aria-label="Ir al final de la conversación"
+          title="Ir al final"
+          style={{ position: 'absolute', right: 20, bottom: 12, zIndex: 5, width: 36, height: 36, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', backgroundColor: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--line)', boxShadow: '0 2px 10px rgba(0,0,0,0.25)' }}
+        >
+          <ArrowDown size={16} />
+        </button>
+      )}
+      <div ref={scrollRef} onScroll={updateJump} role="log" aria-live="polite" aria-label="Conversación con el agente" style={{ flex: 1, overflowY: 'auto' }}>
         <div
           style={{
             width: 'min(720px, 100%)',
@@ -593,6 +618,7 @@ export default function Conversation({
           {messages.map(renderMessage)}
           <div ref={messagesEndRef} />
         </div>
+      </div>
       </div>
 
       <div style={{ padding: '0 24px 20px', position: 'relative', flex: 'none' }}>
