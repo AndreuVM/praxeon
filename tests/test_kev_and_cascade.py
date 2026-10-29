@@ -456,6 +456,18 @@ def test_laya_local_degrades_visibly_to_the_calibrated_engine_when_the_model_can
     assert res.metadata["backend"] == "simulated"
 
 
+def test_laya_auto_device_is_decided_once_and_not_moved_to_cpu_by_its_own_vram(monkeypatch):
+    from praxeon.providers import laya as laya_module
+
+    gpu_router = object()
+    monkeypatch.setattr(laya_module, "_ROUTERS", {"cuda": gpu_router})
+    # con LAYA ya en la GPU la VRAM libre baja; el plan diría «cpu», pero no debe cargarse otra copia
+    monkeypatch.setattr(laya_module, "resolve_device", lambda requested=None: "cpu")
+    provider = laya_module.LayaProvider(backend="simulated")
+    assert provider._get_router() is gpu_router
+    assert list(laya_module._ROUTERS) == ["cuda"]
+
+
 def test_laya_without_the_package_uses_the_calibrated_engine(state, action):
     provider = __import__("praxeon.providers.laya", fromlist=["LayaProvider"]).LayaProvider(backend="auto")
     assert provider.backend == "simulated"  # el conftest simula que el paquete no está instalado

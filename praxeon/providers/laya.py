@@ -303,6 +303,10 @@ class LayaProvider(BaseReasoningProvider):
     def _get_router(self):
         """Carga (una vez por proceso y dispositivo) el Router del paquete `laya`, que elige el checkpoint por idioma."""
         with _ROUTER_LOCK:
+            if (self.device or "auto").strip().lower() == "auto" and _ROUTERS:
+                # «auto» se decide una vez: con LAYA ya en la GPU, la VRAM que ocupa ella misma no es motivo para cargar
+                # otra copia en la CPU (cada paso pasaría de ~0,2 s a ~15 s)
+                return next(iter(_ROUTERS.values()))
             device = resolve_device(self.device)
             router = _ROUTERS.get(device)
             if router is None:
