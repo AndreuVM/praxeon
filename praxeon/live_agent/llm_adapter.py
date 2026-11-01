@@ -237,6 +237,14 @@ def normalize_tool_call(tool: str, args: Dict[str, Any]) -> tuple[str, Dict[str,
     return tool, args
 
 
+# Herramientas propias con argumentos estructurados: su texto no es una línea de shell
+_STRUCTURED_TOOLS = frozenset({
+    "read_file", "view_file", "edit_file", "write_file", "write_to_file", "create_file", "replace_file_content",
+    "delete_file", "list_dir", "grep_search", "search_web", "finish",
+})
+_SHELL_OPERATORS = re.compile(r"\||;|&&|>|<|`|\$\(")
+
+
 def parse_llm_steps(llm_output: str) -> List[Dict[str, Any]]:
     """Extrae uno o múltiples pasos (Thought + Action) de la salida del LLM."""
     steps: List[Dict[str, Any]] = []
@@ -336,7 +344,14 @@ def parse_llm_steps(llm_output: str) -> List[Dict[str, Any]]:
                                 current_args = {"raw": str(parsed)}
                         except Exception:
                             kw_pairs = re.findall(r'([a-zA-Z0-9_]+)\s*=\s*(?:"([^"]*)"|\'([^\']*)\'|([^\s,)]+))', raw_arg)
-                            if kw_pairs:
+                            if current_tool.lower() not in _STRUCTURED_TOOLS and _SHELL_OPERATORS.search(raw_arg):
+                                # «echo … | base64 -d | sh»: es una línea de shell entera; partirla en herramienta + kwargs
+                                # ocultaría la tubería al supervisor
+                                if current_tool.lower() == "run_command":
+                                    current_args = {"command": raw_arg.strip('"').strip("'")}
+                                else:
+                                    current_tool, current_args = "run_command", {"command": action_content}
+                            elif kw_pairs:
                                 current_args = {}
                                 for k, v1, v2, v3 in kw_pairs:
                                     current_args[k] = v1 or v2 or v3

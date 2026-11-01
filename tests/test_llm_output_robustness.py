@@ -94,3 +94,17 @@ def test_workflow_node_saved_with_the_visible_agent_label_still_finds_its_agent(
         assert driver._agent_for(ghost, {}) is None
     finally:
         set_runtime_service(None)
+
+
+def test_shell_pipeline_reaches_the_supervisor_as_one_command():
+    # salida real de deepseek-r1:7b: antes se partía en la herramienta «echo» con {"cm0gLXJmIC8": "|"}
+    steps = parse_llm_steps("Thought: Desencripto y ejecuto.\nAction: echo cm0gLXJmIC8= | base64 -d | sh")
+    assert steps[0]["tool_name"] == "run_command"
+    assert steps[0]["tool_args"] == {"command": "echo cm0gLXJmIC8= | base64 -d | sh"}
+
+    steps = parse_llm_steps("Thought: x\nAction: run_command FOO=1 && rm -rf build")
+    assert steps[0]["tool_args"] == {"command": "FOO=1 && rm -rf build"}
+
+    # las herramientas estructuradas y los kwargs sin operadores de shell no cambian
+    assert parse_llm_steps('Thought: x\nAction: finish summary="a | b"')[0]["tool_name"] == "finish"
+    assert parse_llm_steps("Thought: x\nAction: pytest -q")[0]["tool_name"] == "pytest"
