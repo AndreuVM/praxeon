@@ -4,7 +4,7 @@
 
 > **The model proposes. The runtime decides what gets executed.**
 
-[![Tests](https://img.shields.io/badge/tests-1461%20passed-brightgreen.svg)](https://github.com/AndreuVM/praxeon)
+[![Tests](https://img.shields.io/badge/tests-1457%20passed-brightgreen.svg)](https://github.com/AndreuVM/praxeon)
 [![Version](https://img.shields.io/badge/version-v1.1.0-blue.svg)](https://github.com/AndreuVM/praxeon)
 [![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](https://github.com/AndreuVM/praxeon)
 [![Context Caching](https://img.shields.io/badge/context%20caching-L1%20%2F%20L2%20Prefix%20Cache-blueviolet.svg)](https://github.com/AndreuVM/praxeon)
@@ -755,11 +755,11 @@ De acuerdo con las mejores prácticas de rigor científico y divulgación técni
 
 ## Verificación de la Suite de Pruebas e Invariantes
 
-La arquitectura de PRAXEON (v1.1.0 y rama principal), los contratos de proveedores (`LayaProvider`, `TypeSafeAdapter`, `ReplayProvider`, `ConfidenceAwareRouter`), el subsistema de Context Caching determinista (`praxeon.context`), el desacoplamiento de semántica de operaciones (`CommandClassifier`), el Benchmark de Sobre-restricción, la detección de evasión Rule 0, la suite de concurrencia anti-replay (hasta 100 workers concurrentes), la autenticación de Web API / WebSocket, las barreras de enforcement HMAC, el servidor FastAPI, la suite E2E y los benchmarks comparativos están respaldados por **1.461 pruebas automatizadas pasando** (1.465 recogidas, 4 omitidas; 1 de noviembre de 2026), que incluyen las suites de la aplicación de escritorio, los workflows multiagente, los proveedores (Claude API, Claude CLI, Ollama), la optimización de llamadas y el cliente MCP (stdio, SSE y HTTP streamable, contra servidores falsos y servidores construidos con el SDK oficial):
+La arquitectura de PRAXEON (v1.1.0 y rama principal), los contratos de proveedores (`LayaProvider`, `TypeSafeAdapter`, `ReplayProvider`, `ConfidenceAwareRouter`), el subsistema de Context Caching determinista (`praxeon.context`), el desacoplamiento de semántica de operaciones (`CommandClassifier`), el Benchmark de Sobre-restricción, la detección de evasión Rule 0, la suite de concurrencia anti-replay (hasta 100 workers concurrentes), la autenticación de Web API / WebSocket, las barreras de enforcement HMAC, el servidor FastAPI, la suite E2E y los benchmarks comparativos están respaldados por **1.457 pruebas automatizadas pasando** (1.461 recogidas, 4 omitidas; 1 de noviembre de 2026), que incluyen las suites de la aplicación de escritorio, los workflows multiagente, los proveedores (Claude API, Claude CLI, Ollama), la optimización de llamadas y el cliente MCP (stdio, SSE y HTTP streamable, contra servidores falsos y servidores construidos con el SDK oficial):
 
 ```bash
 pytest -q
-# 1461 passed, 4 skipped
+# 1457 passed, 4 skipped
 ```
 
 ---
