@@ -11,6 +11,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 
+from collections import Counter
 import logging
 import os
 import secrets
@@ -531,9 +532,8 @@ class RuntimeApplicationService(DecisionPipelineMixin, MissionRuntimeMixin):
 
         events = self.event_bus.get_all_events(session_id)
         total_decisions = sum(1 for e in events if e.type == EventType.POLICY_DECIDED)
-        allowed = sum(1 for e in events if e.type == EventType.POLICY_DECIDED and "ALLOW" in str(e.payload.get("status", "")).upper())
-        blocked = sum(1 for e in events if e.type == EventType.POLICY_DECIDED and "BLOCK" in str(e.payload.get("status", "")).upper())
-        review = sum(1 for e in events if e.type == EventType.POLICY_DECIDED and "REVIEW" in str(e.payload.get("status", "")).upper())
+        decided = Counter(str(e.payload.get("status", "")).upper() for e in events if e.type == EventType.POLICY_DECIDED)
+        allowed, blocked, review = decided["ALLOW"], decided["BLOCK"], decided["REVIEW"]   # estado exacto, no subcadena
         waiting = sum(1 for e in events if e.type == EventType.APPROVAL_REQUESTED)
 
         tree = reduce_events_to_tree(events, session_id=session_id)

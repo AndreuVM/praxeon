@@ -68,6 +68,8 @@ class JEVProxyMiddleware:
             registry=self.registry,
             secret_key=self.executor.secret_key,
         )
+        if self.executor.secret_key is None:
+            self.executor.secret_key = self.policy_engine.secret_key      # el ejecutor verifica lo que firma la política
         self.completion_verifier = CompletionVerifier()
         self.session_state = SessionState(session_id=self.session_id, goal=self.domain_goal)
         self.event_bus = event_bus

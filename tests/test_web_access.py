@@ -140,7 +140,7 @@ def test_brave_search_parses_results_and_sends_the_key(server):
 # --------------------------------------------------------------------------- herramientas
 @pytest.fixture
 def web(tmp_path):
-    registry, executor = ToolRegistry(register_defaults=True), SecureExecutor()
+    registry, executor = ToolRegistry(register_defaults=True), SecureExecutor(insecure_skip_signature=True)
     tools = WebTools(registry, executor, WebSettingsStore(str(tmp_path)), allow_private=True)
     tools.register()
     return tools

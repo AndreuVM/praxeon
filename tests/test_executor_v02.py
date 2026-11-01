@@ -15,7 +15,7 @@ from praxeon.runtime import PolicyViolation, SecureExecutor, SessionState
 
 def test_executor_blocks_unauthorized_decision_with_policy_violation():
     """Verifica que el ejecutor lance PolicyViolation físicamente si la decisión no es ALLOW."""
-    executor = SecureExecutor()
+    executor = SecureExecutor(insecure_skip_signature=True)
     state = SessionState(session_id="s1", goal=Goal(objective="test"))
 
     action = ActionCandidate(
@@ -42,7 +42,7 @@ def test_executor_blocks_unauthorized_decision_with_policy_violation():
         assert exc_info.value.action == action
 
     # Modo compatibilidad con strict_capability=False
-    compat_executor = SecureExecutor(strict_capability=False)
+    compat_executor = SecureExecutor(insecure_skip_signature=True, strict_capability=False)
     for status in denied_statuses:
         decision = PolicyDecision(status=status, reason_codes=["TEST_DENIAL"])
         with pytest.raises(PolicyViolation) as exc_info:
@@ -55,7 +55,7 @@ def test_executor_blocks_unauthorized_decision_with_policy_violation():
 
 def test_executor_blocks_forbidden_tool_in_state():
     """Verifica que si la herramienta está prohibida en el estado, se aborte con PolicyViolation."""
-    executor = SecureExecutor()
+    executor = SecureExecutor(insecure_skip_signature=True)
     state = SessionState(session_id="s2", goal=Goal(objective="test"))
     state.forbid_tool("run_command")
 
@@ -81,7 +81,7 @@ def test_executor_blocks_forbidden_tool_in_state():
 
 def test_executor_blocks_unknown_tool_not_in_registry():
     """Verifica que herramientas no registradas sean bloqueadas físicamente."""
-    executor = SecureExecutor()
+    executor = SecureExecutor(insecure_skip_signature=True)
     state = SessionState(session_id="s3", goal=Goal(objective="test"))
 
     action = ActionCandidate(
@@ -106,7 +106,7 @@ def test_executor_blocks_unknown_tool_not_in_registry():
 
 def test_executor_executes_authorized_action_dry_run():
     """Verifica la ejecución en modo dry_run sin efectos secundarios."""
-    executor = SecureExecutor(dry_run=True)
+    executor = SecureExecutor(insecure_skip_signature=True, dry_run=True)
     state = SessionState(session_id="s4", goal=Goal(objective="test"))
 
     action = ActionCandidate(
@@ -131,7 +131,7 @@ def test_executor_executes_authorized_action_dry_run():
 
 def test_executor_custom_handler_injection():
     """Verifica que se puedan inyectar controladores mock/personalizados para herramientas."""
-    executor = SecureExecutor()
+    executor = SecureExecutor(insecure_skip_signature=True)
     state = SessionState(session_id="s5", goal=Goal(objective="test"))
 
     def mock_fetch(args):

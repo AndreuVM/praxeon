@@ -17,6 +17,7 @@ from enum import Enum
 import hmac
 import hashlib
 import json
+import logging
 import os
 import secrets
 import sqlite3
@@ -24,6 +25,8 @@ import threading
 import time
 from typing import Any, Dict, Optional, Set
 from pydantic import BaseModel, ConfigDict, Field
+
+logger = logging.getLogger(__name__)
 
 
 class Role(str, Enum):
@@ -224,8 +227,8 @@ class AuthService:
                     self._revoked_exp[jti] = exp
             finally:
                 conn.close()
-        except sqlite3.Error:
-            pass
+        except sqlite3.Error as exc:
+            logger.error("No se pudieron cargar las revocaciones de tokens (%s): los tokens revocados podrían volver a ser válidos.", exc)
 
     def _remember_revocation(self, jti: str, exp: Optional[float]) -> None:
         """Marca un jti como revocado (memoria + disco). Debe llamarse con el bloqueo tomado."""
@@ -245,8 +248,8 @@ class AuthService:
                         conn.execute("DELETE FROM revoked_jtis WHERE exp < ?", (now,))
                 finally:
                     conn.close()
-            except sqlite3.Error:
-                pass
+            except sqlite3.Error as exc:
+                logger.error("No se pudo guardar la revocación del token %s (%s): dejará de estar revocado al reiniciar.", jti, exc)
 
     def get_configured_api_key(self) -> Optional[str]:
         """Retorna la clave API configurada en entorno o instancia."""
@@ -256,7 +259,7 @@ class AuthService:
         """Verifica una clave API en tiempo constante."""
         configured = self.get_configured_api_key()
         if not configured:
-            return True
+            return False          # sin clave configurada nada se verifica: el modo sin clave lo decide quien llama (loopback dev)
         if not provided_key:
             return False
         return constant_time_equals(provided_key.strip(), configured.strip())

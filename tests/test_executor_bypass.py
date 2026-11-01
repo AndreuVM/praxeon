@@ -42,7 +42,7 @@ def sample_action() -> ActionCandidate:
 
 def test_bypass_execution_without_receipt_raises_violation(session_state, sample_action):
     """Verifica que invocar executor.execute sin recibo/capability sea inmediatamente bloqueado."""
-    executor = SecureExecutor(dry_run=True, strict_capability=True)
+    executor = SecureExecutor(insecure_skip_signature=True, dry_run=True, strict_capability=True)
     with pytest.raises(PolicyViolation) as exc_info:
         executor.execute(sample_action, session_state)
     assert "Se requiere un capability/DecisionReceipt" in str(exc_info.value)
@@ -50,7 +50,7 @@ def test_bypass_execution_without_receipt_raises_violation(session_state, sample
 
 def test_bypass_execution_with_non_allow_receipt_raises_violation(session_state, sample_action):
     """Verifica que un recibo con estatus BLOCK o REPLAN no permita la ejecución física."""
-    executor = SecureExecutor(dry_run=True)
+    executor = SecureExecutor(insecure_skip_signature=True, dry_run=True)
     receipt = DecisionReceipt(
         decision_id="dec_block_01",
         session_id=session_state.session_id,
@@ -67,7 +67,7 @@ def test_bypass_execution_with_non_allow_receipt_raises_violation(session_state,
 
 def test_bypass_execution_with_tampered_action_hash_raises_violation(session_state, sample_action):
     """Verifica que si la acción física no coincide con el hash del recibo (tampering), se aborte."""
-    executor = SecureExecutor(dry_run=True)
+    executor = SecureExecutor(insecure_skip_signature=True, dry_run=True)
     receipt = DecisionReceipt(
         decision_id="dec_allow_01",
         session_id=session_state.session_id,
@@ -84,7 +84,7 @@ def test_bypass_execution_with_tampered_action_hash_raises_violation(session_sta
 
 def test_bypass_execution_with_stale_state_hash_raises_violation(session_state, sample_action):
     """Verifica que un recibo emitido para un estado previo desfasado sea rechazado (Stale State Defense)."""
-    executor = SecureExecutor(dry_run=True)
+    executor = SecureExecutor(insecure_skip_signature=True, dry_run=True)
     receipt = DecisionReceipt(
         decision_id="dec_allow_02",
         session_id=session_state.session_id,
@@ -101,7 +101,7 @@ def test_bypass_execution_with_stale_state_hash_raises_violation(session_state, 
 
 def test_replay_attack_prevention_on_consumed_receipt(session_state, sample_action):
     """Verifica que un mismo capability no pueda reutilizarse múltiples veces (Anti-Replay Attack)."""
-    executor = SecureExecutor(dry_run=True)
+    executor = SecureExecutor(insecure_skip_signature=True, dry_run=True)
     receipt = DecisionReceipt(
         decision_id="dec_unique_nonce_123",
         session_id=session_state.session_id,
@@ -124,7 +124,7 @@ def test_replay_attack_prevention_on_consumed_receipt(session_state, sample_acti
 def test_human_confirmation_loop_with_permission_manager():
     """Verifica el flujo completo de confirmación humana: ABSTAIN -> confirm_action -> ALLOW."""
     provider = ReplayProvider(default_scenario="safe_read")
-    executor = SecureExecutor(dry_run=True)
+    executor = SecureExecutor(insecure_skip_signature=True, dry_run=True)
     nav = Navigator(provider=provider, executor=executor)
     nav.start_session(Goal(objective="Operaciones protegidas"))
 

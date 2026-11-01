@@ -81,6 +81,7 @@ class SecureExecutor(Executor):
         nonce_store: Optional[NonceStore] = None,
         full_access_executor: Optional[FullAccessExecutor] = None,
         allow_full_access: bool = True,
+        insecure_skip_signature: bool = False,
     ):
         self.registry = registry or ToolRegistry(register_defaults=True)
         self.dry_run = dry_run
@@ -91,6 +92,8 @@ class SecureExecutor(Executor):
         self.sanitizer = sanitizer if sanitizer is not None else DataSanitizer()
         self.strict_capability = strict_capability
         self.secret_key = secret_key
+        # Sin clave no hay forma de autenticar un recibo: se rechaza (falla cerrado). Solo pruebas aisladas lo desactivan, a propósito.
+        self.insecure_skip_signature = insecure_skip_signature
         self.nonce_store = nonce_store if nonce_store is not None else InMemoryNonceStore()
         self.full_access_executor = full_access_executor or FullAccessExecutor()
         self.allow_full_access = allow_full_access
@@ -198,7 +201,14 @@ class SecureExecutor(Executor):
                     receipt=receipt,
                 )
 
-            # Verificar autenticidad mediante firma HMAC si se configuró clave secreta
+            # Verificar autenticidad mediante firma HMAC del emisor (la clave es obligatoria salvo opt-out explícito)
+            if not self.secret_key and not self.insecure_skip_signature:
+                raise PolicyViolation(
+                    f"Ejecución física DENEGADA para '{tool_name}': el ejecutor no tiene clave para verificar la firma del capability.",
+                    action=action,
+                    decision=decision,
+                    receipt=receipt,
+                )
             if self.secret_key:
                 if not receipt.signature:
                     raise PolicyViolation(
