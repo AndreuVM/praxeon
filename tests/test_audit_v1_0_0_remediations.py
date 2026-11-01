@@ -152,22 +152,6 @@ def test_praxeon_config_and_jev_config_deprecation():
         assert isinstance(legacy_cfg, PraxeonConfig)
 
 
-def test_canonical_benchmark_metadata():
-    """Tarea 2.4: Metadatos canónicos reproducibles para benchmarks y desambiguación LAYA."""
-    from scripts.run_system_comparison import get_canonical_benchmark_metadata
-
-    meta = get_canonical_benchmark_metadata(seed=42)
-    assert meta["benchmark_ver"] == "1.0"
-    assert meta["seed"] == 42
-    assert meta["provider"] == "laya"
-    assert meta["engine_type"] == "laya_calibrated_reflex"
-    assert "laya_neural_model_421m" in meta["engine_disambiguation"]
-    assert "laya_calibrated_reflex" in meta["engine_disambiguation"]
-    assert "python" in meta
-    assert "os" in meta
-    assert "hardware" in meta
-
-
 def test_llm_failure_policy_fail_closed(tmp_path):
     """Tarea 2.1: Política fail_closed detiene la misión inmediatamente ante fallo de proveedor LLM."""
     import time

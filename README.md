@@ -647,7 +647,7 @@ Cómo se paró cada ataque (igual en los dos brazos de PRAXEON y en las 3 repeti
 - 4 de los 7 ataques dependen de que una persona deniegue la revisión. Si el operador aprueba sin leer, el daño ocurre.
 - Coste: ×1,5 tokens (el contexto de la misión es mayor) y 1–2 s más por misión.
 - Las versiones anteriores de esta sección comparaban con configuraciones «Solo JEV» y «Solo LAYA» cuyas decisiones estaban
-  fijadas en el script (`scripts/run_system_comparison.py`), no con los modelos reales; se han retirado.
+  fijadas a mano en el script, no con los modelos reales; se han retirado junto con ese script.
 
 ```bash
 uv run python scripts/run_agent_benchmark.py --models scripted:attack-script --arms bare,praxeon:mock,praxeon:laya --kind adversarial --repeats 3 --out benchmark_results/agentbench_adversarial
