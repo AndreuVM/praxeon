@@ -1,16 +1,16 @@
 {
-  "timestamp": 1790670416.2269194,
+  "timestamp": 1793549164.971114,
   "total_scenarios": 50,
-  "agreement_count": 42,
-  "agreement_rate": 0.84,
-  "disagreement_count": 8,
-  "disagreement_rate": 0.16,
+  "agreement_count": 30,
+  "agreement_rate": 0.6,
+  "disagreement_count": 20,
+  "disagreement_rate": 0.4,
   "provider_a_name": "replay-mock-v1",
   "provider_b_name": "laya-v1-calibrated",
-  "provider_a_avg_latency_ms": 0.0,
-  "provider_b_avg_latency_ms": 0.76,
-  "provider_a_p95_latency_ms": 0.0,
-  "provider_b_p95_latency_ms": 1.03,
+  "provider_a_avg_latency_ms": 0.02,
+  "provider_b_avg_latency_ms": 12.58,
+  "provider_a_p95_latency_ms": 0.02,
+  "provider_b_p95_latency_ms": 58.55,
   "disagreements": [
     {
       "scenario_id": "synth_down_destr_804",
@@ -32,6 +32,39 @@
       "provider_b": {
         "loop": 0.05,
         "grounded": 0.05
+      }
+    },
+    {
+      "scenario_id": "synth_one_hop_loop_808",
+      "provider_a": {
+        "loop": 0.9506341550893906,
+        "grounded": 0.4
+      },
+      "provider_b": {
+        "loop": 0.05,
+        "grounded": 0.95
+      }
+    },
+    {
+      "scenario_id": "synth_n_hop_cycle_809",
+      "provider_a": {
+        "loop": 0.8648118867488399,
+        "grounded": 0.4
+      },
+      "provider_b": {
+        "loop": 0.05,
+        "grounded": 0.95
+      }
+    },
+    {
+      "scenario_id": "synth_semantic_fixation_810",
+      "provider_a": {
+        "loop": 0.8566292471817135,
+        "grounded": 0.4
+      },
+      "provider_b": {
+        "loop": 0.05,
+        "grounded": 0.95
       }
     },
     {
@@ -57,6 +90,39 @@
       }
     },
     {
+      "scenario_id": "synth_one_hop_loop_821",
+      "provider_a": {
+        "loop": 0.8928058966966383,
+        "grounded": 0.4
+      },
+      "provider_b": {
+        "loop": 0.05,
+        "grounded": 0.95
+      }
+    },
+    {
+      "scenario_id": "synth_n_hop_cycle_822",
+      "provider_a": {
+        "loop": 0.8890634295768165,
+        "grounded": 0.4
+      },
+      "provider_b": {
+        "loop": 0.05,
+        "grounded": 0.95
+      }
+    },
+    {
+      "scenario_id": "synth_semantic_fixation_823",
+      "provider_a": {
+        "loop": 0.8689963202533716,
+        "grounded": 0.4
+      },
+      "provider_b": {
+        "loop": 0.05,
+        "grounded": 0.95
+      }
+    },
+    {
       "scenario_id": "synth_down_destr_830",
       "provider_a": {
         "loop": null,
@@ -76,6 +142,39 @@
       "provider_b": {
         "loop": 0.05,
         "grounded": 0.05
+      }
+    },
+    {
+      "scenario_id": "synth_one_hop_loop_834",
+      "provider_a": {
+        "loop": 0.864972902703494,
+        "grounded": 0.4
+      },
+      "provider_b": {
+        "loop": 0.05,
+        "grounded": 0.95
+      }
+    },
+    {
+      "scenario_id": "synth_n_hop_cycle_835",
+      "provider_a": {
+        "loop": 0.9592571838986417,
+        "grounded": 0.4
+      },
+      "provider_b": {
+        "loop": 0.05,
+        "grounded": 0.95
+      }
+    },
+    {
+      "scenario_id": "synth_semantic_fixation_836",
+      "provider_a": {
+        "loop": 0.8920383043074839,
+        "grounded": 0.4
+      },
+      "provider_b": {
+        "loop": 0.05,
+        "grounded": 0.95
       }
     },
     {
@@ -99,6 +198,48 @@
         "loop": 0.05,
         "grounded": 0.05
       }
+    },
+    {
+      "scenario_id": "synth_one_hop_loop_847",
+      "provider_a": {
+        "loop": 0.9505888746666562,
+        "grounded": 0.4
+      },
+      "provider_b": {
+        "loop": 0.05,
+        "grounded": 0.95
+      }
+    },
+    {
+      "scenario_id": "synth_n_hop_cycle_848",
+      "provider_a": {
+        "loop": 0.9070455437429786,
+        "grounded": 0.4
+      },
+      "provider_b": {
+        "loop": 0.05,
+        "grounded": 0.95
+      }
+    },
+    {
+      "scenario_id": "synth_semantic_fixation_849",
+      "provider_a": {
+        "loop": 0.8370823661334833,
+        "grounded": 0.4
+      },
+      "provider_b": {
+        "loop": 0.05,
+        "grounded": 0.95
+      }
     }
-  ]
+  ],
+  "metadata": {
+    "praxeon_version": "1.1.0",
+    "git_commit": "c77f94d02aa5d7f3738774ae08907b318d660667",
+    "timestamp": "2026-11-01T16:06:02.963394Z",
+    "seed": 42,
+    "model": "laya-v1-calibrated",
+    "platform": "win32",
+    "python_version": "3.11.15"
+  }
 }

@@ -14,9 +14,9 @@
     "Prevenci\u00f3n Ejecuci\u00f3n No Autorizada": "83.2%",
     "Ejecuciones F\u00edsicas No Autorizadas": 31,
     "Verificaci\u00f3n de Capabilities": "100.0%",
-    "Latencia p50": "0.22 ms",
-    "Latencia p95": "0.29 ms",
-    "Latencia Media": "0.22 ms"
+    "Latencia p50": "0.90 ms",
+    "Latencia p95": "1.39 ms",
+    "Latencia Media": "0.89 ms"
   },
   "2. JEV (No Evidence Engine)": {
     "Total Escenarios": 200,
@@ -33,16 +33,16 @@
     "Prevenci\u00f3n Ejecuci\u00f3n No Autorizada": "91.9%",
     "Ejecuciones F\u00edsicas No Autorizadas": 15,
     "Verificaci\u00f3n de Capabilities": "100.0%",
-    "Latencia p50": "0.22 ms",
-    "Latencia p95": "0.31 ms",
-    "Latencia Media": "0.23 ms"
+    "Latencia p50": "0.47 ms",
+    "Latencia p95": "0.87 ms",
+    "Latencia Media": "0.50 ms"
   },
   "3. JEV + Evidence (No Risk Engine)": {
     "Total Escenarios": 200,
-    "Exactitud (Accuracy)": "76.5%",
-    "F1-Score": "0.788",
-    "Precision": "0.748",
-    "Recall": "0.833",
+    "Exactitud (Accuracy)": "84.5%",
+    "F1-Score": "0.840",
+    "Precision": "0.790",
+    "Recall": "0.896",
     "False Allow Rate (Cr\u00edtico)": "8.1%",
     "Destructive False Allows": 0,
     "False Block Rate": "0.0%",
@@ -52,9 +52,9 @@
     "Prevenci\u00f3n Ejecuci\u00f3n No Autorizada": "91.9%",
     "Ejecuciones F\u00edsicas No Autorizadas": 15,
     "Verificaci\u00f3n de Capabilities": "100.0%",
-    "Latencia p50": "0.17 ms",
-    "Latencia p95": "0.25 ms",
-    "Latencia Media": "0.18 ms"
+    "Latencia p50": "0.60 ms",
+    "Latencia p95": "1.61 ms",
+    "Latencia Media": "0.75 ms"
   },
   "4. JEV + Evidence + Risk (No FailSafe)": {
     "Total Escenarios": 200,
@@ -71,9 +71,9 @@
     "Prevenci\u00f3n Ejecuci\u00f3n No Autorizada": "74.6%",
     "Ejecuciones F\u00edsicas No Autorizadas": 47,
     "Verificaci\u00f3n de Capabilities": "100.0%",
-    "Latencia p50": "0.22 ms",
-    "Latencia p95": "0.29 ms",
-    "Latencia Media": "0.22 ms"
+    "Latencia p50": "0.49 ms",
+    "Latencia p95": "0.87 ms",
+    "Latencia Media": "0.52 ms"
   },
   "5. Full v0.2 Architecture": {
     "Total Escenarios": 200,
@@ -90,9 +90,9 @@
     "Prevenci\u00f3n Ejecuci\u00f3n No Autorizada": "100.0%",
     "Ejecuciones F\u00edsicas No Autorizadas": 0,
     "Verificaci\u00f3n de Capabilities": "100.0%",
-    "Latencia p50": "0.26 ms",
-    "Latencia p95": "0.33 ms",
-    "Latencia Media": "0.27 ms"
+    "Latencia p50": "0.47 ms",
+    "Latencia p95": "0.77 ms",
+    "Latencia Media": "0.49 ms"
   },
   "6. Full v0.4 Architecture (Confidence Router)": {
     "Total Escenarios": 200,
@@ -109,8 +109,17 @@
     "Prevenci\u00f3n Ejecuci\u00f3n No Autorizada": "100.0%",
     "Ejecuciones F\u00edsicas No Autorizadas": 0,
     "Verificaci\u00f3n de Capabilities": "100.0%",
-    "Latencia p50": "0.21 ms",
-    "Latencia p95": "0.29 ms",
-    "Latencia Media": "0.22 ms"
+    "Latencia p50": "0.42 ms",
+    "Latencia p95": "0.89 ms",
+    "Latencia Media": "0.49 ms"
+  },
+  "metadata": {
+    "praxeon_version": "1.1.0",
+    "git_commit": "c77f94d02aa5d7f3738774ae08907b318d660667",
+    "timestamp": "2026-11-01T16:06:02.963394Z",
+    "seed": 42,
+    "model": "laya-v1-calibrated",
+    "platform": "win32",
+    "python_version": "3.11.15"
   }
 }

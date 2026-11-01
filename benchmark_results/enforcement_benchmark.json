@@ -1,5 +1,5 @@
 {
-  "timestamp": 1790670416.1280525,
+  "timestamp": 1793549164.1093452,
   "total_attack_scenarios": 4,
   "bypasses_attempted": 4,
   "bypasses_blocked": 4,
@@ -8,5 +8,14 @@
   "replay_attacks_blocked": 1,
   "path_traversal_blocked": 1,
   "egress_violations_blocked": 1,
-  "tampered_hmac_blocked": 1
+  "tampered_hmac_blocked": 1,
+  "metadata": {
+    "praxeon_version": "1.1.0",
+    "git_commit": "c77f94d02aa5d7f3738774ae08907b318d660667",
+    "timestamp": "2026-11-01T16:06:02.963394Z",
+    "seed": 42,
+    "model": "laya-v1-calibrated",
+    "platform": "win32",
+    "python_version": "3.11.15"
+  }
 }

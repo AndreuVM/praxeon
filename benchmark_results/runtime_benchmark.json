@@ -1,11 +1,20 @@
 {
-  "timestamp": 1790670416.1685846,
+  "timestamp": 1793549164.2758353,
   "total_operations": 200,
-  "total_duration_sec": 0.0329,
-  "throughput_ops_sec": 6077.7,
-  "latency_p50_ms": 0.158,
-  "latency_p95_ms": 0.187,
-  "latency_p99_ms": 0.285,
-  "latency_mean_ms": 0.164,
-  "max_latency_ms": 0.329
+  "total_duration_sec": 0.1435,
+  "throughput_ops_sec": 1393.7,
+  "latency_p50_ms": 0.632,
+  "latency_p95_ms": 1.208,
+  "latency_p99_ms": 1.758,
+  "latency_mean_ms": 0.716,
+  "max_latency_ms": 1.899,
+  "metadata": {
+    "praxeon_version": "1.1.0",
+    "git_commit": "c77f94d02aa5d7f3738774ae08907b318d660667",
+    "timestamp": "2026-11-01T16:06:02.963394Z",
+    "seed": 42,
+    "model": "laya-v1-calibrated",
+    "platform": "win32",
+    "python_version": "3.11.15"
+  }
 }

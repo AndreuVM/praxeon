@@ -2,7 +2,7 @@
   "metadata": {
     "benchmark_name": "PRAXEON Context Cache Pressure & Eviction Benchmark",
     "praxeon_version": "1.0.0",
-    "timestamp": "2026-10-02T19:48:03.651153+00:00",
+    "timestamp": "2026-11-01T16:05:51.671663+00:00",
     "dataset": "synthetic_multi_session_contention_v1",
     "seed": 42,
     "strategy_version": "dag_priority_v1",
@@ -28,25 +28,25 @@
     },
     "latency_analysis": {
       "cold_start_ms": {
-        "p50": 0.165,
-        "p95": 0.302,
-        "avg": 0.191,
-        "min": 0.142,
-        "max": 0.36
+        "p50": 0.201,
+        "p95": 0.36,
+        "avg": 0.228,
+        "min": 0.169,
+        "max": 0.411
       },
       "warm_hit_ms": {
-        "p50": 0.091,
-        "p95": 0.153,
-        "avg": 0.103,
-        "min": 0.086,
-        "max": 0.18
+        "p50": 0.111,
+        "p95": 0.184,
+        "avg": 0.123,
+        "min": 0.105,
+        "max": 0.237
       },
       "rebuild_after_eviction_ms": {
-        "p50": 0.314,
-        "p95": 0.339,
-        "avg": 0.314,
-        "min": 0.288,
-        "max": 0.345
+        "p50": 0.46,
+        "p95": 0.882,
+        "avg": 0.62,
+        "min": 0.445,
+        "max": 0.891
       },
       "warm_speedup_factor": 1.85
     },

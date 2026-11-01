@@ -1,0 +1,9 @@
+{
+  "praxeon_version": "1.1.0",
+  "git_commit": "c77f94d02aa5d7f3738774ae08907b318d660667",
+  "timestamp": "2026-11-01T16:06:02.963394Z",
+  "seed": 42,
+  "model": "laya-v1-calibrated",
+  "platform": "win32",
+  "python_version": "3.11.15"
+}
