@@ -7,6 +7,7 @@ import uvicorn
 from fastapi import Depends, FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 
+from praxeon.runtime.keys import production_keys_problem
 from praxeon.server.routes import api_router
 from praxeon.server.websocket import ws_router
 
@@ -21,12 +22,10 @@ def validate_security_profile(profile: Optional[str] = None) -> List[str]:
     prof = (profile or os.environ.get("PRAXEON_PROFILE") or os.environ.get("PRAXEON_ENV") or "dev").lower().strip()
 
     if prof == "production":
-        secret = os.environ.get("PRAXEON_SECRET_KEY", "")
         insecure_defaults = {"", "praxeon_secret_hmac_key_v1", "default", "secret", "change_me"}
-        if secret in insecure_defaults or len(secret) < 32:
-            raise ValueError(
-                "Perfil de seguridad 'production' requiere que PRAXEON_SECRET_KEY esté configurada con al menos 32 caracteres y no use claves por defecto."
-            )
+        problem = production_keys_problem()
+        if problem:
+            raise ValueError(problem)
 
         cors_env = os.environ.get("PRAXEON_CORS_ORIGINS", "")
         if not cors_env or "*" in cors_env:
@@ -161,9 +160,8 @@ def validate_network_binding(host: str) -> None:
     loopback_hosts = {"127.0.0.1", "localhost", "::1", "testclient"}
     normalized_host = (host or "").lower().strip()
     if normalized_host not in loopback_hosts:
-        api_key = os.environ.get("PRAXEON_API_KEY", "").strip()
-        secret_key = os.environ.get("PRAXEON_SECRET_KEY", "").strip()
-        has_auth = bool(api_key or secret_key)
+        # PRAXEON_SECRET_KEY es un secreto maestro de firma, no una credencial de cliente: no basta para exponerse en red
+        has_auth = bool(os.environ.get("PRAXEON_API_KEY", "").strip())
         if not has_auth:
             raise ValueError(
                 f"Fallo de seguridad: Vincular el servidor a la interfaz de red '{host}' sin autenticación "

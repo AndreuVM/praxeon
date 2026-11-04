@@ -26,6 +26,8 @@ import time
 from typing import Any, Dict, Optional, Set
 from pydantic import BaseModel, ConfigDict, Field
 
+from praxeon.runtime.keys import jwt_secret
+
 logger = logging.getLogger(__name__)
 
 
@@ -203,7 +205,7 @@ class AuthService:
         self._configured_api_key = api_key or os.getenv("PRAXEON_API_KEY") or os.getenv("JEV_API_KEY")
         # Sin secreto configurado se genera uno aleatorio por proceso (nunca un valor público por defecto);
         # los tokens dejan de ser válidos al reiniciar, lo que es seguro en desarrollo.
-        self._secret_key = secret_key or os.getenv("PRAXEON_SECRET_KEY") or secrets.token_urlsafe(48)
+        self._secret_key = secret_key or jwt_secret() or secrets.token_urlsafe(48)
         self._load_revocations()
 
     # ------------------------------------------------------------------ revocaciones persistentes

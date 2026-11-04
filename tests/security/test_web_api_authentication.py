@@ -93,7 +93,9 @@ def test_production_profile_enforcement(test_service, monkeypatch):
     """En perfil 'production', cualquier petición sin clave válida es rechazada."""
     secret = "a_super_secure_production_secret_key_32_characters_long!"
     monkeypatch.setenv("PRAXEON_PROFILE", "production")
+    api_key = "a_distinct_production_api_key_value"
     monkeypatch.setenv("PRAXEON_SECRET_KEY", secret)
+    monkeypatch.setenv("PRAXEON_API_KEY", api_key)
     monkeypatch.setenv("PRAXEON_CORS_ORIGINS", "https://app.praxeon.io")
 
     app = create_app(profile="production")
@@ -107,10 +109,13 @@ def test_production_profile_enforcement(test_service, monkeypatch):
     res_auth = client.post(
         "/v1/sessions",
         json={"goal": "Production mission"},
-        headers={"X-API-Key": secret},
+        headers={"X-API-Key": api_key},
     )
     assert res_auth.status_code == 201
     assert res_auth.json()["success"] is True
+
+    # El secreto maestro de firma no es una credencial de cliente
+    assert client.post("/v1/sessions", json={"goal": "Production mission"}, headers={"X-API-Key": secret}).status_code == 401
 
 
 def test_websocket_authentication_rejection_and_acceptance(test_service, monkeypatch):

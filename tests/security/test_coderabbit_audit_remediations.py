@@ -347,6 +347,7 @@ def test_finding_08_laya_custom_endpoint_does_not_leak_auth_token(monkeypatch):
 def test_finding_14_confirm_decision_requires_operator_authentication(tmp_path, monkeypatch):
     """F14: /confirm requiere autenticación de operador en entorno seguro y no confía ciegamente en JSON."""
     monkeypatch.setenv("PRAXEON_SECRET_KEY", "operator_secret_key_12345678901234567890")
+    monkeypatch.setenv("PRAXEON_OPERATOR_KEY", "operator_secret_key_12345678901234567890")   # el secreto maestro ya no es una credencial
     service = RuntimeApplicationService(db_dir=str(tmp_path / "f14_cache"))
     sid = "sess_f14_test"
     service.create_session(goal="Confirm test", session_id=sid)

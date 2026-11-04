@@ -295,7 +295,6 @@ class MCPBridge:
 
         expected_secret = (
             os.getenv("PRAXEON_OPERATOR_KEY")
-            or os.getenv("PRAXEON_SECRET_KEY")
             or os.getenv("PRAXEON_API_KEY")
         )
         if expected_secret:

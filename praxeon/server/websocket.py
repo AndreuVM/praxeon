@@ -208,7 +208,7 @@ async def websocket_session_stream(
     app_profile = getattr(websocket.app.state, "security_profile", None) if (hasattr(websocket, "app") and hasattr(websocket.app, "state")) else None
     client_host = effective_client_host(websocket)
     if is_auth_required(profile=app_profile, client_host=client_host):
-        expected_key = os.environ.get("PRAXEON_API_KEY") or os.environ.get("PRAXEON_SECRET_KEY")
+        expected_key = os.environ.get("PRAXEON_API_KEY")
         if not expected_key:
             logger.error("Fallo de seguridad evitado en WS: Autenticación requerida pero no hay PRAXEON_API_KEY configurada.")
             await websocket.close(code=WS_1008_POLICY_VIOLATION, reason="Servidor sin clave configurada.")

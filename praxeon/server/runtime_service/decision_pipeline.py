@@ -964,14 +964,13 @@ class DecisionPipelineMixin:
         # Finding 14: Verificación e integridad del operador en el servidor
         expected_secret = (
             os.getenv("PRAXEON_OPERATOR_KEY")
-            or os.getenv("PRAXEON_SECRET_KEY")
             or os.getenv("PRAXEON_API_KEY")
         )
         is_verified_operator = caller_is_verified_operator
         if operator_token:
             # Cualquiera de las claves configuradas vale: la de operador, la de firma o la maestra de API (la que usa la UI;
             # en modo escritorio la de firma es otra, efímera).
-            candidates = (os.getenv("PRAXEON_OPERATOR_KEY"), os.getenv("PRAXEON_SECRET_KEY"), os.getenv("PRAXEON_API_KEY"))
+            candidates = (os.getenv("PRAXEON_OPERATOR_KEY"), os.getenv("PRAXEON_API_KEY"))
             if any(c and hmac.compare_digest(str(operator_token).strip(), str(c).strip()) for c in candidates):
                 is_verified_operator = True
 

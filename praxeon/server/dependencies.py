@@ -42,6 +42,7 @@ from praxeon.reasoning.risk import RiskEngine
 from praxeon.runtime.decision_store import SqliteDecisionRepository
 from praxeon.runtime.event_bus import EventBus, EventStore
 from praxeon.runtime.executor import SecureExecutor
+from praxeon.runtime.keys import production_keys_problem, receipt_key
 from praxeon.runtime.nonce_store import NonceStore, SqliteNonceStore
 from praxeon.context.manager import ContextManager
 from praxeon.agents.bus import AgentMessageBus
@@ -116,16 +117,12 @@ class RuntimeApplicationService(DecisionPipelineMixin, MissionRuntimeMixin):
 
         self.registry = ToolRegistry(register_defaults=True)
         prof = (os.environ.get("PRAXEON_PROFILE") or os.environ.get("PRAXEON_ENV") or "dev").lower().strip()
-        secret_env = os.environ.get("PRAXEON_SECRET_KEY")
-        insecure_defaults = {"", "praxeon_secret_hmac_key_v1", "default", "secret", "change_me"}
         if prof == "production":
-            if not secret_env or secret_env in insecure_defaults or len(secret_env) < 32:
-                raise ValueError(
-                    "Perfil de seguridad 'production' requiere que PRAXEON_SECRET_KEY esté configurada con al menos 32 caracteres y no use claves por defecto."
-                )
-            effective_secret = secret_env
-        else:
-            effective_secret = secret_env or secrets.token_hex(32)
+            problem = production_keys_problem()
+            if problem:
+                raise ValueError(problem)
+        # Clave de recibos propia (explícita o derivada del secreto maestro); sin ninguna, una aleatoria por proceso
+        effective_secret = receipt_key() or secrets.token_hex(32)
 
         # El motor de políticas comparte el registro con el ejecutor: lo que se registra (herramientas MCP) lo conocen ambos
         self.policy_engine = PolicyEngine(secret_key=effective_secret, registry=self.registry)
@@ -949,7 +946,7 @@ def get_current_tenant(
             ) from e
 
     # Si es una API Key estática
-    expected_key = os.environ.get("PRAXEON_API_KEY") or os.environ.get("PRAXEON_SECRET_KEY")
+    expected_key = os.environ.get("PRAXEON_API_KEY")
     if expected_key and constant_time_equals(token, expected_key):
         return TenantContext(
             tenant_id="default_tenant",
@@ -1006,7 +1003,7 @@ def verify_api_key(
     app_profile = getattr(request.app.state, "security_profile", None) if (request and hasattr(request, "app") and hasattr(request.app, "state")) else None
     client_host = effective_client_host(request) if request else None
     required = is_auth_required(profile=app_profile, client_host=client_host)
-    expected_key = os.environ.get("PRAXEON_API_KEY") or os.environ.get("PRAXEON_SECRET_KEY")
+    expected_key = os.environ.get("PRAXEON_API_KEY")
 
     cookie_val = praxeon_access_token if isinstance(praxeon_access_token, str) else None
     api_key_val = x_api_key if isinstance(x_api_key, str) else None

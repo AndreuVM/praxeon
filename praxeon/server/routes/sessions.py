@@ -142,7 +142,7 @@ def create_session(
     metadata["created_by"] = "api_client"
     # Un llamante HTTP untrusted no puede auto-aprobarse full_access autónomo sin verificar credencial de operador
     operator_token = metadata.get("operator_token") or metadata.get("operator_approval_token")
-    expected_secret = os.environ.get("PRAXEON_SECRET_KEY") or os.environ.get("PRAXEON_API_KEY")
+    expected_secret = os.environ.get("PRAXEON_OPERATOR_KEY") or os.environ.get("PRAXEON_API_KEY")
     token_ok = bool(
         operator_token and expected_secret and constant_time_equals(str(operator_token), str(expected_secret))
     )
