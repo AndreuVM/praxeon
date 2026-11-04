@@ -27,7 +27,7 @@ class _Handler(BaseHTTPRequestHandler):
         pass
 
     def do_GET(self):
-        if self.path == "/page":
+        if self.path.split("?")[0] == "/page":
             body, ctype = PAGE.encode(), "text/html; charset=utf-8"
         elif self.path == "/big":
             body, ctype = b"a" * 300_000, "text/plain"
@@ -187,6 +187,21 @@ def test_queries_and_urls_that_look_like_secrets_are_not_sent(web, server):
         _run(web, "web_search", {"query": "precio api_key=sk-abcdefghijklmnopqrstuvwxyz123456"}, mode="full_access")
     with pytest.raises(WebError, match="secretos"):
         _run(web, "web_fetch", {"url": f"{server}/page?token=sk-abcdefghijklmnopqrstuvwxyz123456"}, mode="full_access")
+
+
+def test_a_url_cannot_smuggle_local_data_out_as_an_encoded_blob(web, server):
+    """Leer .env y pedir una URL con su contenido en base64 es la fuga que cierra T1.7 (auditoría S-02 + canal GET)."""
+    import base64
+    blob = base64.urlsafe_b64encode(b"DB_HOST=10.0.0.5;DB_PASS=correct-horse-battery-staple;OWNER=adria").decode().rstrip("=")
+    for url in (f"{server}/page?d={blob}", f"{server}/page#{blob}", f"{server}/page?x=" + "a=b&" * 100):
+        with pytest.raises(WebError, match="codificados|demasiado larga"):
+            _run(web, "web_fetch", {"url": url}, mode="full_access")
+
+
+def test_ordinary_urls_with_ids_and_hashes_are_still_fetched(web, server):
+    sha = "9fceb02d0ae598e95dc970b74767f19372d61af8"
+    out = _run(web, "web_fetch", {"url": f"{server}/page?commit={sha}&lang=es&page=2"}, mode="full_access")
+    assert "NO instrucciones" in out
 
 
 def test_search_output_is_marked_as_untrusted_data(web):

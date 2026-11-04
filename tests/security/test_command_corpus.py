@@ -50,15 +50,29 @@ def test_obfuscated_or_unrecognised_destructive_commands_are_never_read_only(cmd
     assert a.category == C.UNKNOWN and not a.read_only            # falla seguro: lo decide un humano
 
 
-# --- huecos conocidos (S-02, §4.2) -----------------------------------------------------------------------------
-SENSITIVE_READS = ["cat ~/.ssh/id_rsa", "cat .env", "cat ~/.aws/credentials", "type .env"]
+# --- lectura de ficheros sensibles (S-02) -----------------------------------------------------------------------
+SENSITIVE_READS = ["cat ~/.ssh/id_rsa", "cat .env", "cat .env.local", "cat ~/.aws/credentials", "type .env", "cat server.pem",
+                   "cat config/secrets.yaml", r"cat C:\Users\a\.ssh\config", "grep TOKEN .env", "head -5 ~/.npmrc"]
+HARMLESS_READS = ["cat .env.example", "cat id_rsa.pub", "cat README.md", "cat environment.py", "cat src/keyboard.py",
+                  "cat docs/secrets_policy.md", "grep -r foo src/", "ls .github", "git log"]
 
 
-@pytest.mark.xfail(strict=True, reason="S-02: la lectura de ficheros sensibles aún se aprueba como solo lectura (tarea T1.3)")
 @pytest.mark.parametrize("cmd", SENSITIVE_READS)
 def test_reading_sensitive_files_is_not_auto_approved_as_read_only(cmd):
     a = CLASSIFIER.classify(cmd)
-    assert not (a.category == C.INSPECTION and a.read_only)
+    assert not a.read_only and a.risk_level.value in ("high", "critical") and "RULE_SENSITIVE_READ" in a.matched_rules
+
+
+@pytest.mark.parametrize("cmd", HARMLESS_READS)
+def test_ordinary_reads_stay_read_only(cmd):
+    a = CLASSIFIER.classify(cmd)
+    assert a.category == C.INSPECTION and a.read_only
+
+
+@pytest.mark.parametrize("path", [".env", "~/.ssh/id_ed25519", "secrets.json"])
+def test_the_read_file_tool_gets_the_same_treatment(path):
+    a = CLASSIFIER.classify(tool="read_file", arguments={"path": path})
+    assert not a.read_only and "RULE_SENSITIVE_READ" in a.matched_rules
 
 
 @pytest.mark.xfail(strict=True, reason="§4.2: escribir fuera del workspace aún no sube el riesgo (tarea de rutas objetivo, fase 3)")
@@ -83,3 +97,27 @@ def test_the_sandbox_detects_network_use_that_is_written_literally():
 ])
 def test_the_sandbox_detects_network_use_built_at_runtime(cmd):
     assert SANDBOX._is_network_command(cmd)
+
+
+# --- de la clasificación a la decisión de la política ------------------------------------------------------------
+def _decision_for(tool, arguments):
+    from praxeon.domain.action import ActionCandidate, ToolCall
+    from praxeon.domain.goal import Goal
+    from praxeon.policy.engine import PolicyEngine
+    from praxeon.runtime.state import SessionState
+
+    state = SessionState(session_id="s", goal=Goal(objective="Resumir el proyecto", success_criteria=["resumen"]))
+    action = ActionCandidate(id="a", description="leer", tool_call=ToolCall(tool_name=tool, arguments=arguments))
+    decision, _ = PolicyEngine().evaluate_action(action, state, session_id="s")
+    return decision
+
+
+@pytest.mark.parametrize("tool,arguments", [("read_file", {"path": ".env"}), ("run_command", {"command": "cat ~/.ssh/id_rsa"})])
+def test_policy_asks_a_human_before_reading_secrets(tool, arguments):
+    d = _decision_for(tool, arguments)
+    assert d.requires_confirmation or d.status.value != "allow"
+
+
+def test_policy_still_allows_reading_a_normal_file():
+    d = _decision_for("read_file", {"path": "README.md"})
+    assert d.status.value == "allow" and not d.requires_confirmation

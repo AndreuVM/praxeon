@@ -102,6 +102,22 @@ class CommandClassifier:
         r"\bhelm\s+(install|upgrade|uninstall)\b",
     ]
 
+    # 3b. Rutas con credenciales o secretos: leerlas no es una inspección inocua (el contenido acaba en el contexto del modelo)
+    _SEP = r"(?:^|[\s/\\\"'=~:])"
+    _END = r"(?=$|[\s\"';|&<>)])"
+    SENSITIVE_PATH_PATTERNS = [
+        _SEP + r"\.env(?!\.(?:example|sample|template|dist|defaults?))(?:\.[\w.-]+)?" + _END,
+        _SEP + r"id_(?:rsa|dsa|ecdsa|ed25519)(?!\.pub)" + _END,
+        r"[\w.-]+\.(?:pem|key|p12|pfx|ppk|kdbx|jks|keystore)" + _END,
+        r"[/\\~]\.(?:ssh|aws|gnupg|kube|azure)(?:[/\\]|" + _END + ")",
+        r"[/\\]\.config[/\\]gcloud",
+        _SEP + r"\.(?:npmrc|pypirc|netrc|pgpass|git-credentials)" + _END,
+        r"[/\\]\.docker[/\\]config\.json",
+        _SEP + r"(?:credentials|secrets?)(?:\.(?:json|ya?ml|toml|ini|env|txt))?" + _END,
+        r"/etc/(?:shadow|sudoers)",
+        r"(?:chrome|firefox|edge|brave)[/\\].*(?:login data|cookies|logins\.json|key4\.db)",
+    ]
+
     # 4. Reglas deterministas para INSPECTION (de sólo lectura)
     INSPECTION_PATTERNS = [
         # Lectura por rangos con sed: solo `sed -n '<rango>p' fichero` (sin -i ni comandos de escritura/ejecución)
@@ -444,6 +460,18 @@ class CommandClassifier:
 
         return atomic_res
 
+    def _sensitive_read(self, op_clean: str, op_lower: str, ctx_hash: str) -> Optional[CommandRiskAssessment]:
+        """Regla 3b: leer un fichero con credenciales o secretos nunca se aprueba sola como «inspección»."""
+        if not any(re.search(pat, op_lower) for pat in self.SENSITIVE_PATH_PATTERNS):
+            return None
+        return CommandRiskAssessment(
+            operation=op_clean, category=CommandCategory.UNKNOWN, risk_level=RiskLevel.HIGH, read_only=False,
+            reversible=True, destructive=False, external_side_effect=False, network_access=False,
+            privilege_escalation=False, confidence=0.9,
+            reasons=["Acceso a un fichero que suele contener credenciales o secretos: requiere confirmación humana."],
+            matched_rules=["RULE_SENSITIVE_READ"], classifier="deterministic", context_hash=ctx_hash,
+        )
+
     def _classify_atomic(
         self,
         op_clean: str,
@@ -594,10 +622,19 @@ class CommandClassifier:
                     context_hash=ctx_hash,
                 )
 
+        # Regla 3b: las herramientas de lectura de ficheros reciben solo la ruta como operación
+        if tool in ("read_file", "view_file"):
+            sensitive = self._sensitive_read(op_clean, op_lower, ctx_hash)
+            if sensitive is not None:
+                return sensitive
+
         # Regla 4: INSPECTION (Lecturas puras y consultas de estado)
         if not has_redirection:
             for pat in self.INSPECTION_PATTERNS:
                 if re.search(pat, op_lower):
+                    sensitive = self._sensitive_read(op_clean, op_lower, ctx_hash)
+                    if sensitive is not None:
+                        return sensitive
                     return CommandRiskAssessment(
                         operation=op_clean,
                         category=CommandCategory.INSPECTION,
