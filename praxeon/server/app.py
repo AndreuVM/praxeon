@@ -2,12 +2,14 @@
 
 import argparse
 import os
+import secrets
 from typing import Any, List, Optional
 import uvicorn
 from fastapi import Depends, FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from praxeon.runtime.keys import production_keys_problem
+from praxeon.server.host_guard import HostGuardMiddleware, configured_hosts
 from praxeon.server.routes import api_router
 from praxeon.server.websocket import ws_router
 
@@ -85,6 +87,7 @@ def create_app(
     cors_methods = ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"] if is_prod else ["*"]
     cors_headers = ["Authorization", "X-API-Key", "Content-Type", "Accept"] if is_prod else ["*"]
 
+    app.add_middleware(HostGuardMiddleware)      # la última en añadirse es la primera en ejecutarse: antes que CORS y las rutas
     app.add_middleware(
         CORSMiddleware,
         allow_origins=origins,
@@ -162,11 +165,28 @@ def validate_network_binding(host: str) -> None:
     if normalized_host not in loopback_hosts:
         # PRAXEON_SECRET_KEY es un secreto maestro de firma, no una credencial de cliente: no basta para exponerse en red
         has_auth = bool(os.environ.get("PRAXEON_API_KEY", "").strip())
+        if has_auth and not configured_hosts():
+            raise ValueError(
+                f"Vincular el servidor a '{host}' exige declarar los nombres con que se le llamará en PRAXEON_ALLOWED_HOSTS "
+                "(p. ej. 'praxeon.midominio.com'); sin ella la validación de Host rechazaría todas las peticiones externas."
+            )
         if not has_auth:
             raise ValueError(
                 f"Fallo de seguridad: Vincular el servidor a la interfaz de red '{host}' sin autenticación "
                 "activa está prohibido. Configure PRAXEON_API_KEY o use 127.0.0.1."
             )
+
+
+def ensure_local_token(host: str) -> Optional[str]:
+    """En local sin PRAXEON_API_KEY se genera un token aleatorio por arranque (como la app de escritorio) y se devuelve para
+    mostrarlo. Se desactiva con PRAXEON_ALLOW_INSECURE_DEV=1 (modo antiguo: loopback sin autenticación)."""
+    if os.environ.get("PRAXEON_API_KEY", "").strip():
+        return None
+    if os.environ.get("PRAXEON_ALLOW_INSECURE_DEV", "").strip().lower() in ("1", "true", "yes"):
+        return None
+    token = secrets.token_urlsafe(32)
+    os.environ["PRAXEON_API_KEY"] = token
+    return token
 
 
 def start():
@@ -178,7 +198,10 @@ def start():
     args = parser.parse_args()
 
     validate_network_binding(args.host)
+    token = ensure_local_token(args.host)
     print(f"[PRAXEON] Web Server iniciando en http://{args.host}:{args.port}")
+    if token:
+        print(f"[PRAXEON] Token de esta ejecución (X-API-Key / interfaz): http://{args.host}:{args.port}/#token={token}")
     print(f"[PRAXEON] Documentacion OpenAPI disponible en http://{args.host}:{args.port}/docs")
     uvicorn.run("praxeon.server.app:app", host=args.host, port=args.port, reload=args.reload)
 
@@ -196,7 +219,9 @@ def launch_web():
     args = parser.parse_args()
 
     validate_network_binding(args.host)
+    token = ensure_local_token(args.host)
     url = f"http://{args.host}:{args.port}"
+    open_url = f"{url}/#token={token}" if token else url      # el fragmento no viaja al servidor ni queda en sus logs
     print("=" * 68)
     print("PRAXEON 1.0 -- Runtime Supervision for Autonomous AI Agents")
     print(f"* Interfaz grafica: {url}")
@@ -204,7 +229,7 @@ def launch_web():
     print("=" * 68)
 
     if not args.no_browser:
-        threading.Timer(1.2, webbrowser.open, [url]).start()
+        threading.Timer(1.2, webbrowser.open, [open_url]).start()
 
     uvicorn.run("praxeon.server.app:app", host=args.host, port=args.port, reload=args.reload)
 

@@ -297,6 +297,7 @@ def test_rel_02_non_loopback_bind_requires_authentication(monkeypatch, external_
 def test_rel_02_non_loopback_bind_allowed_when_auth_is_configured(monkeypatch, external_host):
     """REL-02: Vincular a interfaz externa es permitido si la autenticación por API key está configurada."""
     monkeypatch.setenv("PRAXEON_API_KEY", "secure_remote_management_api_key_123")
+    monkeypatch.setenv("PRAXEON_ALLOWED_HOSTS", external_host)       # y los nombres con que se le llamará (validación de Host)
 
     # No debe levantar ninguna excepción
     validate_network_binding(external_host)

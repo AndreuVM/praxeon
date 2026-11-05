@@ -64,6 +64,7 @@ def test_network_binding_needs_an_api_key_not_just_the_master_secret(monkeypatch
     with pytest.raises(ValueError, match="PRAXEON_API_KEY"):
         validate_network_binding("0.0.0.0")
     monkeypatch.setenv("PRAXEON_API_KEY", "k" * 20)
+    monkeypatch.setenv("PRAXEON_ALLOWED_HOSTS", "praxeon.midominio.test")
     validate_network_binding("0.0.0.0")
 
 

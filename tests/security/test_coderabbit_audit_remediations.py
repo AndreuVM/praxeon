@@ -234,6 +234,9 @@ def test_finding_04_network_binding_validation(monkeypatch):
 
     # Con PRAXEON_API_KEY configurada, la vinculación a red sí se permite
     monkeypatch.setenv("PRAXEON_API_KEY", "prod_super_secret_key_12345")
+    with pytest.raises(ValueError, match="PRAXEON_ALLOWED_HOSTS"):       # además, declarar los hosts de confianza
+        validate_network_binding("0.0.0.0")
+    monkeypatch.setenv("PRAXEON_ALLOWED_HOSTS", "0.0.0.0,192.168.1.50")
     validate_network_binding("0.0.0.0")
     validate_network_binding("192.168.1.50")
 

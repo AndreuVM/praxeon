@@ -21,3 +21,13 @@ Antes `PRAXEON_SECRET_KEY` también se aceptaba como API key y como token de ope
 - Si aprobabas decisiones con ese valor como `operator_token`, define `PRAXEON_OPERATOR_KEY` (o usa la API key).
 - Los JWT emitidos antes del cambio dejan de ser válidos (la clave de firma es ahora una subclave): hay que volver a iniciar sesión.
 - La app de escritorio no necesita cambios: ya genera una API key y un secreto efímeros en cada arranque.
+
+## Acceso local: `Host` de confianza y token por arranque
+
+- **Validación de `Host`** (defensa frente a DNS-rebinding): el servidor solo atiende peticiones HTTP y WebSocket cuya cabecera `Host` sea
+  `localhost`, `127.0.0.1` o `[::1]`. Una web ajena que resuelva su dominio a 127.0.0.1 recibe un `400`. Para atender otros nombres define
+  `PRAXEON_ALLOWED_HOSTS` (separados por comas; admite `*.midominio.com`). Vincular a una interfaz de red (`--host 0.0.0.0`) exige
+  `PRAXEON_API_KEY` **y** `PRAXEON_ALLOWED_HOSTS`.
+- **Token por arranque**: `praxeon-server` y `praxeon-web` sin `PRAXEON_API_KEY` generan un token aleatorio en cada ejecución (como la app de
+  escritorio) y lo muestran en una URL con `#token=…`; `praxeon-web` abre el navegador con ella. Para el modo antiguo (loopback sin
+  autenticación) define `PRAXEON_ALLOW_INSECURE_DEV=1`.

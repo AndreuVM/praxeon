@@ -168,6 +168,7 @@ def test_auth_protection_on_agents_endpoints(tmp_path):
     os.environ["PRAXEON_SECRET_KEY"] = "super_secure_production_secret_key_32_chars_long"
     os.environ["PRAXEON_API_KEY"] = "prax_prod_valid_test_key_16_chars"
     os.environ["PRAXEON_CORS_ORIGINS"] = "http://localhost:5173"
+    os.environ["PRAXEON_ALLOWED_HOSTS"] = "192.168.1.50"        # el servidor atiende a ese host (validación de Host)
 
     db_dir = str(tmp_path)
     service = RuntimeApplicationService(db_dir=db_dir)
@@ -193,5 +194,6 @@ def test_auth_protection_on_agents_endpoints(tmp_path):
         os.environ.pop("PRAXEON_SECRET_KEY", None)
         os.environ.pop("PRAXEON_API_KEY", None)
         os.environ.pop("PRAXEON_CORS_ORIGINS", None)
+        os.environ.pop("PRAXEON_ALLOWED_HOSTS", None)
         set_runtime_service(None)
         set_active_security_profile(None)
