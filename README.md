@@ -8,7 +8,7 @@
 [![Version](https://img.shields.io/badge/version-v1.1.0-blue.svg)](https://github.com/AndreuVM/praxeon)
 [![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](https://github.com/AndreuVM/praxeon)
 [![Context Caching](https://img.shields.io/badge/context%20caching-L1%20%2F%20L2%20Prefix%20Cache-blueviolet.svg)](https://github.com/AndreuVM/praxeon)
-[![Security](https://img.shields.io/badge/security-sandbox%20%26%20container%20hardened-green.svg)](https://github.com/AndreuVM/praxeon/blob/main/SECURITY.md)
+[![Security](https://img.shields.io/badge/security-defense%20in%20depth-green.svg)](https://github.com/AndreuVM/praxeon/blob/main/SECURITY.md)
 [![Providers](https://img.shields.io/badge/providers-TypeSafe%20%7C%20LAYA%20%7C%20CascadeRouter-purple.svg)](https://github.com/AndreuVM/praxeon)
 [![MCP](https://img.shields.io/badge/MCP-server%20%2B%20client-orange.svg)](docs/MCP_CLIENT.md)
 
@@ -160,10 +160,10 @@ En lugar de delegar la seguridad en prompts permisivos o heurísticas acopladas,
    El evaluador semántico ($JEV/LAYA$) emite estimaciones probabilísticas de viabilidad o riesgo; la autoridad de ejecución reside de forma exclusiva en el motor determinista de políticas (`PolicyEngine`). Una acción puede tener una probabilidad semántica de éxito elevada ($JEV = 0.95$) y ser al mismo tiempo operacionalmente inadmisible ($Risk = \text{CRITICAL}$, ej. `rm -rf /` o acceso a `.env`). La política emite la decisión vinculante (`ALLOW`, `BLOCK`, `REPLAN`, `ABSTAIN`).
 2. **Capabilities Criptográficos Efímeros y Protección Anti-Replay:**
    Las instrucciones en lenguaje natural (*"no ejecutes comandos dañinos"*) no constituyen una barrera de seguridad. `SecureExecutor` exige de forma obligatoria un capability firmado criptográficamente (`DecisionReceipt`) mediante **HMAC-SHA256**, con ventana de validez temporal acotada (`expires_at`), ligado al hash canónico de la acción y del estado de la sesión. Un almacén de nonces durable (`SqliteNonceStore` o `InMemoryNonceStore`) con poda automática por TTL previene ataques de repetición (*replay attacks*) a través de reinicios del proceso.
-3. **Aislamiento en Host y Sandboxing de Procesos:**
-   La ejecución física de herramientas del sistema (`run_command`, `read_file`, `edit_file`) no interactúa directamente con el host con shells permisivos. Se delega en adaptadores de contención (`SandboxAdapter`):
+3. **Contención de procesos (contenedor) y mitigación local:**
+   La ejecución física de herramientas del sistema (`run_command`, `read_file`, `edit_file`) se delega en adaptadores (`SandboxAdapter`) con garantías distintas, que conviene no confundir:
    - `ContainerSandboxAdapter`: Confinamiento en contenedores OCI (Docker/Podman) con filesystem raíz de solo lectura (`--read-only`), aislamiento de red total (`--network=none`), límites de memoria/CPU (cgroups) y descarte de privilegios (`--cap-drop=ALL`).
-   - `LocalProcessSandbox`: Confina los accesos al workspace delimitado resolviendo enlaces simbólicos canónicos (`os.path.realpath`) para anular vectores de *symlink traversal* y *TOCTOU*, neutraliza variables de entorno que contengan secretos o proxies hacia el loopback, y aplica políticas de egress de red (`EgressPolicy`) bloqueando interfaces de loopback, rangos RFC 1918 y metadatos cloud (`169.254.169.254`).
+   - `LocalProcessSandbox` (**mitigación de errores, no frontera de seguridad**): contiene el directorio de trabajo resolviendo enlaces simbólicos canónicos (`os.path.realpath`), purga variables de entorno con secretos y rechaza comandos de red *conocidos* (`curl`, `wget`, `nc`…) comparando el texto del comando. **No aísla el proceso ni la red**: un `python -c` que construya la URL en ejecución o abra un socket directo no es detectado, y las rutas absolutas dentro del comando no se confinan. Con modelos no confiables, use `ContainerSandboxAdapter`; en `local_restricted` la barrera efectiva es el clasificador de comandos y la confirmación humana.
 4. **Fundamentación Empírica y Verificación Estructurada de Criterios:**
    `EvidenceEngine` comprueba que las precondiciones necesarias existan en el registro de observaciones antes de autorizar acciones dependientes, descalificando evidencias obsoletas ante mutaciones del entorno (*stale state defense*). Asimismo, `CompletionVerifier` impide que el agente declare victoria prematura (`finish`) sin antes validar formalmente que todos los criterios obligatorios (`CriterionType.FILE_EXISTS`, `TESTS_PASS`, `EXIT_CODE_ZERO`, `STATE_VALUE`, `CUSTOM`) cuenten con observaciones verificadas en disco o traza.
 5. **Fail-Safe Estricto y Enrutamiento Adaptativo:**
@@ -195,7 +195,7 @@ $$\text{Proposal} \to \text{Evidence} \to \text{Risk} \to \text{ProviderContext}
 |  7. DecisionReceipt       -> Emisión de capability HMAC-SHA256        |
 |  8. CheckpointManager     -> Captura snapshot preventivo antes de mutar|
 |  9. SecureExecutor        -> Verifica capability único y no expirado  |
-| 10. Process/Container Sbx -> Ejecución aislada con env depurado & jail|
+| 10. Container Sbx / local -> Contención (local: mitigación)           |
 +-----------------------------------------------------------------------+
                                    | Observación
                                    v
@@ -734,7 +734,7 @@ De acuerdo con las mejores prácticas de rigor científico y divulgación técni
 
 1. **Aislamiento en Host Windows vs Linux (Paridad de Sandboxing):**
    - En entornos Linux con soporte para Docker o Podman, `ContainerSandboxAdapter` proporciona aislamiento a nivel de kernel mediante namespaces de proceso, red, montajes de solo lectura y control estricto de cgroups.
-   - En sistemas Windows nativos sin contenedor, `LocalProcessSandbox` protege el sistema resolviendo rutas canónicas (`os.path.realpath`) y bloqueando procesos no permitidos, pero el filtrado de red a nivel de socket depende de la inspección sobre comandos invocados (`curl`, `wget`, `nc`, `ssh`) y no de un firewall o namespace de kernel dedicado.
+   - En sistemas Windows nativos sin contenedor, `LocalProcessSandbox` no es una frontera de seguridad: resuelve rutas canónicas y bloquea procesos y comandos de red conocidos, pero el filtrado de red es léxico (inspección del texto del comando) y no un firewall o un namespace de kernel; un cliente que construya la URL en ejecución o use sockets directos lo elude. Para ejecución no confiable use el contenedor.
 2. **Horizonte Temporal de Contexto y Truncamiento (`ProviderContextBuilder`):**
    - Para preservar latencias de inferencia predecibles y presupuestos de tokens acotados, el constructor de contexto recorta observaciones voluminosas (`max_observation_chars`) y limita la ventana de pasos históricos (`max_history_steps`). Si una evidencia empírica crucial ocurrió hace muchos turnos y no fue registrada en el `EvidenceEngine`, el supervisor exigirá una re-inspección explícita antes de autorizar mutaciones dependientes.
 3. **Grounding Empírico vs Demostradores Formales de Teoremas:**

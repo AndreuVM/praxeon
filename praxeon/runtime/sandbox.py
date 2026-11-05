@@ -1,4 +1,6 @@
-"""Adaptadores de aislamiento y ejecución en sandbox (SandboxAdapter) para v0.2.1.
+"""Adaptadores de contención y ejecución (SandboxAdapter) para v0.2.1.
+
+ATENCIÓN: solo `ContainerSandboxAdapter` aísla. `LocalProcessSandbox` es una mitigación de errores, NO una frontera de seguridad (ver su docstring).
 
 Separa formalmente la arquitectura:
 Policy decision -> Capability -> Sandbox / Tool Adapter -> Host / Isolated Execution
@@ -85,7 +87,15 @@ def get_default_workspace_root() -> str:
 
 
 class LocalProcessSandbox(SandboxAdapter):
-    """Sandbox de proceso local con depuración de entorno y contención de rutas."""
+    """Contención de proceso local: depuración de entorno y contención de rutas. NO es una frontera de seguridad.
+
+    Hace: resuelve symlinks y exige que el `cwd` esté dentro del workspace; elimina del entorno hijo las variables con secretos; rechaza
+    los comandos de red *conocidos* comparando el texto del comando.
+    No hace: aislar el proceso ni la red. Un comando que construya la URL en ejecución (`'ht'+'tp://…'`) o abra un socket directo no se
+    detecta (`_is_network_command` es léxico), las variables de proxy son solo una convención y las rutas absolutas dentro del comando no se
+    confinan. La barrera efectiva en este modo es el clasificador de comandos y la confirmación humana; para ejecución no confiable use
+    `ContainerSandboxAdapter`.
+    """
 
     BLOCKED_ENV_VARS: Set[str] = {
         "TYPESAFE_API_KEY",

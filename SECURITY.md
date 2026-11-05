@@ -33,7 +33,7 @@ $$\text{LLM Proposal} \to \text{Evidence Grounding} \to \text{Risk Assessment} \
    $$\text{Policy Enforcement} \neq \text{Host Isolation}$$
    El runtime impone verificación determinista y denegación por defecto (fail-safe) a nivel de aplicación. Para contención a nivel de sistema operativo y kernel, el framework soporta:
    - `ContainerSandboxAdapter`: Ejecución contenida en contenedores OCI (Docker/Podman) con `--read-only`, aislamiento de red (`--network=none`), límites estrictos de CPU/memoria y descarte de privilegios (`--cap-drop=ALL`). **Fail-Closed por Defecto:** `fallback_to_local: bool = False`. Si el motor de contenedores falla o no está disponible, el runtime bloquea la acción físicamente en lugar de degradar silenciosamente a ejecución local desprotegida.
-   - `LocalProcessSandbox`: Confinamiento local de procesos hijos con desreferenciación real de symlinks (`os.path.realpath`), purga de entorno y fallback ordenado.
+   - `LocalProcessSandbox` (**mitigación, no aislamiento**): contención de rutas con `os.path.realpath`, purga de entorno y rechazo léxico de comandos de red conocidos. No aísla proceso ni red (sockets directos o URLs construidas en ejecución lo eluden); frente a un modelo no confiable la barrera efectiva es el clasificador de comandos y la confirmación humana. Use `ContainerSandboxAdapter` cuando necesite aislamiento real.
 2. **Capabilities Ligados Criptográficamente (DecisionReceipt con HMAC-SHA256) y NonceStore Atómico Concurrente:**
    `SecureExecutor` no ejecuta ninguna herramienta física sin recibir un capability emitido por la `PolicyEngine` con:
    - `decision_status == ALLOW`
@@ -72,7 +72,7 @@ $$\text{LLM Proposal} \to \text{Evidence Grounding} \to \text{Risk Assessment} \
 8. **Modos de Ejecución Formales y Límites de Full Access (PRAXEON 1.0):**
    PRAXEON define tres modos explícitos de ejecución (`ExecutionMode`):
    - `CONTAINER`: Aislamiento estricto de contenedor (cgroups, `--network=none`, raíz de solo lectura, `--pids-limit`).
-   - `LOCAL_RESTRICTED`: Sandbox de proceso local con depuración de variables de entorno y contención de rutas (jail path).
+   - `LOCAL_RESTRICTED`: Contención de proceso local (mitigación, no aislamiento): depuración de variables de entorno y contención de rutas del directorio de trabajo.
    - `FULL_ACCESS`: Ejecución directa sobre el host sin aislamiento de sistema operativo.
 
    **Invariante Central de Full Access:**
