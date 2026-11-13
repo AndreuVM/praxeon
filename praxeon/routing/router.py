@@ -472,7 +472,7 @@ class AgentRouter:
                             },
                         )
                     except Exception:
-                        pass
+                        logger.debug('No se pudo emitir el evento de enrutamiento', exc_info=True)
 
                 return new_decision
 

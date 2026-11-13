@@ -59,9 +59,10 @@ class Executor(Protocol):
         self,
         action: ActionCandidate,
         state: Any,
+        receipt: Any = None,
         decision: Optional[PolicyDecision] = None,
     ) -> Any:
-        """Ejecuta físicamente la herramienta autorizada y captura la observación resultante."""
+        """Ejecuta físicamente la herramienta autorizada (con su recibo firmado) y captura la observación resultante."""
         ...
 
 

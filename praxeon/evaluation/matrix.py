@@ -117,7 +117,7 @@ def get_current_git_commit_sha() -> str:
         )
         if res.returncode == 0 and res.stdout.strip():
             return res.stdout.strip()
-    except Exception:
+    except Exception:  # noqa: S110 - best-effort: detección de hardware opcional
         pass
     return "0000000000000000000000000000000000000000"
 
@@ -132,7 +132,7 @@ def collect_hardware_metadata() -> HardwareMetadata:
     try:
         import psutil
         ram_gb = round(psutil.virtual_memory().total / (1024 ** 3), 2)
-    except Exception:
+    except Exception:  # noqa: S110 - best-effort: detección de hardware opcional
         pass
 
     # Detección de aceleración GPU
@@ -143,7 +143,7 @@ def collect_hardware_metadata() -> HardwareMetadata:
             gpu_desc = f"CUDA: {torch.cuda.get_device_name(0)}"
         elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
             gpu_desc = "Apple Silicon MPS"
-    except Exception:
+    except Exception:  # noqa: S110 - best-effort: detección de hardware opcional
         pass
 
     return HardwareMetadata(

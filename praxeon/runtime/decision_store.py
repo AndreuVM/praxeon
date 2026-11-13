@@ -85,13 +85,15 @@ def _deserialize_decision_record(raw_json: str) -> Dict[str, Any]:
             try:
                 d[dt_key] = datetime.fromisoformat(d[dt_key])
             except Exception:
-                pass
+                logger.debug('Fecha ilegible en una decisión guardada', exc_info=True)
 
     return d
 
 
 class SqliteDecisionRepository:
     """Almacén durable de decisiones con persistencia SQLite WAL y reconstrucción determinista."""
+
+    _mem_conn: Optional[sqlite3.Connection] = None   # conexión única para db_path=":memory:"
 
     def __init__(self, db_path: Optional[str] = None):
         from praxeon.config import resolve_db_path
@@ -283,7 +285,7 @@ class SqliteDecisionRepository:
             p = ev.payload or {}
 
             # Enriquecer según tipo de evento
-            if ev.type in (EventType.ACTION_PROPOSED, EventType.ACTION_CANDIDATE):
+            if ev.type == EventType.ACTION_PROPOSED:      # ACTION_CANDIDATE no existe: lanzaba AttributeError
                 tool = p.get("tool") or p.get("tool_name")
                 args = p.get("arguments") or {}
                 rationale = p.get("rationale") or p.get("description") or ""
@@ -321,7 +323,7 @@ class SqliteDecisionRepository:
                     try:
                         rec["expires_at"] = datetime.fromisoformat(p["expires_at"])
                     except Exception:
-                        pass
+                        logger.debug('Fecha de caducidad ilegible en una decisión guardada', exc_info=True)
             elif ev.type == EventType.APPROVAL_REQUESTED:
                 rec["status"] = "REVIEW"
             elif ev.type == EventType.APPROVAL_COMPLETED:

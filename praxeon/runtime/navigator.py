@@ -72,7 +72,7 @@ class Navigator:
         self.completion_verifier = completion_verifier or CompletionVerifier()
         self.event_bus = event_bus or global_event_bus
         self.shadow_mode = shadow_mode
-        self.model_name = model_name or getattr(self.provider, "model", "deepseek-r1-7b")
+        self.model_name: str = str(model_name or getattr(self.provider, "model", None) or "deepseek-r1-7b")
 
         self.state: Optional[SessionState] = None
         self.audit_receipts: List[DecisionReceipt] = []

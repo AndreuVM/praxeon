@@ -65,7 +65,7 @@ class RiskReconciler:
         5. Efecto del modo de ejecución (full_access no puede saltarse CRITICAL).
         """
         forbidden_tools = forbidden_tools or set()
-        mode_str = str(execution_mode.value if hasattr(execution_mode, "value") else execution_mode or "").lower()
+        mode_str = str(getattr(execution_mode, "value", execution_mode) or "").lower()
 
         # 0. Pasos puramente cognitivos (sin herramienta)
         if not tool_name:

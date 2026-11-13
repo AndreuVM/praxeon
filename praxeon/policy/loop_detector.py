@@ -40,7 +40,6 @@ def is_mutation(tool: str, args: Dict[str, Any]) -> bool:
     if tool in WRITE_TOOLS:
         return True
     if tool in SHELL_TOOLS:
-        from praxeon.reasoning.classifier import CommandClassifier
 
         command = str((args or {}).get("command") or (args or {}).get("cmd") or (args or {}).get("raw") or "")
         return bool(command) and not _classifier().classify(command).read_only

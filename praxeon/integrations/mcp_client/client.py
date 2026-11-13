@@ -278,7 +278,7 @@ class StdioMcpClient(_RpcClient):
             proc.kill()
         try:
             proc.wait(timeout=3)
-        except Exception:
+        except Exception:  # noqa: S110 - best-effort: limpieza al cerrar la conexión o el proceso
             pass
 
     def _send(self, message: Dict[str, Any], timeout: Optional[float] = None) -> None:
@@ -453,7 +453,7 @@ class SseMcpClient(_RemoteClient):
                         self._handle_message(json.loads(data))
                     except ValueError:
                         continue
-        except Exception:   # al cerrar, http.client puede fallar de formas internas (AttributeError…) mientras el hilo lee
+        except Exception:  # noqa: S110 - best-effort: limpieza al cerrar la conexión o el proceso
             pass
         self._closed = True
         self._endpoint_ready.set()
@@ -490,7 +490,7 @@ class SseMcpClient(_RemoteClient):
         if conn is not None:
             try:
                 conn.close()
-            except Exception:
+            except Exception:  # noqa: S110 - best-effort: limpieza al cerrar la conexión o el proceso
                 pass
         self._fail_pending("El cliente MCP se cerró")
 
@@ -557,7 +557,7 @@ class StreamableHttpMcpClient(_RemoteClient):
                 conn.request("DELETE", _target(self._parts), headers={"Mcp-Session-Id": self._session_id, **self._headers})
                 conn.getresponse().read()
                 conn.close()
-            except Exception:
+            except Exception:  # noqa: S110 - best-effort: limpieza al cerrar la conexión o el proceso
                 pass
         self._closed = True
         self._fail_pending("El cliente MCP se cerró")

@@ -44,7 +44,7 @@ class BranchScore(BaseModel):
     weight_alignment: float = 0.35
     weight_risk: float = 0.40
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]  # patrón documentado de pydantic
     @property
     def composite_score(self) -> float:
         """Calcula el score compuesto normalizado [0.0, 1.0]."""

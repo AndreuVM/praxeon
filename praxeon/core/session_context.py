@@ -186,7 +186,7 @@ class SessionContextManager:
                             if sub.name.startswith(".") or sub.name in ignored_dirs:
                                 continue
                             sub_items.append(sub.name + ("/" if sub.is_dir() else ""))
-                    except Exception:
+                    except Exception:  # noqa: S110 - best-effort: carpetas sin permiso de lectura se omiten del listado
                         pass
                     if sub_items:
                         preview = ", ".join(sub_items[:8])
@@ -339,7 +339,7 @@ class SessionContextManager:
                     found_files.append(rel.replace("\\", "/"))
                     if len(found_files) >= max_files:
                         return found_files
-        except Exception:
+        except Exception:  # noqa: S110 - best-effort: carpetas sin permiso de lectura se omiten del listado
             pass
         return found_files
 

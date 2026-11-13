@@ -673,12 +673,12 @@ class MCPBridge:
         if hasattr(sys.stdin, "reconfigure"):
             try:
                 sys.stdin.reconfigure(encoding="utf-8")
-            except Exception:
+            except Exception:  # noqa: S110 - best-effort: reconfigurar la codificación de stdio
                 pass
         if hasattr(sys.stdout, "reconfigure"):
             try:
                 sys.stdout.reconfigure(encoding="utf-8")
-            except Exception:
+            except Exception:  # noqa: S110 - best-effort: reconfigurar la codificación de stdio
                 pass
 
         buffer = ""

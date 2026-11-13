@@ -90,7 +90,7 @@ class WebSocketConnectionManager:
             try:
                 await ws.send_text(text_data)
             except Exception:
-                pass
+                logger.debug('No se pudo enviar un mensaje a un WebSocket (cliente desconectado)', exc_info=True)
 
 
 ws_manager = WebSocketConnectionManager()

@@ -5,6 +5,9 @@ from typing import Dict, List, Optional, Set
 from pydantic import BaseModel, ConfigDict, Field
 from praxeon.domain.models import ActionCandidate, DecisionStatus, PolicyDecision, RiskAssessment
 from praxeon.policy.registry import ToolRegistry
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class HumanApprovalTicket(BaseModel):
@@ -53,6 +56,8 @@ class PermissionManager:
             self._load_audit_log()
 
     def _load_audit_log(self) -> None:
+        if not self.audit_log_path:
+            return
         try:
             with open(self.audit_log_path, "r", encoding="utf-8") as f:
                 for line in f:
@@ -63,7 +68,7 @@ class PermissionManager:
                             self._tickets[ticket.action_id] = ticket
                             self._confirmed_actions.add(ticket.action_id)
         except Exception:
-            pass
+            logger.warning('No se pudieron cargar los tickets de aprobación guardados', exc_info=True)
 
     def grant_approval(self, ticket: HumanApprovalTicket) -> None:
         """Registra un ticket formal de aprobación emitido por un operador y lo audita durablemente."""

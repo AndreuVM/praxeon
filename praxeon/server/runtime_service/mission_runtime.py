@@ -1403,7 +1403,7 @@ class MissionRuntimeMixin:
                     try:
                         self.state_store.save_mission(dict(mission))
                     except Exception:
-                        pass
+                        logger.warning('No se pudo persistir la misión %s', sid, exc_info=True)
 
                 # Usar parent_id explícito del plan o el active_parent_id actual
                 target_parent = step_data.get("parent_id") or active_parent_id
@@ -1541,7 +1541,7 @@ class MissionRuntimeMixin:
             try:
                 self.state_store.save_mission(dict(mission))
             except Exception:
-                pass
+                logger.warning('No se pudo persistir la misión detenida %s', sid, exc_info=True)
 
         self.event_bus.emit(
             session_id=sid,

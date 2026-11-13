@@ -18,10 +18,15 @@ import threading
 from typing import Any, Callable, Dict, List, Optional, Set
 
 from praxeon.domain.events import EventType, RuntimeEvent, make_event
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class EventStore:
     """Almacén durable de eventos basado en SQLite WAL."""
+
+    _mem_conn: Optional[sqlite3.Connection] = None   # conexión única para db_path=":memory:"
 
     def __init__(self, db_path: Optional[str] = None):
         from praxeon.config import resolve_db_path
@@ -393,14 +398,14 @@ class EventBus:
             try:
                 cb(persisted_event)
             except Exception:
-                pass  # Evitar que errores de observadores rompan el flujo del runtime
+                logger.warning('Un observador del bus de eventos falló', exc_info=True)
 
         # 3. Despacho a colas asíncronas
         for q in async_queues:
             try:
                 q.put_nowait(persisted_event)
             except Exception:
-                pass
+                logger.debug('Cola asíncrona de eventos llena o cerrada', exc_info=True)
 
         return persisted_event
 

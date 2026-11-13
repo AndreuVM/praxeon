@@ -14,6 +14,9 @@ import threading
 import time
 from pathlib import Path
 from typing import Any, Dict, Optional
+import logging
+
+logger = logging.getLogger(__name__)
 
 TRACE_ENV = "PRAXEON_TRACE_SUPERVISOR"
 RUN_LABEL_ENV = "PRAXEON_TRACE_LABEL"
@@ -85,4 +88,4 @@ def record_supervisor_step(*, state: str, questions: Any, primitives: Any, ctx: 
             with path.open("a", encoding="utf-8") as fh:
                 fh.write(line + "\n")
     except Exception:  # noqa: BLE001
-        pass
+        logger.debug('No se pudo escribir la traza del supervisor', exc_info=True)

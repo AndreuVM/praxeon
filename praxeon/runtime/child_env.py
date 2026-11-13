@@ -15,7 +15,7 @@ import os
 import signal
 import subprocess
 import sys
-from typing import Dict, Iterable, Mapping, Optional
+from typing import Any, Dict, Iterable, Mapping, Optional
 
 # Variables que las herramientas comunes necesitan para arrancar (comparación sin distinguir mayúsculas)
 BASE_ALLOWED_ENV = frozenset({
@@ -85,7 +85,7 @@ def child_environment(
     return clean
 
 
-def process_group_kwargs() -> Dict[str, object]:
+def process_group_kwargs() -> Dict[str, Any]:
     """Argumentos de Popen para que el proceso y sus descendientes formen un grupo que se pueda terminar entero."""
     if sys.platform == "win32":
         return {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}

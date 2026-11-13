@@ -499,7 +499,7 @@ class SessionLifecycleCoordinator:
                     try:
                         self.service.state_store.delete_mission(session_id)
                     except Exception:
-                        pass
+                        logger.warning('No se pudo borrar la misión persistida %s', session_id, exc_info=True)
                 return True
         return False
 

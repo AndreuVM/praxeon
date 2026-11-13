@@ -13,7 +13,6 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, Iterator, List, Optional
 
-from praxeon.providers.action_record import build_action_record
 from praxeon.providers.context import ProviderContext
 from praxeon.providers.laya import _STATE_FITS, build_laya_state
 from praxeon.providers.supervisor_trace import redact
@@ -81,7 +80,7 @@ def extract_session(session_id: str, events: List[sqlite3.Row], *, only_real: bo
             approvals[e["decision_id"]] = p
 
     history: List[Dict[str, Any]] = []
-    for index, node in enumerate(order, start=1):
+    for node in order:
         info = by_action[node]
         proposed = info.get("proposed", {})
         tool = str(proposed.get("tool") or "")

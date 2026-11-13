@@ -8,6 +8,9 @@ from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 import threading
 from typing import Dict, Optional
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def _is_expired(exp: Optional[datetime], now: Optional[datetime] = None) -> bool:
@@ -175,7 +178,7 @@ class SqliteNonceStore(NonceStore):
                                 )
                             return False
                     except Exception:
-                        pass
+                        logger.warning('Caducidad ilegible para el nonce de %s: se considera consumido', decision_id, exc_info=True)
                 return True
             finally:
                 self._close_conn(conn)

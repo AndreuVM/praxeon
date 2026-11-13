@@ -162,10 +162,10 @@ class FullAccessExecutor:
         elif tool_name in ("edit_file", "write_file"):
             raw_path = str(arguments.get("path") or "").strip()
             path = os.path.expanduser(os.path.expandvars(raw_path))
-            content = content_from_args(arguments)
+            new_content = content_from_args(arguments)
             if not os.path.isabs(path):
                 path = os.path.join(cwd, path)
-            if not raw_path or content is None:
+            if not raw_path or new_content is None:
                 elapsed = (time.perf_counter() - start_t) * 1000.0
                 return FullAccessResult(
                     output=f"[FULL_ACCESS] {tool_name} necesita path y content (el texto COMPLETO del archivo).",
@@ -174,7 +174,7 @@ class FullAccessExecutor:
             try:
                 os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
                 with open(path, "w", encoding="utf-8") as f:
-                    f.write(content)
+                    f.write(new_content)
                 elapsed = (time.perf_counter() - start_t) * 1000.0
                 return FullAccessResult(
                     output=f"[FULL_ACCESS] Archivo '{path}' modificado satisfactoriamente en el host.",

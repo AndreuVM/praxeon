@@ -290,12 +290,12 @@ class LocalProcessSandbox(SandboxAdapter):
                         total_bytes[0] += allowed
                     else:
                         overflow[0] = True
-            except Exception:
+            except Exception:  # noqa: S110 - best-effort: limpieza de tuberías y del proceso
                 pass
             finally:
                 try:
                     pipe.close()
-                except Exception:
+                except Exception:  # noqa: S110 - best-effort: limpieza de tuberías y del proceso
                     pass
 
         t_out = threading.Thread(target=read_stream, args=(proc.stdout, stdout_chunks), daemon=True)
@@ -309,7 +309,7 @@ class LocalProcessSandbox(SandboxAdapter):
             try:
                 kill_process_tree(proc)      # los descendientes (p. ej. lo que lanza PowerShell) también
                 proc.wait(timeout=2.0)
-            except Exception:
+            except Exception:  # noqa: S110 - best-effort: limpieza de tuberías y del proceso
                 pass
             raise
         finally:
@@ -698,8 +698,11 @@ class ContainerSandboxAdapter(SandboxAdapter):
         if net_mode == "host":
             raise SandboxViolation("Violación de sandbox de contenedor: el modo de red 'host' está prohibido.")
 
+        runtime = self.runtime_binary
+        if not runtime:      # comprobado arriba (o se usó el fallback local); se repite para el tipo y por seguridad
+            raise SandboxViolation("No hay runtime de contenedor disponible (docker/podman).")
         args = [
-            self.runtime_binary,
+            runtime,
             "run",
             "--rm",
             "-i",

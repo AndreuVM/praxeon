@@ -106,12 +106,12 @@ class DecisionTree(BaseModel):
     nodes: Dict[str, TreeNode] = Field(default_factory=dict)
     edges: List[TreeEdge] = Field(default_factory=list)
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]  # patrón documentado de pydantic
     @property
     def node_count(self) -> int:
         return len(self.nodes)
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]  # patrón documentado de pydantic
     @property
     def edge_count(self) -> int:
         return len(self.edges)

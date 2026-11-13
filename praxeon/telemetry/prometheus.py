@@ -12,6 +12,9 @@ import os
 import threading
 import time
 from typing import Any, Dict, List, Optional
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class PrometheusMetricsExporter:
@@ -131,10 +134,10 @@ class PrometheusMetricsExporter:
                         if rec.get("signature") or rec.get("capability"):
                             nonce_success += 1
                     except Exception:
-                        pass
+                        logger.debug('Decisión ilegible al exportar métricas', exc_info=True)
                 service.decision_repository._close_conn(conn)
             except Exception:
-                pass
+                logger.warning('No se pudieron leer las decisiones para Prometheus', exc_info=True)
 
         lines.append(f'praxeon_policy_evaluations_total{{status="replan"}} {replan}')
 
@@ -185,7 +188,7 @@ class PrometheusMetricsExporter:
                 lines.append("# TYPE praxeon_context_cache_hit_ratio gauge")
                 lines.append(f"praxeon_context_cache_hit_ratio {round(hit_ratio, 4)}")
             except Exception:
-                pass
+                logger.debug('No se pudieron calcular las métricas de caché de contexto', exc_info=True)
 
         # Total de eventos emitidos
         total_events = sum(s.get("event_count", 0) for s in sessions)

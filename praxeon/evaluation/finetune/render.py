@@ -7,7 +7,7 @@ prueba cada tamaño con el tokenizador del checkpoint y `build_sequence` hasta q
 from __future__ import annotations
 
 import hashlib
-from typing import Any, Callable, Optional
+from typing import Any, Callable
 
 from praxeon.providers.context import ProviderContext
 from praxeon.providers.laya import _STATE_FITS, build_laya_state

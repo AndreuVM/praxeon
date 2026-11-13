@@ -18,6 +18,9 @@ from urllib.parse import urlsplit
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from praxeon.config import resolve_cache_dir
+import logging
+
+logger = logging.getLogger(__name__)
 
 _NAME_RE = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
 _RISKS = ("LOW", "MEDIUM", "HIGH", "CRITICAL")
@@ -113,6 +116,7 @@ class McpConfigStore:
             try:
                 servers[name] = McpServerConfig(name=name, **cfg)
             except Exception:  # entrada corrupta: se ignora sin tumbar el resto
+                logger.warning("Configuración MCP corrupta para '%s': se ignora", name, exc_info=True)
                 continue
         return servers
 

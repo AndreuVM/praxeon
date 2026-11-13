@@ -348,7 +348,7 @@ class AuthService:
                     self._remember_revocation(jti, payload.get("exp"))
                 return True
         except Exception:
-            pass
+            logger.debug('Token inválido al revocar', exc_info=True)
         return False
 
     def authenticate_jwt(self, token: str) -> TenantContext:

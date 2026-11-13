@@ -56,7 +56,7 @@ def jwt_secret() -> Optional[str]:
 
 
 def _strong(value: Optional[str]) -> bool:
-    return bool(value) and value not in INSECURE_DEFAULTS and len(value) >= MIN_LENGTH
+    return value is not None and value not in INSECURE_DEFAULTS and len(value) >= MIN_LENGTH
 
 
 def production_keys_problem() -> Optional[str]:

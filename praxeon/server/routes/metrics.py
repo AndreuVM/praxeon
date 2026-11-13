@@ -7,6 +7,9 @@ from fastapi import APIRouter, Depends, Header, Query, Response
 from praxeon.server.dependencies import RuntimeApplicationService, get_runtime_service
 from praxeon.server.schemas.common import APIResponse
 from praxeon.telemetry.prometheus import get_prometheus_exporter
+import logging
+
+logger = logging.getLogger(__name__)
 
 PROMETHEUS_MEDIA_TYPE = "text/plain; version=0.0.4; charset=utf-8"
 
@@ -65,10 +68,10 @@ def get_metrics(
                 if cat:
                     categories_dist[cat] = categories_dist.get(cat, 0) + 1
             except Exception:
-                pass
+                logger.debug('Decisión ilegible al calcular métricas', exc_info=True)
         service.decision_repository._close_conn(conn)
     except Exception:
-        pass
+        logger.warning('No se pudieron leer las decisiones para las métricas', exc_info=True)
 
     # Cálculo exacto de percentiles
     latencies.sort()

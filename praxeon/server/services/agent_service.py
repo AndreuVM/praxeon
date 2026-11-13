@@ -6,6 +6,9 @@ from praxeon.agents.definition import AgentDefinition, AgentStatus
 from praxeon.agents.registry import AgentRegistry
 from praxeon.agents.templates import AgentTemplateCatalog
 from praxeon.routing.router import AgentRouter
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class AgentService:
@@ -27,7 +30,7 @@ class AgentService:
                 try:
                     self.registry.register(AgentTemplateCatalog.instantiate(tpl, f"ag_{tpl}"))
                 except Exception:
-                    pass
+                    logger.warning('No se pudo registrar el agente por defecto %s', tpl, exc_info=True)
 
     def get_registry(self) -> AgentRegistry:
         return self.registry

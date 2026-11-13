@@ -12,6 +12,9 @@ from praxeon.workflows.models import (
     NodeType,
     UIPosition,
 )
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/v1/workflows", tags=["Workflows"])
 
@@ -26,7 +29,7 @@ def get_workflow_editor_service() -> WorkflowEditorService:
         if svc and hasattr(svc, "get_workflow_editor_service"):
             return svc.get_workflow_editor_service()
     except Exception:
-        pass
+        logger.debug('Servicio de workflows no disponible; se usa uno local', exc_info=True)
     return _editor_service
 
 

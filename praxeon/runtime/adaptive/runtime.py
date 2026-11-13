@@ -36,6 +36,9 @@ from praxeon.runtime.adaptive.models import (
 from praxeon.runtime.adaptive.step_dispatcher import StepLevelAdaptiveDispatcher
 from praxeon.runtime.adaptive.trajectory_controller import TrajectoryController
 from praxeon.runtime.event_bus import EventStore
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class AdaptiveAgentRuntime:
@@ -60,7 +63,7 @@ class AdaptiveAgentRuntime:
                 try:
                     self.registry.register(AgentTemplateCatalog.instantiate(tpl, f"ag_{tpl}"))
                 except Exception:
-                    pass
+                    logger.warning('No se pudo registrar el agente por defecto %s', tpl, exc_info=True)
 
         # 2. Componentes centrales de enrutamiento y supervisión
         self.router = router or AgentRouter(registry=self.registry)
@@ -233,7 +236,12 @@ class AdaptiveAgentRuntime:
 
             elif directive == TrajectoryDirective.PRUNE:
                 # Podar fragmentos de contexto redundantes y continuar con acción correctiva
-                self.context_manager.prune_branch(session_id=sid, branch_id=f"step_{step_idx}")
+                # ContextManager no implementa la poda por rama: antes esto lanzaba AttributeError. Se registra y se sigue.
+                prune = getattr(self.context_manager, "prune_branch", None)
+                if callable(prune):
+                    prune(session_id=sid, branch_id=f"step_{step_idx}")
+                else:
+                    logger.info("Directiva PRUNE en %s paso %d: el gestor de contexto no poda por rama", sid, step_idx)
                 step_idx += 1
 
             elif directive == TrajectoryDirective.RECOVER:

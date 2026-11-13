@@ -5,6 +5,9 @@ from typing import Optional, Tuple
 from rich.console import Console
 from rich.panel import Panel
 from rich.prompt import Prompt
+import logging
+
+logger = logging.getLogger(__name__)
 
 AVAILABLE_MODELS = [
     ("groq:llama-3.3-70b-versatile", "Groq Cloud (Plan gratuito de 14.400 req/día y 30 RPM - Ultra rápido)", "GROQ_API_KEY"),
@@ -169,4 +172,4 @@ def _persist_api_key_to_env(new_key: str, key_name: str = "GEMINI_API_KEY", env_
         except OSError:
             pass
     except Exception:
-        pass
+        logger.warning('No se pudo guardar la clave recuperada en el fichero .env', exc_info=True)

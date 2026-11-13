@@ -79,7 +79,7 @@ class WorkflowEditorService:
                 if self._workflows:
                     loaded = True
             except Exception:
-                pass
+                logger.warning('No se pudieron cargar los workflows guardados', exc_info=True)
 
         # Registrar un workflow de demostración por defecto si el almacén está vacío
         if not loaded:
@@ -191,7 +191,7 @@ class WorkflowEditorService:
                 if wf:
                     self._workflows[workflow_id] = wf
             except Exception:
-                pass
+                logger.warning('No se pudo cargar el workflow %s', workflow_id, exc_info=True)
         return wf
 
     def list_workflows(self) -> List[Dict[str, Any]]:

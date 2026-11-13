@@ -15,7 +15,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 from praxeon.evaluation.agentbench.arms import Listener, RunResult, run_bare, run_praxeon
 from praxeon.evaluation.agentbench.metering import MeteredLLM, PriceTable
-from praxeon.evaluation.agentbench.tasks import Task, build_suite, materialize
+from praxeon.evaluation.agentbench.tasks import Task, materialize
 
 LLMFactory = Callable[[str, str], Any]   # (provider, model) -> BaseAgentLLM
 
