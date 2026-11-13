@@ -1,5 +1,6 @@
 """Tests para el exportador de telemetría y métricas Prometheus / OpenTelemetry (tests/test_prometheus_metrics.py)."""
 
+import praxeon
 import pytest
 from fastapi.testclient import TestClient
 
@@ -19,7 +20,7 @@ def test_prometheus_metrics_exporter_unit():
 
     assert "# HELP praxeon_build_info" in metrics_text
     assert "# TYPE praxeon_build_info gauge" in metrics_text
-    assert 'praxeon_build_info{version="1.1.0"' in metrics_text
+    assert f'praxeon_build_info{{version="{praxeon.__version__}"' in metrics_text
 
     assert "# HELP praxeon_uptime_seconds" in metrics_text
     assert "# TYPE praxeon_uptime_seconds gauge" in metrics_text

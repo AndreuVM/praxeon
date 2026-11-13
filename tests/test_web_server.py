@@ -10,6 +10,7 @@ Verifica todos los endpoints REST y canales WebSocket especificados en la Secci√
 - Endpoints de salud (/health) y telemetr√≠a agregada (/metrics).
 """
 
+import praxeon
 from datetime import datetime, timezone
 import json
 import pytest
@@ -46,7 +47,7 @@ def test_healthcheck_endpoint(client):
     assert resp.status_code == 200
     data = resp.json()["data"]
     assert data["status"] == "healthy"
-    assert data["version"] in ("1.0.0", "1.1.0")
+    assert data["version"] == praxeon.__version__
     assert "uptime_seconds" in data
 
 

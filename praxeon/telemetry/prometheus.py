@@ -7,6 +7,7 @@ Cumple estrictamente con la especificación de formato de texto Prometheus 0.0.4
 - Cero dependencias externas requeridas
 """
 
+from praxeon import __version__
 import json
 import os
 import threading
@@ -63,7 +64,7 @@ class PrometheusMetricsExporter:
         lines.append("# HELP praxeon_build_info Build information and current version of PRAXEON runtime.")
         lines.append("# TYPE praxeon_build_info gauge")
         prof = (os.environ.get("PRAXEON_PROFILE") or os.environ.get("PRAXEON_ENV") or "dev").lower()
-        lines.append(f'praxeon_build_info{{version="1.1.0",profile="{prof}"}} 1')
+        lines.append(f'praxeon_build_info{{version="{__version__}",profile="{prof}"}} 1')
 
         lines.append("# HELP praxeon_uptime_seconds Total runtime uptime in seconds.")
         lines.append("# TYPE praxeon_uptime_seconds gauge")

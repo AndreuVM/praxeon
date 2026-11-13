@@ -8,6 +8,7 @@ import uvicorn
 from fastapi import Depends, FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 
+from praxeon import __version__
 from praxeon.runtime.keys import production_keys_problem
 from praxeon.server.host_guard import HostGuardMiddleware, configured_hosts
 from praxeon.server.routes import api_router
@@ -74,7 +75,7 @@ def create_app(
 
     app = FastAPI(
         title="PRAXEON Web Server",
-        version="1.1.0",
+        version=__version__,
         description="Runtime supervision for autonomous AI agents — REST API & WebSocket Streaming",
         docs_url=None if prof == "production" else "/docs",
         redoc_url=None if prof == "production" else "/redoc",
@@ -118,7 +119,7 @@ def create_app(
     @app.get("/health", include_in_schema=True)
     def health_root():
         """Healthcheck raíz para balanceadores de carga y sondas Kubernetes."""
-        return {"status": "healthy", "version": "1.1.0"}
+        return {"status": "healthy", "version": __version__}
 
     # Servir interfaz web de supervisión si está construida o empaquetada
     static_packaged = os.path.abspath(os.path.join(os.path.dirname(__file__), "static"))

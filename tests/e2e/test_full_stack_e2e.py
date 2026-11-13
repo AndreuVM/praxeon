@@ -8,6 +8,7 @@ Valida integralmente todos los subsistemas acoplados de PRAXEON 1.0:
 5. Entrega de assets estáticos de la SPA Web y contratos de salud pública (/v1/health).
 """
 
+import praxeon
 import json
 import os
 import secrets
@@ -62,7 +63,7 @@ def test_public_health_and_frontend_delivery(isolated_stack):
     assert health_resp.status_code == 200
     health_data = health_resp.json()["data"]
     assert health_data["status"] == "healthy"
-    assert health_data["version"] in ("1.0.0", "1.1.0")
+    assert health_data["version"] == praxeon.__version__
 
     # 2. Raíz SPA
     spa_resp = client.get("/")

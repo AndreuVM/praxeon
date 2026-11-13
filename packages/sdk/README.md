@@ -2,7 +2,7 @@
 
 **Cliente TypeScript y SDK oficial para PRAXEON: Runtime Supervision for Autonomous AI Agents.**
 
-[![npm version](https://img.shields.io/badge/version-1.1.0-blue.svg)](https://github.com/AndreuVM/praxeon)
+[![npm version](https://img.shields.io/badge/version-1.2.0-blue.svg)](https://github.com/AndreuVM/praxeon)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-green.svg)](https://opensource.org/licenses/Apache-2.0)
 
 PRAXEON proporciona supervisión formal determinista para agentes de IA autónomos (ReAct, Tool-use, Tree-of-Thought). El modelo propone acciones; el runtime PRAXEON verifica evidencias, audita riesgos, emite tokens criptográficos HMAC-SHA256 y confina la ejecución física.

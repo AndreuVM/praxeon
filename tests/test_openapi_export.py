@@ -1,5 +1,6 @@
 """Tests de validación para la exportación de OpenAPI y consistencia del SDK (tests/test_openapi_export.py)."""
 
+import praxeon
 import json
 from pathlib import Path
 from scripts.export_openapi import export_openapi
@@ -12,7 +13,7 @@ def test_export_openapi_schema(tmp_path: Path):
 
     assert target_json.exists()
     assert schema.get("openapi", "").startswith("3.")
-    assert schema.get("info", {}).get("version") == "1.1.0"
+    assert schema.get("info", {}).get("version") == praxeon.__version__
     assert "PRAXEON" in schema.get("info", {}).get("title", "")
 
     paths = schema.get("paths", {})
@@ -39,8 +40,8 @@ def test_packages_sdk_files_exist():
     assert (sdk_dir / "src" / "index.ts").is_file()
     assert (sdk_dir / "README.md").is_file()
 
-    # Validar que package.json sea un JSON válido con versión 1.1.0
+    # El SDK publica la misma versión que el servidor
     with open(sdk_dir / "package.json", "r", encoding="utf-8") as f:
         pkg = json.load(f)
     assert pkg.get("name") == "@praxeon/sdk"
-    assert pkg.get("version") == "1.1.0"
+    assert pkg.get("version") == praxeon.__version__

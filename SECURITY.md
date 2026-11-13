@@ -6,8 +6,9 @@
 
 | Versión | Soportada | Estado de Mantenimiento |
 | :--- | :---: | :--- |
-| **1.1.x (v1.1.0 y rama principal)** | ✅ Sí | Versión activa. Incluye Web API FastAPI con autenticación forzada, WebSocket streaming seguro, Decision Tree durable, Execution Modes (Container, Local Restricted, Full Access) con capability binding HMAC-SHA256 y fail-closed por defecto, workflows multiagente supervisados, aplicación de escritorio autenticada en loopback y **cliente MCP** (herramientas externas supervisadas, ver §2.12). Los cambios posteriores a la etiqueta v1.1.0 están en la rama principal y constan en la sección *Unreleased* del `CHANGELOG.md`. |
-| < 1.1.0 | ❌ No | Sustituida por 1.1.x. Se recomienda actualizar. |
+| **1.2.x (v1.2.0 y rama principal)** | ✅ Sí | Versión activa. Incluye la remediación de la auditoría del 2026-11-01 (claves independientes, Host de confianza, Full Access solo en escritorio, entorno filtrado, instalación de un solo usuario) además de todo lo de 1.1.x. Los cambios posteriores a la etiqueta v1.2.0 constan en la sección *Unreleased* del `CHANGELOG.md`. |
+| 1.1.x | ❌ No | Sustituida por 1.2.x. Se recomienda actualizar. |
+| < 1.1.0 | ❌ No | Sustituida. |
 
 ---
 

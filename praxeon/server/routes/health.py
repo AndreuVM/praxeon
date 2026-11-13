@@ -1,5 +1,6 @@
 """Ruta de comprobación de salud del Web Server (praxeon/server/routes/health.py)."""
 
+from praxeon import __version__
 from datetime import datetime, timezone
 import time
 from typing import Any, Dict, Optional
@@ -29,7 +30,7 @@ def healthcheck(
     uptime = time.time() - _START_TIME
     data = {
         "status": "healthy",
-        "version": "1.1.0",
+        "version": __version__,
         "runtime": "PRAXEON Autonomous Supervision Runtime",
         "uptime_seconds": round(uptime, 2),
         "database": "SQLite (WAL)",

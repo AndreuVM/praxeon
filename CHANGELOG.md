@@ -6,7 +6,25 @@ Todas las modificaciones notables de este proyecto están documentadas en este a
 
 ## [Unreleased]
 
+---
+
+## [1.2.0] — 2026-11-13
+
+### Al actualizar (cambios de comportamiento)
+- **Full Access solo en la app de escritorio.** Con `praxeon-server`, `praxeon-web` o la CLI, define `PRAXEON_ALLOW_FULL_ACCESS=1`.
+- **Un solo usuario:** el login y la confirmación de decisiones ya no aceptan `role`.
+- **Claves separadas:** `PRAXEON_SECRET_KEY` ya no vale como API key ni como token de operador; define `PRAXEON_API_KEY`
+  (migración en `docs/SECURITY_KEYS.md`). Los JWT emitidos antes dejan de ser válidos.
+- **Host de confianza:** el servidor solo responde a `localhost`/`127.0.0.1`/`[::1]` salvo `PRAXEON_ALLOWED_HOSTS`; `praxeon-server`
+  y `praxeon-web` generan un token por arranque si no hay `PRAXEON_API_KEY`.
+- Los comandos del agente ya no heredan todas las variables de entorno: si una herramienta necesita otra, `PRAXEON_CHILD_ENV_ALLOW`.
+
 ### Security
+- Remediación de la auditoría del 2026-11-01: claves independientes para API, JWT y recibos derivadas por HKDF (S-03); validación
+  de la cabecera `Host` frente a DNS-rebinding y token por arranque (S-05); leer ficheros de credenciales (`.env`, claves SSH, AWS,
+  `*.pem`…) pide confirmación y `web_fetch` rechaza URLs con datos codificados (S-02); el ejecutor rechaza recibos si no tiene clave
+  y `verify_api_key` falla cerrado (S-07); contadores de decisiones exactos en el resumen de sesión (F-01); `LocalProcessSandbox`
+  documentado como mitigación, no aislamiento (S-01). Corpus adversario del clasificador en `tests/security/test_command_corpus.py`.
 - **Cambio de comportamiento:** Full Access solo está disponible en la app de escritorio. `praxeon-server`, `praxeon-web` y la CLI
   rechazan las sesiones `full_access` con `403` salvo que se arranquen con `PRAXEON_ALLOW_FULL_ACCESS=1`. `SecureExecutor` lo trae
   desactivado por defecto.
@@ -23,6 +41,8 @@ Todas las modificaciones notables de este proyecto están documentadas en este a
 - Un capability token con fecha de caducidad ilegible se rechaza (antes se ignoraba el error y se ejecutaba).
 
 ### Added
+- Acceso a internet de solo lectura para los agentes: `web_search` (Brave o DuckDuckGo sin clave) y `web_fetch`, supervisados.
+- Calidad: `mypy` sobre el núcleo (`domain`, `policy`, `runtime`) en CI; prohibidos los `except Exception: pass` silenciosos.
 - Clasificador: buscar texto peligroso entre comillas (`grep "rm -rf" src`) ya no se bloquea; `net user /add`, `net localgroup /add`, `Set-ExecutionPolicy` y `powershell -EncodedCommand` pasan a CRITICAL.
 - `LAYA_RECORD_VERSION=2`: el registro de la acción añade si la orden aparece en lo leído antes (procedencia). Desactivado por defecto.
 - `PRAXEON_TRACE_SUPERVISOR` (`1` o ruta): volcado local, redactado, del estado exacto y la decisión cruda del supervisor por paso;
