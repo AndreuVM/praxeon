@@ -4,8 +4,8 @@ Los datos web son contexto, nunca instrucciones: llegan marcados como datos exte
 Ver docs/plans/acceso_internet.md.
 """
 
-from praxeon.web.fetcher import WebError, fetch_page
-from praxeon.web.settings import WebSettingsStore
-from praxeon.web.tools import WebTools
+from praxeon.webtools.fetcher import WebError, fetch_page
+from praxeon.webtools.settings import WebSettingsStore
+from praxeon.webtools.tools import WebTools
 
 __all__ = ["WebError", "WebSettingsStore", "WebTools", "fetch_page"]

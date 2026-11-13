@@ -37,7 +37,7 @@ from praxeon.runtime.sandbox import (
     get_default_workspace_root,
 )
 from praxeon.runtime.state import SessionState
-from praxeon.web.context import CALL_CONTEXT
+from praxeon.runtime.call_context import CALL_CONTEXT
 
 
 class PolicyViolation(Exception):

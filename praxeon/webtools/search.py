@@ -9,7 +9,7 @@ from html.parser import HTMLParser
 from typing import List, Optional
 from urllib.parse import parse_qs, urlencode, urlsplit
 
-from praxeon.web.fetcher import WebError, fetch_raw
+from praxeon.webtools.fetcher import WebError, fetch_raw
 
 ENDPOINT = "https://api.search.brave.com/res/v1/web/search"
 _TAGS = re.compile(r"<[^>]+>")

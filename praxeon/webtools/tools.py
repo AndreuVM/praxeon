@@ -17,10 +17,10 @@ from urllib.parse import urlsplit
 from praxeon.domain.models import RiskLevel
 from praxeon.policy.registry import ToolSpec
 from praxeon.policy.sanitizer import DataSanitizer
-from praxeon.web.context import CALL_CONTEXT
-from praxeon.web.fetcher import WebError, fetch_page
-from praxeon.web.search import BraveSearch, DuckDuckGoSearch, SearchResult
-from praxeon.web.settings import WebSettingsStore
+from praxeon.runtime.call_context import CALL_CONTEXT
+from praxeon.webtools.fetcher import WebError, fetch_page
+from praxeon.webtools.search import BraveSearch, DuckDuckGoSearch, SearchResult
+from praxeon.webtools.settings import WebSettingsStore
 
 FULL_ACCESS = "full_access"
 MAX_SEARCHES_PER_SESSION = 20

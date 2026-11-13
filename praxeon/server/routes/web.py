@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 
 from praxeon.server.dependencies import get_runtime_service
 from praxeon.server.schemas.common import APIResponse
-from praxeon.web import WebError
+from praxeon.webtools import WebError
 
 router = APIRouter(prefix="/v1/web", tags=["Web"])
 

@@ -10,10 +10,10 @@ import pytest
 from praxeon.domain import ActionCandidate, DecisionReceipt, DecisionStatus, Goal, ToolCall, compute_action_hash
 from praxeon.policy.registry import ToolRegistry
 from praxeon.runtime import SecureExecutor, SessionState
-from praxeon.web import WebError, WebSettingsStore, WebTools
-from praxeon.web import fetcher
-from praxeon.web.context import CALL_CONTEXT
-from praxeon.web.search import BraveSearch, SearchResult
+from praxeon.webtools import WebError, WebSettingsStore, WebTools
+from praxeon.webtools import fetcher
+from praxeon.runtime.call_context import CALL_CONTEXT
+from praxeon.webtools.search import BraveSearch, SearchResult
 
 PAGE = (
     "<html><head><title>Precio del oro</title><script>var secreto='no-sale'</script></head>"
@@ -212,7 +212,7 @@ def test_search_output_is_marked_as_untrusted_data(web):
 
 
 def test_calls_per_session_are_limited(web, server, monkeypatch):
-    monkeypatch.setattr("praxeon.web.tools.MAX_FETCHES_PER_SESSION", 2)
+    monkeypatch.setattr("praxeon.webtools.tools.MAX_FETCHES_PER_SESSION", 2)
     for _ in range(2):
         _run(web, "web_fetch", {"url": f"{server}/page"}, mode="full_access", session="s9")
     with pytest.raises(WebError, match="Límite"):
@@ -343,7 +343,7 @@ def ddg_server():
 
 
 def test_duckduckgo_results_are_parsed_ads_skipped_and_redirects_unwrapped(ddg_server):
-    from praxeon.web.search import DuckDuckGoSearch
+    from praxeon.webtools.search import DuckDuckGoSearch
 
     results = DuckDuckGoSearch(endpoint=ddg_server, allow_private=True).search("oro", 5)
     assert [(r.title, r.url, r.snippet) for r in results] == [
@@ -354,7 +354,7 @@ def test_duckduckgo_results_are_parsed_ads_skipped_and_redirects_unwrapped(ddg_s
 
 
 def test_duckduckgo_captcha_is_reported_clearly(ddg_server):
-    from praxeon.web.search import DuckDuckGoSearch
+    from praxeon.webtools.search import DuckDuckGoSearch
 
     with pytest.raises(WebError, match="captcha"):
         DuckDuckGoSearch(endpoint=ddg_server + "?captcha", allow_private=True).search("oro")

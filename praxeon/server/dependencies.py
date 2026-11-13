@@ -28,7 +28,7 @@ from praxeon.domain.models import (
 )
 from praxeon.policy.engine import PolicyEngine
 from praxeon.skills import SkillStore
-from praxeon.web import WebSettingsStore, WebTools
+from praxeon.webtools import WebSettingsStore, WebTools
 from praxeon.integrations.mcp_client import McpConfigStore, McpManager
 from praxeon.policy.registry import ToolRegistry
 from praxeon.providers.base import BaseReasoningProvider
