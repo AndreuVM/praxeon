@@ -2,6 +2,7 @@
 Valida el ciclo de vida completo: REST + WebSocket + Policy + Capabilities + Sandbox + Frontend.
 """
 
+from tests._frontend import FRONTEND_BUILT
 from pathlib import Path
 import shutil
 import uuid
@@ -50,9 +51,10 @@ def test_complete_platform_lifecycle_e2e(test_app):
     assert health.status_code == 200
     assert health.json()["data"]["status"] == "healthy"
 
-    ui = test_app.get("/")
-    assert ui.status_code == 200
-    assert "PRAXEON" in ui.text
+    if FRONTEND_BUILT:          # la interfaz se compila aparte (scripts/build_frontend.py); en CI siempre lo está
+        ui = test_app.get("/")
+        assert ui.status_code == 200
+        assert "PRAXEON" in ui.text
 
     # 2. Creación de sesión
     create_res = test_app.post("/v1/sessions", json={

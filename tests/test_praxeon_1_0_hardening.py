@@ -17,6 +17,7 @@ Verifica formalmente los 14 criterios de la Definition of Done (Sección 18 del 
 14. Documentación de modelo de amenazas y ausencia de aislamiento en Full Access en SECURITY.md.
 """
 
+from tests._frontend import requires_frontend
 import asyncio
 from datetime import datetime, timedelta
 import os
@@ -129,6 +130,7 @@ def test_dod_1_wheel_packaging_cleanliness():
 # CRITERIO 2: UI Served via Web Server
 # =============================================================================
 
+@requires_frontend
 def test_dod_2_ui_served_via_web(client):
     """DOD-2: La interfaz web se sirve en la raíz / con assets y branding."""
     c, _ = client

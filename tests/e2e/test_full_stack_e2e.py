@@ -8,6 +8,7 @@ Valida integralmente todos los subsistemas acoplados de PRAXEON 1.0:
 5. Entrega de assets estáticos de la SPA Web y contratos de salud pública (/v1/health).
 """
 
+from tests._frontend import requires_frontend
 import praxeon
 import json
 import os
@@ -54,6 +55,7 @@ def isolated_stack(tmp_path, monkeypatch):
     set_active_security_profile(None)
 
 
+@requires_frontend
 def test_public_health_and_frontend_delivery(isolated_stack):
     """Verifica que /v1/health y la raíz / entreguen respuestas públicas válidas."""
     client = isolated_stack["client"]

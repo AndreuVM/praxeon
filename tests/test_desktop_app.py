@@ -1,5 +1,6 @@
 """Aplicación de escritorio: servidor local autenticado con token efímero."""
 
+from tests._frontend import requires_frontend
 import json
 import urllib.error
 import urllib.request
@@ -61,6 +62,7 @@ def test_tokens_differ_between_launches(monkeypatch):
     assert a.token != b.token
 
 
+@requires_frontend
 def test_frontend_is_packaged():
     assert frontend_available()
 

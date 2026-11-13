@@ -68,6 +68,17 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev,decision-typesafe]"
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: web/package.json
+
+      # La interfaz no se versiona: se compila para que los tests de entrega de la UI se ejecuten (no se salten)
+      - name: Build Frontend
+        run: python scripts/build_frontend.py
+
       - name: Run Test Suite with Pytest
         if: matrix.os != 'ubuntu-latest' || matrix.python-version != '3.11'
         run: |

@@ -10,10 +10,10 @@ Verifica todos los endpoints REST y canales WebSocket especificados en la Secci�
 - Endpoints de salud (/health) y telemetría agregada (/metrics).
 """
 
+from tests._frontend import requires_frontend
 import praxeon
 from datetime import datetime, timezone
 import json
-import os
 import pytest
 from fastapi.testclient import TestClient
 
@@ -269,13 +269,7 @@ def test_websocket_streaming_and_sync(client):
         assert ev_msg["data"]["session_id"] == session_id
 
 
-@pytest.mark.skipif(
-    not any(
-        os.path.isfile(os.path.join(os.path.dirname(__file__), "..", *parts, "index.html"))
-        for parts in (("web", "dist"), ("praxeon", "server", "static"))
-    ),
-    reason="la interfaz web no está construida (scripts/build_frontend.py)",
-)
+@requires_frontend
 def test_frontend_static_serving(client):
     """Verifica que el frontend web compilado se sirve en /."""
     resp = client.get("/")
