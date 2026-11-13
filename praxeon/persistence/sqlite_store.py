@@ -9,13 +9,12 @@ Proporciona persistencia durable, ACID y versionada para:
 
 from datetime import datetime, timezone
 import json
-import os
 import sqlite3
-import threading
 from typing import Any, Dict, List, Optional
 import uuid
 
 from praxeon.agents.definition import AgentDefinition, AgentStatus
+from praxeon.sqlite_base import SqliteStore
 from praxeon.workflows.models import (
     WorkflowDefinition,
     WorkflowExecution,
@@ -23,119 +22,74 @@ from praxeon.workflows.models import (
 )
 
 
-class SqlitePersistenceStore:
+class SqlitePersistenceStore(SqliteStore):
     """Almacén relacional SQLite con soporte transaccional y cuarentena de entidades corruptas."""
 
-    def __init__(self, db_path: Optional[str] = None):
-        from praxeon.config import resolve_db_path
-        if db_path == ":memory:":
-            self.db_path = ":memory:"
-        else:
-            self.db_path = str(resolve_db_path("praxeon.db", db_path))
-            os.makedirs(os.path.dirname(os.path.abspath(self.db_path)), exist_ok=True)
+    DEFAULT_DB_NAME = 'praxeon.db'
+    ROW_FACTORY = sqlite3.Row
+    MIGRATIONS = (
+        (   # versión 1: esquema histórico (IF NOT EXISTS: lo aceptan las bases creadas antes de las migraciones)
+            """
+            CREATE TABLE IF NOT EXISTS agents (
+                agent_id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                role TEXT NOT NULL,
+                version INTEGER NOT NULL,
+                status TEXT NOT NULL,
+                definition_hash TEXT NOT NULL,
+                definition_json TEXT NOT NULL,
+                is_quarantined INTEGER NOT NULL DEFAULT 0,
+                quarantine_reason TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS agent_versions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                agent_id TEXT NOT NULL,
+                version INTEGER NOT NULL,
+                definition_hash TEXT NOT NULL,
+                definition_json TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                UNIQUE(agent_id, version)
+            );
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS workflow_executions (
+                execution_id TEXT PRIMARY KEY,
+                workflow_id TEXT NOT NULL,
+                status TEXT NOT NULL,
+                execution_json TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                finished_at TEXT,
+                updated_at TEXT NOT NULL
+            );
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS quarantined_records (
+                record_id TEXT PRIMARY KEY,
+                entity_type TEXT NOT NULL,
+                entity_id TEXT,
+                raw_content TEXT NOT NULL,
+                error_message TEXT NOT NULL,
+                quarantined_at TEXT NOT NULL
+            );
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS workflows (
+                workflow_id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                description TEXT,
+                version INTEGER NOT NULL DEFAULT 1,
+                workflow_json TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            """,
+        ),
+    )
 
-        self._lock = threading.Lock()
-        self._mem_conn: Optional[sqlite3.Connection] = None
-        self._init_db()
-
-
-    def _get_connection(self) -> sqlite3.Connection:
-        if self.db_path == ":memory:":
-            if self._mem_conn is None:
-                self._mem_conn = sqlite3.connect(":memory:", check_same_thread=False)
-                self._mem_conn.row_factory = sqlite3.Row
-            return self._mem_conn
-
-        conn = sqlite3.connect(self.db_path, timeout=30.0)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode=WAL;")
-        conn.execute("PRAGMA synchronous=NORMAL;")
-        return conn
-
-    def _close_conn(self, conn: sqlite3.Connection) -> None:
-        if self.db_path != ":memory:":
-            conn.close()
-
-    def _init_db(self) -> None:
-        with self._lock:
-            conn = self._get_connection()
-            try:
-                with conn:
-                    # 1. Catálogo actual de agentes
-                    conn.execute(
-                        """
-                        CREATE TABLE IF NOT EXISTS agents (
-                            agent_id TEXT PRIMARY KEY,
-                            name TEXT NOT NULL,
-                            role TEXT NOT NULL,
-                            version INTEGER NOT NULL,
-                            status TEXT NOT NULL,
-                            definition_hash TEXT NOT NULL,
-                            definition_json TEXT NOT NULL,
-                            is_quarantined INTEGER NOT NULL DEFAULT 0,
-                            quarantine_reason TEXT,
-                            created_at TEXT NOT NULL,
-                            updated_at TEXT NOT NULL
-                        );
-                        """
-                    )
-                    # 2. Historial inmutable de versiones de agentes
-                    conn.execute(
-                        """
-                        CREATE TABLE IF NOT EXISTS agent_versions (
-                            id INTEGER PRIMARY KEY AUTOINCREMENT,
-                            agent_id TEXT NOT NULL,
-                            version INTEGER NOT NULL,
-                            definition_hash TEXT NOT NULL,
-                            definition_json TEXT NOT NULL,
-                            created_at TEXT NOT NULL,
-                            UNIQUE(agent_id, version)
-                        );
-                        """
-                    )
-                    # 3. Registro formal de ejecuciones de workflows
-                    conn.execute(
-                        """
-                        CREATE TABLE IF NOT EXISTS workflow_executions (
-                            execution_id TEXT PRIMARY KEY,
-                            workflow_id TEXT NOT NULL,
-                            status TEXT NOT NULL,
-                            execution_json TEXT NOT NULL,
-                            created_at TEXT NOT NULL,
-                            finished_at TEXT,
-                            updated_at TEXT NOT NULL
-                        );
-                        """
-                    )
-                    # 4. Tabla de cuarentena para registros no deserializables o corruptos
-                    conn.execute(
-                        """
-                        CREATE TABLE IF NOT EXISTS quarantined_records (
-                            record_id TEXT PRIMARY KEY,
-                            entity_type TEXT NOT NULL,
-                            entity_id TEXT,
-                            raw_content TEXT NOT NULL,
-                            error_message TEXT NOT NULL,
-                            quarantined_at TEXT NOT NULL
-                        );
-                        """
-                    )
-                    # 5. Definiciones de workflows persistentes
-                    conn.execute(
-                        """
-                        CREATE TABLE IF NOT EXISTS workflows (
-                            workflow_id TEXT PRIMARY KEY,
-                            name TEXT NOT NULL,
-                            description TEXT,
-                            version INTEGER NOT NULL DEFAULT 1,
-                            workflow_json TEXT NOT NULL,
-                            created_at TEXT NOT NULL,
-                            updated_at TEXT NOT NULL
-                        );
-                        """
-                    )
-            finally:
-                self._close_conn(conn)
 
     # =========================================================================
     # GESTIÓN TRANSACCIONAL DE AGENTES Y VERSIONADO

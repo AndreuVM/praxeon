@@ -45,10 +45,10 @@ def test_verify_api_key_is_false_when_no_key_is_configured(monkeypatch):
 def test_a_failure_saving_a_revocation_is_logged(tmp_path, caplog, monkeypatch):
     svc = AuthService(api_key="k" * 20, secret_key="s" * 40, revocation_db_path=str(tmp_path / "rev.db"))
 
-    def boom():
+    def boom(*args, **kwargs):
         raise sqlite3.OperationalError("disco lleno")
 
-    monkeypatch.setattr(svc, "_revocation_conn", boom)
+    monkeypatch.setattr(svc._revocations, "remember", boom)
     with caplog.at_level(logging.ERROR, logger="praxeon.server.services.auth_service"):
         with svc._lock:
             svc._remember_revocation("jti-1", None)

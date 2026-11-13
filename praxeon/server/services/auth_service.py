@@ -27,6 +27,7 @@ from typing import Any, Dict, Optional, Set
 from pydantic import BaseModel, ConfigDict, Field
 
 from praxeon.runtime.keys import jwt_secret
+from praxeon.sqlite_base import SqliteStore
 
 logger = logging.getLogger(__name__)
 
@@ -183,6 +184,35 @@ def decode_jwt_hs256(token: str, secret_key: str) -> Dict[str, Any]:
     return payload
 
 
+class RevocationStore(SqliteStore):
+    """Revocaciones de tokens (jti) persistentes, para que un logout sobreviva a un reinicio."""
+
+    DEFAULT_DB_NAME = "auth_revocations.db"
+    BUSY_TIMEOUT_SECONDS = 5.0
+    MIGRATIONS = (
+        ("CREATE TABLE IF NOT EXISTS revoked_jtis (jti TEXT PRIMARY KEY, exp REAL NOT NULL)",),   # versión 1
+    )
+
+    def load_valid(self, now: float) -> Dict[str, float]:
+        """Descarta las revocaciones caducadas (el token habría expirado igualmente) y devuelve las vigentes."""
+        conn = self._get_connection()
+        try:
+            with conn:
+                conn.execute("DELETE FROM revoked_jtis WHERE exp < ?", (now,))
+            return {jti: exp for jti, exp in conn.execute("SELECT jti, exp FROM revoked_jtis")}
+        finally:
+            self._close_conn(conn)
+
+    def remember(self, jti: str, exp: float, now: float) -> None:
+        conn = self._get_connection()
+        try:
+            with conn:
+                conn.execute("INSERT OR REPLACE INTO revoked_jtis (jti, exp) VALUES (?, ?)", (jti, exp))
+                conn.execute("DELETE FROM revoked_jtis WHERE exp < ?", (now,))
+        finally:
+            self._close_conn(conn)
+
+
 class AuthService:
     """Servicio empresarial de autenticación, multi-tenancy, tokens JWT y tickets de sesión."""
 
@@ -206,29 +236,19 @@ class AuthService:
         # Sin secreto configurado se genera uno aleatorio por proceso (nunca un valor público por defecto);
         # los tokens dejan de ser válidos al reiniciar, lo que es seguro en desarrollo.
         self._secret_key = secret_key or jwt_secret() or secrets.token_urlsafe(48)
+        self._revocations: Optional[RevocationStore] = None
         self._load_revocations()
 
     # ------------------------------------------------------------------ revocaciones persistentes
-    def _revocation_conn(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self._revocation_db_path, timeout=5.0)
-        conn.execute("CREATE TABLE IF NOT EXISTS revoked_jtis (jti TEXT PRIMARY KEY, exp REAL NOT NULL)")
-        return conn
-
     def _load_revocations(self) -> None:
-        """Carga las revocaciones vigentes desde disco y descarta las ya caducadas (el token habría expirado igualmente)."""
+        """Carga las revocaciones vigentes desde disco."""
         if not self._revocation_db_path:
             return
-        now = time.time()
         try:
-            conn = self._revocation_conn()
-            try:
-                with conn:
-                    conn.execute("DELETE FROM revoked_jtis WHERE exp < ?", (now,))
-                for jti, exp in conn.execute("SELECT jti, exp FROM revoked_jtis"):
-                    self._revoked_jtis.add(jti)
-                    self._revoked_exp[jti] = exp
-            finally:
-                conn.close()
+            self._revocations = RevocationStore(self._revocation_db_path)
+            for jti, exp in self._revocations.load_valid(time.time()).items():
+                self._revoked_jtis.add(jti)
+                self._revoked_exp[jti] = exp
         except sqlite3.Error as exc:
             logger.error("No se pudieron cargar las revocaciones de tokens (%s): los tokens revocados podrían volver a ser válidos.", exc)
 
@@ -243,13 +263,9 @@ class AuthService:
             self._revoked_jtis.discard(old_jti)
         if self._revocation_db_path:
             try:
-                conn = self._revocation_conn()
-                try:
-                    with conn:
-                        conn.execute("INSERT OR REPLACE INTO revoked_jtis (jti, exp) VALUES (?, ?)", (jti, expiry))
-                        conn.execute("DELETE FROM revoked_jtis WHERE exp < ?", (now,))
-                finally:
-                    conn.close()
+                if self._revocations is None:
+                    self._revocations = RevocationStore(self._revocation_db_path)
+                self._revocations.remember(jti, expiry, now)
             except sqlite3.Error as exc:
                 logger.error("No se pudo guardar la revocación del token %s (%s): dejará de estar revocado al reiniciar.", jti, exc)
 

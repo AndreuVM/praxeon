@@ -10,6 +10,8 @@ import threading
 from typing import Dict, Optional
 import logging
 
+from praxeon.sqlite_base import SqliteStore
+
 logger = logging.getLogger(__name__)
 
 
@@ -22,7 +24,6 @@ def _is_expired(exp: Optional[datetime], now: Optional[datetime] = None) -> bool
     elif exp.tzinfo is not None and current.tzinfo is None:
         current = current.replace(tzinfo=timezone.utc)
     return current > exp
-
 
 
 class NonceStore(ABC):
@@ -94,63 +95,29 @@ class InMemoryNonceStore(NonceStore):
             return len(self._store)
 
 
-class SqliteNonceStore(NonceStore):
+class SqliteNonceStore(SqliteStore, NonceStore):
     """Almacén durable y transaccional basado en SQLite para prevención de replay attacks.
     
     Persiste capabilities y nonces consumidos en disco, sobreviviendo a reinicios
     del proceso y permitiendo sincronización concurrente entre múltiples procesos.
     """
 
-    def __init__(self, db_path: Optional[str] = None):
-        import os
-        from praxeon.config import resolve_db_path
+    DEFAULT_DB_NAME = 'nonces.db'
+    MIGRATIONS = (
+        (   # versión 1: esquema histórico (IF NOT EXISTS: lo aceptan las bases creadas antes de las migraciones)
+            """
+            CREATE TABLE IF NOT EXISTS consumed_nonces (
+                decision_id TEXT NOT NULL,
+                nonce TEXT NOT NULL,
+                expires_at TEXT,
+                created_at TEXT NOT NULL,
+                PRIMARY KEY (decision_id, nonce)
+            );
+            """,
+            'CREATE INDEX IF NOT EXISTS idx_expires_at ON consumed_nonces (expires_at);',
+        ),
+    )
 
-        if db_path == ":memory:":
-            self.db_path = ":memory:"
-        else:
-            self.db_path = str(resolve_db_path("nonces.db", db_path))
-            os.makedirs(os.path.dirname(os.path.abspath(self.db_path)), exist_ok=True)
-
-            
-        self._lock = threading.Lock()
-        self._init_db()
-
-    def _get_connection(self):
-        import sqlite3
-        if self.db_path == ":memory:":
-            if not hasattr(self, "_mem_conn") or self._mem_conn is None:
-                self._mem_conn = sqlite3.connect(":memory:", check_same_thread=False)
-            return self._mem_conn
-        conn = sqlite3.connect(self.db_path, timeout=30.0)
-        conn.execute("PRAGMA journal_mode=WAL;")
-        conn.execute("PRAGMA synchronous=NORMAL;")
-        return conn
-
-    def _close_conn(self, conn) -> None:
-        if self.db_path != ":memory:":
-            conn.close()
-
-    def _init_db(self) -> None:
-        with self._lock:
-            conn = self._get_connection()
-            try:
-                with conn:
-                    conn.execute(
-                        """
-                        CREATE TABLE IF NOT EXISTS consumed_nonces (
-                            decision_id TEXT NOT NULL,
-                            nonce TEXT NOT NULL,
-                            expires_at TEXT,
-                            created_at TEXT NOT NULL,
-                            PRIMARY KEY (decision_id, nonce)
-                        );
-                        """
-                    )
-                    conn.execute(
-                        "CREATE INDEX IF NOT EXISTS idx_expires_at ON consumed_nonces (expires_at);"
-                    )
-            finally:
-                self._close_conn(conn)
 
     def has_been_consumed(self, decision_id: str, nonce: str) -> bool:
         with self._lock:

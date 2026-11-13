@@ -5,6 +5,8 @@ from praxeon.domain.interfaces import CheckpointStore, StateStore
 from praxeon.domain.models import Checkpoint
 from praxeon.runtime.state import SessionState
 
+from praxeon.sqlite_base import SqliteStore
+
 
 class InMemoryStateStore(StateStore, CheckpointStore):
     """Implementación en memoria de almacén de estados y checkpoints de sesión."""
@@ -189,89 +191,52 @@ class InMemoryStateStore(StateStore, CheckpointStore):
             self._missions.clear()
 
 
-class SqliteStateStore(StateStore, CheckpointStore):
+class SqliteStateStore(SqliteStore, StateStore, CheckpointStore):
     """Almacén durable y atómico basado en SQLite para estados de sesión y checkpoints.
     
     Garantiza la preservación transaccional de sesiones y árboles de checkpoints
     sobreviviendo a fallos o reinicios del proceso ejecutor.
     """
 
+    DEFAULT_DB_NAME = 'state.db'
+
     def __init__(self, db_path: Optional[str] = None):
-        import os
-        import threading
-        from praxeon.config import resolve_db_path
-
-        if db_path == ":memory:":
-            self.db_path = ":memory:"
-        else:
-            self.db_path = str(resolve_db_path("state.db", db_path))
-            os.makedirs(os.path.dirname(os.path.abspath(self.db_path)), exist_ok=True)
-
-            
-        self._lock = threading.Lock()
         self._seq = 0
-        self._init_db()
+        super().__init__(db_path)
 
-    def _get_connection(self):
-        import sqlite3
-        if self.db_path == ":memory:":
-            if not hasattr(self, "_mem_conn") or self._mem_conn is None:
-                self._mem_conn = sqlite3.connect(":memory:", check_same_thread=False)
-            return self._mem_conn
-        conn = sqlite3.connect(self.db_path, timeout=30.0)
-        conn.execute("PRAGMA journal_mode=WAL;")
-        conn.execute("PRAGMA synchronous=NORMAL;")
-        return conn
+    MIGRATIONS = (
+        (   # versión 1: esquema histórico (IF NOT EXISTS: lo aceptan las bases creadas antes de las migraciones)
+            """
+            CREATE TABLE IF NOT EXISTS sessions (
+                session_id TEXT PRIMARY KEY,
+                state_json TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS checkpoints (
+                id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL,
+                sequence_num INTEGER NOT NULL,
+                checkpoint_json TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+            """,
+            'CREATE INDEX IF NOT EXISTS idx_chk_session ON checkpoints (session_id, sequence_num);',
+            """
+            CREATE TABLE IF NOT EXISTS missions (
+                session_id TEXT PRIMARY KEY,
+                status TEXT NOT NULL,
+                current_step INTEGER NOT NULL,
+                max_steps INTEGER NOT NULL,
+                mission_json TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            """,
+            'CREATE INDEX IF NOT EXISTS idx_missions_status ON missions (status);',
+        ),
+    )
 
-    def _close_conn(self, conn) -> None:
-        if self.db_path != ":memory:":
-            conn.close()
-
-    def _init_db(self) -> None:
-        with self._lock:
-            conn = self._get_connection()
-            try:
-                with conn:
-                    conn.execute(
-                        """
-                        CREATE TABLE IF NOT EXISTS sessions (
-                            session_id TEXT PRIMARY KEY,
-                            state_json TEXT NOT NULL,
-                            updated_at TEXT NOT NULL
-                        );
-                        """
-                    )
-                    conn.execute(
-                        """
-                        CREATE TABLE IF NOT EXISTS checkpoints (
-                            id TEXT PRIMARY KEY,
-                            session_id TEXT NOT NULL,
-                            sequence_num INTEGER NOT NULL,
-                            checkpoint_json TEXT NOT NULL,
-                            created_at TEXT NOT NULL
-                        );
-                        """
-                    )
-                    conn.execute(
-                        "CREATE INDEX IF NOT EXISTS idx_chk_session ON checkpoints (session_id, sequence_num);"
-                    )
-                    conn.execute(
-                        """
-                        CREATE TABLE IF NOT EXISTS missions (
-                            session_id TEXT PRIMARY KEY,
-                            status TEXT NOT NULL,
-                            current_step INTEGER NOT NULL,
-                            max_steps INTEGER NOT NULL,
-                            mission_json TEXT NOT NULL,
-                            updated_at TEXT NOT NULL
-                        );
-                        """
-                    )
-                    conn.execute(
-                        "CREATE INDEX IF NOT EXISTS idx_missions_status ON missions (status);"
-                    )
-            finally:
-                self._close_conn(conn)
 
     def save_state(self, state: SessionState) -> None:
         import datetime

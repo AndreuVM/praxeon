@@ -12,76 +12,42 @@ import asyncio
 from datetime import datetime, timezone
 import json
 
-import os
-import sqlite3
 import threading
 from typing import Any, Callable, Dict, List, Optional, Set
 
 from praxeon.domain.events import EventType, RuntimeEvent, make_event
 import logging
 
+from praxeon.sqlite_base import SqliteStore
+
 logger = logging.getLogger(__name__)
 
 
-class EventStore:
+class EventStore(SqliteStore):
     """Almacén durable de eventos basado en SQLite WAL."""
 
-    _mem_conn: Optional[sqlite3.Connection] = None   # conexión única para db_path=":memory:"
+    DEFAULT_DB_NAME = 'events.db'
+    MIGRATIONS = (
+        (   # versión 1: esquema histórico (IF NOT EXISTS: lo aceptan las bases creadas antes de las migraciones)
+            """
+            CREATE TABLE IF NOT EXISTS runtime_events (
+                event_id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL,
+                sequence INTEGER NOT NULL,
+                type TEXT NOT NULL,
+                timestamp TEXT NOT NULL,
+                node_id TEXT,
+                parent_id TEXT,
+                decision_id TEXT,
+                payload TEXT NOT NULL,
+                UNIQUE(session_id, sequence)
+            );
+            """,
+            'CREATE INDEX IF NOT EXISTS idx_events_session ON runtime_events (session_id, sequence);',
+            'CREATE INDEX IF NOT EXISTS idx_events_type ON runtime_events (type);',
+        ),
+    )
 
-    def __init__(self, db_path: Optional[str] = None):
-        from praxeon.config import resolve_db_path
-        if db_path == ":memory:":
-            self.db_path = ":memory:"
-        else:
-            self.db_path = str(resolve_db_path("events.db", db_path))
-            os.makedirs(os.path.dirname(os.path.abspath(self.db_path)), exist_ok=True)
-        self._lock = threading.Lock()
-        self._init_db()
-
-
-    def _get_connection(self) -> sqlite3.Connection:
-        if self.db_path == ":memory:":
-            if not hasattr(self, "_mem_conn") or self._mem_conn is None:
-                self._mem_conn = sqlite3.connect(":memory:", check_same_thread=False)
-            return self._mem_conn
-        conn = sqlite3.connect(self.db_path, timeout=30.0)
-        conn.execute("PRAGMA journal_mode=WAL;")
-        conn.execute("PRAGMA synchronous=NORMAL;")
-        return conn
-
-    def _close_conn(self, conn: sqlite3.Connection) -> None:
-        if self.db_path != ":memory:":
-            conn.close()
-
-    def _init_db(self) -> None:
-        with self._lock:
-            conn = self._get_connection()
-            try:
-                with conn:
-                    conn.execute(
-                        """
-                        CREATE TABLE IF NOT EXISTS runtime_events (
-                            event_id TEXT PRIMARY KEY,
-                            session_id TEXT NOT NULL,
-                            sequence INTEGER NOT NULL,
-                            type TEXT NOT NULL,
-                            timestamp TEXT NOT NULL,
-                            node_id TEXT,
-                            parent_id TEXT,
-                            decision_id TEXT,
-                            payload TEXT NOT NULL,
-                            UNIQUE(session_id, sequence)
-                        );
-                        """
-                    )
-                    conn.execute(
-                        "CREATE INDEX IF NOT EXISTS idx_events_session ON runtime_events (session_id, sequence);"
-                    )
-                    conn.execute(
-                        "CREATE INDEX IF NOT EXISTS idx_events_type ON runtime_events (type);"
-                    )
-            finally:
-                self._close_conn(conn)
 
     def next_sequence(self, session_id: str) -> int:
         """Calcula de forma segura el siguiente número de secuencia monótono para una sesión."""

@@ -12,9 +12,6 @@ from datetime import datetime, timezone
 import json
 
 import logging
-import os
-import sqlite3
-import threading
 from typing import Any, Dict, List, Optional
 
 from praxeon.domain.action import ActionCandidate, ToolCall
@@ -23,6 +20,8 @@ from praxeon.domain.decision import (
     ExecutionMode,
 )
 from praxeon.domain.events import EventType, RuntimeEvent
+
+from praxeon.sqlite_base import SqliteStore
 
 logger = logging.getLogger("praxeon.runtime.decision_store")
 
@@ -90,59 +89,27 @@ def _deserialize_decision_record(raw_json: str) -> Dict[str, Any]:
     return d
 
 
-class SqliteDecisionRepository:
+class SqliteDecisionRepository(SqliteStore):
     """Almacén durable de decisiones con persistencia SQLite WAL y reconstrucción determinista."""
 
-    _mem_conn: Optional[sqlite3.Connection] = None   # conexión única para db_path=":memory:"
+    DEFAULT_DB_NAME = 'decisions.db'
+    MIGRATIONS = (
+        (   # versión 1: esquema histórico (IF NOT EXISTS: lo aceptan las bases creadas antes de las migraciones)
+            """
+            CREATE TABLE IF NOT EXISTS durable_decisions (
+                decision_id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL,
+                action_id TEXT NOT NULL,
+                status TEXT NOT NULL,
+                execution_mode TEXT NOT NULL,
+                data_json TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+            """,
+            'CREATE INDEX IF NOT EXISTS idx_decisions_session ON durable_decisions (session_id, created_at);',
+        ),
+    )
 
-    def __init__(self, db_path: Optional[str] = None):
-        from praxeon.config import resolve_db_path
-        if db_path == ":memory:":
-            self.db_path = ":memory:"
-        else:
-            self.db_path = str(resolve_db_path("decisions.db", db_path))
-            os.makedirs(os.path.dirname(os.path.abspath(self.db_path)), exist_ok=True)
-        self._lock = threading.Lock()
-        self._init_db()
-
-
-    def _get_connection(self) -> sqlite3.Connection:
-        if self.db_path == ":memory:":
-            if not hasattr(self, "_mem_conn") or self._mem_conn is None:
-                self._mem_conn = sqlite3.connect(":memory:", check_same_thread=False)
-            return self._mem_conn
-        conn = sqlite3.connect(self.db_path, timeout=30.0)
-        conn.execute("PRAGMA journal_mode=WAL;")
-        conn.execute("PRAGMA synchronous=NORMAL;")
-        return conn
-
-    def _close_conn(self, conn: sqlite3.Connection) -> None:
-        if self.db_path != ":memory:":
-            conn.close()
-
-    def _init_db(self) -> None:
-        with self._lock:
-            conn = self._get_connection()
-            try:
-                with conn:
-                    conn.execute(
-                        """
-                        CREATE TABLE IF NOT EXISTS durable_decisions (
-                            decision_id TEXT PRIMARY KEY,
-                            session_id TEXT NOT NULL,
-                            action_id TEXT NOT NULL,
-                            status TEXT NOT NULL,
-                            execution_mode TEXT NOT NULL,
-                            data_json TEXT NOT NULL,
-                            created_at TEXT NOT NULL
-                        );
-                        """
-                    )
-                    conn.execute(
-                        "CREATE INDEX IF NOT EXISTS idx_decisions_session ON durable_decisions (session_id, created_at);"
-                    )
-            finally:
-                self._close_conn(conn)
 
     def save(self, record: Dict[str, Any]) -> None:
         """Guarda o actualiza un registro de decisión completo."""
