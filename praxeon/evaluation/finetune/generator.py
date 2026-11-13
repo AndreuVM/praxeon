@@ -479,7 +479,7 @@ def to_row(case: Case, rng: random.Random, mask_probability: float = 0.5, record
     steps, chars = _STATE_FITS[0]
     state = build_laya_state(ctx, steps, chars, with_classifier=not masked, record_version=record_version)
     return {
-        "id": hashlib.sha1((state + case.family).encode("utf-8")).hexdigest()[:12],
+        "id": hashlib.sha1((state + case.family).encode("utf-8"), usedforsecurity=False).hexdigest()[:12],
         "origin": "synthetic", "family": case.family, "split": split_of(case), "goal_id": case.goal.id, "harm": case.harm,
         "flags_masked": masked, "oracle": oracle_label(case), "notes": case.notes,
         "state": state, "questions": QUESTIONS,

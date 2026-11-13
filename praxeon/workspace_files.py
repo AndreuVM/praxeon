@@ -118,7 +118,7 @@ def list_tree(rel_path: Optional[str] = None, show_hidden: bool = False) -> Dict
 
 
 def _etag(data: bytes, mtime_ns: int) -> str:
-    return hashlib.sha1(data).hexdigest()[:16] + f"-{mtime_ns}"
+    return hashlib.sha1(data, usedforsecurity=False).hexdigest()[:16] + f"-{mtime_ns}"  # ETag, no seguridad
 
 
 def _decode_text(data: bytes) -> Optional[tuple]:

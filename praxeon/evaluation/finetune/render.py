@@ -19,7 +19,7 @@ _CACHE: dict = {}
 def load_tokenizer(model_dir: str) -> Any:
     from transformers import AutoTokenizer
 
-    return AutoTokenizer.from_pretrained(f"{model_dir}/tokenizer")
+    return AutoTokenizer.from_pretrained(f"{model_dir}/tokenizer")  # nosec B615 - directorio local del modelo, no el Hub
 
 
 def tokens_dropped(tok: Any, state: str, max_len: int = 1024, head_max_len: int = 256) -> int:
@@ -37,7 +37,7 @@ def tokens_dropped(tok: Any, state: str, max_len: int = 1024, head_max_len: int 
 
 def masked_by_id(case_id: str, probability: float = 0.5) -> bool:
     """Decisión estable (por id) de ocultar las banderas del clasificador en un caso."""
-    return int(hashlib.sha1(case_id.encode("utf-8")).hexdigest()[:8], 16) / 0xFFFFFFFF < probability
+    return int(hashlib.sha1(case_id.encode("utf-8"), usedforsecurity=False).hexdigest()[:8], 16) / 0xFFFFFFFF < probability
 
 
 def make_renderer(tok: Any, record_version: int = 2, mask_probability: float = 0.5,
