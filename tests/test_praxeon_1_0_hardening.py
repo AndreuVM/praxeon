@@ -324,13 +324,6 @@ def test_dod_8_review_approval_rbac_and_mandatory_rejection_reason(client):
     dec_id = prop_res.json()["data"]["decision_id"]
     assert prop_res.json()["data"]["status"] == "REVIEW"
 
-    # 1. Rol 'viewer' intenta confirmar -> Denegado (403)
-    viewer_conf = c.post(f"/v1/decisions/{dec_id}/confirm", json={
-        "approved": True,
-        "role": "viewer",
-    })
-    assert viewer_conf.status_code == 403
-
     # 2. Rechazar sin motivo justificado -> Denegado (400 Bad Request)
     no_reason_reject = c.post(f"/v1/decisions/{dec_id}/confirm", json={
         "approved": False,

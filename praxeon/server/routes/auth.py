@@ -21,12 +21,16 @@ from praxeon.server.services.auth_service import (
 
 auth_router = APIRouter(prefix="/v1/auth", tags=["auth"])
 
+# Rol de toda sesión iniciada con la credencial: instalación de un único usuario, que es el operador.
+OPERATOR_ROLE = Role.ADMIN
+
 
 class LoginRequest(BaseModel):
     api_key: Optional[str] = Field(default=None, description="Clave API de acceso")
     tenant_id: str = Field(default="default_tenant", description="Etiqueta informativa (instalación de un único usuario; no aísla datos)")
     user_id: str = Field(default="admin", description="Identificador del usuario")
-    role: Role = Field(default=Role.ADMIN, description="Rol solicitado")
+    # Sin campo `role` (auditoría S-04/S-10): PRAXEON es de un solo usuario y el rol no lo elige quien inicia sesión.
+    # Quien presenta la credencial es el operador. Un `role` enviado por clientes antiguos se ignora.
 
 
 class RefreshRequest(BaseModel):
@@ -95,7 +99,7 @@ def login(
     tokens = auth_service.issue_token_pair(
         tenant_id=req.tenant_id,
         user_id=req.user_id,
-        role=req.role,
+        role=OPERATOR_ROLE,
     )
 
     _set_auth_cookies(response, tokens, secure=_is_secure_request(request))
@@ -106,7 +110,7 @@ def login(
             "tokens": tokens.model_dump(),
             "tenant_id": req.tenant_id,
             "user_id": req.user_id,
-            "role": req.role.value,
+            "role": OPERATOR_ROLE.value,
         },
     }
 

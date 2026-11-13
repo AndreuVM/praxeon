@@ -44,7 +44,9 @@ def test_refresh_token_cannot_be_used_as_access_token(client):
 
 
 def test_viewer_cannot_mutate_but_can_read(client):
-    h = {"Authorization": "Bearer " + _login(client, "viewer")["access_token"]}
+    # El login ya no permite elegir rol (S-04): un token de lectura se emite directamente para probar el control por ruta
+    svc = client.app.dependency_overrides[get_auth_service]()
+    h = {"Authorization": "Bearer " + svc.issue_token_pair(role=Role.VIEWER).access_token}
     assert client.get("/v1/workflows", headers=h).status_code == 200
     assert client.post("/v1/workflows", json={"name": "x"}, headers=h).status_code == 403
 

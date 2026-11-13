@@ -180,7 +180,7 @@ def test_endpoint_me_with_bearer_token(client):
     """GET /v1/auth/me valida correctamente cabeceras Authorization: Bearer <token>."""
     login_resp = client.post(
         "/v1/auth/login",
-        json={"tenant_id": "t1", "user_id": "u1", "role": "operator"},
+        json={"tenant_id": "t1", "user_id": "u1"},
     )
     access_token = login_resp.json()["data"]["tokens"]["access_token"]
 
@@ -193,16 +193,17 @@ def test_endpoint_me_with_bearer_token(client):
     me = resp.json()["data"]
     assert me["tenant_id"] == "t1"
     assert me["user_id"] == "u1"
-    assert me["role"] == "operator"
+    # Un solo usuario (S-04): quien inicia sesión con la credencial es el operador, con todos los permisos
+    assert me["role"] == "admin"
     assert "session:execute" in me["permissions"]
-    assert "admin:settings" not in me["permissions"]
+    assert "admin:settings" in me["permissions"]
 
 
 def test_endpoint_me_with_httponly_cookie(client):
     """GET /v1/auth/me autentica fluidamente mediante cookie HttpOnly sin cabeceras."""
     login_resp = client.post(
         "/v1/auth/login",
-        json={"tenant_id": "cookie_tenant", "user_id": "cookie_user", "role": "viewer"},
+        json={"tenant_id": "cookie_tenant", "user_id": "cookie_user"},
     )
     assert login_resp.status_code == 200
 
@@ -212,7 +213,7 @@ def test_endpoint_me_with_httponly_cookie(client):
     me = resp.json()["data"]
     assert me["tenant_id"] == "cookie_tenant"
     assert me["user_id"] == "cookie_user"
-    assert me["role"] == "viewer"
+    assert me["role"] == "admin"
     assert "session:read" in me["permissions"]
 
 
@@ -220,7 +221,7 @@ def test_endpoint_refresh_token_rotation(client):
     """POST /v1/auth/refresh rota tokens mediante cookie o body."""
     login_resp = client.post(
         "/v1/auth/login",
-        json={"tenant_id": "tenant_rot", "user_id": "u_rot", "role": "operator"},
+        json={"tenant_id": "tenant_rot", "user_id": "u_rot"},
     )
     first_tokens = login_resp.json()["data"]["tokens"]
     first_refresh = first_tokens["refresh_token"]
@@ -287,11 +288,10 @@ def test_require_permission_enforcement(client, test_service):
     client.app.include_router(test_subrouter)
 
     # 1. Usuario con rol VIEWER (no tiene SESSION_EXECUTE) -> debe recibir 403 Forbidden
-    login_viewer = client.post(
-        "/v1/auth/login",
-        json={"tenant_id": "t_test", "user_id": "viewer_user", "role": "viewer"},
-    )
-    viewer_token = login_viewer.json()["data"]["tokens"]["access_token"]
+    # Los roles ya no se eligen en el login (S-04); el control por permisos del token sigue vigente y se prueba
+    # con tokens emitidos directamente por el servicio
+    auth = test_service.get_auth_service()
+    viewer_token = auth.issue_token_pair(tenant_id="t_test", user_id="viewer_user", role=Role.VIEWER).access_token
 
     resp_denied = client.post(
         "/v1/test_rbac/execute-guarded",
@@ -301,11 +301,7 @@ def test_require_permission_enforcement(client, test_service):
     assert "Permiso insuficiente" in resp_denied.json()["detail"]
 
     # 2. Usuario con rol OPERATOR (tiene SESSION_EXECUTE) -> 200 OK
-    login_operator = client.post(
-        "/v1/auth/login",
-        json={"tenant_id": "t_test", "user_id": "operator_user", "role": "operator"},
-    )
-    op_token = login_operator.json()["data"]["tokens"]["access_token"]
+    op_token = auth.issue_token_pair(tenant_id="t_test", user_id="operator_user", role=Role.OPERATOR).access_token
 
     resp_allowed = client.post(
         "/v1/test_rbac/execute-guarded",
@@ -316,3 +312,10 @@ def test_require_permission_enforcement(client, test_service):
     assert resp_allowed.json()["user"] == "operator_user"
 
 
+
+
+def test_login_ignores_a_requested_role(client):
+    """S-04/S-10: quien inicia sesión no elige su rol; un `role` enviado por un cliente antiguo se ignora."""
+    resp = client.post("/v1/auth/login", json={"tenant_id": "t", "user_id": "u", "role": "viewer"})
+    assert resp.status_code == 200
+    assert resp.json()["data"]["role"] == "admin"

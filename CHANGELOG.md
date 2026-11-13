@@ -13,6 +13,10 @@ Todas las modificaciones notables de este proyecto están documentadas en este a
 - Los comandos del agente (sandbox local y Full Access) heredan solo una lista blanca de variables de entorno; ampliable con
   `PRAXEON_CHILD_ENV_ALLOW`, nunca con nombres que parezcan secretos.
 - Al vencer el timeout de un comando se termina todo su árbol de procesos, no solo el hijo directo.
+- **Cambio de comportamiento:** instalación de un solo usuario. `POST /v1/auth/login` y las peticiones de confirmar, rechazar o
+  ejecutar decisiones ya no aceptan `role`: quien presenta la credencial es el operador (`admin` en el token). Un `role` enviado
+  por clientes antiguos se ignora.
+- El nonce de un recibo se consume tras todas las validaciones: un recibo rechazado por modo o herramienta ya no queda gastado.
 
 ### Added
 - Clasificador: buscar texto peligroso entre comillas (`grep "rm -rf" src`) ya no se bloquea; `net user /add`, `net localgroup /add`, `Set-ExecutionPolicy` y `powershell -EncodedCommand` pasan a CRITICAL.

@@ -17,6 +17,10 @@ from praxeon.server.schemas.decision import (
 
 router = APIRouter(prefix="/v1/decisions", tags=["Decisions"])
 
+# Instalación de un único usuario (auditoría S-04): el rol no lo declara el cliente. Lo que autoriza es la credencial
+# (API key u operator_token), verificada en el servidor.
+OPERATOR_ROLE = "operator"
+
 
 def _operator_token(body_token: Optional[str], request: Optional[Request]) -> Optional[str]:
     """Token de operador: el del cuerpo, `X-Operator-Token` o, si no, la propia credencial con la que se autenticó la petición.
@@ -79,7 +83,7 @@ def confirm_decision(
             reason=req.reason,
             actor=req.actor or "human_operator",
             operator_id=req.operator_id or "operator_admin",
-            role=req.role or "operator",
+            role=OPERATOR_ROLE,
             operator_token=op_token,
             security_profile=prof,
         )
@@ -125,7 +129,7 @@ def reject_decision(
             reason=req.reason,
             actor=req.actor or "human_operator",
             operator_id=req.operator_id or "operator_admin",
-            role=req.role or "operator",
+            role=OPERATOR_ROLE,
             operator_token=op_token,
             security_profile=prof,
         )
@@ -161,13 +165,12 @@ def execute_decision(
     """Solicita la ejecución física de la acción autorizada dentro del sandbox."""
     cap_token = req.capability_token if req else None
     operator_id = req.operator_id if req else None
-    role = req.role if req and req.role else "operator"
     try:
         exec_res = service.execute_decision(
             decision_id,
             capability_token=cap_token,
             operator_id=operator_id,
-            role=role,
+            role=OPERATOR_ROLE,
         )
         return APIResponse(data=exec_res)
     except KeyError:

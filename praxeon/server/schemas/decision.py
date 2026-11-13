@@ -78,7 +78,6 @@ class ConfirmDecisionRequest(BaseModel):
     reason: Optional[str] = Field(None, description="Justificación u observaciones del revisor humano (obligatorio al rechazar)")
     actor: Optional[str] = Field("human_operator", description="Identidad del supervisor humano")
     operator_id: Optional[str] = Field("operator_admin", description="ID de usuario del operador humano")
-    role: Optional[str] = Field("operator", description="Rol de autorización: 'viewer', 'operator', 'admin'")
     operator_token: Optional[str] = Field(None, description="Token o clave del operador para autenticación e integridad de confirmación (Finding 14)")
 
 
@@ -87,7 +86,6 @@ class RejectDecisionRequest(BaseModel):
     reason: str = Field(..., description="Justificación obligatoria del rechazo del operador")
     actor: Optional[str] = Field("human_operator", description="Identidad del supervisor humano")
     operator_id: Optional[str] = Field("operator_admin", description="ID de usuario del operador humano")
-    role: Optional[str] = Field("operator", description="Rol de autorización: 'viewer', 'operator', 'admin'")
     operator_token: Optional[str] = Field(None, description="Token o clave del operador para autenticación e integridad de confirmación (Finding 14)")
 
 
@@ -110,7 +108,6 @@ class ExecuteDecisionRequest(BaseModel):
     """Petición para invocar la ejecución física con capability token."""
     capability_token: Optional[Dict[str, Any]] = Field(None, description="Capability token firmado emitido por el runtime")
     operator_id: Optional[str] = Field(None, description="Identificador del operador que dispara la ejecución")
-    role: Optional[str] = Field("operator", description="Rol de autorización ('viewer', 'operator', 'admin')")
 
 
 class ExecuteDecisionResponse(BaseModel):
