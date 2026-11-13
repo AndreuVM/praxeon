@@ -8,6 +8,7 @@ requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115.0",
     "google-genai>=2.24.0",
+    "httpx>=0.27.0",          # cliente HTTP compartido de los proveedores (ya llegaba como dependencia de google-genai)
     "jsonschema>=4.0",
     "networkx>=3.6.1",
     "pydantic>=2.13.5",

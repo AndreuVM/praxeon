@@ -20,6 +20,8 @@ import threading
 import time
 from typing import Any, Dict, List, Optional
 import urllib.error
+
+from praxeon import http_client
 import urllib.parse
 import urllib.request
 
@@ -265,8 +267,6 @@ class OpenAICompatibleLLM(BaseAgentLLM):
             headers["HTTP-Referer"] = "https://github.com/AndreuVM/praxeon"
             headers["X-Title"] = "PRAXEON Agent Supervisor"
 
-        req_bytes = json.dumps(payload).encode("utf-8")
-
         # Intentar con endpoint configurado y con fallback de loopback (localhost <-> 127.0.0.1)
         endpoints_to_try = [self._endpoint]
         if "localhost" in self._endpoint:
@@ -276,19 +276,16 @@ class OpenAICompatibleLLM(BaseAgentLLM):
 
         last_url_err = None
         for ep in endpoints_to_try:
-            req = urllib.request.Request(ep, data=req_bytes, headers=headers, method="POST")
             try:
-                with urllib.request.urlopen(req, timeout=self._timeout) as resp:  # nosec B310
-                    resp_bytes = resp.read()
-                    data = json.loads(resp_bytes.decode("utf-8"))
-                    self._usage_from_openai(data.get("usage"))
-                    choices = data.get("choices", [])
-                    if not choices:
-                        return ""
-                    msg = choices[0].get("message", {})
-                    # Si respondió con un endpoint alternativo, guardarlo para futuras llamadas
-                    self._endpoint = ep
-                    return (msg.get("content") or "").strip()
+                data = http_client.post_json(ep, payload, headers=headers, timeout=self._timeout)
+                self._usage_from_openai(data.get("usage"))
+                choices = data.get("choices", [])
+                if not choices:
+                    return ""
+                msg = choices[0].get("message", {})
+                # Si respondió con un endpoint alternativo, guardarlo para futuras llamadas
+                self._endpoint = ep
+                return (msg.get("content") or "").strip()
             except urllib.error.HTTPError as http_err:
                 body = ""
                 try:
@@ -368,13 +365,8 @@ class OllamaLLM(OpenAICompatibleLLM):
             "keep_alive": self._keep_alive,
             "options": {"num_ctx": self._num_ctx, "num_predict": self._max_tokens, "temperature": self._temperature},
         }
-        req = urllib.request.Request(
-            self._native_endpoint, data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json", "User-Agent": "Praxeon/1.0.0 (Autonomous Agent Runtime)"}, method="POST",
-        )
         try:
-            with urllib.request.urlopen(req, timeout=self._timeout) as resp:  # nosec B310
-                data = json.loads(resp.read().decode("utf-8"))
+            data = http_client.post_json(self._native_endpoint, payload, timeout=self._timeout)
         except urllib.error.HTTPError as http_err:
             if http_err.code == 404:   # Ollama muy antiguo, o un servidor que solo habla /v1
                 self._use_native = False
@@ -470,7 +462,6 @@ class AnthropicLLM(BaseAgentLLM):
             payload["cache_control"] = {"type": "ephemeral"}
         if self._temperature is not None:
             payload["temperature"] = self._temperature
-        body = json.dumps(payload).encode("utf-8")
         headers = {
             "Content-Type": "application/json",
             "x-api-key": self._api_key,
@@ -480,10 +471,8 @@ class AnthropicLLM(BaseAgentLLM):
 
         attempt = 0
         while True:
-            req = urllib.request.Request(self._endpoint, data=body, headers=headers, method="POST")
             try:
-                with urllib.request.urlopen(req, timeout=self._timeout) as resp:  # nosec B310
-                    data = json.loads(resp.read().decode("utf-8"))
+                data = http_client.post_json(self._endpoint, payload, headers=headers, timeout=self._timeout)
                 break
             except urllib.error.HTTPError as http_err:
                 detail = ""
@@ -858,11 +847,8 @@ def is_ollama_online(host: str = "http://127.0.0.1:11434") -> bool:
 
     for h in hosts:
         try:
-            url = f"{h.rstrip('/')}/api/tags"
-            req = urllib.request.Request(url, headers={"User-Agent": "Praxeon/1.0.0"})
-            with urllib.request.urlopen(req, timeout=0.35) as resp:  # nosec B310
-                if resp.status == 200:
-                    return True
+            if http_client.get_status(f"{h.rstrip('/')}/api/tags", timeout=0.35) == 200:
+                return True
         except Exception:  # noqa: S112 - best-effort: lectura de detalle de error, sondeo o cierre de proceso
             continue
     return False
@@ -878,13 +864,10 @@ def get_ollama_installed_models(host: str = "http://127.0.0.1:11434") -> List[st
 
     for h in hosts:
         try:
-            url = f"{h.rstrip('/')}/api/tags"
-            req = urllib.request.Request(url, headers={"User-Agent": "Praxeon/1.0.0"})
-            with urllib.request.urlopen(req, timeout=0.6) as resp:  # nosec B310
-                data = json.loads(resp.read().decode("utf-8"))
-                models = [m.get("name") for m in data.get("models", []) if m.get("name")]
-                if models:
-                    return models
+            data = http_client.get_json(f"{h.rstrip('/')}/api/tags", timeout=0.6)
+            models = [m.get("name") for m in data.get("models", []) if m.get("name")]
+            if models:
+                return models
         except Exception:  # noqa: S112 - best-effort: lectura de detalle de error, sondeo o cierre de proceso
             continue
     return []

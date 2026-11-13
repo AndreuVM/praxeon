@@ -42,11 +42,10 @@ def test_openai_compatible_endpoint_formatting():
     assert client2.endpoint == "https://api.groq.com/openai/v1/chat/completions"
 
 
-@patch("urllib.request.urlopen")
-def test_openai_compatible_generate_success(mock_urlopen):
+@patch("praxeon.http_client.post_json")
+def test_openai_compatible_generate_success(mock_post):
     """Verifica una llamada exitosa de generación compatible con OpenAI."""
-    mock_response = MagicMock()
-    mock_response.read.return_value = json.dumps({
+    mock_post.return_value = {
         "choices": [
             {
                 "message": {
@@ -55,8 +54,7 @@ def test_openai_compatible_generate_success(mock_urlopen):
                 }
             }
         ]
-    }).encode("utf-8")
-    mock_urlopen.return_value.__enter__.return_value = mock_response
+    }
 
     client = OpenAICompatibleLLM(
         base_url="https://api.groq.com/openai/v1",
@@ -69,10 +67,10 @@ def test_openai_compatible_generate_success(mock_urlopen):
     assert 'run_command("ls")' in res
 
 
-@patch("urllib.request.urlopen")
-def test_openai_compatible_rate_limit_429(mock_urlopen):
+@patch("praxeon.http_client.post_json")
+def test_openai_compatible_rate_limit_429(mock_post):
     """Verifica que el error 429 de cuota sea interceptado con mensaje descriptivo."""
-    mock_urlopen.side_effect = urllib.error.HTTPError(
+    mock_post.side_effect = urllib.error.HTTPError(
         url="https://api.groq.com/openai/v1/chat/completions",
         code=429,
         msg="Too Many Requests",
@@ -92,10 +90,10 @@ def test_openai_compatible_rate_limit_429(mock_urlopen):
     assert "Rate limit reached" in str(exc_info.value)
 
 
-@patch("urllib.request.urlopen")
-def test_ollama_connection_error(mock_urlopen):
+@patch("praxeon.http_client.post_json")
+def test_ollama_connection_error(mock_post):
     """Verifica que si Ollama no está escuchando en local, dé un error claro con instrucciones."""
-    mock_urlopen.side_effect = urllib.error.URLError(reason="Connection refused")
+    mock_post.side_effect = urllib.error.URLError(reason="Connection refused")
 
     client = OpenAICompatibleLLM(
         base_url="http://localhost:11434/v1",

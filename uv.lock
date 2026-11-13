@@ -1579,6 +1579,7 @@ source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
     { name = "google-genai" },
+    { name = "httpx" },
     { name = "jsonschema" },
     { name = "networkx" },
     { name = "pydantic" },
@@ -1629,6 +1630,7 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.115.0" },
     { name = "fastapi", marker = "extra == 'server'", specifier = ">=0.115.0" },
     { name = "google-genai", specifier = ">=2.24.0" },
+    { name = "httpx", specifier = ">=0.27.0" },
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.27.0" },
     { name = "jsonschema", specifier = ">=4.0" },
     { name = "laya", marker = "extra == 'decision-all'", specifier = ">=0.3.0" },

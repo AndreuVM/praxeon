@@ -23,8 +23,8 @@ import shutil
 import subprocess  # nosec B404
 import threading
 import time
-import urllib.error
-import urllib.request
+
+from praxeon import http_client
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -40,11 +40,8 @@ LOOPBACK = "127.0.0.1"
 def server_is_up(base_url: str, timeout: float = 2.0) -> bool:
     """Un servidor KEV responde a ``GET /v1/models`` con 200 cuando el modelo ya está cargado."""
     try:
-        req = urllib.request.Request(f"{base_url.rstrip('/')}/v1/models", headers={"User-Agent": "Praxeon/1.0.0"})
-        with urllib.request.urlopen(req, timeout=timeout) as resp:  # nosec B310
-            return resp.getcode() == 200
-    except urllib.error.HTTPError as exc:
-        return exc.code in (401, 403)  # está vivo pero exige clave
+        code = http_client.get_status(f"{base_url.rstrip('/')}/v1/models", timeout=timeout)
+        return code == 200 or code in (401, 403)  # 401/403: está vivo pero exige clave
     except Exception:
         return False
 

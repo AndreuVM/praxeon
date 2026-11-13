@@ -16,12 +16,12 @@ Backends:
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 import time
 import urllib.error
-import urllib.request
+
+from praxeon import http_client
 from typing import Any, Dict, Optional
 
 from praxeon.providers.context import ProviderContext, ProviderContextBuilder
@@ -121,12 +121,8 @@ class KevProvider(LayaProvider):
         headers = {"Content-Type": "application/json", "User-Agent": "Praxeon/1.0.0"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
-        req = urllib.request.Request(
-            f"{self.endpoint_url}/v1/systemone", data=json.dumps(body).encode("utf-8"), headers=headers, method="POST"
-        )
         try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:  # nosec B310
-                data = json.loads(resp.read().decode("utf-8"))
+            data = http_client.post_json(f"{self.endpoint_url}/v1/systemone", body, headers=headers, timeout=self.timeout)
         except urllib.error.HTTPError as exc:
             self.circuit_breaker.record_failure(exc)
             detail = exc.read().decode("utf-8", "replace")[:300] if hasattr(exc, "read") else ""

@@ -21,7 +21,8 @@ import os
 import threading
 import time
 import urllib.error
-import urllib.request
+
+from praxeon import http_client
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -265,8 +266,6 @@ class LayaProvider(BaseReasoningProvider):
 
         payload = ctx.to_laya_payload()
         payload["model"] = self.model_name
-        req_data = json.dumps(payload).encode("utf-8")
-
         headers = {
             "Content-Type": "application/json",
             "User-Agent": "Praxeon/1.0.0",
@@ -274,13 +273,10 @@ class LayaProvider(BaseReasoningProvider):
         if self.auth_token:
             headers["Authorization"] = f"Bearer {self.auth_token}"
 
-        req = urllib.request.Request(self.endpoint_url, data=req_data, headers=headers, method="POST")
-        with urllib.request.urlopen(req, timeout=self.timeout) as resp:  # nosec B310
-            resp_code = resp.getcode()
-            if resp_code != 200:
-                raise RuntimeError(f"LAYA endpoint retornó status {resp_code}")
-            raw_body = resp.read().decode("utf-8")
-            data = json.loads(raw_body)
+        try:
+            data = http_client.post_json(self.endpoint_url, payload, headers=headers, timeout=self.timeout)
+        except urllib.error.HTTPError as exc:
+            raise RuntimeError(f"LAYA endpoint retornó status {exc.code}") from exc
 
         choice_data = data.get("choice", {"label": "ALLOW", "probabilities": {"ALLOW": 1.0}, "confidence": 1.0})
         score_val = float(data.get("score", 1.0))
