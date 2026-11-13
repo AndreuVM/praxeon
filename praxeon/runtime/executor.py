@@ -10,7 +10,7 @@ Aplica los principios fundamentales:
 
 import os
 import time
-from typing import Any, Callable, Dict, Optional, Set
+from typing import Any, Callable, Dict, Optional
 from pydantic import BaseModel, ConfigDict
 from praxeon.domain.action import compute_action_hash
 from praxeon.domain.decision import (
@@ -98,7 +98,6 @@ class SecureExecutor(Executor):
         self.full_access_executor = full_access_executor or FullAccessExecutor()
         self.allow_full_access = allow_full_access
         self.container_sandbox: Optional[ContainerSandboxAdapter] = None
-        self._consumed_receipts: Set[str] = set()
         self._custom_handlers: Dict[str, Callable[[Dict[str, Any]], str]] = {}
 
     def register_handler(self, tool_name: str, handler: Callable[[Dict[str, Any]], str]) -> None:
@@ -225,18 +224,6 @@ class SecureExecutor(Executor):
                         receipt=receipt,
                     )
 
-            # Verificar no-reutilización (Replay attack prevention mediante NonceStore atómico)
-            if receipt.decision_id in self._consumed_receipts or not self.nonce_store.consume(
-                receipt.decision_id, receipt.nonce, expires_at=receipt.expires_at
-            ):
-                raise PolicyViolation(
-                    f"Ejecución física DENEGADA para '{tool_name}': El capability '{receipt.decision_id}' "
-                    f"con nonce '{receipt.nonce}' ya ha sido consumido previamente (Replay attack prevention).",
-                    action=action,
-                    decision=decision,
-                    receipt=receipt,
-                )
-
             # Verificar modo de ejecución y ligadura contextual (PRAXEON 1.0 Sección 7 y 8)
             receipt_mode = getattr(receipt, "execution_mode", ExecutionMode.LOCAL_RESTRICTED.value)
             session_mode = state.metadata.get("execution_mode", ExecutionMode.LOCAL_RESTRICTED.value)
@@ -261,9 +248,6 @@ class SecureExecutor(Executor):
                         receipt=receipt,
                     )
 
-            # Registrar en conjunto local
-            self._consumed_receipts.add(receipt.decision_id)
-
         # 2. BARRERA DE ENFORCEMENT: Verificar si la herramienta está prohibida en el estado
         if tool_name and tool_name in state.forbidden_tools:
             raise PolicyViolation(
@@ -277,6 +261,19 @@ class SecureExecutor(Executor):
         if tool_name and not self.registry.is_known(tool_name) and tool_name not in self._custom_handlers:
             raise PolicyViolation(
                 f"Ejecución física DENEGADA: herramienta desconocida '{tool_name}' no admitida en ToolRegistry.",
+                action=action,
+                decision=decision,
+                receipt=receipt,
+            )
+
+        # Anti-replay (NonceStore atómico, única fuente de verdad). Se consume después de TODAS las validaciones: un recibo
+        # rechazado por modo, Full Access o herramienta no se «quema» (S-08), y uno válido no puede ejecutarse dos veces.
+        if receipt is not None and not self.nonce_store.consume(
+            receipt.decision_id, receipt.nonce, expires_at=receipt.expires_at
+        ):
+            raise PolicyViolation(
+                f"Ejecución física DENEGADA para '{tool_name}': El capability '{receipt.decision_id}' "
+                f"con nonce '{receipt.nonce}' ya ha sido consumido previamente (Replay attack prevention).",
                 action=action,
                 decision=decision,
                 receipt=receipt,

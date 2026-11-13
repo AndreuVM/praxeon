@@ -51,7 +51,7 @@ def _http_error(exc: Exception) -> HTTPException:
     if isinstance(exc, workspace_files.WorkspaceFileNotFound):
         return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
     if isinstance(exc, workspace_files.WorkspaceTooLarge):
-        return HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail=str(exc))
+        return HTTPException(status_code=status.HTTP_413_CONTENT_TOO_LARGE, detail=str(exc))
     if isinstance(exc, (workspace_files.WorkspaceConflict, workspace_files.WorkspaceExists)):
         return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
     return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))

@@ -179,8 +179,9 @@ class RuntimeApplicationService(DecisionPipelineMixin, MissionRuntimeMixin):
             for tpl in ["developer", "security_auditor", "researcher", "writer", "code_reviewer"]:
                 try:
                     self.agent_registry.register(AgentTemplateCatalog.instantiate(tpl, f"ag_{tpl}"))
-                except Exception:
-                    pass
+                except Exception as exc:
+                    # No impide arrancar, pero el operador debe saber por qué falta un agente por defecto (F-05)
+                    logger.warning("No se pudo registrar el agente por defecto '%s': %s", tpl, exc)
         self.agent_router = agent_router or AgentRouter(
             registry=self.agent_registry,
             message_bus=self.agent_bus,
