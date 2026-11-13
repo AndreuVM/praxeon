@@ -10,6 +10,7 @@ debe poder llevar a REVIEW. Las barreras deterministas tienen precedencia."
 """
 
 import hashlib
+import os
 import re
 from typing import Any, Dict, List, Optional
 
@@ -279,6 +280,45 @@ class CommandClassifier:
         if all(s in (".", "*", "*.*") for s in segments):
             return False                                                    # el workspace entero
         return not any(cls._PROTECTED_SEGMENT.match(s) for s in segments)
+
+    # Redirección que trunca (`>`, `1>`, `2>`, `>|`), no la que añade (`>>`) ni la que duplica descriptores (`2>&1`)
+    _TRUNCATING_REDIRECT = re.compile(r"""(?<![<>])>(?![>&])\|?\s*("[^"]+"|'[^']+'|[^\s;|&<>]+)""")
+    _DISCARD_TARGETS = {"/dev/null", "nul", "$null", "/dev/stdout", "/dev/stderr"}
+
+    @staticmethod
+    def _outside_quotes(text: str, index: int) -> bool:
+        """True si la posición `index` no cae dentro de una cadena entre comillas simples o dobles."""
+        quote = None
+        for ch in text[:index]:
+            if quote:
+                if ch == quote:
+                    quote = None
+            elif ch in ("'", '"'):
+                quote = ch
+        return quote is None
+
+    @classmethod
+    def _overwritten_files(cls, op: str, context: Optional[Dict[str, Any]]) -> List[str]:
+        """Ficheros que YA existen y que una redirección `>` del comando vaciaría (auditoría §4.2).
+
+        Las rutas relativas se resuelven contra `context["workspace_root"]`; sin él solo se comprueban las absolutas.
+        """
+        root = (context or {}).get("workspace_root")
+        found: List[str] = []
+        for match in cls._TRUNCATING_REDIRECT.finditer(op):
+            if not cls._outside_quotes(op, match.start()):
+                continue                                                    # `echo "a > b"` no redirige nada
+            target = match.group(1).strip("\"'")
+            if not target or target.lower() in cls._DISCARD_TARGETS:
+                continue
+            path = os.path.expanduser(target)
+            if not os.path.isabs(path):
+                if not root:
+                    continue
+                path = os.path.join(str(root), path)
+            if os.path.isfile(path):
+                found.append(target)
+        return found
 
     @classmethod
     def _is_scoped_workspace_delete(cls, op: str) -> bool:
@@ -741,6 +781,17 @@ class CommandClassifier:
                     classifier="deterministic",
                     context_hash=ctx_hash,
                 )
+
+        # Regla 9-previa: sobrescribir con `>` un fichero que ya existe destruye su contenido sin copia: lo decide una persona
+        overwritten = self._overwritten_files(op_clean, context)
+        if overwritten:
+            return CommandRiskAssessment(
+                operation=op_clean, category=CommandCategory.LOCAL_MUTATION, risk_level=RiskLevel.HIGH, read_only=False,
+                reversible=False, destructive=False, external_side_effect=False, network_access=False,
+                privilege_escalation=False, confidence=0.9,
+                reasons=[f"La redirección '>' sobrescribiría un fichero existente ({', '.join(overwritten[:3])}): requiere confirmación humana."],
+                matched_rules=["RULE_OVERWRITE_EXISTING_FILE"], classifier="deterministic", context_hash=ctx_hash,
+            )
 
         # Regla 9: LOCAL_MUTATION (Creación, movimiento o edición de archivos locales)
         for pat in self.LOCAL_MUTATION_PATTERNS:

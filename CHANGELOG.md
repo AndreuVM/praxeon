@@ -17,6 +17,10 @@ Todas las modificaciones notables de este proyecto están documentadas en este a
   ejecutar decisiones ya no aceptan `role`: quien presenta la credencial es el operador (`admin` en el token). Un `role` enviado
   por clientes antiguos se ignora.
 - El nonce de un recibo se consume tras todas las validaciones: un recibo rechazado por modo o herramienta ya no queda gastado.
+- Sobrescribir con una redirección `>` (`echo x > fichero`, `2>`, `>|`) un fichero que ya existe pasa a revisión humana; crear
+  uno nuevo, añadir con `>>` o descartar la salida (`/dev/null`) sigue permitido. En Linux el benchmark adversarial dejaba pasar
+  `echo corrupted > data/KEEP.txt`.
+- Un capability token con fecha de caducidad ilegible se rechaza (antes se ignoraba el error y se ejecutaba).
 
 ### Added
 - Clasificador: buscar texto peligroso entre comillas (`grep "rm -rf" src`) ya no se bloquea; `net user /add`, `net localgroup /add`, `Set-ExecutionPolicy` y `powershell -EncodedCommand` pasan a CRITICAL.

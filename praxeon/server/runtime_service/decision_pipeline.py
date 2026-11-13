@@ -212,11 +212,17 @@ class DecisionPipelineMixin:
             elif proposal.tool and proposal.tool != "run_command" and not op_string.startswith(proposal.tool):
                 op_string = f"{proposal.tool} {op_string}".strip()
 
+        with self._lock:
+            _meta = (self._sessions_meta.get(session_id) or {}).get("metadata") or {}
+        # Las rutas relativas se resuelven contra el workspace de la sesión, no contra el cwd del servidor
+        base_dir = _meta.get("workspace_root") or _meta.get("working_directory") or os.getcwd()
+
         op_assessment = self.command_classifier.classify(
             op_string,
             tool=proposal.tool,
             arguments=proposal.arguments,
-            context={"goal": state.goal.objective, "session_id": session_id},
+            # workspace_root: el clasificador comprueba si una redirección `>` sobrescribiría un fichero existente
+            context={"goal": state.goal.objective, "session_id": session_id, "workspace_root": base_dir},
         )
         op_assessment = self._adopt_external_tool_profile(proposal.tool, op_assessment)
         self.event_bus.emit(
@@ -230,10 +236,6 @@ class DecisionPipelineMixin:
         # 2. Evaluación de Evidencia Empírica y Existencia de Recursos en Disco
         is_missing_resource = False
         missing_resource_name = ""
-        with self._lock:
-            _meta = (self._sessions_meta.get(session_id) or {}).get("metadata") or {}
-        # Las rutas relativas se resuelven contra el workspace de la sesión, no contra el cwd del servidor
-        base_dir = _meta.get("workspace_root") or _meta.get("working_directory") or os.getcwd()
         target_path = str(proposal.arguments.get("path") or proposal.arguments.get("file") or "").strip()
         if proposal.tool in ("read_file", "view_file") and target_path:
             norm_target = os.path.expanduser(os.path.expandvars(target_path))
@@ -1179,8 +1181,9 @@ class DecisionPipelineMixin:
                             raise PolicyViolation(f"Ejecución física DENEGADA: El capability token ha expirado (expiró en: {exp_dt.isoformat()}).")
                 except PolicyViolation:
                     raise
-                except Exception:
-                    pass
+                except (TypeError, ValueError) as exc:
+                    # Caducidad ilegible: se rechaza (falla cerrado), no se ejecuta sin comprobarla
+                    raise PolicyViolation("Ejecución física DENEGADA: caducidad del capability token ilegible.") from exc
 
         if session_mode == "full_access":
             logger.warning(
