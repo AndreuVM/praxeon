@@ -242,7 +242,7 @@ def test_endpoint_refresh_token_rotation(client):
         json={"refresh_token": first_refresh},
     )
     assert failed_resp.status_code == 401
-    assert "Fallo en la rotación" in failed_resp.json()["detail"]
+    assert failed_resp.json()["detail"] == "Credenciales inválidas o caducadas."   # sin el motivo (S-13)
 
 
 def test_endpoint_logout_clears_cookies_and_revokes(client):

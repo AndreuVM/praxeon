@@ -7,11 +7,12 @@ Expone:
 - GET /v1/auth/me: Inspección del contexto del tenant actual y permisos RBAC.
 """
 
+import logging
 from typing import Any, Dict, Optional
 from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
 
-from praxeon.server.auth_deps import get_auth_service, get_current_tenant, is_auth_required
+from praxeon.server.auth_deps import INVALID_CREDENTIALS, get_auth_service, get_current_tenant, is_auth_required
 from praxeon.server.services.auth_service import (
     AuthService,
     Role,
@@ -20,6 +21,7 @@ from praxeon.server.services.auth_service import (
 )
 
 auth_router = APIRouter(prefix="/v1/auth", tags=["auth"])
+logger = logging.getLogger(__name__)
 
 # Rol de toda sesión iniciada con la credencial: instalación de un único usuario, que es el operador.
 OPERATOR_ROLE = Role.ADMIN
@@ -84,7 +86,7 @@ def login(
         if not req.api_key or not auth_service.verify_api_key(req.api_key):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Credenciales de acceso inválidas.",
+                detail=INVALID_CREDENTIALS,
             )
     elif is_auth_required(
         profile=getattr(request.app.state, "security_profile", None),
@@ -136,9 +138,10 @@ def refresh_token(
         new_tokens = auth_service.refresh_token_pair(token)
     except ValueError as e:
         _clear_auth_cookies(response)
+        logger.info("Refresh token rechazado: %s", e)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Fallo en la rotación de token: {str(e)}",
+            detail=INVALID_CREDENTIALS,
         ) from e
 
     _set_auth_cookies(response, new_tokens, secure=_is_secure_request(request))

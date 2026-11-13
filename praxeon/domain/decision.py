@@ -5,11 +5,17 @@ from enum import Enum
 import hashlib
 import hmac
 import json
+import logging
 from typing import Any, Dict, List, Optional, Union
 import uuid
 from pydantic import BaseModel, ConfigDict, Field
 
 from praxeon.domain.assessment import CommandRiskAssessment, ProviderAssessment, RiskAssessment
+
+logger = logging.getLogger(__name__)
+
+# Versión del formato firmado del capability. 2 = JSON canónico (posterior a v1.2.0); 1 = campos unidos con ":" (solo al verificar).
+RECEIPT_SIGNATURE_VERSION = 2
 
 
 def utc_now() -> datetime:
@@ -184,12 +190,65 @@ def compute_receipt_signature(
     expires_at: Optional[datetime] = None,
     execution_mode: str = ExecutionMode.LOCAL_RESTRICTED.value,
 ) -> str:
-    """Calcula un HMAC-SHA256 para autenticar criptográficamente la emisión del capability por PolicyEngine."""
-    exp_str = expires_at.isoformat() if expires_at else "none"
-    status_val = decision_status.value if isinstance(decision_status, DecisionStatus) else str(decision_status)
-    mode_val = execution_mode.value if isinstance(execution_mode, ExecutionMode) else str(execution_mode)
-    payload = f"{decision_id}:{session_id}:{action_hash}:{state_hash}:{nonce}:{status_val}:{exp_str}:{mode_val}"
+    """HMAC-SHA256 del capability sobre JSON canónico (auditoría S-11).
+
+    Antes se firmaba la concatenación de los campos con `:`; como algunos (p. ej. `session_id`) los elige el cliente y pueden
+    contener `:`, el mismo texto firmado admitía varias lecturas. El JSON con claves ordenadas y un campo de versión no.
+    """
+    payload = json.dumps(
+        {
+            "v": RECEIPT_SIGNATURE_VERSION,
+            "decision_id": decision_id,
+            "session_id": session_id,
+            "action_hash": action_hash,
+            "state_hash": state_hash,
+            "nonce": nonce,
+            "status": _enum_value(decision_status),
+            "expires_at": expires_at.isoformat() if expires_at else None,
+            "execution_mode": _enum_value(execution_mode),
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
     return hmac.new(secret_key.encode("utf-8"), payload.encode("utf-8"), hashlib.sha256).hexdigest()
+
+
+def _legacy_receipt_signature(
+    secret_key: str,
+    decision_id: str,
+    session_id: str,
+    action_hash: str,
+    state_hash: str,
+    nonce: str,
+    decision_status: Any,
+    expires_at: Optional[datetime] = None,
+    execution_mode: Any = ExecutionMode.LOCAL_RESTRICTED.value,
+) -> str:
+    """Formato de firma anterior (campos unidos con `:`). Solo se acepta al verificar, durante una versión menor."""
+    exp_str = expires_at.isoformat() if expires_at else "none"
+    payload = (
+        f"{decision_id}:{session_id}:{action_hash}:{state_hash}:{nonce}:"
+        f"{_enum_value(decision_status)}:{exp_str}:{_enum_value(execution_mode)}"
+    )
+    return hmac.new(secret_key.encode("utf-8"), payload.encode("utf-8"), hashlib.sha256).hexdigest()
+
+
+def _enum_value(value: Any) -> str:
+    return value.value if isinstance(value, Enum) else str(value)
+
+
+def _signature_matches(secret_key: str, signature: str, **fields: Any) -> bool:
+    """Compara en tiempo constante con la firma canónica y, durante la ventana de compatibilidad, con la antigua."""
+    if hmac.compare_digest(signature, compute_receipt_signature(secret_key, **fields)):
+        return True
+    if hmac.compare_digest(signature, _legacy_receipt_signature(secret_key, **fields)):
+        logger.warning(
+            "Capability %s firmado con el formato anterior (campos unidos con ':'): se acepta por compatibilidad, "
+            "dejará de aceptarse en la próxima versión menor.", fields.get("decision_id"),
+        )
+        return True
+    return False
 
 
 def sign_receipt(receipt: DecisionReceipt, secret_key: str) -> DecisionReceipt:
@@ -212,8 +271,9 @@ def verify_receipt_signature(secret_key: str, receipt: DecisionReceipt) -> bool:
     """Verifica de forma inmune a ataques de temporización si el recibo fue firmado con la clave del runtime."""
     if not receipt.signature:
         return False
-    expected = compute_receipt_signature(
-        secret_key=secret_key,
+    return _signature_matches(
+        secret_key,
+        receipt.signature,
         decision_id=receipt.decision_id,
         session_id=receipt.session_id,
         action_hash=receipt.action_hash,
@@ -223,7 +283,6 @@ def verify_receipt_signature(secret_key: str, receipt: DecisionReceipt) -> bool:
         expires_at=receipt.expires_at,
         execution_mode=receipt.execution_mode,
     )
-    return hmac.compare_digest(receipt.signature, expected)
 
 
 def verify_capability_signature(secret_key: str, capability: Union[CapabilityPayload, Dict[str, Any]]) -> bool:
@@ -235,8 +294,9 @@ def verify_capability_signature(secret_key: str, capability: Union[CapabilityPay
             return False
     if not capability.signature:
         return False
-    expected = compute_receipt_signature(
-        secret_key=secret_key,
+    return _signature_matches(
+        secret_key,
+        capability.signature,
         decision_id=capability.decision_id,
         session_id=capability.session_id,
         action_hash=capability.action_hash,
@@ -246,7 +306,6 @@ def verify_capability_signature(secret_key: str, capability: Union[CapabilityPay
         expires_at=capability.expires_at,
         execution_mode=capability.execution_mode,
     )
-    return hmac.compare_digest(capability.signature, expected)
 
 
 def compute_state_hash(state_dict: Any) -> str:

@@ -23,6 +23,9 @@ from praxeon.server.services.auth_service import (
 
 logger = logging.getLogger("praxeon.server.dependencies")
 
+# Mensaje único para cualquier credencial rechazada: no revela si falló la clave, la firma, la caducidad o la revocación
+INVALID_CREDENTIALS = "Credenciales inválidas o caducadas."
+
 
 _ACTIVE_SECURITY_PROFILE: Optional[str] = None
 
@@ -154,9 +157,11 @@ def get_current_tenant(
         try:
             return service.authenticate_jwt(token)
         except ValueError as e:
+            # El motivo (caducado, revocado, firma…) va al log, no al cliente (auditoría S-13)
+            logger.info("JWT rechazado: %s", e)
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail=f"Token JWT inválido o expirado: {str(e)}",
+                detail=INVALID_CREDENTIALS,
                 headers={"WWW-Authenticate": "Bearer"},
             ) from e
 
@@ -172,7 +177,7 @@ def get_current_tenant(
 
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Credenciales inválidas: token o API key no reconocidos.",
+        detail=INVALID_CREDENTIALS,
         headers={"WWW-Authenticate": "Bearer"},
     )
 
@@ -274,6 +279,6 @@ def verify_api_key(
 
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Credenciales inválidas: API key o token no coincide con el servidor.",
+        detail=INVALID_CREDENTIALS,
         headers={"WWW-Authenticate": "Bearer"},
     )

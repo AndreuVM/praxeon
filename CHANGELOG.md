@@ -6,6 +6,18 @@ Todas las modificaciones notables de este proyecto están documentadas en este a
 
 ## [Unreleased]
 
+### Security
+- Los capabilities se firman sobre JSON canónico con campo de versión (antes, campos unidos con `:`, que admitían más de una
+  lectura si un campo como `session_id` contenía `:`). Los firmados con el formato anterior se aceptan con un aviso en el log
+  hasta la próxima versión menor.
+- Las respuestas 401 por credenciales rechazadas dan un mensaje único («Credenciales inválidas o caducadas.»); el motivo
+  (caducado, revocado, firma…) queda solo en el log del servidor.
+
+### Changed
+- Almacenes SQLite sobre una base común: WAL activado una vez y esquema versionado con migraciones (`PRAGMA user_version`).
+  Las bases de datos existentes se adoptan sin cambios.
+- Importar `praxeon.server.app` ya no crea la aplicación; los arranques usan `uvicorn --factory` (`create_app`).
+
 ---
 
 ## [1.2.0] — 2026-11-13
