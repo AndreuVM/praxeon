@@ -14,6 +14,8 @@ Todas las modificaciones notables de este proyecto están documentadas en este a
   `http`/`https` con host: antes un `base_url` como `file:///…` se habría abierto.
 - Las respuestas 401 por credenciales rechazadas dan un mensaje único («Credenciales inválidas o caducadas.»); el motivo
   (caducado, revocado, firma…) queda solo en el log del servidor.
+- Con el perfil `production`, una `JEV_API_KEY` débil ya no pasa la comprobación de arranque: solo se miraba
+  `PRAXEON_API_KEY`, aunque la autenticación aceptaba también el nombre antiguo.
 
 ### Changed
 - Almacenes SQLite sobre una base común: WAL activado una vez y esquema versionado con migraciones (`PRAGMA user_version`).
@@ -21,6 +23,17 @@ Todas las modificaciones notables de este proyecto están documentadas en este a
 - Cliente HTTP compartido (`praxeon.http_client`, sobre `httpx`) con conexiones persistentes en lugar de `urllib`: cada
   llamada al modelo ya no abre una conexión TCP/TLS nueva. Al seguir una redirección a otro host retira las credenciales.
 - Importar `praxeon.server.app` ya no crea la aplicación; los arranques usan `uvicorn --factory` (`create_app`).
+- `praxeon.web` pasa a llamarse `praxeon.webtools`, y el contexto de llamada vive en `praxeon.runtime.call_context`.
+- `PolicyEngine.evaluate_action` se divide en etapas (cribado, supervisor, riesgo operacional, confirmación, recibo) sin
+  cambios de comportamiento.
+- La interfaz web empaquetada (`praxeon/server/static`) ya no se versiona: `scripts/build_frontend.py` la compila desde
+  `web/` antes de empaquetar. La que se versionaba era de mediados de octubre y no incluía los cambios posteriores.
+- `openapi.json` (raíz y SDK) regenerado; un test falla si deja de coincidir con la API.
+
+### Deprecated
+- Variables de entorno `JEV_*` (`JEV_API_KEY`, `JEV_CACHE_DIR`, `JEV_CHUNK_SIZE`, `JEV_MAX_RETRIES`, `JEV_TIMEOUT_SECONDS`,
+  `JEV_MAX_HISTORY_STEPS`, `JEV_CRITICAL_THRESHOLD`): usa `PRAXEON_*`. Se siguen leyendo con `DeprecationWarning` hasta v2.0.0.
+  Los procesos del sandbox reciben `PRAXEON_SANDBOX_ACTIVE=1` además de `JEV_SANDBOX_ACTIVE=1`.
 
 ---
 

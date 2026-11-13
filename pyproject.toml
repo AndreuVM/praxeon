@@ -79,6 +79,11 @@ jev-mcp = "praxeon.legacy_cli:jev_mcp_main"
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.hatch.build]
+# La interfaz compilada no se versiona (está en .gitignore), pero debe ir en el sdist y en el wheel:
+# se genera con scripts/build_frontend.py antes de empaquetar
+artifacts = ["praxeon/server/static/**"]
+
 [tool.hatch.build.targets.wheel]
 packages = ["praxeon"]
 

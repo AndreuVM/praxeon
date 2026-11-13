@@ -1,8 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <title>Praxeon</title>
-  <rect width="64" height="64" rx="14" fill="#0e1013"/>
-  <g transform="translate(14.5 12) scale(0.6875)" fill="#e4e6e9">
-    <rect x="0" y="0" width="14.60" height="62.04"/>
-    <path d="M21.89 0H32.84A19.16 19.16 0 0 1 32.84 38.32H21.89Z"/>
-  </g>
-</svg>

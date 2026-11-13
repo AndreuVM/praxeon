@@ -272,7 +272,7 @@ praxeon/
 │   ├── cli.py                    # Consola interactiva CLI enriquecida con Rich
 │   ├── live_agent/               # Agente autónomo en vivo (multiproveedor) supervisado en tiempo real
 │   └── dashboard.py              # Monitor visual interactivo TUI en tiempo real
-├── web/                          # Interfaz React (Vite); se compila a praxeon/server/static
+├── web/                          # Interfaz React (Vite); scripts/build_frontend.py la compila a praxeon/server/static (no versionado)
 ├── landing/                      # Página de presentación (HTML, CSS y JS sin dependencias)
 ├── docs/
 │   ├── FULL_ACCESS_POLICY.md     # Política de gobernanza del modo Full Access

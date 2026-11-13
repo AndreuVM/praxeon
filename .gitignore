@@ -62,3 +62,6 @@ docs/*
 !docs/benchmarks/
 docs/benchmarks/*
 !docs/benchmarks/agentbench.md
+
+# Interfaz compilada: la genera scripts/build_frontend.py antes de empaquetar (no se versiona)
+praxeon/server/static/

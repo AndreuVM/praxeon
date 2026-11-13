@@ -131,13 +131,28 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: web/package.json
+
       - name: Install Build Tools
         run: |
           python -m pip install --upgrade pip
           pip install build twine
 
+      # praxeon/server/static no se versiona: se compila desde web/src para que el wheel lleve la interfaz actual
+      - name: Build Frontend into the Package
+        run: python scripts/build_frontend.py
+
       - name: Build Wheel & Source Distribution
         run: python -m build
+
+      - name: Verify the Wheel Ships the Web Interface
+        run: |
+          python -c "import sys, zipfile, glob; names = zipfile.ZipFile(glob.glob('dist/*.whl')[0]).namelist(); sys.exit(0 if 'praxeon/server/static/index.html' in names else 'el wheel no incluye la interfaz web')"
 
       - name: Verify Package Metadata
         run: twine check dist/*
