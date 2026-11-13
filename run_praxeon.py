@@ -73,7 +73,7 @@ def run_api_mode(host: str, port: int, reload: bool = False) -> None:
     validate_network_binding(host)
     print(f"[PRAXEON] Iniciando servidor API en http://{host}:{port}")
     print(f"[PRAXEON] Documentacion OpenAPI en http://{host}:{port}/docs")
-    uvicorn.run("praxeon.server.app:app", host=host, port=port, reload=reload)
+    uvicorn.run("praxeon.server.app:create_app", factory=True, host=host, port=port, reload=reload)
 
 
 def run_web_mode(host: str, port: int, no_browser: bool = False, reload: bool = False) -> None:
@@ -99,7 +99,7 @@ def run_web_mode(host: str, port: int, no_browser: bool = False, reload: bool = 
 
         threading.Thread(target=_open, daemon=True).start()
 
-    uvicorn.run("praxeon.server.app:app", host=host, port=port, reload=reload)
+    uvicorn.run("praxeon.server.app:create_app", factory=True, host=host, port=port, reload=reload)
 
 
 def run_all_dev_mode(host: str, port: int, no_browser: bool = False) -> None:
@@ -144,7 +144,7 @@ def run_all_dev_mode(host: str, port: int, no_browser: bool = False) -> None:
 
     try:
         import uvicorn
-        uvicorn.run("praxeon.server.app:app", host=host, port=port, reload=True)
+        uvicorn.run("praxeon.server.app:create_app", factory=True, host=host, port=port, reload=True)
     finally:
         _cleanup()
 

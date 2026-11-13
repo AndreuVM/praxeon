@@ -7,11 +7,8 @@ from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from praxeon.server.dependencies import (
-    RuntimeApplicationService,
-    get_runtime_service,
-    verify_api_key,
-)
+from praxeon.server.auth_deps import verify_api_key
+from praxeon.server.dependencies import RuntimeApplicationService, get_runtime_service
 from praxeon.server.schemas.common import APIResponse
 
 router = APIRouter(prefix="/v1", tags=["Health"])

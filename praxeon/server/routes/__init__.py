@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, Depends
 
-from praxeon.server.dependencies import require_route_permission
+from praxeon.server.auth_deps import require_route_permission
 from praxeon.server.services.auth_service import Permission as P
 from praxeon.server.routes.agents import router as agents_router
 from praxeon.server.routes.auth import auth_router

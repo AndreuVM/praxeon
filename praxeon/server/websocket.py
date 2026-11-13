@@ -20,12 +20,8 @@ import os
 import secrets
 from starlette.status import WS_1008_POLICY_VIOLATION
 from praxeon.domain.events import RuntimeEvent
-from praxeon.server.dependencies import (
-    get_runtime_service,
-    effective_client_host,
-    is_auth_required,
-    verify_api_key,
-)
+from praxeon.server.auth_deps import effective_client_host, is_auth_required, verify_api_key
+from praxeon.server.dependencies import get_runtime_service
 from praxeon.server.services.auth_service import AuthService, Permission, constant_time_equals
 
 logger = logging.getLogger("praxeon.server.websocket")

@@ -11,7 +11,8 @@ from typing import Any, Dict, List, Literal
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from praxeon import workspace_store
-from praxeon.server.dependencies import effective_client_host, get_runtime_service
+from praxeon.server.auth_deps import effective_client_host
+from praxeon.server.dependencies import get_runtime_service
 from praxeon.server.websocket import is_remote_client
 from praxeon.server.schemas.common import APIResponse
 

@@ -181,8 +181,8 @@ def test_rel_01_dev_mode_permissive_with_logging(tmp_path, monkeypatch, caplog):
     monkeypatch.delenv("PRAXEON_API_KEY", raising=False)
     monkeypatch.delenv("PRAXEON_REQUIRE_AUTH", raising=False)
 
-    import praxeon.server.dependencies as deps
-    deps._warned_dev_auth = False
+    import praxeon.server.auth_deps as auth_deps
+    auth_deps._warned_dev_auth = False
 
     service = RuntimeApplicationService(db_dir=str(tmp_path / "dev_cache"))
     set_runtime_service(service)

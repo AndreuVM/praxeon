@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
-from praxeon.server.dependencies import get_current_tenant
+from praxeon.server.auth_deps import get_current_tenant
 from praxeon.server.schemas.common import APIResponse
 from praxeon.workflows.editor_service import WorkflowEditorService
 from praxeon.workflows.models import (

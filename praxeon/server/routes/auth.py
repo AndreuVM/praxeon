@@ -11,7 +11,7 @@ from typing import Any, Dict, Optional
 from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
 
-from praxeon.server.dependencies import get_auth_service, get_current_tenant, is_auth_required
+from praxeon.server.auth_deps import get_auth_service, get_current_tenant, is_auth_required
 from praxeon.server.services.auth_service import (
     AuthService,
     Role,

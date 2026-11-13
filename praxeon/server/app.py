@@ -20,12 +20,14 @@ import logging
 logger = logging.getLogger("praxeon.server.app")
 
 
+INSECURE_API_KEYS = frozenset({"", "praxeon_secret_hmac_key_v1", "default", "secret", "change_me"})
+
+
 def validate_security_profile(profile: Optional[str] = None) -> List[str]:
     """Valida el perfil de seguridad del runtime conforme a la Sección 8 y Sección 18 (Criterio 11)."""
     prof = (profile or os.environ.get("PRAXEON_PROFILE") or os.environ.get("PRAXEON_ENV") or "dev").lower().strip()
 
     if prof == "production":
-        insecure_defaults = {"", "praxeon_secret_hmac_key_v1", "default", "secret", "change_me"}
         problem = production_keys_problem()
         if problem:
             raise ValueError(problem)
@@ -42,7 +44,7 @@ def validate_security_profile(profile: Optional[str] = None) -> List[str]:
             )
 
         api_key = os.environ.get("PRAXEON_API_KEY", "")
-        if api_key and (api_key in insecure_defaults or len(api_key) < 16):
+        if api_key and (api_key in INSECURE_API_KEYS or len(api_key) < 16):
             raise ValueError(
                 "Perfil de seguridad 'production' requiere que PRAXEON_API_KEY esté configurada con al menos 16 caracteres y no use claves por defecto."
             )
@@ -67,7 +69,8 @@ def create_app(
 ) -> FastAPI:
     """Crea y configura la aplicación FastAPI con rutas y middleware."""
     prof = (profile or os.environ.get("PRAXEON_PROFILE") or os.environ.get("PRAXEON_ENV") or "dev").lower().strip()
-    from praxeon.server.dependencies import set_active_security_profile, get_runtime_service, require_permission
+    from praxeon.server.auth_deps import require_permission, set_active_security_profile
+    from praxeon.server.dependencies import get_runtime_service
     from praxeon.server.services.auth_service import Permission
     set_active_security_profile(prof)
 
@@ -83,7 +86,6 @@ def create_app(
     )
     app.state.security_profile = prof
 
-    prof = (profile or os.environ.get("PRAXEON_PROFILE") or os.environ.get("PRAXEON_ENV") or "dev").lower().strip()
     is_prod = (prof == "production")
     cors_methods = ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"] if is_prod else ["*"]
     cors_headers = ["Authorization", "X-API-Key", "Content-Type", "Accept"] if is_prod else ["*"]
@@ -156,7 +158,21 @@ def create_app(
     return app
 
 
-app = create_app()
+_default_app: Optional[FastAPI] = None
+
+
+def __getattr__(name: str) -> Any:
+    """`praxeon.server.app.app` se crea al pedirlo por primera vez, no al importar el módulo (auditoría F-03).
+
+    Importar ya no valida el perfil ni registra rutas como efecto secundario. Los arranques propios usan
+    `uvicorn ...:create_app --factory`; este atributo se mantiene para quien lance `uvicorn praxeon.server.app:app`.
+    """
+    global _default_app
+    if name == "app":
+        if _default_app is None:
+            _default_app = create_app()
+        return _default_app
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def validate_network_binding(host: str) -> None:
@@ -204,7 +220,7 @@ def start():
     if token:
         print(f"[PRAXEON] Token de esta ejecución (X-API-Key / interfaz): http://{args.host}:{args.port}/#token={token}")
     print(f"[PRAXEON] Documentacion OpenAPI disponible en http://{args.host}:{args.port}/docs")
-    uvicorn.run("praxeon.server.app:app", host=args.host, port=args.port, reload=args.reload)
+    uvicorn.run("praxeon.server.app:create_app", factory=True, host=args.host, port=args.port, reload=args.reload)
 
 
 def launch_web():
@@ -232,7 +248,7 @@ def launch_web():
     if not args.no_browser:
         threading.Timer(1.2, webbrowser.open, [open_url]).start()
 
-    uvicorn.run("praxeon.server.app:app", host=args.host, port=args.port, reload=args.reload)
+    uvicorn.run("praxeon.server.app:create_app", factory=True, host=args.host, port=args.port, reload=args.reload)
 
 
 if __name__ == "__main__":

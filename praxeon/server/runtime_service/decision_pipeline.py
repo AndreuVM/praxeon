@@ -50,15 +50,15 @@ from praxeon.server.schemas.decision import (
 
 
 def get_active_security_profile():
-    """Resuelve en tiempo de llamada el perfil activo (evita el import circular con dependencies)."""
-    import praxeon.server.dependencies as deps
-    return deps.get_active_security_profile()
+    """Resuelve en tiempo de llamada el perfil activo (evita el import circular con el servidor)."""
+    from praxeon.server import auth_deps
+    return auth_deps.get_active_security_profile()
 
 
 def is_auth_required(*args, **kwargs):
-    """Resuelve en tiempo de llamada la política de autenticación (respeta parches en tests)."""
-    import praxeon.server.dependencies as deps
-    return deps.is_auth_required(*args, **kwargs)
+    """Resuelve en tiempo de llamada la política de autenticación (evita el import circular con el servidor)."""
+    from praxeon.server import auth_deps
+    return auth_deps.is_auth_required(*args, **kwargs)
 
 
 class DecisionPipelineMixin:
