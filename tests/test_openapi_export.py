@@ -45,3 +45,14 @@ def test_packages_sdk_files_exist():
         pkg = json.load(f)
     assert pkg.get("name") == "@praxeon/sdk"
     assert pkg.get("version") == praxeon.__version__
+
+
+def test_committed_openapi_files_match_the_api(tmp_path: Path):
+    """Los openapi.json versionados (raíz y SDK) coinciden con la API actual (auditoría A-09).
+
+    Si falla, regenere con `uv run python scripts/export_openapi.py` y versione el resultado.
+    """
+    current = export_openapi(output_paths=[tmp_path / "openapi.json"])
+    for committed in (Path("openapi.json"), Path("packages") / "sdk" / "openapi.json"):
+        stored = json.loads(committed.read_text(encoding="utf-8"))
+        assert stored == current, f"{committed} está desfasado: ejecute `uv run python scripts/export_openapi.py`"
