@@ -24,6 +24,7 @@ import time
 from typing import Any, Dict, List, Optional, Set, Tuple
 from pydantic import BaseModel, ConfigDict
 from praxeon.policy.egress import EgressMode, EgressPolicy
+from praxeon.runtime.child_env import child_environment, kill_process_tree, process_group_kwargs
 
 
 class SandboxTier(str, Enum):
@@ -161,7 +162,8 @@ class LocalProcessSandbox(SandboxAdapter):
 
     def _sanitize_environment(self, custom_env: Optional[Dict[str, str]] = None) -> Dict[str, str]:
         """Limpia las variables de entorno para que el proceso hijo no tenga acceso a claves privadas ni tokens."""
-        clean_env = dict(os.environ)
+        # Lista blanca: el hijo no hereda el entorno completo del servidor (S-09); después, la lista de bloqueo propia
+        clean_env = child_environment(blocked_markers=self.blocked_vars)
         # Purgar variables sensibles
         for var in list(clean_env.keys()):
             upper_var = var.upper()
@@ -269,6 +271,7 @@ class LocalProcessSandbox(SandboxAdapter):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             shell=False,
+            **process_group_kwargs(),
         )
         stdout_chunks: List[bytes] = []
         stderr_chunks: List[bytes] = []
@@ -304,7 +307,7 @@ class LocalProcessSandbox(SandboxAdapter):
             exit_code = proc.wait(timeout=timeout)
         except subprocess.TimeoutExpired:
             try:
-                proc.kill()
+                kill_process_tree(proc)      # los descendientes (p. ej. lo que lanza PowerShell) también
                 proc.wait(timeout=2.0)
             except Exception:
                 pass

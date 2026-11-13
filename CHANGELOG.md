@@ -6,6 +6,14 @@ Todas las modificaciones notables de este proyecto están documentadas en este a
 
 ## [Unreleased]
 
+### Security
+- **Cambio de comportamiento:** Full Access solo está disponible en la app de escritorio. `praxeon-server`, `praxeon-web` y la CLI
+  rechazan las sesiones `full_access` con `403` salvo que se arranquen con `PRAXEON_ALLOW_FULL_ACCESS=1`. `SecureExecutor` lo trae
+  desactivado por defecto.
+- Los comandos del agente (sandbox local y Full Access) heredan solo una lista blanca de variables de entorno; ampliable con
+  `PRAXEON_CHILD_ENV_ALLOW`, nunca con nombres que parezcan secretos.
+- Al vencer el timeout de un comando se termina todo su árbol de procesos, no solo el hijo directo.
+
 ### Added
 - Clasificador: buscar texto peligroso entre comillas (`grep "rm -rf" src`) ya no se bloquea; `net user /add`, `net localgroup /add`, `Set-ExecutionPolicy` y `powershell -EncodedCommand` pasan a CRITICAL.
 - `LAYA_RECORD_VERSION=2`: el registro de la acción añade si la orden aparece en lo leído antes (procedencia). Desactivado por defecto.

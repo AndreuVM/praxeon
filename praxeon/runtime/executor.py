@@ -80,7 +80,7 @@ class SecureExecutor(Executor):
         secret_key: Optional[str] = None,
         nonce_store: Optional[NonceStore] = None,
         full_access_executor: Optional[FullAccessExecutor] = None,
-        allow_full_access: bool = True,
+        allow_full_access: bool = False,
         insecure_skip_signature: bool = False,
     ):
         self.registry = registry or ToolRegistry(register_defaults=True)

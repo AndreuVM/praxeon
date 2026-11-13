@@ -41,6 +41,7 @@ from praxeon.reasoning.evidence import EvidenceEngine
 from praxeon.reasoning.risk import RiskEngine
 from praxeon.runtime.decision_store import SqliteDecisionRepository
 from praxeon.runtime.event_bus import EventBus, EventStore
+from praxeon.runtime.child_env import full_access_enabled
 from praxeon.runtime.executor import SecureExecutor
 from praxeon.runtime.keys import production_keys_problem, receipt_key
 from praxeon.runtime.nonce_store import NonceStore, SqliteNonceStore
@@ -130,7 +131,8 @@ class RuntimeApplicationService(DecisionPipelineMixin, MissionRuntimeMixin):
             registry=self.registry,
             secret_key=self.policy_engine.secret_key,
             nonce_store=self.nonce_store,
-            allow_full_access=True,
+            # Full Access solo si el proceso lo habilita: la app de escritorio sí; servidor y CLI no (PRAXEON_ALLOW_FULL_ACCESS)
+            allow_full_access=full_access_enabled(),
         )
         # Herramientas de servidores MCP: se registran en el mismo ToolRegistry/Executor que las nativas
         self.mcp = McpManager(McpConfigStore(), self.registry, self.executor)

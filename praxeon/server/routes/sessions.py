@@ -29,12 +29,26 @@ def is_full_access_authorized(execution_mode: Optional[str], full_access_confirm
     return (execution_mode or "").lower() == "full_access" and bool(full_access_confirmed)
 
 
+def ensure_full_access_available(execution_mode: Optional[str], service: Any) -> None:
+    """Rechaza al crear la sesión (y no a mitad de misión) un Full Access que este proceso no tiene habilitado."""
+    if (execution_mode or "").lower() != "full_access":
+        return
+    executor = getattr(service, "executor", None)
+    if executor is not None and not getattr(executor, "allow_full_access", False):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Full Access no está disponible en este servidor. Usa la app de escritorio o arranca con "
+            "PRAXEON_ALLOW_FULL_ACCESS=1.",
+        )
+
+
 @router.post("/run", response_model=APIResponse[SessionSummaryResponse], status_code=status.HTTP_201_CREATED)
 def run_mission(
     req: RunMissionRequest,
     service: RuntimeApplicationService = Depends(get_runtime_service),
 ):
     """Inicia una nueva misión interactiva con ejecución y supervisión en tiempo real."""
+    ensure_full_access_available(req.execution_mode, service)
     full_access_authorized = is_full_access_authorized(req.execution_mode, req.full_access_confirmed)
     try:
         meta = service.start_mission(
@@ -138,6 +152,7 @@ def create_session(
     service: RuntimeApplicationService = Depends(get_runtime_service),
 ):
     """Crea una nueva sesión de supervisión para un agente autónomo."""
+    ensure_full_access_available(req.execution_mode, service)
     metadata = dict(req.metadata or {})
     metadata["created_by"] = "api_client"
     # Un llamante HTTP untrusted no puede auto-aprobarse full_access autónomo sin verificar credencial de operador

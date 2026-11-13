@@ -123,6 +123,8 @@ def start_local_server(port: Optional[int] = None, startup_timeout: float = 20.0
         "PRAXEON_SECRET_KEY": secrets.token_urlsafe(48),
         # Permite el origen de la propia ventana (CORS/WebSocket) sin abrir nada más.
         "PRAXEON_CORS_ORIGINS": f"http://{LOOPBACK}:{chosen}",
+        # La app de escritorio es el único arranque con Full Access disponible (sigue pidiendo doble confirmación por sesión)
+        "PRAXEON_ALLOW_FULL_ACCESS": "1",
     }
     saved_env = {name: os.environ.get(name) for name in overrides}
     os.environ.update(overrides)

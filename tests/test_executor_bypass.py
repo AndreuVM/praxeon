@@ -171,12 +171,16 @@ def test_sandbox_environment_scrubbing():
         clean_env = sandbox._sanitize_environment()
         assert "TYPESAFE_API_KEY" not in clean_env
         assert "GEMINI_API_KEY" not in clean_env
-        assert clean_env.get("SAFE_TEST_VAR") == "public_value"
+        # Lista blanca (S-09): una variable cualquiera solo pasa si el operador la autoriza
+        assert "SAFE_TEST_VAR" not in clean_env
         assert clean_env.get("JEV_SANDBOX_ACTIVE") == "1"
+        os.environ["PRAXEON_CHILD_ENV_ALLOW"] = "SAFE_TEST_VAR"
+        assert sandbox._sanitize_environment().get("SAFE_TEST_VAR") == "public_value"
     finally:
         os.environ.pop("TYPESAFE_API_KEY", None)
         os.environ.pop("GEMINI_API_KEY", None)
         os.environ.pop("SAFE_TEST_VAR", None)
+        os.environ.pop("PRAXEON_CHILD_ENV_ALLOW", None)
 
 
 def test_sandbox_jail_containment_prevents_traversal():

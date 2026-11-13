@@ -8,8 +8,8 @@ Full Access elimina el aislamiento a nivel de sistema operativo del executor,
 pero NO elimina la cadena de custodia de autorización:
 Proposal -> Evidence -> Risk -> Provider -> Policy -> Capability -> SecureExecutor.
 
-FullAccessExecutor carece de jail path y no depura variables de entorno del host,
-pero SOLO puede ser invocado por SecureExecutor tras verificar la firma HMAC
+FullAccessExecutor carece de jail path; los comandos reciben solo la lista blanca de variables de entorno
+(`praxeon.runtime.child_env`), no los secretos del proceso de PRAXEON. SOLO puede ser invocado por SecureExecutor tras verificar la firma HMAC
 del CapabilityPayload con execution_mode='full_access'.
 """
 
@@ -22,6 +22,7 @@ import sys
 import time
 from typing import Any, Dict, Optional, Protocol
 
+from praxeon.runtime.child_env import child_environment, run_with_tree_timeout
 from praxeon.runtime.fs_tools import content_from_args, list_directory
 from pydantic import BaseModel, ConfigDict
 
@@ -221,11 +222,10 @@ class FullAccessExecutor:
                     elif (cmd_norm.startswith('"') or cmd_norm.startswith("'")) and not cmd_norm.startswith("&"):
                         cmd_norm = f"& {cmd_norm}"
 
-                    proc = subprocess.run(
+                    proc = run_with_tree_timeout(
                         ["powershell", "-NoProfile", "-NonInteractive", "-Command", cmd_norm],
                         cwd=cwd,
-                        env=os.environ.copy(),
-                        capture_output=True,
+                        env=child_environment(),
                         text=True,
                         timeout=timeout,
                         encoding="utf-8",
@@ -234,12 +234,11 @@ class FullAccessExecutor:
                     )
                     # Si falla por ser script por lotes clásico (.bat/.cmd), intentar fallback a cmd.exe
                     if proc.returncode != 0 and any(cmd_lower.endswith(ext) for ext in (".bat", ".cmd")):
-                        fallback_proc = subprocess.run(
+                        fallback_proc = run_with_tree_timeout(
                             cmd,
                             shell=True,  # nosec B602
                             cwd=cwd,
-                            env=os.environ.copy(),
-                            capture_output=True,
+                            env=child_environment(),
                             text=True,
                             timeout=timeout,
                             encoding="utf-8",
@@ -248,12 +247,11 @@ class FullAccessExecutor:
                         if fallback_proc.returncode == 0:
                             proc = fallback_proc
                 else:
-                    proc = subprocess.run(
+                    proc = run_with_tree_timeout(
                         cmd,
                         shell=True,  # nosec B602
                         cwd=cwd,
-                        env=os.environ.copy(),
-                        capture_output=True,
+                        env=child_environment(),
                         text=True,
                         timeout=timeout,
                         encoding="utf-8",

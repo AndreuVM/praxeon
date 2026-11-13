@@ -31,3 +31,12 @@ Antes `PRAXEON_SECRET_KEY` también se aceptaba como API key y como token de ope
 - **Token por arranque**: `praxeon-server` y `praxeon-web` sin `PRAXEON_API_KEY` generan un token aleatorio en cada ejecución (como la app de
   escritorio) y lo muestran en una URL con `#token=…`; `praxeon-web` abre el navegador con ella. Para el modo antiguo (loopback sin
   autenticación) define `PRAXEON_ALLOW_INSECURE_DEV=1`.
+
+## Full Access y entorno de los comandos (auditoría S-06, S-09)
+
+- **`PRAXEON_ALLOW_FULL_ACCESS`**: Full Access solo está disponible si vale `1`. La app de escritorio lo define al arrancar; con
+  `praxeon-server`, `praxeon-web` o la CLI, una sesión `full_access` se rechaza con `403` salvo que lo definas tú.
+- **`PRAXEON_CHILD_ENV_ALLOW`**: los comandos que lanza el agente heredan solo una lista blanca de variables (`PATH`, `HOME`/`USERPROFILE`,
+  `APPDATA`, `TEMP`, `LANG`/`LC_*`, `SystemRoot`, proxies...). Si una herramienta necesita otra, añádela aquí separada por comas; admite
+  prefijos con `*` (p. ej. `JAVA_HOME,CONDA_*`). Las variables cuyo nombre contiene `KEY`, `TOKEN`, `SECRET`, `PASSWORD`, `CREDENTIAL`,
+  `AUTH`, `COOKIE` o `SESSION` no pasan nunca, aunque las incluyas.

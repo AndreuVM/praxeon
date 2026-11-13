@@ -10,6 +10,8 @@ import pytest
 # Antes, cada ejecución de la suite añadía workflows duplicados (p. ej. «MyReviewLoop») a la lista guardada.
 # Se fija antes de que se cree cualquier servicio global; los tests que necesitan otra ruta la sobreescriben.
 os.environ.setdefault("PRAXEON_CACHE_DIR", tempfile.mkdtemp(prefix="praxeon_test_cache_"))
+# La suite reproduce la app de escritorio, donde Full Access está disponible; los tests del bloqueo lo desactivan ellos mismos.
+os.environ.setdefault("PRAXEON_ALLOW_FULL_ACCESS", "1")
 
 
 def pytest_collection_modifyitems(config, items):
