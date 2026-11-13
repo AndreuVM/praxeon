@@ -416,12 +416,14 @@ Compatible con **Antigravity IDE**, **Claude Desktop** y **Cursor**:
 ```
 
 **Herramientas MCP Nativas de Sesión y Runtime:**
-- `jev_v2_start_session(goal, session_id)`: Inicializa una sesión con objetivo formal y checkpoint génesis.
-- `jev_v2_evaluate_action(action, goal, session_id)`: Evalúa una acción emitiendo decisión operacional y capability firmado.
-- `jev_v2_step_and_execute(action, auto_checkpoint)`: Evalúa y ejecuta físicamente en sandbox con captura de observación.
-- `jev_v2_rollback(checkpoint_id, culprit_tool, reason)`: Restaura el estado e invalida la herramienta reincidente.
-- `jev_v2_get_session_state()`: Devuelve el snapshot serializado del estado y su SHA-256 canónico.
-- `jev_v2_confirm_action(action_id)`: Registra la confirmación humana explícita para acciones con `requires_confirmation=True`.
+- `praxeon_start_session(goal, session_id)`: Inicializa una sesión con objetivo formal y checkpoint génesis.
+- `praxeon_evaluate_action(action, goal, session_id)`: Evalúa una acción emitiendo decisión operacional y capability firmado.
+- `praxeon_step_and_execute(action, auto_checkpoint)`: Evalúa y ejecuta físicamente en sandbox con captura de observación.
+- `praxeon_rollback(checkpoint_id, culprit_tool, reason)`: Restaura el estado e invalida la herramienta reincidente.
+- `praxeon_get_session_state()`: Devuelve el snapshot serializado del estado y su SHA-256 canónico.
+- `praxeon_confirm_action(action_id)`: Registra la confirmación humana explícita para acciones con `requires_confirmation=True`.
+
+Los nombres históricos `jev_v2_*` siguen aceptándose como alias y se retiran en v2.0.0.
 
 ### C. Cliente MCP: herramientas externas dentro de PRAXEON
 PRAXEON también puede **consumir** servidores MCP: sus herramientas aparecen a los agentes como `mcp__<servidor>__<herramienta>` y
@@ -784,6 +786,11 @@ Conforme a la política de gobernanza y estabilización de PRAXEON v1.1.0, los b
 | `jev-mcp` | `praxeon-mcp` | ⚠️ Deprecated (emite `DeprecationWarning`) | **v2.0.0** |
 
 Recomendamos actualizar scripts, integraciones de CI/CD y automatizaciones a los comandos canónicos `praxeon*`.
+
+Lo mismo vale para las variables de entorno: `JEV_API_KEY`, `JEV_CACHE_DIR`, `JEV_CRITICAL_THRESHOLD`, `JEV_CHUNK_SIZE`,
+`JEV_MAX_RETRIES`, `JEV_TIMEOUT_SECONDS` y `JEV_MAX_HISTORY_STEPS` se leen todavía, con `DeprecationWarning`, si no está la
+variante `PRAXEON_*` (`PRAXEON_API_KEY`, `PRAXEON_CHUNK_SIZE`…), y se retiran en **v2.0.0**. Dentro del sandbox, los procesos
+reciben `PRAXEON_SANDBOX_ACTIVE=1` (y, hasta v2.0.0, también `JEV_SANDBOX_ACTIVE=1`).
 
 ---
 

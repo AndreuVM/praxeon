@@ -1,4 +1,4 @@
-"""Configuraciones desacopladas y parametrización modular del runtime JEV Reasoning Navigator.
+"""Configuraciones desacopladas y parametrización modular del runtime PRAXEON.
 
 Implementa los requisitos de la Sección 23 de la Auditoría Técnica:
 - Segregación modular en sub-configuraciones Pydantic especializadas
@@ -11,6 +11,8 @@ import os
 import warnings
 from typing import Any, List, Literal, Optional, Set
 from pydantic import BaseModel, Field, field_validator, model_validator
+
+from praxeon.env import env_setting
 
 
 class ProviderConfig(BaseModel):
@@ -351,17 +353,17 @@ class PraxeonConfig(BaseModel):
                 allowed_custom_hosts=allowed_custom_hosts,
             ),
             decision=DecisionConfig(
-                critical_jev_threshold=float(os.getenv("JEV_CRITICAL_THRESHOLD", "0.0")),
+                critical_jev_threshold=float(env_setting("CRITICAL_THRESHOLD", "0.0")),
             ),
             chunk=ChunkConfig(
-                chunk_size=int(os.getenv("JEV_CHUNK_SIZE", "3")),
+                chunk_size=int(env_setting("CHUNK_SIZE", "3")),
             ),
             retry=RetryConfig(
-                max_retries=int(os.getenv("JEV_MAX_RETRIES", "2")),
-                timeout_seconds=float(os.getenv("JEV_TIMEOUT_SECONDS", "10.0")),
+                max_retries=int(env_setting("MAX_RETRIES", "2")),
+                timeout_seconds=float(env_setting("TIMEOUT_SECONDS", "10.0")),
             ),
             security=SecurityConfig(
-                max_history_steps=int(os.getenv("JEV_MAX_HISTORY_STEPS", "50")),
+                max_history_steps=int(env_setting("MAX_HISTORY_STEPS", "50")),
                 allow_custom_endpoints=allow_custom_endpoints,
                 allowed_custom_hosts=allowed_custom_hosts,
             ),
@@ -397,12 +399,9 @@ def resolve_cache_dir(custom_dir: Optional[str] = None) -> str:
     """
     if custom_dir:
         return custom_dir
-    env_dir = os.environ.get("PRAXEON_CACHE_DIR")
+    env_dir = env_setting("CACHE_DIR", "")
     if env_dir:
         return env_dir
-    legacy_env = os.environ.get("JEV_CACHE_DIR")
-    if legacy_env:
-        return legacy_env
 
     from pathlib import Path
     prax_path = Path(".praxeon_cache")

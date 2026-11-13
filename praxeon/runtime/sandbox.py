@@ -171,7 +171,8 @@ class LocalProcessSandbox(SandboxAdapter):
                 clean_env.pop(var, None)
 
         # Inyectar indicador de ejecución en sandbox
-        clean_env["JEV_SANDBOX_ACTIVE"] = "1"
+        clean_env["PRAXEON_SANDBOX_ACTIVE"] = "1"
+        clean_env["JEV_SANDBOX_ACTIVE"] = "1"  # nombre histórico, para scripts que aún lo consulten (se retira en v2.0.0)
         clean_env["PYTHONUNBUFFERED"] = "1"
 
         # Política de red: bloquear egress por variables proxy si allow_network es False
@@ -722,7 +723,7 @@ class ContainerSandboxAdapter(SandboxAdapter):
 
         clean_env = self._local_fallback._sanitize_environment(env)
         for k, v in clean_env.items():
-            if k in ("JEV_SANDBOX_ACTIVE", "PYTHONUNBUFFERED"):
+            if k in ("PRAXEON_SANDBOX_ACTIVE", "JEV_SANDBOX_ACTIVE", "PYTHONUNBUFFERED"):
                 args.extend(["-e", f"{k}={v}"])
 
         args.extend([self.config.image, "sh", "-c", cmd_str])

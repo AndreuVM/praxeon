@@ -9,6 +9,7 @@ from fastapi import Depends, FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from praxeon import __version__
+from praxeon.env import env_setting
 from praxeon.runtime.keys import production_keys_problem
 from praxeon.server.host_guard import HostGuardMiddleware, configured_hosts
 from praxeon.server.routes import api_router
@@ -43,7 +44,7 @@ def validate_security_profile(profile: Optional[str] = None) -> List[str]:
                 "Lista de orígenes CORS inválida para producción. Especifique dominios explícitos sin comodines."
             )
 
-        api_key = os.environ.get("PRAXEON_API_KEY", "")
+        api_key = env_setting("API_KEY", "")  # también el nombre histórico JEV_API_KEY, que auth_service acepta
         if api_key and (api_key in INSECURE_API_KEYS or len(api_key) < 16):
             raise ValueError(
                 "Perfil de seguridad 'production' requiere que PRAXEON_API_KEY esté configurada con al menos 16 caracteres y no use claves por defecto."
@@ -181,7 +182,7 @@ def validate_network_binding(host: str) -> None:
     normalized_host = (host or "").lower().strip()
     if normalized_host not in loopback_hosts:
         # PRAXEON_SECRET_KEY es un secreto maestro de firma, no una credencial de cliente: no basta para exponerse en red
-        has_auth = bool(os.environ.get("PRAXEON_API_KEY", "").strip())
+        has_auth = bool(env_setting("API_KEY", "").strip())
         if has_auth and not configured_hosts():
             raise ValueError(
                 f"Vincular el servidor a '{host}' exige declarar los nombres con que se le llamará en PRAXEON_ALLOWED_HOSTS "

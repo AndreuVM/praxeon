@@ -18,7 +18,6 @@ import hmac
 import hashlib
 import json
 import logging
-import os
 import secrets
 import sqlite3
 import threading
@@ -26,6 +25,7 @@ import time
 from typing import Any, Dict, Optional, Set
 from pydantic import BaseModel, ConfigDict, Field
 
+from praxeon.env import env_setting
 from praxeon.runtime.keys import jwt_secret
 from praxeon.sqlite_base import SqliteStore
 
@@ -232,7 +232,7 @@ class AuthService:
         self._tickets: Dict[str, Dict[str, Any]] = {}
         self._revoked_jtis: Set[str] = set()
         self.ticket_ttl_seconds = ticket_ttl_seconds
-        self._configured_api_key = api_key or os.getenv("PRAXEON_API_KEY") or os.getenv("JEV_API_KEY")
+        self._configured_api_key = api_key or env_setting("API_KEY", "") or None
         # Sin secreto configurado se genera uno aleatorio por proceso (nunca un valor público por defecto);
         # los tokens dejan de ser válidos al reiniciar, lo que es seguro en desarrollo.
         self._secret_key = secret_key or jwt_secret() or secrets.token_urlsafe(48)
