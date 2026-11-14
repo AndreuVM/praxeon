@@ -1,10 +1,19 @@
-"""Controlador de trayectoria cognitiva para el Live Agent de PRAXEON.
+"""Obsoleto (se retira en v2.0.0): Controlador de trayectoria cognitiva para el Live Agent de PRAXEON.
 
 Supervisa el progreso secuencial de pasos, detecta bucles degenerativos y parálisis,
 gestiona el circuit-breaker de bloqueos y valida la admisibilidad semántica de finalización.
 """
 
 from __future__ import annotations
+
+import warnings as _warnings
+
+_warnings.warn(
+    "praxeon.live_agent.trajectory_controller está en desuso: `praxeon live` y `praxeon-dash --live` usan el bucle canónico del runtime "
+    "(praxeon.live_agent.runtime_session.TerminalMission). Se retira en v2.0.0.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 import os
 from typing import Any, Dict, List, Optional, Tuple

@@ -41,6 +41,14 @@ Todas las modificaciones notables de este proyecto están documentadas en este a
 - Un único acceso al SDK de TypeSafe (`praxeon.providers.typesafe`: `create_sdk_client`, `invoke_system_one`) para el
   proveedor del runtime y el cliente del `DecisionEngine`. Este último reintenta ahora como el proveedor: también ante
   429 y límites de peticiones, con espera exponencial con jitter y respetando `Retry-After`.
+- `praxeon live` y `praxeon-dash --live` ya no tienen un bucle de agente propio: cada tarea es una misión del runtime con el
+  bucle canónico (`praxeon.live_agent.runtime_session.TerminalMission`), con la misma política, sandbox y recibos que la
+  app y la web. Las acciones que necesitan confirmación se aprueban o rechazan en la terminal (sin terminal interactiva,
+  no se aprueban). Desaparecen la evaluación por bloques con una sola llamada al supervisor, su tabla de ahorro de llamadas
+  y la síntesis final al agotar los pasos; se mantienen la memoria entre tareas encadenadas y el menú de recuperación
+  cuando falla el modelo.
+- Las acciones del planificador sintético quedan marcadas como sintéticas en su procedencia (`synthetic_fallback`,
+  `model_source="synthetic:fallback"`).
 - La interfaz web empaquetada (`praxeon/server/static`) ya no se versiona: `scripts/build_frontend.py` la compila desde
   `web/` antes de empaquetar. La que se versionaba era de mediados de octubre y no incluía los cambios posteriores.
 - `openapi.json` (raíz y SDK) regenerado; un test falla si deja de coincidir con la API.
@@ -50,10 +58,16 @@ Todas las modificaciones notables de este proyecto están documentadas en este a
 - README: insignias de tests (estado del CI) y versión (leída de `pyproject.toml`) dinámicas, en lugar de cifras fijas.
 
 ### Fixed
+- Con `llm_failure_policy="fail_closed"`, un proveedor del agente sin credenciales hacía que la misión siguiera en silencio
+  con el planificador sintético (la fábrica devolvía el simulador en vez de fallar). Ahora la misión se detiene.
+- El supervisor TypeSafe elegido sin modelo explícito llamaba al API con el modelo `typesafe` (o `default`), que rechaza
+  con `400 Unknown model`, y todas las acciones acababan en abstención. Ahora usa `jev-v1`.
 - Si proponer una acción fallaba con una excepción, el turno del agente se registraba con el veredicto y los motivos de
   la acción anterior (p. ej. un `TOOL_FORBIDDEN_BY_SUPERVISOR` que no le correspondía). Ahora se registra como `ERROR`.
 
 ### Deprecated
+- `praxeon.live_agent.trajectory_controller` y `praxeon.live_agent.runtime_client` (`TrajectoryController`,
+  `LiveAgentRuntimeClient`): ya no los usa `praxeon live`. Avisan con `DeprecationWarning` y se retiran en v2.0.0.
 - `praxeon.policy.risk`: importa `ToolRegistry`/`ToolSpec` de `praxeon.policy.registry` y `RiskLevel`/`RiskAssessment` de
   `praxeon.domain.models`. Avisa con `DeprecationWarning` y se retira en v2.0.0.
 - Variables de entorno `JEV_*` (`JEV_API_KEY`, `JEV_CACHE_DIR`, `JEV_CHUNK_SIZE`, `JEV_MAX_RETRIES`, `JEV_TIMEOUT_SECONDS`,

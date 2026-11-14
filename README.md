@@ -117,6 +117,9 @@ Para evitar cuotas y rate-limits estrictos (como los límites gratuitos de Googl
    ```
    *(PRAXEON detecta automáticamente si Ollama está en ejecución en `localhost:11434` sin configuración adicional).*
 
+   `praxeon live` y `praxeon-dash --live` usan el mismo runtime que la app y la web (misma política, sandbox y recibos);
+   las acciones que necesitan confirmación se aprueban o rechazan en la propia terminal.
+
 ### 2. Usar Groq Cloud (Gratuito, 14.400 peticiones diarias, ~500 tok/s)
 1. Consigue una clave gratuita en [Groq Console](https://console.groq.com) (tarda 30 segundos).
 2. Configura tu `.env`:

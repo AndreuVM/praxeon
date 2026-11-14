@@ -44,6 +44,10 @@ from praxeon.server.runtime_service.agent_loop import (  # noqa: E402,F401
 )
 
 
+# Proveedores que piden expresamente el planificador sintético (no un modelo)
+SIMULATOR_PROVIDERS = ("simulator", "simulated", "mock", "sim")
+
+
 class MissionRuntimeMixin:
     """Ciclo de vida de misiones autónomas, checkpoints, rollback y worker de misión."""
 
@@ -531,7 +535,7 @@ class MissionRuntimeMixin:
         agent_llm: Optional[BaseAgentLLM] = None
         use_real_llm = False
 
-        if provider_name not in ("simulator", "mock", "sim"):
+        if provider_name not in SIMULATOR_PROVIDERS:
             try:
                 llm_timeout = float(os.getenv("PRAXEON_LLM_TIMEOUT", "180.0"))
                 agent_llm = create_agent_llm(
@@ -541,9 +545,12 @@ class MissionRuntimeMixin:
                     base_url=base_url,
                     timeout=llm_timeout,
                 )
-                if not isinstance(agent_llm, SimulatedAgentLLM):
-                    use_real_llm = True
-                    logger.info("Misión inicializada con LLM real: %s (%s)", agent_llm.provider_name, agent_llm.model_name)
+                if isinstance(agent_llm, SimulatedAgentLLM):
+                    # El proveedor pedido no está disponible (p. ej. sin credenciales) y la fábrica devolvió el simulador:
+                    # es un fallo de inicialización, que con fail_closed debe detener la misión en vez de simular
+                    raise RuntimeError(f"proveedor '{provider_name}' no disponible (sin credenciales válidas o sin servidor)")
+                use_real_llm = True
+                logger.info("Misión inicializada con LLM real: %s (%s)", agent_llm.provider_name, agent_llm.model_name)
             except Exception as err:
                 llm_fail_policy = (mission.get("llm_failure_policy") or "synthetic_fallback").lower().strip()
                 if llm_fail_policy == "fail_closed":
@@ -640,7 +647,7 @@ class MissionRuntimeMixin:
                 action_node_id = f"act_{step_idx}"
                 thought_str = step_data["thought"]
                 prov_source = f"LLM ({provider_name.upper()})"
-                if provider_name not in ("simulator", "mock", "sim"):
+                if provider_name not in SIMULATOR_PROVIDERS:
                     thought_str = f"[DEGRADED_MODE: SYNTHETIC_PLANNER] {thought_str}"
                     prov_source = "SYNTHETIC_FALLBACK"
 
@@ -654,6 +661,9 @@ class MissionRuntimeMixin:
                     provenance={
                         "source": prov_source,
                         "step": step_idx,
+                        # las acciones del planificador no las propone un modelo: la procedencia lo deja constancia
+                        "synthetic_fallback": True,
+                        "model_source": "synthetic:fallback",
                     },
                     context={"goal": goal},
                 )

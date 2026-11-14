@@ -26,7 +26,11 @@ from rich.prompt import Prompt
 
 from praxeon.config import PraxeonConfig, default_config
 from praxeon.core.session_context import SessionContextManager
+from praxeon.domain.events import EventType, RuntimeEvent
+from praxeon.domain.governance import FallbackMode
 from praxeon.interceptor.proxy_middleware import JEVProxyMiddleware
+from praxeon.live_agent.mission_runner import _run_with_recovery, ask_approval
+from praxeon.live_agent.runtime_session import LiveTaskResult, TerminalMission
 
 console = Console(legacy_windows=False)
 
@@ -495,424 +499,110 @@ def run_visual_demo(task: Optional[str] = None, once: bool = False):
         current_task = None
 
 
+class _DashboardMission(TerminalMission):
+    """Misión del runtime cuyos eventos alimentan los paneles del dashboard dentro de una vista Live."""
+
+    def __init__(self, dash: "PraxeonDashboard"):
+        super().__init__(on_event=self._on_event, approver=self._ask)
+        self.dash = dash
+        self.live: Optional[Live] = None
+
+    def run(self, goal: str, **kwargs: Any) -> LiveTaskResult:
+        with Live(self.dash.generate_layout(), console=console, refresh_per_second=4, screen=False) as live:
+            self.live = live
+            try:
+                return super().run(goal, **kwargs)
+            finally:
+                self.live = None
+
+    def _refresh(self) -> None:
+        if self.live is not None:
+            self.live.update(self.dash.generate_layout())
+
+    def _ask(self, event: RuntimeEvent) -> bool:
+        if self.live is not None:
+            self.live.stop()
+        try:
+            return ask_approval(event)
+        finally:
+            if self.live is not None:
+                self.live.start()
+
+    def _on_event(self, event: RuntimeEvent) -> None:
+        dash, payload = self.dash, event.payload or {}
+        if event.type == EventType.ACTION_PROPOSED:
+            dash.turn += 1
+            dash.llm_calls += 1
+            dash.update_agent_step(
+                thought=str(payload.get("thought_rationale") or ""),
+                action=f"{payload.get('tool')} {json.dumps(payload.get('arguments') or {}, ensure_ascii=False)}",
+                status="🔍 Evaluando la acción con el supervisor...",
+            )
+            dash.supervisor_status, dash.supervisor_color = "⏳ Evaluando...", "yellow"
+        elif event.type == EventType.POLICY_DECIDED:
+            status = str(payload.get("status", "")).upper()
+            reason = str(payload.get("reason_code", ""))
+            vetoed = status in ("BLOCK", "REPLAN")
+            if vetoed:
+                dash.interventions_count += 1
+            dash.supervisor_status = f"{'🛑' if vetoed else '✅'} {status}"
+            dash.supervisor_color = "red" if status == "BLOCK" else ("yellow" if vetoed or status == "REVIEW" else "green")
+            dash.explanation = reason or dash.explanation
+            dash.record_step_result(
+                step_name=f"Paso {dash.turn}: {dash.current_action.split(' ', 1)[0]}",
+                score_text=status,
+                is_safe=not vetoed,
+                explanation=reason,
+            )
+        elif event.type == EventType.OBSERVATION_RECORDED:
+            dash.last_observation = str(payload.get("output", ""))[:600]
+            dash.agent_status = "✅ Acción ejecutada"
+        elif event.type == EventType.INTERVENTION_APPLIED:
+            text = payload.get("message") or payload.get("warning") or payload.get("error")
+            if text:
+                dash.directive_text, dash.directive_level = str(text), "WARNING"
+        elif event.type == EventType.SESSION_COMPLETED:
+            dash.agent_status = "🎉 Misión terminada."
+            dash.supervisor_status, dash.supervisor_color = "🌟 TRAYECTORIA COMPLETADA", "green"
+        self._refresh()
+
+
 def _execute_single_live_task(
     goal: str,
     max_steps: int = 25,
     model_name: Optional[str] = None,
     config: Optional[PraxeonConfig] = None,
     session_context: Optional[SessionContextManager] = None,
-    middleware: Optional[JEVProxyMiddleware] = None,
+    middleware: Optional[Any] = None,
     provider: Optional[str] = None,
     base_url: Optional[str] = None,
     api_key: Optional[str] = None,
-) -> Tuple[bool, Optional[str], JEVDashboard, int, SessionContextManager, JEVProxyMiddleware]:
-    """Ejecuta una corrida individual en vivo del agente supervisado por PRAXEON manteniendo contexto acumulado."""
+) -> Tuple[bool, Optional[str], JEVDashboard, int, SessionContextManager, Optional[Any]]:
+    """Ejecuta una tarea en vivo como misión del runtime (bucle canónico) y la pinta en el dashboard.
+
+    ``middleware`` se acepta por compatibilidad y ya no interviene: la supervisión es la del runtime.
+    """
     cfg = config or default_config
-
     session = session_context or SessionContextManager()
-    if middleware is None:
-        middleware = JEVProxyMiddleware(goal=goal, config=cfg)
-    else:
-        middleware.start_subtask(goal)
-
-    from praxeon.agent_llm import create_agent_llm, SimulatedAgentLLM
-    try:
-        agent_llm = create_agent_llm(
-            provider=provider,
-            model=model_name,
-            api_key=api_key,
-            base_url=base_url,
-        )
-    except Exception as e:
-        console.print(f"[bold yellow]Aviso al inicializar LLM:[/] {e}. Usando simulador.")
-        agent_llm = SimulatedAgentLLM()
-
-    dash = JEVDashboard(goal=goal, model_name=f"{agent_llm.model_name} ({agent_llm.provider_name.upper()})", config=cfg)
-    dash.middleware = middleware
+    dash = JEVDashboard(goal=goal, model_name=f"{model_name or 'por defecto'} ({(provider or 'auto').upper()})", config=cfg)
     console.clear()
 
-    conversation_history = session.prepare_task_conversation(goal)
-    from praxeon.live_agent import parse_llm_steps
-
-    final_summary: Optional[str] = None
-    task_finished = False
-    turn = 0
-    executed_step_records: List[Dict[str, Any]] = []
-
-    with Live(dash.generate_layout(), console=console, refresh_per_second=4, screen=False) as live:
-        consecutive_blocks = 0
-
-        while turn < max_steps and not task_finished:
-            turn += 1
-            dash.turn = turn
-            dash.llm_calls += 1
-            dash.agent_status = f"⚡ Generando propuesta de bloque cognitivo ({agent_llm.provider_name.upper()})..."
-            live.update(dash.generate_layout())
-
-            llm_output = ""
-            while not llm_output and not task_finished:
-                try:
-                    if agent_llm.provider_name == "gemini":
-                        time.sleep(2.0)
-                    llm_output = agent_llm.generate(conversation_history)
-                except Exception as e:
-                    err_str = str(e)
-                    live.stop()
-                    from praxeon.model_recovery import prompt_model_recovery_menu
-                    action, payload = prompt_model_recovery_menu(
-                        error_message=err_str,
-                        current_model=f"{agent_llm.provider_name}:{agent_llm.model_name}",
-                        console=console,
-                    )
-                    if action == "change_model" and payload:
-                        if ":" in payload:
-                            p_part, m_part = payload.split(":", 1)
-                            agent_llm = create_agent_llm(provider=p_part, model=m_part, base_url=base_url)
-                        else:
-                            agent_llm = create_agent_llm(provider=agent_llm.provider_name, model=payload, base_url=base_url)
-                        dash.model_name = f"{agent_llm.model_name} ({agent_llm.provider_name.upper()})"
-                        live.start()
-                        dash.agent_status = f"🔄 Reintentando con {agent_llm.provider_name} ({agent_llm.model_name})..."
-                        live.update(dash.generate_layout())
-                        continue
-                    elif action == "update_key" and payload:
-                        if ":" in payload:
-                            k_name, k_val = payload.split(":", 1)
-                        else:
-                            k_val = payload
-                        agent_llm = create_agent_llm(provider=agent_llm.provider_name, model=agent_llm.model_name, api_key=k_val, base_url=base_url)
-                        live.start()
-                        dash.agent_status = "🔄 Reintentando con clave actualizada..."
-                        live.update(dash.generate_layout())
-                        continue
-                    else:
-                        live.start()
-                        dash.agent_status = f"🚨 ERROR LLM: {err_str[:60]}"
-                        dash.supervisor_status = "❌ DETENIDO TRAS ERROR DE API / CUOTA"
-                        dash.supervisor_color = "red"
-                        live.update(dash.generate_layout())
-                        final_summary = f"Ejecución detenida por error en {agent_llm.provider_name}: {err_str[:80]}"
-                        task_finished = False
-                        break
-
-            if not llm_output:
-                break
-
-            proposed_steps = parse_llm_steps(llm_output)
-            if not proposed_steps:
-                lower_out = llm_output.lower()
-                is_conclusive = any(w in lower_out for w in ("conclu", "finaliz", "resuelt", "solución", "solucion", "terminad", "completad", "finish"))
-                if is_conclusive:
-                    final_summary = llm_output.strip()
-                    task_finished = True
-                    dash.agent_status = "🎉 Solución completada y verificada."
-                    dash.supervisor_status = "🌟 TRAYECTORIA CONVERGENTE COMPLETADA"
-                    live.update(dash.generate_layout())
-                    break
-                else:
-                    conversation_history.append({
-                        "role": "assistant",
-                        "content": llm_output,
-                    })
-                    conversation_history.append({
-                        "role": "user",
-                        "content": (
-                            "Observación: Has emitido un razonamiento pero ninguna acción concreta.\n"
-                            "Por favor, formula tu siguiente paso en una línea nueva con el formato:\n"
-                            "Action: <herramienta> <argumentos_en_json>\n"
-                            "Ejemplo: Action: run_command {\"command\": \"dir /b\"}\n"
-                            "O para concluir: Action: finish {\"summary\": \"<resumen o solución final>\"}"
-                        ),
-                    })
-                    dash.agent_status = "⚠️ Razonamiento sin acción detectado. Re-solicitando paso ejecutable..."
-                    live.update(dash.generate_layout())
-                    time.sleep(0.5)
-                    continue
-
-            first_st = proposed_steps[0]
-            dash.update_agent_step(
-                thought=first_st.get("thought_rationale", ""),
-                action=f"{first_st.get('tool_name')} {json.dumps(first_st.get('tool_args') or {})}",
-                status="🔍 Evaluando bloque en TypeSafe AI (System One)...",
-            )
-            dash.supervisor_status = "⏳ Evaluando bloque en lote..."
-            dash.supervisor_color = "yellow"
-            live.update(dash.generate_layout())
-            time.sleep(0.4)
-
-            dash.typesafe_calls += 1
-            chunk_result = dash.middleware.intercept_step_chunk(proposed_steps)
-
-            if not chunk_result.all_safe:
-                dash.interventions_count += 1
-                dash.hallucinations_blocked += 1
-                consecutive_blocks += 1
-
-                # Ejecutar pasos válidos previos si los hubiera (ej. si Step 1 fue read_file y Step 2 finish)
-                for v_idx in range(chunk_result.valid_step_count or 0):
-                    v_st = proposed_steps[v_idx]
-                    v_tool = v_st.get("tool_name")
-                    v_args = v_st.get("tool_args") or {}
-                    v_thought = v_st.get("thought_rationale") or ""
-                    try:
-                        v_obs = dash.middleware.execute_tool(v_tool, v_args, v_thought)
-                        v_obs_str = str(v_obs.output)[:500]
-                    except Exception as e:
-                        v_obs_str = f"Error ejecutando '{v_tool}': {e}"
-                    conversation_history.append({
-                        "role": "assistant",
-                        "content": f"Thought: {v_thought}\nAction: {v_tool} {json.dumps(v_args)}"
-                    })
-                    conversation_history.append({
-                        "role": "user",
-                        "content": f"Observation: {v_obs_str}"
-                    })
-                    dash.record_step_result(
-                        step_name=f"Paso {dash.executed_steps+1}: {v_tool}",
-                        score_text="Noul 0.10 • ALLOW",
-                        is_safe=True,
-                        explanation="Paso previo del bloque ejecutado exitosamente.",
-                    )
-
-                flagged_idx = chunk_result.flagged_step_index or 0
-                flagged_step = proposed_steps[flagged_idx]
-                flagged_tool = flagged_step.get("tool_name", "accion")
-
-                is_real_hallucination = bool(chunk_result.hallucination_detected)
-                if is_real_hallucination:
-                    dash.supervisor_status = "🚨 INTERCEPCIÓN ACTIVADA: ALUCINACIÓN DETECTADA"
-                    dash.supervisor_color = "red"
-                    dash.diagnostic_type = str(chunk_result.hallucination_type or "INVENTED_FACT").upper()
-                    dash.groundedness = "BAJA (Suposición no comprobada)"
-                    dash.noul_prob = 0.85
-                else:
-                    dash.supervisor_status = "⚠️ INTERCEPCIÓN ACTIVADA: BUCLE / REPETICIÓN DETECTADA"
-                    dash.supervisor_color = "yellow"
-                    dash.diagnostic_type = str(chunk_result.hallucination_type or "LOOP_REPETITION").upper()
-                    dash.groundedness = "ALTA (Hechos observados en disco)"
-                    dash.noul_prob = 0.65
-
-                dash.explanation = chunk_result.explanation
-                if chunk_result.directive and chunk_result.directive.message:
-                    dash.directive_text = chunk_result.directive.message
-                else:
-                    dash.directive_text = chunk_result.explanation
-                dash.directive_level = "LEVEL_2_FORCED_BACKTRACKING"
-                dash.progress_score = "COUNTERPRODUCTIVE"
-
-                dash.update_agent_step(
-                    thought=flagged_step.get("thought_rationale", ""),
-                    action=f"{flagged_tool} {flagged_step.get('tool_args')}",
-                    observation=f"🛑 [{dash.diagnostic_type}] Acción pausada por el supervisor antes de tocar el sistema.",
-                    status="🛑 Interceptado por Supervisor",
-                )
-                dash.record_step_result(
-                    step_name=f"Paso {dash.executed_steps+1}: {flagged_tool} [BLOQUEADO]",
-                    score_text=f"Noul {dash.noul_prob:.2f} • {dash.diagnostic_type}",
-                    is_safe=False,
-                    explanation=chunk_result.explanation,
-                )
-
-                # Circuit breaker para evitar bucles repetitivos de bloqueo
-                if consecutive_blocks == 2:
-                    if dash.executed_steps >= 2:
-                        dash.directive_text += (
-                            "\n\n💡 [ORIENTACIÓN DE CIERRE]: Ya has obtenido observaciones empíricas durante la sesión. "
-                            "Si dispones de suficiente contexto para responder a la tarea del usuario, sintetiza tu informe o conclusión "
-                            "y entrega el resultado invocando obligatoriamente:\n"
-                            'Action: finish {"summary": "informe o conclusión fundamentada basada en lo observado"}'
-                        )
-                    else:
-                        dash.directive_text += (
-                            "\n\n🚨 [ALERTA DE DESBLOQUEO]: Queda TERMINANTEMENTE PROHIBIDO invocar 'edit_file' sin fundamento. "
-                            "En tu siguiente turno invoca 'finish' si tu tarea es conceptual o de diseño, o una herramienta de inspección válida si operas sobre código existente."
-                        )
-                elif consecutive_blocks >= 3:
-                    console.print("[bold yellow]⚡ CIRCUIT BREAKER: Inyectando observación empírica para romper la parálisis cognitiva...[/]")
-                    auto_probe = "Archivos reales en disco: "
-                    try:
-                        auto_probe += ", ".join([f for f in os.listdir(".") if not f.startswith(".")][:6])
-                    except Exception:
-                        auto_probe += "(directorio local no listable)"
-                    dash.last_observation = auto_probe
-                    dash.middleware.record_observation(auto_probe)
-                    conversation_history.append({
-                        "role": "user",
-                        "content": f"OBSERVACIÓN REAL ENTORNO: {auto_probe}\nFormula tu próximo plan basándote exclusivamente en estos archivos.",
-                    })
-                    consecutive_blocks = 0
-                    time.sleep(0.5)
-                    continue
-
-                if flagged_tool in ("edit_file", "write_file"):
-                    agent_prompt_feedback = (
-                        f"SUPERVISIÓN PRAXEON: La acción '{flagged_tool}' ha sido BLOQUEADA porque la tarea solicitada por el usuario "
-                        f"('{goal}') no requiere modificar archivos ni alterar el código.\n"
-                        f"INSTRUCCIÓN OBLIGATORIA: Tu objetivo es responder al usuario: '{goal}'. "
-                        "Basándote en los archivos y código que ya has inspeccionado, entrega tu informe/opinión en:\n"
-                        'Action: finish {"summary": "tu respuesta completa y fundamentada resolviendo la tarea del usuario"}'
-                    )
-                elif not is_real_hallucination and flagged_tool in ("read_file", "view_file", "list_dir", "run_command"):
-                    agent_prompt_feedback = (
-                        f"SUPERVISIÓN PRAXEON: La consulta '{flagged_tool}' ha sido pausada porque ese contenido ya fue obtenido "
-                        "y está presente en tus observaciones anteriores. TIENES AUTORIZACIÓN PLENA para responder a la tarea del usuario.\n"
-                        f"INSTRUCCIÓN OBLIGATORIA: Responde directamente al objetivo del usuario: '{goal}'. "
-                        "No necesitas volver a leerlo: sintetiza la respuesta basándote en lo ya observado e invoca obligatoriamente:\n"
-                        'Action: finish {"summary": "tu respuesta completa con los hallazgos"}'
-                    )
-                else:
-                    agent_prompt_feedback = (
-                        f"SUPERVISIÓN PRAXEON: Acción '{flagged_tool}' bloqueada. {dash.directive_text}\n"
-                        f"INSTRUCCIÓN OBLIGATORIA: Tu meta es resolver la tarea del usuario: '{goal}'. "
-                        "NO reproduzcas advertencias de bloqueo ni diagnósticos del supervisor; formula tu respuesta a la tarea en 'finish':\n"
-                        'Action: finish {"summary": "tu respuesta final a la tarea del usuario"}'
-                    )
-
-                conversation_history.append({
-                    "role": "user",
-                    "content": agent_prompt_feedback,
-                })
-                live.update(dash.generate_layout())
-                time.sleep(0.8)
-                continue
-
-            # Bloque aprobado
-            consecutive_blocks = 0
-            dash.supervisor_status = "🛡️ BLOQUE APROBADO: CONVERGENTE"
-            dash.supervisor_color = "green"
-            dash.explanation = chunk_result.explanation
-            dash.directive_text = None
-            dash.noul_prob = 0.10
-            dash.groundedness = "ALTA (Hechos observados en disco)"
-            dash.progress_score = "SIGNIFICANT_PROGRESS"
-            dash.diagnostic_type = "NONE"
-            dash.llm_calls_saved += max(0, len(proposed_steps) - 1)
-
-            for st_data in proposed_steps:
-                tool_name = st_data.get("tool_name") or "thought"
-                tool_args = st_data.get("tool_args") or {}
-                thought_str = st_data.get("thought_rationale") or ""
-
-                obs = "Acción ejecutada correctamente."
-                if tool_name == "finish":
-                    summary = tool_args.get("summary", "Tarea completada exitosamente.")
-                    evasive_markers = (
-                        "pendiente de", "pendiente", "planificación", "planificacion",
-                        "como soy un agente", "la acción real", "la accion real",
-                        "todavía no", "aún no he", "aun no he", "sin analizar",
-                        "no he podido leer", "no he podido", "provisional", "pending",
-                        "este paso es de"
-                    )
-                    meta_leakage_markers = (
-                        "ha sido vetada", "vetada temporalmente", "bucle o estancamiento",
-                        "acción pausada", "accion pausada", "acción bloqueada", "accion bloqueada",
-                        "bloqueado por el supervisor", "bloqueada por el supervisor",
-                        "error de supervisión", "error de supervision",
-                        "policy_engine", "system_intervention",
-                        "no tengo la autorización", "no tengo la autorizacion",
-                        "intervención activada", "intervencion activada",
-                    )
-                    sum_lower = str(summary).lower()
-                    if any(m in sum_lower for m in evasive_markers):
-                        dash.supervisor_status = "⚠️ FINISH EVASIVO RECHAZADO"
-                        dash.supervisor_action = "Inyectando directiva para respuesta fundamentada"
-                        task_finished = False
-                        obs = (
-                            "OBSERVACIÓN DEL SUPERVISOR (JEV): Tu llamada a 'finish' ha sido RECHAZADA porque contiene un texto de planificación o evasión ('pendiente de lectura'). "
-                            "NO puedes finalizar sin dar una respuesta concreta. Analiza las observaciones y el contenido ya obtenido y responde directamente con los hallazgos en tu siguiente turno."
-                        )
-                    elif any(m in sum_lower for m in meta_leakage_markers):
-                        dash.supervisor_status = "⚠️ RESPUESTA INVÁLIDA: ECO DE SUPERVISOR RECHAZADO"
-                        dash.supervisor_action = "Inyectando directiva para responder al objetivo real"
-                        task_finished = False
-                        obs = (
-                            f"OBSERVACIÓN DEL SUPERVISOR (JEV): Tu llamada a 'finish' ha sido RECHAZADA porque estás describiendo "
-                            f"mensajes de diagnóstico interno del supervisor en lugar de responder a la tarea del usuario: '{goal}'. "
-                            f"Prohibido mencionar 'herramienta vetada', 'bucle detectado' o 'policy_engine'. Responde directamente a: '{goal}' "
-                            f"con tus conclusiones y opinión fundamentada sobre el proyecto que has inspeccionado."
-                        )
-                    else:
-                        task_finished = True
-                        final_summary = summary
-                        obs = f"Tarea finalizada: {final_summary}"
-                elif tool_name == "run_command":
-                    cmd = tool_args.get("command") or tool_args.get("cmd") or tool_args.get("raw") or ""
-                    if isinstance(cmd, dict):
-                        cmd = cmd.get("command") or cmd.get("cmd") or cmd.get("raw") or ""
-                    cmd = str(cmd).strip().strip('"').strip("'")
-                    if cmd:
-                        # Adaptaciones benignas para terminales Windows
-                        if sys.platform == "win32":
-                            import shutil
-                            cmd_stripped = cmd.strip()
-                            if cmd_stripped.lower().startswith("git") and shutil.which("git") is None:
-                                if any(sub in cmd_stripped.lower() for sub in ("status", "ls-files", "branch")):
-                                    cmd = "dir /b"
-                            elif cmd_stripped.startswith("ls"):
-                                cmd = "dir /b"
-                        tool_args["command"] = cmd
-                        # Finding 6: Enrutamiento forzoso por PolicyEngine y SecureExecutor
-                        tool_obs = dash.middleware.execute_tool(
-                            tool_name="run_command",
-                            tool_args=tool_args,
-                            thought_rationale=thought_str,
-                        )
-                        obs = tool_obs.output
-                    else:
-                        obs = "Comando vacío."
-                elif tool_name in ("read_file", "view_file", "edit_file"):
-                    # Finding 6: Ejecución confinada en sandbox tras evaluación de PolicyEngine
-                    tool_obs = dash.middleware.execute_tool(
-                        tool_name=tool_name,
-                        tool_args=tool_args,
-                        thought_rationale=thought_str,
-                    )
-                    obs = tool_obs.output
-
-                dash.last_observation = obs
-                dash.middleware.record_observation(obs)
-                conversation_history.append({
-                    "role": "user",
-                    "content": f"OBSERVACIÓN REAL ({tool_name}):\n{obs}",
-                })
-
-                dash.update_agent_step(
-                    thought=thought_str,
-                    action=f"{tool_name} {json.dumps(tool_args)}",
-                    observation=obs,
-                    status="✅ Ejecutando paso autorizado de forma autónoma...",
-                )
-                dash.record_step_result(
-                    step_name=f"Paso {dash.executed_steps+1}: {tool_name}",
-                    score_text="Noul 0.10 • ALLOW",
-                    is_safe=True,
-                    explanation="Acción constructiva",
-                )
-                executed_step_records.append({
-                    "tool_name": tool_name,
-                    "tool_args": tool_args,
-                    "observation": obs,
-                })
-                live.update(dash.generate_layout())
-                time.sleep(0.4)
-
-            if task_finished:
-                dash.agent_status = "🎉 Solución completada y verificada."
-                dash.supervisor_status = "🌟 TRAYECTORIA CONVERGENTE COMPLETADA"
-                dash.progress_score = "DIRECT_SOLUTION"
-                live.update(dash.generate_layout())
-                break
-
-        resolved_summary = final_summary or ("Tarea completada exitosamente" if task_finished else "Límite de pasos alcanzado")
-        session.record_completed_task(
-            goal=goal,
-            summary=resolved_summary,
-            final_answer=resolved_summary,
-            executed_steps=dash.executed_steps,
-            history_steps=executed_step_records,
-        )
-
-    return task_finished, final_summary, dash, turn, session, middleware
+    result = _run_with_recovery(
+        _DashboardMission(dash), goal, FallbackMode.BEST_EFFORT, provider, model_name, api_key, base_url, max_steps,
+        getattr(cfg, "supervisor", "laya"), session,
+    )
+    summary = result.final_answer or ("Tarea completada" if result.finished else "La tarea terminó sin finish aceptado")
+    session.record_completed_task(
+        goal=goal,
+        summary=summary[:200],
+        final_answer=summary,
+        executed_steps=len(result.steps),
+        history_steps=[
+            {"tool_name": s.get("tool"), "tool_args": s.get("arguments"), "observation": s.get("observation", "")}
+            for s in result.steps
+        ],
+    )
+    return result.finished, summary, dash, len(result.steps), session, middleware
 
 
 def _display_task_results(
@@ -957,7 +647,7 @@ def _display_task_results(
             )
             console.print(Panel(
                 f"[bold yellow]⚠️ {reason_msg}[/]\n"
-                "El supervisor TypeSafe AI interceptó o detuvo la trayectoria antes de completar la tarea.",
+                "El supervisor de PRAXEON vetó o detuvo la trayectoria antes de completar la tarea.",
                 title="⚠️ [bold yellow]Sesión Incompleta[/]",
                 border_style="yellow",
                 padding=(1, 2),
@@ -965,11 +655,9 @@ def _display_task_results(
 
     console.print(Panel(
         f"{'[bold green]✓ Tarea completada con éxito (Meta alcanzada).[/]' if task_finished else '[bold yellow]⚠️ Tarea detenida antes de alcanzar finish.[/]'}\n"
-        f"• Pasos ejecutados: [bold white]{dash.executed_steps}[/]\n"
-        f"• Llamadas LLM ahorradas gracias a TypeSafe: [bold green]{dash.llm_calls_saved}[/]\n"
-        f"• Alucinaciones prevenidas: [bold red]{dash.hallucinations_blocked}[/]\n"
-        f"• Evaluaciones TypeSafe AI: [bold magenta]{dash.typesafe_calls}[/]",
-        title="📊 [bold green]Telemetría y Eficiencia TypeSafe AI[/]" if task_finished else "📊 [bold yellow]Métricas TypeSafe AI[/]",
+        f"• Pasos evaluados por el supervisor: [bold white]{dash.executed_steps}[/]\n"
+        f"• Vetos del supervisor (BLOCK / REPLAN): [bold red]{dash.interventions_count}[/]",
+        title="📊 [bold green]Supervisión PRAXEON[/]" if task_finished else "📊 [bold yellow]Supervisión PRAXEON[/]",
         border_style="green" if task_finished else "yellow",
     ))
 

@@ -1,4 +1,9 @@
-"""Ejecutor de misiones y punto de entrada interactivo para el Live Agent de PRAXEON."""
+"""Ejecutor de misiones y punto de entrada interactivo para el Live Agent de PRAXEON.
+
+Cada tarea es una misión del runtime con el bucle canónico (``praxeon.live_agent.runtime_session``): misma política,
+sandbox y recibos que la app y la web. Este módulo pinta su progreso en la terminal, pide aquí las confirmaciones
+humanas y mantiene la memoria entre tareas encadenadas de la sesión.
+"""
 
 from __future__ import annotations
 
@@ -6,7 +11,6 @@ import argparse
 import json
 import os
 import sys
-import time
 from typing import Any, Dict, List, Optional, Tuple
 
 from rich.console import Console
@@ -15,17 +19,61 @@ from rich.prompt import Prompt
 
 from praxeon.config import PraxeonConfig, default_config
 from praxeon.core.session_context import SessionContextManager
+from praxeon.domain.events import EventType, RuntimeEvent
 from praxeon.domain.governance import FallbackMode, resolve_fallback_mode
-from praxeon.interceptor.proxy_middleware import JEVProxyMiddleware
-from praxeon.live_agent.llm_adapter import (
-    compact_conversation_history,
-    parse_llm_steps,
-    prune_observation_output,
-)
-from praxeon.live_agent.runtime_client import LiveAgentRuntimeClient
-from praxeon.live_agent.trajectory_controller import TrajectoryController
+from praxeon.live_agent.runtime_session import LiveTaskResult, TerminalMission
 
 console = Console(legacy_windows=False)
+
+MAX_RECOVERY_ATTEMPTS = 3
+_VERDICT_STYLE = {"ALLOW": "green", "REVIEW": "yellow", "REPLAN": "yellow", "BLOCK": "red"}
+
+
+def render_event(event: RuntimeEvent) -> None:
+    """Pinta en la terminal un evento de la misión."""
+    payload = event.payload or {}
+    if event.type == EventType.ACTION_PROPOSED:
+        args = json.dumps(payload.get("arguments") or {}, ensure_ascii=False)[:200]
+        console.print(f"\n[cyan]▶ Paso {payload.get('step', '?')}:[/] [bold]{payload.get('tool')}[/] [dim]{args}[/]")
+        if payload.get("thought_rationale"):
+            console.print(f"  [italic white]Pensamiento:[/] {str(payload['thought_rationale'])[:400]}")
+    elif event.type == EventType.POLICY_DECIDED:
+        status = str(payload.get("status", "")).upper()
+        style = _VERDICT_STYLE.get(status, "white")
+        console.print(f"  [{style}]Supervisor: {status}[/] [dim]{payload.get('reason_code', '')}[/]")
+    elif event.type == EventType.OBSERVATION_RECORDED:
+        console.print(f"  [dim]Observación: {str(payload.get('output', ''))[:300]}[/]")
+    elif event.type == EventType.INTERVENTION_APPLIED:
+        text = payload.get("message") or payload.get("warning") or payload.get("error")
+        if text:
+            console.print(f"  [bold yellow]⚡ {text}[/]")
+    elif event.type == EventType.APPROVAL_REQUESTED:
+        reasons = ", ".join(map(str, payload.get("reason_code") or []))
+        console.print(Panel(
+            f"[bold]Riesgo:[/] {payload.get('risk_level')}\n[bold]Motivos:[/] {reasons}",
+            title="🛡️ La acción necesita tu confirmación",
+            border_style="yellow",
+        ))
+
+
+def ask_approval(event: RuntimeEvent) -> bool:
+    """Pregunta en la terminal si se aprueba la acción. Sin terminal interactiva, no se aprueba."""
+    if not sys.stdin.isatty():
+        console.print("[yellow]Entrada no interactiva: la acción que pide confirmación no se ejecuta.[/]")
+        return False
+    try:
+        return Prompt.ask("[bold yellow]¿Aprobar esta acción?[/]", choices=["s", "n"], default="n") == "s"
+    except (KeyboardInterrupt, EOFError):
+        return False
+
+
+def _chat_history(session: SessionContextManager) -> List[Dict[str, str]]:
+    """Memoria entre tareas encadenadas: objetivo y respuesta de cada tarea previa de la sesión."""
+    history: List[Dict[str, str]] = []
+    for record in session.task_records:
+        history.append({"role": "user", "content": record.goal})
+        history.append({"role": "assistant", "content": record.final_answer or record.summary})
+    return history
 
 
 def run_live_agent(
@@ -35,355 +83,127 @@ def run_live_agent(
     gemini_api_key: Optional[str] = None,
     model_name: Optional[str] = None,
     session_context: Optional[SessionContextManager] = None,
-    middleware: Optional[JEVProxyMiddleware] = None,
+    middleware: Optional[Any] = None,
     provider: Optional[str] = None,
     base_url: Optional[str] = None,
     context_manager: Optional[Any] = None,
     fallback_mode: Optional[str | FallbackMode] = None,
-) -> Tuple[bool, str, SessionContextManager, JEVProxyMiddleware]:
-    """Ejecuta un bucle de razonamiento de agente supervisado en bloques por PRAXEON.
+    mission: Optional[TerminalMission] = None,
+) -> Tuple[bool, str, SessionContextManager, Optional[Any]]:
+    """Ejecuta una tarea del agente en la terminal como misión supervisada del runtime.
 
-    Soporta múltiples proveedores LLM (Ollama, Groq, OpenRouter, Gemini, OpenAI) mediante
-    la interfaz universal `praxeon.agent_llm.create_agent_llm`.
+    Devuelve ``(terminada, respuesta, sesión, middleware)``. ``middleware`` y ``context_manager`` se aceptan por
+    compatibilidad y ya no intervienen: la supervisión es la del runtime. Con FAIL_CLOSED, si el modelo del agente no
+    está disponible se lanza ``RuntimeError`` en vez de simular.
     """
     cfg = config or default_config
     session = session_context or SessionContextManager()
-    resolved_fallback_mode = resolve_fallback_mode(fallback_mode or getattr(cfg, "fallback_mode", None))
+    mode = resolve_fallback_mode(fallback_mode or getattr(cfg, "fallback_mode", None))
 
     if not task or not str(task).strip():
         try:
             task = Prompt.ask("[bold cyan]🎯 Introduce el objetivo o tarea para el agente[/]").strip()
         except (KeyboardInterrupt, EOFError):
             console.print("\n[yellow]Operación cancelada por el usuario.[/]")
-            return (False, "Cancelado por el usuario", session, middleware or JEVProxyMiddleware(goal="Cancelado", config=cfg))
+            return (False, "Cancelado por el usuario", session, middleware)
         if not task:
             console.print("[yellow]No se introdujo ninguna tarea. Finalizando.[/]")
-            return (False, "Tarea vacía", session, middleware or JEVProxyMiddleware(goal="Vacío", config=cfg))
+            return (False, "Tarea vacía", session, middleware)
 
-    runtime_client = LiveAgentRuntimeClient(middleware=middleware, config=cfg)
-    active_middleware = runtime_client.ensure_task(task)
-
-    from praxeon.agent_llm import SimulatedAgentLLM, create_agent_llm
-    is_synthetic = False
-    model_source = "synthetic:fallback"
-    try:
-        agent_llm = create_agent_llm(
-            provider=provider,
-            model=model_name,
-            api_key=gemini_api_key,
-            base_url=base_url,
-        )
-        if isinstance(agent_llm, SimulatedAgentLLM) and provider not in ("simulator", "simulated"):
-            if resolved_fallback_mode == FallbackMode.FAIL_CLOSED:
-                msg = f"Inicialización de LLM rechazada en modo FAIL_CLOSED: proveedor '{provider or 'auto'}' no disponible sin credenciales válidas."
-                console.print(f"[bold red]❌ {msg}[/]")
-                raise RuntimeError(msg)
-            is_synthetic = True
-            model_source = "synthetic:fallback"
-        else:
-            is_synthetic = isinstance(agent_llm, SimulatedAgentLLM)
-            model_source = "synthetic:fallback" if is_synthetic else f"llm:{agent_llm.provider_name}:{agent_llm.model_name}"
-    except Exception as e:
-        if resolved_fallback_mode == FallbackMode.FAIL_CLOSED:
-            console.print(f"[bold red]❌ Fallo crítico al inicializar LLM en modo FAIL_CLOSED:[/] {e}")
-            raise RuntimeError(f"Ejecución de Live Agent bloqueada en modo FAIL_CLOSED: {e}") from e
-        console.print(f"[bold yellow]Aviso al inicializar LLM:[/] {e}. Usando simulador de agente (BEST_EFFORT).")
-        agent_llm = SimulatedAgentLLM()
-        is_synthetic = True
-        model_source = "synthetic:fallback"
-
-    is_laya = getattr(cfg, "supervisor", "typesafe").lower() in ("laya", "laya-system1", "laya-v1")
-    sup_runtime = f"PRAXEON (LAYA System-1 [{getattr(cfg, 'laya_backend', 'auto')}])" if is_laya else "PRAXEON (TypeSafe AI / JEV)"
-
-    from praxeon.context.manager import ContextManager
-    ctx_mgr = context_manager or ContextManager()
-
-    trajectory = TrajectoryController(max_steps=max_steps, governance_mode=resolved_fallback_mode.value)
-
+    runner = mission or TerminalMission(on_event=render_event, approver=ask_approval)
+    supervisor = getattr(cfg, "supervisor", "laya")
+    limit = "sin límite (hasta finish)" if max_steps <= 0 else str(max_steps)
+    memory = "primera tarea" if session.is_empty() else f"{len(session.task_records)} tarea(s) previa(s)"
     console.print(Panel(
         f"[bold white]Tarea del Agente:[/] {task}\n"
-        f"[bold white]Supervisor Runtime:[/] {sup_runtime}\n"
-        f"[bold white]Context Manager:[/] [bold green]Activo[/] (L1/L2 Caching & Compaction)\n"
-        f"[bold white]Modelo LLM Agente:[/] [bold cyan]{agent_llm.model_name}[/] ({agent_llm.provider_name.upper()})\n"
-        f"[bold white]Límite de Pasos:[/] {'Ilimitado (hasta invocar finish)' if trajectory.is_unlimited else f'{max_steps} pasos'}\n"
-        f"[bold white]Tamaño de bloque (Chunk Size):[/] {cfg.evaluation_chunk_size} pasos por lote\n"
-        f"[bold white]Contexto de Sesión:[/] {'Primera tarea (limpia)' if session.is_empty() else f'Heredando memoria de {len(session.task_records)} tarea(s) previa(s)'}",
-        title="🤖 [bold green]Live Agent Loop Supervisado por PRAXEON (Memoria Continua)[/]",
+        f"[bold white]Supervisor:[/] PRAXEON ({supervisor})\n"
+        f"[bold white]Modelo del agente:[/] {model_name or 'por defecto'} ({(provider or 'auto').upper()})\n"
+        f"[bold white]Límite de pasos:[/] {limit}\n"
+        f"[bold white]Contexto de sesión:[/] {memory}",
+        title="🤖 [bold green]Live Agent supervisado por PRAXEON[/]",
         border_style="green",
     ))
 
-    # Mostrar resumen de tareas previas si existen
-    if not session.is_empty():
-        console.print(session.get_summary_panel())
+    result = _run_with_recovery(runner, task, mode, provider, model_name, gemini_api_key, base_url, max_steps, supervisor, session)
+    answer = result.final_answer or "Tarea sin respuesta final."
+    if result.finished:
+        console.print(Panel(answer, title="🎉 Respuesta del agente", border_style="green"))
+    else:
+        console.print(Panel(answer, title="ℹ️ La tarea terminó sin finish aceptado", border_style="yellow"))
 
-    conversation_history: List[Dict[str, str]] = session.prepare_task_conversation(task)
-
-    sim_turn = 0
-    last_llm_call_time = 0.0
-    max_turns = 1000000 if trajectory.is_unlimited else (max_steps + 4)
-
-    while trajectory.can_continue() and sim_turn < max_turns:
-        sim_turn += 1
-        console.print(f"\n[bold magenta]━━━━━━━━━━━━━━━ Fase de Generación LLM (Turno {sim_turn}) ━━━━━━━━━━━━━━━[/]")
-
-        trajectory.llm_calls_count += 1
-        llm_output = ""
-
-        max_retries = 3
-        for _attempt in range(max_retries):
-            try:
-                if agent_llm.provider_name == "gemini":
-                    elapsed = time.time() - last_llm_call_time
-                    if last_llm_call_time > 0 and elapsed < 4.0:
-                        wait_rpm = 4.0 - elapsed
-                        time.sleep(wait_rpm)
-
-                console.print(f"[dim]⚡ Consultando {agent_llm.provider_name.upper()} ({agent_llm.model_name})... [Llamada #{trajectory.llm_calls_count}][/]")
-                last_llm_call_time = time.time()
-                compacted_history = compact_conversation_history(conversation_history, context_manager=ctx_mgr)
-                llm_output = agent_llm.generate(compacted_history)
-                console.print(f"[bold white]LLM Output ({agent_llm.provider_name}):[/]\n{llm_output}")
-                break
-            except Exception as err:
-                err_str = str(err)
-                console.print(f"[bold red]Error en API de {agent_llm.provider_name}:[/] {err_str}")
-                from praxeon.model_recovery import prompt_model_recovery_menu
-                action, payload = prompt_model_recovery_menu(
-                    error_message=err_str,
-                    current_model=f"{agent_llm.provider_name}:{agent_llm.model_name}",
-                    console=console,
-                )
-                if action == "change_model" and payload:
-                    if ":" in payload:
-                        p_part, m_part = payload.split(":", 1)
-                        agent_llm = create_agent_llm(provider=p_part, model=m_part, base_url=base_url)
-                    else:
-                        agent_llm = create_agent_llm(provider=agent_llm.provider_name, model=payload, base_url=base_url)
-                    console.print(f"[green]✓ Cambiado a {agent_llm.provider_name} ({agent_llm.model_name}). Reintentando...[/]")
-                    continue
-                elif action == "update_key" and payload:
-                    if ":" in payload:
-                        k_name, k_val = payload.split(":", 1)
-                    else:
-                        k_val = payload
-                    agent_llm = create_agent_llm(provider=agent_llm.provider_name, model=agent_llm.model_name, api_key=k_val, base_url=base_url)
-                    console.print("[green]✓ Clave actualizada. Reintentando...[/]")
-                    continue
-                else:
-                    console.print("[yellow]Ejecución detenida tras error de LLM o cancelación del usuario.[/]")
-                    llm_output = ""
-                    break
-
-        if not llm_output:
-            console.print("[bold red]❌ No se obtuvo respuesta del modelo LLM. Finalizando tarea.[/]")
-            break
-
-        # 2. Extraer pasos candidatos del bloque propuesto
-        proposed_steps = parse_llm_steps(llm_output)
-        if not proposed_steps:
-            console.print("[yellow]Aviso: No se identificaron acciones concretas en la respuesta. Fin de ciclo.[/]")
-            break
-
-        console.print(f"[bold cyan]🔍 Bloque propuesto con {len(proposed_steps)} paso(s). Enviando a JEV en UNA sola petición agrupada...[/]")
-        trajectory.typesafe_calls_count += 1
-
-        # 3. Supervisión agrupada en TypeSafe (1 sola petición para todo el bloque)
-        chunk_result = runtime_client.intercept_step_chunk(proposed_steps)
-
-        # 4. Si JEV detecta una alucinación o bucle en el bloque:
-        if not chunk_result.all_safe:
-            flagged_idx = chunk_result.flagged_step_index or 0
-            flagged_step = proposed_steps[flagged_idx]
-            diag_label = "ALUCINACIÓN" if chunk_result.hallucination_detected else "BUCLE DEGENERATIVO"
-
-            dir_inj = chunk_result.directive.context_injection if chunk_result.directive else None
-            is_breaker, directive_text, auto_probe = trajectory.register_block_interception(
-                explanation=chunk_result.explanation,
-                directive_injection=dir_inj,
-            )
-
-            console.print(Panel(
-                f"[bold red]🚨 JEV INTERCEPCIÓN ACTIVADA: {diag_label} DETECTADO EN PASO {flagged_idx+1}[/]\n\n"
-                f"[bold yellow]Paso bloqueado:[/] {flagged_step.get('tool_name')} {flagged_step.get('tool_args')}\n"
-                f"[bold white]Diagnóstico:[/] {chunk_result.explanation}\n\n"
-                f"{dir_inj or ''}",
-                title="🛑 [bold red]Supervisión JEV: Acción Prevenida (Ahorro de Llamada a Gemini)[/]",
-                border_style="red",
-            ))
-
-            # Ejecutar pasos anteriores al fallo si los hubiera
-            for valid_idx in range(chunk_result.valid_step_count):
-                st = proposed_steps[valid_idx]
-                tool_n = st.get("tool_name")
-                tool_a = st.get("tool_args") or {}
-                th_text = st.get("thought_rationale") or ""
-                try:
-                    tool_obs = runtime_client.execute_tool(tool_n, tool_a, th_text)
-                    obs_text = prune_observation_output(tool_obs.output, max_chars=2000)
-                except Exception as e:
-                    obs_text = f"Error ejecutando '{tool_n}': {e}"
-                trajectory.record_step(
-                    tool_n,
-                    tool_a,
-                    obs_text,
-                    th_text,
-                    synthetic_fallback=is_synthetic,
-                    model_source=model_source,
-                )
-                conversation_history.append({
-                    "role": "assistant",
-                    "content": f"Thought: {th_text}\nAction: {tool_n} {json.dumps(tool_a)}",
-                })
-                conversation_history.append({
-                    "role": "user",
-                    "content": f"Observation: {obs_text}",
-                })
-                console.print(f"  [green]✓ Paso {valid_idx+1} previo válido ejecutado: {tool_n}[/]")
-
-            if is_breaker and auto_probe:
-                console.print("[bold yellow]⚡ JEV CIRCUIT BREAKER: Inyectando observación empírica para romper la parálisis cognitiva...[/]")
-                runtime_client.record_observation(auto_probe)
-                conversation_history.append({
-                    "role": "user",
-                    "content": f"OBSERVACIÓN REAL DE ENTORNO: {auto_probe}\nFormula tu próximo plan basándote exclusivamente en estos archivos reales.",
-                })
-                time.sleep(1)
-                continue
-
-            conversation_history.append({
-                "role": "user",
-                "content": (
-                    f"SISTEMA DE SUPERVISIÓN JEV:\n{directive_text}\n"
-                    f"Tu acción previa fue BLOQUEADA por {diag_label}. "
-                    f"Debes rectificar tu plan basándote únicamente en hechos verificados."
-                ),
-            })
-            prov_label = agent_llm.provider_name.upper() if agent_llm else "LLM"
-            console.print(f"[bold green]✓ Directiva inyectada. Devolviendo control a {prov_label} solo para rectificación necesaria...[/]")
-            time.sleep(1)
-            continue
-
-        # Bloque aprobado: resetear contador de bloqueos consecutivos
-        trajectory.reset_consecutive_blocks()
-
-        # 5. Si JEV aprueba el bloque: Ejecutar secuencialmente SIN volver a llamar a Gemini entre pasos
-        console.print(f"[bold green]✓ JEV: Bloque de {len(proposed_steps)} paso(s) validado con éxito. Ejecutando de forma autónoma...[/]")
-
-        for _step_idx, step_data in enumerate(proposed_steps):
-            tool_name = step_data.get("tool_name") or "thought_reflection"
-            tool_args = step_data.get("tool_args") or {}
-            thought_text = step_data.get("thought_rationale") or ""
-
-            console.print(f"\n[cyan]▶ Ejecutando Paso {trajectory.executed_steps + 1} (del bloque aprobado):[/] [bold]{tool_name}[/] [dim]{tool_args}[/]")
-            if thought_text:
-                console.print(f"  [italic white]Pensamiento:[/] {thought_text}")
-
-            observation = ""
-            if tool_name == "finish":
-                summary = tool_args.get("summary", "Tarea completada exitosamente")
-                is_valid_finish, reject_reason, obs_finish = trajectory.validate_finish_action(summary=summary, task=task)
-                observation = obs_finish
-
-                if not is_valid_finish:
-                    panel_title = "⚠️ JEV Rechazó finalización evasiva" if reject_reason == "evasive" else "⚠️ JEV Rechazó eco de diagnóstico interno"
-                    panel_msg = (
-                        "[italic]El agente intentó terminar con excusas de planificación. Obligando a formular respuesta con observaciones existentes.[/]"
-                        if reject_reason == "evasive"
-                        else "[italic]El agente describió advertencias del supervisor en lugar de resolver la tarea del usuario.[/]"
-                    )
-                    console.print(Panel(
-                        f"[bold yellow]{panel_title}:[/] {summary}\n{panel_msg}",
-                        title="🛡️ Intervención JEV",
-                        border_style="yellow",
-                    ))
-                else:
-                    console.print(Panel(
-                        f"[bold green]Objetivo completado:[/] {summary}",
-                        title="🎉 Éxito de Ejecución",
-                        border_style="green",
-                    ))
-            else:
-                try:
-                    tool_obs = runtime_client.execute_tool(tool_name, tool_args, thought_text)
-                    observation = prune_observation_output(tool_obs.output, max_chars=2000)
-                except Exception as e:
-                    observation = f"Error ejecutando '{tool_name}' bajo supervisión JEV: {e}"
-
-            trajectory.record_step(
-                tool_name,
-                tool_args,
-                observation,
-                thought_text,
-                synthetic_fallback=is_synthetic,
-                model_source=model_source,
-            )
-
-            if tool_name == "finish":
-                runtime_client.record_observation(observation)
-
-            conversation_history.append({
-                "role": "assistant",
-                "content": f"Thought: {thought_text}\nAction: {tool_name} {json.dumps(tool_args)}",
-            })
-            conversation_history.append({
-                "role": "user",
-                "content": f"Observation: {observation}",
-            })
-            console.print(f"  [dim]Observation: {observation[:120]}...[/]")
-            time.sleep(0.5)
-
-            if trajectory.task_finished:
-                break
-
-        if trajectory.task_finished:
-            break
-
-    # Si se alcanzó el límite máximo de pasos sin finish explícito, solicitar síntesis final al agente
-    if not trajectory.task_finished and agent_llm:
-        console.print("\n[bold yellow]ℹ️ Se alcanzó el límite de pasos. Solicitando respuesta de síntesis final al agente...[/]")
-        conversation_history.append({
-            "role": "user",
-            "content": (
-                "Has alcanzado el límite de pasos de ejecución para esta tarea. "
-                "Con base en todas las observaciones y datos reales recopilados durante la sesión "
-                "(ignora cualquier advertencia o restricción de supervisión previa), "
-                "redacta y entrega tu conclusión o informe final completo para el usuario."
-            ),
-        })
-        try:
-            trajectory.final_answer = agent_llm.generate(conversation_history).strip()
-            console.print(Panel(
-                trajectory.final_answer,
-                title="🏁 Respuesta Final del Agente (Síntesis de Observaciones)",
-                border_style="cyan",
-            ))
-        except Exception as e:
-            console.print(f"[dim]No se pudo generar síntesis final: {e}[/]")
-    elif not trajectory.task_finished:
-        console.print(Panel(
-            f"El agente completó los {trajectory.executed_steps} pasos máximos configurados.\n"
-            "Para permitir más pasos de exploración en tareas complejas, usa el flag: [bold]--steps 10[/]",
-            title="ℹ️ Límite de Pasos Alcanzado",
-            border_style="yellow",
-        ))
-
-    # 6. Registrar en la memoria de sesión continua
-    resolved_summary = trajectory.final_summary or trajectory.final_answer or "Tarea completada satisfactoriamente."
-    resolved_answer = trajectory.final_answer or trajectory.final_summary or "Tarea completada."
     session.record_completed_task(
         goal=task,
-        summary=resolved_summary,
-        final_answer=resolved_answer,
-        executed_steps=trajectory.executed_steps,
-        history_steps=trajectory.executed_step_records,
+        summary=answer[:200],
+        final_answer=answer,
+        executed_steps=len(result.steps),
+        history_steps=[
+            {
+                "tool": step.get("tool"),
+                "arguments": step.get("arguments"),
+                "observation": step.get("observation", ""),
+                "thought": step.get("thought", ""),
+                "verdict": step.get("verdict"),
+                "synthetic_fallback": step.get("synthetic_fallback", False),
+                "model_source": step.get("model_source"),
+                "governance_mode": mode.value,
+            }
+            for step in result.steps
+        ],
     )
+    return (result.finished, answer, session, middleware)
 
-    # 7. Renderizar métricas finales de ahorro de peticiones
-    metrics_table = trajectory.build_metrics_table(provider_name=agent_llm.provider_name if agent_llm else "LLM")
-    console.print("\n")
-    console.print(metrics_table)
 
-    return (trajectory.task_finished, resolved_answer, session, active_middleware)
+def _run_with_recovery(
+    runner: TerminalMission,
+    task: str,
+    mode: FallbackMode,
+    provider: Optional[str],
+    model_name: Optional[str],
+    api_key: Optional[str],
+    base_url: Optional[str],
+    max_steps: int,
+    supervisor: str,
+    session: SessionContextManager,
+) -> LiveTaskResult:
+    """Ejecuta la tarea; si el modelo del agente falla, ofrece cambiar de modelo o de clave y reintenta.
+
+    Con FAIL_CLOSED no se ofrece nada: un modelo no disponible detiene la tarea con ``RuntimeError``.
+    """
+    for attempt in range(MAX_RECOVERY_ATTEMPTS):
+        result = runner.run(
+            task,
+            provider=provider,
+            model=model_name,
+            api_key=api_key,
+            base_url=base_url,
+            max_steps=max_steps,
+            supervisor=supervisor,
+            llm_failure_policy="fail_closed" if mode == FallbackMode.FAIL_CLOSED else "synthetic_fallback",
+            chat_history=_chat_history(session),
+        )
+        failure = result.fatal_error or result.llm_error
+        if failure is None:
+            return result
+        if mode == FallbackMode.FAIL_CLOSED:
+            console.print(f"[bold red]❌ {failure}[/]")
+            raise RuntimeError(f"Ejecución de Live Agent bloqueada en modo FAIL_CLOSED: {failure}")
+        if attempt == MAX_RECOVERY_ATTEMPTS - 1 or not sys.stdin.isatty():
+            return result
+        from praxeon.model_recovery import prompt_model_recovery_menu
+        action, payload = prompt_model_recovery_menu(
+            error_message=failure, current_model=f"{provider or 'auto'}:{model_name or ''}", console=console
+        )
+        if action == "change_model" and payload:
+            if ":" in payload:
+                provider, model_name = payload.split(":", 1)
+            else:
+                model_name = payload
+        elif action == "update_key" and payload:
+            api_key = payload.split(":", 1)[1] if ":" in payload else payload
+        else:
+            return result
+        console.print(f"[green]✓ Reintentando con {provider} ({model_name or 'por defecto'})...[/]")
+    return result
 
 
 def run_live_gemini_agent(*args, **kwargs):

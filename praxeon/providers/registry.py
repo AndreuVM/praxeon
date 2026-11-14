@@ -225,15 +225,20 @@ def _create_laya_provider(config: DecisionModelConfig) -> DecisionProvider:
     )
 
 
+TYPESAFE_DEFAULT_MODEL = "jev-v1"
+
+
 def _create_typesafe_provider(config: DecisionModelConfig) -> DecisionProvider:
     from praxeon.providers.typesafe import TypeSafeProvider
 
     api_key = config.custom_params.get("api_key")
     timeout = config.timeout_seconds or 10.0
     max_retries = config.max_retries or 2
+    # Sin modelo explícito llega el nombre del supervisor ("typesafe") o "default", que el API rechaza (400 Unknown model)
+    model_id = config.model_id if config.model_id not in (None, "", "default", "typesafe") else TYPESAFE_DEFAULT_MODEL
     return TypeSafeProvider(
         api_key=api_key,
-        model_name=config.model_id or "jev-v1",
+        model_name=model_id,
         timeout=timeout,
         max_retries=max_retries,
     )

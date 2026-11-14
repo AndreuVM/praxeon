@@ -1,10 +1,19 @@
-"""Cliente de runtime y mediación para el Live Agent de PRAXEON.
+"""Obsoleto (se retira en v2.0.0): Cliente de runtime y mediación para el Live Agent de PRAXEON.
 
 Encapsula la interacción entre el runner del agente y el supervisor de control
 (JEVProxyMiddleware o Control Plane), desacoplando la ejecución del agente del runtime subyacente.
 """
 
 from __future__ import annotations
+
+import warnings as _warnings
+
+_warnings.warn(
+    "praxeon.live_agent.runtime_client está en desuso: `praxeon live` y `praxeon-dash --live` usan el bucle canónico del runtime "
+    "(praxeon.live_agent.runtime_session.TerminalMission). Se retira en v2.0.0.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 from typing import Any, Dict, List, Optional
 from praxeon.config import PraxeonConfig, default_config
