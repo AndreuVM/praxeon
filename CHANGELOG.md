@@ -24,8 +24,9 @@ Todas las modificaciones notables de este proyecto están documentadas en este a
   llamada al modelo ya no abre una conexión TCP/TLS nueva. Al seguir una redirección a otro host retira las credenciales.
 - Importar `praxeon.server.app` ya no crea la aplicación; los arranques usan `uvicorn --factory` (`create_app`).
 - `praxeon.web` pasa a llamarse `praxeon.webtools`, y el contexto de llamada vive en `praxeon.runtime.call_context`.
-- `PolicyEngine.evaluate_action` se divide en etapas (cribado, supervisor, riesgo operacional, confirmación, recibo) sin
-  cambios de comportamiento.
+- Las decisiones de `PolicyEngine.evaluate_action` las toma una cadena declarativa de reglas (`praxeon.policy.rules`):
+  una clase por regla con `apply(ctx)`, en un orden explícito que es la prioridad (`POLICY_CHAIN`), y tests por regla.
+  El comportamiento no cambia: veredictos, motivos y recibos idénticos en 12 000 casos aleatorios comparados.
 - La interfaz web empaquetada (`praxeon/server/static`) ya no se versiona: `scripts/build_frontend.py` la compila desde
   `web/` antes de empaquetar. La que se versionaba era de mediados de octubre y no incluía los cambios posteriores.
 - `openapi.json` (raíz y SDK) regenerado; un test falla si deja de coincidir con la API.
