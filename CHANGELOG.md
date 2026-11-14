@@ -27,6 +27,10 @@ Todas las modificaciones notables de este proyecto están documentadas en este a
 - Las decisiones de `PolicyEngine.evaluate_action` las toma una cadena declarativa de reglas (`praxeon.policy.rules`):
   una clase por regla con `apply(ctx)`, en un orden explícito que es la prioridad (`POLICY_CHAIN`), y tests por regla.
   El comportamiento no cambia: veredictos, motivos y recibos idénticos en 12 000 casos aleatorios comparados.
+- El bucle del agente (`_run_llm_loop`, misión completa y nodos de workflow) es un pipeline de pasos
+  (`praxeon.server.runtime_service.agent_loop`): una clase por paso con `run(ctx) -> Outcome`, en un orden explícito
+  (`TURN_STEPS`), y tests por paso. Comportamiento idéntico en 3 200 escenarios aleatorios comparados, salvo la
+  corrección de abajo.
 - La interfaz web empaquetada (`praxeon/server/static`) ya no se versiona: `scripts/build_frontend.py` la compila desde
   `web/` antes de empaquetar. La que se versionaba era de mediados de octubre y no incluía los cambios posteriores.
 - `openapi.json` (raíz y SDK) regenerado; un test falla si deja de coincidir con la API.
@@ -34,6 +38,10 @@ Todas las modificaciones notables de este proyecto están documentadas en este a
   el lockfile no corresponde a `pyproject.toml`.
 - El extra `[server]` queda vacío: FastAPI, Uvicorn y websockets ya son dependencias obligatorias.
 - README: insignias de tests (estado del CI) y versión (leída de `pyproject.toml`) dinámicas, en lugar de cifras fijas.
+
+### Fixed
+- Si proponer una acción fallaba con una excepción, el turno del agente se registraba con el veredicto y los motivos de
+  la acción anterior (p. ej. un `TOOL_FORBIDDEN_BY_SUPERVISOR` que no le correspondía). Ahora se registra como `ERROR`.
 
 ### Deprecated
 - Variables de entorno `JEV_*` (`JEV_API_KEY`, `JEV_CACHE_DIR`, `JEV_CHUNK_SIZE`, `JEV_MAX_RETRIES`, `JEV_TIMEOUT_SECONDS`,
