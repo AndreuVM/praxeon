@@ -61,18 +61,50 @@ def _wait(predicate, timeout=60.0):
     return False
 
 
-def _approve_gate(runtime, exec_id, node_id="human_gate"):
+def _node_state(runtime, exec_id, node_id):
+    """Estado del nodo según el motor en memoria (el que decide), o según lo persistido si el motor ya no está activo."""
+    engine = runtime.workflow_service._active_engine(exec_id)
+    if engine is not None:
+        st = engine.context.node_states.get(node_id)
+    else:
+        ex = runtime.workflow_service.get_execution(exec_id)
+        st = ex.node_states.get(node_id) if ex is not None else None
+    return getattr(st, "value", st)
+
+
+def _approve_gate(runtime, exec_id, node_id="human_gate", give_up_after=300.0):
+    """Aprueba el nodo humano en cuanto espera (R-079).
+
+    Antes se rendía a los 45 s mientras el test esperaba 90: si la misión tardaba en llegar al nodo (en el CI, por
+    ejemplo, al cargar el modelo de LAYA), nadie aprobaba y la misión quedaba esperando para siempre. Además, una
+    excepción al leer el estado mataba el hilo sin dejar rastro. Ahora espera lo que haga falta, tolera errores
+    transitorios, reintenta hasta que la aprobación cuaja y deja constancia en ``gate`` para el mensaje de fallo.
+    """
+    gate = {"approved": False, "attempts": 0, "last_state": None, "errors": []}
+
     def worker():
-        def waiting():
-            ex = runtime.workflow_service.get_execution(exec_id)
-            return ex is not None and ex.node_states.get(node_id) is not None and ex.node_states[node_id].value == "WAITING_APPROVAL"
+        deadline = time.time() + give_up_after
+        while time.time() < deadline and not gate["approved"]:
+            try:
+                gate["last_state"] = _node_state(runtime, exec_id, node_id)
+                if gate["last_state"] == "WAITING_APPROVAL":
+                    gate["attempts"] += 1
+                    ok = runtime.workflow_service.approve_execution_node(exec_id, node_id, approved=True, approver_id="test")
+                    gate["approved"] = bool(ok)
+            except Exception as exc:            # transitorio (p. ej. el estado cambiando mientras se lee): reintentar
+                gate["errors"].append(repr(exc)[:200])
+            time.sleep(0.05)
 
-        if _wait(waiting, 45):
-            runtime.workflow_service.approve_execution_node(exec_id, node_id, approved=True, approver_id="test")
+    threading.Thread(target=worker, daemon=True).start()
+    return gate
 
-    t = threading.Thread(target=worker, daemon=True)
-    t.start()
-    return t
+
+def _mission_report(runtime, sid, exec_id, gate=None):
+    """Qué estaba pasando cuando la misión no terminó a tiempo (para el mensaje del assert)."""
+    ex = runtime.workflow_service.get_execution(exec_id)
+    states = {k: getattr(v, "value", v) for k, v in (ex.node_states.items() if ex else [])}
+    return (f"misión={runtime._running_missions.get(sid, {}).get('status')!r} "
+            f"workflow={getattr(getattr(ex, 'status', None), 'value', None)!r} nodos={states} aprobación={gate}")
 
 
 def test_helpers():
@@ -121,8 +153,8 @@ def test_dev_reviewer_loop_hands_over_information_and_respects_the_loop(runtime,
         )
         sid = meta["session_id"]
         exec_id = f"wfx-{sid}"
-        _approve_gate(runtime, exec_id)
-        assert _wait(lambda: runtime._running_missions.get(sid, {}).get("status") is not None, 90), "la misión no terminó"
+        gate = _approve_gate(runtime, exec_id)
+        assert _wait(lambda: runtime._running_missions.get(sid, {}).get("status") is not None, 120),             "la misión no terminó: " + _mission_report(runtime, sid, exec_id, gate)
 
     # 1. El workflow terminó y todos los nodos reflejan el recorrido (la UI sigue viéndolo por nodos)
     execution = runtime.workflow_service.get_execution(exec_id)
@@ -320,8 +352,8 @@ def test_actions_carry_their_agent_and_each_node_hangs_from_the_previous_one(run
         meta = runtime.start_mission(goal="Haz algo", session_id="wf-m3", llm_provider="scripted",
                                      workspace_root=str(tmp_path), workflow_id=wf.workflow_id, step_delay_ms=0)
         sid = meta["session_id"]
-        _approve_gate(runtime, f"wfx-{sid}")
-        assert _wait(lambda: runtime._running_missions.get(sid, {}).get("status") is not None, 90)
+        gate = _approve_gate(runtime, f"wfx-{sid}")
+        assert _wait(lambda: runtime._running_missions.get(sid, {}).get("status") is not None, 120),             _mission_report(runtime, sid, f"wfx-{sid}", gate)
 
     proposed = [e for e in runtime.event_bus.get_events(sid, limit=2000) if e.type.value == "action.proposed"]
     by_node = {e.node_id: e for e in proposed}
@@ -348,8 +380,8 @@ def test_node_finish_is_a_milestone_and_only_the_end_of_the_workflow_completes_t
         meta = runtime.start_mission(goal="Haz algo", session_id="wf-m4", llm_provider="scripted",
                                      workspace_root=str(tmp_path), workflow_id=wf.workflow_id, step_delay_ms=0)
         sid = meta["session_id"]
-        _approve_gate(runtime, f"wfx-{sid}")
-        assert _wait(lambda: runtime._running_missions.get(sid, {}).get("status") is not None, 90)
+        gate = _approve_gate(runtime, f"wfx-{sid}")
+        assert _wait(lambda: runtime._running_missions.get(sid, {}).get("status") is not None, 120),             _mission_report(runtime, sid, f"wfx-{sid}", gate)
 
     assert _wait(lambda: any(e.type.value == "session.completed" for e in runtime.event_bus.get_events(sid, limit=2000)), 30)
     events = runtime.event_bus.get_events(sid, limit=2000)
@@ -374,8 +406,8 @@ def test_node_start_is_announced_before_its_first_action(runtime, tmp_path):
         meta = runtime.start_mission(goal="Haz algo", session_id="wf-m5", llm_provider="scripted",
                                      workspace_root=str(tmp_path), workflow_id=wf.workflow_id, step_delay_ms=0)
         sid = meta["session_id"]
-        _approve_gate(runtime, f"wfx-{sid}")
-        assert _wait(lambda: any(e.type.value == "session.completed" for e in runtime.event_bus.get_events(sid, limit=2000)), 90)
+        gate = _approve_gate(runtime, f"wfx-{sid}")
+        assert _wait(lambda: any(e.type.value == "session.completed" for e in runtime.event_bus.get_events(sid, limit=2000)), 120),             _mission_report(runtime, sid, f"wfx-{sid}", gate)
 
     events = runtime.event_bus.get_events(sid, limit=2000)
     order = [(e.type.value, e.node_id) for e in events if e.type.value.startswith("workflow.") or (e.type.value == "action.proposed")]
