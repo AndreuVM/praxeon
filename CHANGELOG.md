@@ -35,6 +35,9 @@ Todas las modificaciones notables de este proyecto están documentadas en este a
   una secuencia de pasos (`praxeon.server.runtime_service.proposal_pipeline`, `PROPOSAL_STEPS`) con tests por paso.
   Respuestas, eventos y estado de la sesión idénticos al anterior en las secuencias aleatorias comparadas. Los pipelines
   comparten el contrato `Step.run(ctx) -> Outcome` de `praxeon.core.pipeline`.
+- La ejecución de un nodo de workflow (`WorkflowEngine.execute_node`) son tres pasos (preparar, ejecutar, registrar el
+  resultado) en `praxeon.workflows.node_execution`, con un ejecutor por tipo de nodo (`NODE_EXECUTORS`) y tests por paso.
+  Valor devuelto y estado de la ejecución idénticos al anterior en las 318 ejecuciones de nodo de los tests de workflows.
 - La interfaz web empaquetada (`praxeon/server/static`) ya no se versiona: `scripts/build_frontend.py` la compila desde
   `web/` antes de empaquetar. La que se versionaba era de mediados de octubre y no incluía los cambios posteriores.
 - `openapi.json` (raíz y SDK) regenerado; un test falla si deja de coincidir con la API.
