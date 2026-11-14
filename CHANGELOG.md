@@ -49,6 +49,13 @@ Todas las modificaciones notables de este proyecto están documentadas en este a
   cuando falla el modelo.
 - Las acciones del planificador sintético quedan marcadas como sintéticas en su procedencia (`synthetic_fallback`,
   `model_source="synthetic:fallback"`).
+- Raíz de composición del servidor (`praxeon.server.bootstrap`): construye los colaboradores del
+  `RuntimeApplicationService` (almacenes, política, ejecutor, supervisor por defecto, agentes, workflows y servicios) y
+  resuelve el perfil de seguridad en un solo sitio; el servicio los recibe ya construidos. Su firma no cambia.
+- El perfil de seguridad ya no es una variable global: vive en el servicio (`service.security_profile`) y en
+  `app.state`, y cada aplicación atiende con su propio servicio (`app.state.service`). Antes, crear una segunda
+  aplicación con otro perfil cambiaba también el de la primera. El aviso de «sin autenticación» sale una vez por
+  aplicación.
 - `PRAXEON_NO_DOTENV=1` impide que importar `praxeon` cargue el `.env` del directorio de trabajo. La suite de tests lo
   activa y retira del entorno las claves de proveedores: en local, los tests llamaban de verdad a TypeSafe o Gemini con
   las claves del desarrollador.
@@ -69,6 +76,9 @@ Todas las modificaciones notables de este proyecto están documentadas en este a
   la acción anterior (p. ej. un `TOOL_FORBIDDEN_BY_SUPERVISOR` que no le correspondía). Ahora se registra como `ERROR`.
 
 ### Deprecated
+- `set_active_security_profile` / `get_active_security_profile` (`praxeon.server.auth_deps`): el perfil lo fija
+  `create_app(profile=...)`. Se mantienen sobre el servicio del proceso, avisan con `DeprecationWarning` y se retiran en
+  v2.0.0.
 - `praxeon.live_agent.trajectory_controller` y `praxeon.live_agent.runtime_client` (`TrajectoryController`,
   `LiveAgentRuntimeClient`): ya no los usa `praxeon live`. Avisan con `DeprecationWarning` y se retiran en v2.0.0.
 - `praxeon.policy.risk`: importa `ToolRegistry`/`ToolSpec` de `praxeon.policy.registry` y `RiskLevel`/`RiskAssessment` de

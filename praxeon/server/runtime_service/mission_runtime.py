@@ -112,7 +112,7 @@ class MissionRuntimeMixin:
         # Validación anti-SSRF estricta para endpoint remoto o base_url (SEC-01)
         if base_url:
             from praxeon.policy.egress import validate_provider_endpoint
-            prof = (os.environ.get("PRAXEON_PROFILE") or os.environ.get("PRAXEON_ENV") or "dev").lower().strip()
+            prof = getattr(self, "security_profile", None) or "dev"
             allow_custom = getattr(self.config.security, "allow_custom_endpoints", False)
             allowed_hosts = getattr(self.config.security, "allowed_custom_hosts", set())
             base_url = validate_provider_endpoint(

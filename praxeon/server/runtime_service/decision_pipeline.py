@@ -45,12 +45,6 @@ from praxeon.server.schemas.decision import (
 
 
 
-def get_active_security_profile():
-    """Resuelve en tiempo de llamada el perfil activo (evita el import circular con el servidor)."""
-    from praxeon.server import auth_deps
-    return auth_deps.get_active_security_profile()
-
-
 def is_auth_required(*args, **kwargs):
     """Resuelve en tiempo de llamada la política de autenticación (evita el import circular con el servidor)."""
     from praxeon.server import auth_deps
@@ -455,7 +449,7 @@ class DecisionPipelineMixin:
             if any(c and hmac.compare_digest(str(operator_token).strip(), str(c).strip()) for c in candidates):
                 is_verified_operator = True
 
-        effective_profile = security_profile or get_active_security_profile()
+        effective_profile = security_profile or getattr(self, "security_profile", None)
         if is_auth_required(profile=effective_profile) or (effective_profile == "production"):
             if not is_verified_operator:
                 raise PermissionError(

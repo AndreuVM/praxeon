@@ -69,11 +69,12 @@ def create_app(
     service: Optional[Any] = None,
 ) -> FastAPI:
     """Crea y configura la aplicación FastAPI con rutas y middleware."""
-    prof = (profile or os.environ.get("PRAXEON_PROFILE") or os.environ.get("PRAXEON_ENV") or "dev").lower().strip()
-    from praxeon.server.auth_deps import require_permission, set_active_security_profile
+    from praxeon.server.auth_deps import require_permission
+    from praxeon.server.bootstrap import resolve_security_profile
     from praxeon.server.dependencies import get_runtime_service
     from praxeon.server.services.auth_service import Permission
-    set_active_security_profile(prof)
+
+    prof = resolve_security_profile(profile)
 
     origins = validate_security_profile(prof)
 
@@ -86,6 +87,9 @@ def create_app(
         openapi_url=None if prof == "production" else "/openapi.json",
     )
     app.state.security_profile = prof
+    # Cada aplicación atiende con su servicio: el indicado o el del proceso, construido en praxeon.server.bootstrap
+    app.state.service = service if service is not None else get_runtime_service()
+    app.state.service.security_profile = prof
 
     is_prod = (prof == "production")
     cors_methods = ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"] if is_prod else ["*"]
@@ -153,8 +157,8 @@ def create_app(
 
         app.mount("/", FrontendFiles(directory=target_static_dir, html=True), name="frontend")
 
-    if service is not None:
-        app.dependency_overrides[get_runtime_service] = lambda: service
+    # Las rutas piden el servicio con Depends(get_runtime_service): se resuelve al de esta aplicación
+    app.dependency_overrides[get_runtime_service] = lambda: app.state.service
 
     return app
 

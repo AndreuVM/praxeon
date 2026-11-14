@@ -13,42 +13,24 @@ from datetime import datetime, timezone
 
 from collections import Counter
 import logging
-import os
-import secrets
 import threading
 from typing import Any, Dict, List, Optional
 import uuid
 
 logger = logging.getLogger("praxeon.server.dependencies")
 
-from praxeon.config import PraxeonConfig, default_config, resolve_cache_dir
+from praxeon.config import PraxeonConfig
 from praxeon.domain.events import EventType, RuntimeEvent
 from praxeon.domain.models import (
     Goal,
 )
-from praxeon.policy.engine import PolicyEngine
-from praxeon.skills import SkillStore
-from praxeon.webtools import WebSettingsStore, WebTools
-from praxeon.integrations.mcp_client import McpConfigStore, McpManager
-from praxeon.policy.registry import ToolRegistry
 from praxeon.providers.base import BaseReasoningProvider
-from praxeon.providers.laya import LayaProvider
-from praxeon.providers.mock import MockProvider
-from praxeon.providers.replay import ReplayProvider
-from praxeon.providers.typesafe import TypeSafeAdapter
-from praxeon.reasoning.classifier import CommandClassifier
-from praxeon.reasoning.evidence import EvidenceEngine
-from praxeon.reasoning.risk import RiskEngine
 from praxeon.runtime.decision_store import SqliteDecisionRepository
-from praxeon.runtime.event_bus import EventBus, EventStore
-from praxeon.runtime.child_env import full_access_enabled
-from praxeon.runtime.executor import SecureExecutor
-from praxeon.runtime.keys import production_keys_problem, receipt_key
-from praxeon.runtime.nonce_store import NonceStore, SqliteNonceStore
+from praxeon.runtime.event_bus import EventBus
+from praxeon.runtime.nonce_store import NonceStore
 from praxeon.context.manager import ContextManager
 from praxeon.agents.bus import AgentMessageBus
 from praxeon.agents.registry import AgentRegistry
-from praxeon.agents.templates import AgentTemplateCatalog
 from praxeon.routing.router import AgentRouter
 from praxeon.workflows.editor_service import WorkflowEditorService
 from praxeon.runtime.adaptive.runtime import AdaptiveAgentRuntime
@@ -74,6 +56,7 @@ from praxeon.server.services import (
 )
 
 
+from praxeon.server.bootstrap import RuntimeComponents, build_components  # noqa: E402
 from praxeon.server.runtime_service.decision_pipeline import DecisionPipelineMixin  # noqa: E402
 from praxeon.server.runtime_service.mission_runtime import MissionRuntimeMixin  # noqa: E402
 
@@ -96,134 +79,73 @@ class RuntimeApplicationService(DecisionPipelineMixin, MissionRuntimeMixin):
         workflow_editor_service: Optional[WorkflowEditorService] = None,
         adaptive_runtime: Optional[AdaptiveAgentRuntime] = None,
         provider: Optional[BaseReasoningProvider] = None,
+        security_profile: Optional[str] = None,
+        components: Optional[RuntimeComponents] = None,
     ):
-        self.config = config or default_config
-        self.db_dir = resolve_cache_dir(db_dir)
-        os.makedirs(self.db_dir, exist_ok=True)
-
-
-        self.event_bus = event_bus or EventBus(
-            store=EventStore(db_path=os.path.join(self.db_dir, "events.db"))
+        """Los colaboradores los construye ``praxeon.server.bootstrap`` (raíz de composición); los argumentos sustituyen
+        alguno ya construido. Con ``components`` se usan tal cual y el resto de argumentos se ignora."""
+        c = components or build_components(
+            config=config,
+            db_dir=db_dir,
+            security_profile=security_profile,
+            event_bus=event_bus,
+            state_store=state_store,
+            nonce_store=nonce_store,
+            decision_repository=decision_repository,
+            agent_bus=agent_bus,
+            agent_registry=agent_registry,
+            agent_router=agent_router,
+            context_manager=context_manager,
+            workflow_editor_service=workflow_editor_service,
+            adaptive_runtime=adaptive_runtime,
+            provider=provider,
         )
-        self.state_store = state_store or SqliteStateStore(
-            db_path=os.path.join(self.db_dir, "state.db")
-        )
-        self.nonce_store = nonce_store or SqliteNonceStore(
-            db_path=os.path.join(self.db_dir, "nonces.db")
-        )
-        self.decision_repository = decision_repository or SqliteDecisionRepository(
-            db_path=os.path.join(self.db_dir, "decisions.db")
-        )
+        self.config = c.config
+        self.db_dir = c.db_dir
+        # Perfil de seguridad del proceso (dev / production): lo consultan las decisiones internas sin petición HTTP
+        self.security_profile = c.security_profile
 
+        # Almacenes durables
+        self.event_bus = c.event_bus
+        self.state_store = c.state_store
+        self.nonce_store = c.nonce_store
+        self.decision_repository = c.decision_repository
 
-        self.registry = ToolRegistry(register_defaults=True)
-        prof = (os.environ.get("PRAXEON_PROFILE") or os.environ.get("PRAXEON_ENV") or "dev").lower().strip()
-        if prof == "production":
-            problem = production_keys_problem()
-            if problem:
-                raise ValueError(problem)
-        # Clave de recibos propia (explícita o derivada del secreto maestro); sin ninguna, una aleatoria por proceso
-        effective_secret = receipt_key() or secrets.token_hex(32)
-
-        # El motor de políticas comparte el registro con el ejecutor: lo que se registra (herramientas MCP) lo conocen ambos
-        self.policy_engine = PolicyEngine(secret_key=effective_secret, registry=self.registry)
-        self.executor = SecureExecutor(
-            registry=self.registry,
-            secret_key=self.policy_engine.secret_key,
-            nonce_store=self.nonce_store,
-            # Full Access solo si el proceso lo habilita: la app de escritorio sí; servidor y CLI no (PRAXEON_ALLOW_FULL_ACCESS)
-            allow_full_access=full_access_enabled(),
-        )
-        # Herramientas de servidores MCP: se registran en el mismo ToolRegistry/Executor que las nativas
-        self.mcp = McpManager(McpConfigStore(), self.registry, self.executor)
-        # Skills (SKILL.md) habilitadas por el operador: sus instrucciones se añaden al prompt de las misiones
-        self.skills = SkillStore()
-        # Acceso a internet de solo lectura (web_search con Brave, web_fetch): activado por defecto, abierto en Full Access
-        self.web = WebTools(self.registry, self.executor, WebSettingsStore())
-        self.web.register()
-        self.risk_engine = RiskEngine(registry=self.registry)
-        self.command_classifier = CommandClassifier()
-        self.evidence_engine = EvidenceEngine()
-
-        # Configurar proveedor supervisor semántico por defecto
-        if provider is not None:
-            self._default_provider = provider
-        elif self.config.provider.name.lower() in ("mock", "mockprovider", "test", "testing"):
-            self._default_provider = MockProvider()
-        elif self.config.provider.name.lower() in ("replay", "replayprovider"):
-            self._default_provider = ReplayProvider()
-        elif self.config.provider.name.lower() == "laya":
-            self._default_provider = LayaProvider(backend=self.config.provider.laya_backend)
-        elif self.config.provider.use_api and self.config.provider.api_key:
-            self._default_provider = TypeSafeAdapter(
-                api_key=self.config.provider.api_key,
-                model_name=self.config.provider.model,
-            )
-        else:
-            self._default_provider = MockProvider()
+        # Cadena de seguridad: registro de herramientas, política, ejecutor y herramientas externas
+        self.registry = c.registry
+        self.policy_engine = c.policy_engine
+        self.executor = c.executor
+        self.mcp = c.mcp
+        self.skills = c.skills
+        self.web = c.web
+        self.risk_engine = c.risk_engine
+        self.command_classifier = c.command_classifier
+        self.evidence_engine = c.evidence_engine
+        self._default_provider = c.default_provider
 
         self._session_runtimes: Dict[str, SessionRuntime] = {}
-
         self._lock = threading.Lock()
         self._sessions_meta: Dict[str, Dict[str, Any]] = {}
         self._decisions: Dict[str, Dict[str, Any]] = {}
         self._running_missions: Dict[str, Dict[str, Any]] = {}
 
-        # ---------------------------------------------------------------------
-        # SUBSISTEMAS UNIFICADOS DE AGENTES, CONTEXTO, WORKFLOWS Y ENRUTAMIENTO
-        # ---------------------------------------------------------------------
-        self.context_manager = context_manager or ContextManager()
-        self.agent_bus = agent_bus or AgentMessageBus()
-        self.agent_registry = agent_registry or AgentRegistry(db_path=os.path.join(self.db_dir, "persistence.db"))
-        if not self.agent_registry.list_all():
-            for tpl in ["developer", "security_auditor", "researcher", "writer", "code_reviewer"]:
-                try:
-                    self.agent_registry.register(AgentTemplateCatalog.instantiate(tpl, f"ag_{tpl}"))
-                except Exception as exc:
-                    # No impide arrancar, pero el operador debe saber por qué falta un agente por defecto (F-05)
-                    logger.warning("No se pudo registrar el agente por defecto '%s': %s", tpl, exc)
-        self.agent_router = agent_router or AgentRouter(
-            registry=self.agent_registry,
-            message_bus=self.agent_bus,
-            llm_provider=self.provider,
-            event_bus=self.event_bus,
-        )
-        self.persistence_store = getattr(self.agent_registry, "store", None)
-        self.workflow_editor_service = workflow_editor_service or WorkflowEditorService(
-            event_bus=self.event_bus,
-            agent_bus=self.agent_bus,
-            persistence_store=self.persistence_store,
-        )
-        self.adaptive_runtime = adaptive_runtime or AdaptiveAgentRuntime(
-            registry=self.agent_registry,
-            router=self.agent_router,
-            context_manager=self.context_manager,
-            bus=self.agent_bus,
-            event_store=getattr(self.event_bus, "store", None),
-        )
+        # Agentes, contexto, workflows y enrutamiento
+        self.context_manager = c.context_manager
+        self.agent_bus = c.agent_bus
+        self.agent_registry = c.agent_registry
+        self.agent_router = c.agent_router
+        self.persistence_store = c.persistence_store
+        self.workflow_editor_service = c.workflow_editor_service
+        self.adaptive_runtime = c.adaptive_runtime
 
-        # ---------------------------------------------------------------------
-        # SERVICIOS MODULARES ESPECIALIZADOS
-        # ---------------------------------------------------------------------
-        self.auth_service = AuthService(revocation_db_path=os.path.join(self.db_dir, "auth_revocations.db"))
-        self.session_service = SessionService(event_bus=self.event_bus, state_store=self.state_store)
-        self.agent_service = AgentService(registry=self.agent_registry, router=self.agent_router, bus=self.agent_bus)
-        self.workflow_service = WorkflowService(
-            event_bus=self.event_bus,
-            agent_bus=self.agent_bus,
-            editor_service=self.workflow_editor_service,
-            persistence_store=self.persistence_store,
-        )
-        self.execution_service = ExecutionService()
-        self.mission_service = MissionService()
-        self.decision_service = DecisionService(
-            event_bus=self.event_bus,
-            decision_repository=self.decision_repository,
-            policy_engine=self.policy_engine,
-            risk_engine=self.risk_engine,
-            evidence_engine=self.evidence_engine,
-            command_classifier=self.command_classifier,
-        )
+        # Servicios de dominio
+        self.auth_service = c.auth_service
+        self.session_service = c.session_service
+        self.agent_service = c.agent_service
+        self.workflow_service = c.workflow_service
+        self.execution_service = c.execution_service
+        self.mission_service = c.mission_service
+        self.decision_service = c.decision_service
 
         # REC-01: Reconciliación transaccional automática de misiones tras reinicio del proceso
         if hasattr(self.state_store, "reconcile_interrupted_missions"):
@@ -780,11 +702,16 @@ _service_lock = threading.Lock()
 
 
 def get_runtime_service() -> RuntimeApplicationService:
-    """Devuelve la instancia singleton del servicio de aplicación."""
+    """Servicio del proceso para quien no atiende una petición HTTP (app de escritorio, CLI, tests).
+
+    Las rutas usan el servicio de su aplicación (``app.state.service``, ver ``create_app``); este es el que recibe una
+    aplicación creada sin servicio explícito. Se construye en la raíz de composición (``praxeon.server.bootstrap``).
+    """
     global _runtime_service_instance
     with _service_lock:
         if _runtime_service_instance is None:
-            _runtime_service_instance = RuntimeApplicationService()
+            from praxeon.server.bootstrap import build_runtime_service
+            _runtime_service_instance = build_runtime_service()
         return _runtime_service_instance
 
 
@@ -802,7 +729,7 @@ def get_agent_service() -> AgentService:
 
 # Autenticación y perfil de seguridad: viven en praxeon.server.auth_deps (auditoría A-03). Se resuelven bajo demanda para
 # no crear una importación circular (auth_deps necesita get_runtime_service, definido arriba).
-_MOVED_TO_AUTH_DEPS = frozenset(['PROXY_HEADERS', 'Permission', 'ROLE_PERMISSIONS', 'Role', 'TenantContext', '_ACTIVE_SECURITY_PROFILE', '_warned_dev_auth', 'constant_time_equals', 'effective_client_host', 'enforce_cookie_csrf', 'get_active_security_profile', 'get_auth_service', 'get_current_tenant', 'is_auth_required', 'require_permission', 'require_route_permission', 'set_active_security_profile', 'verify_api_key'])  # incluye lo que antes se exponía de rebote
+_MOVED_TO_AUTH_DEPS = frozenset(['PROXY_HEADERS', 'Permission', 'ROLE_PERMISSIONS', 'Role', 'TenantContext', 'constant_time_equals', 'effective_client_host', 'enforce_cookie_csrf', 'get_active_security_profile', 'get_auth_service', 'get_current_tenant', 'is_auth_required', 'require_permission', 'require_route_permission', 'set_active_security_profile', 'verify_api_key'])  # incluye lo que antes se exponía de rebote
 
 
 def __getattr__(name: str) -> Any:

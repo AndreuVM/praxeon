@@ -7,6 +7,7 @@ nombres siguen importándose también desde `praxeon.server.dependencies` por co
 
 import logging
 import os
+import warnings
 from typing import Any, Optional
 
 from fastapi import Cookie, Depends, Header, HTTPException, Request, status
@@ -27,22 +28,40 @@ logger = logging.getLogger("praxeon.server.dependencies")
 INVALID_CREDENTIALS = "Credenciales inválidas o caducadas."
 
 
-_ACTIVE_SECURITY_PROFILE: Optional[str] = None
-
-
 def set_active_security_profile(profile: Optional[str]) -> None:
-    """Establece el perfil de seguridad activo del runtime."""
-    global _ACTIVE_SECURITY_PROFILE, _warned_dev_auth
-    _ACTIVE_SECURITY_PROFILE = profile
-    _warned_dev_auth = False
+    """Obsoleto (se retira en v2.0.0): el perfil lo fija ``create_app(profile=...)`` en la aplicación y en su servicio.
+
+    Por compatibilidad, cambia el perfil del servicio del proceso si ya existe (nunca lo crea).
+    """
+    warnings.warn(
+        "set_active_security_profile está en desuso: el perfil lo fija create_app(profile=...) (se retira en v2.0.0).",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    from praxeon.server import dependencies
+    from praxeon.server.bootstrap import resolve_security_profile
+
+    service = dependencies._runtime_service_instance
+    if service is not None:
+        service.security_profile = resolve_security_profile(profile)
 
 
 def get_active_security_profile() -> Optional[str]:
-    """Retorna el perfil de seguridad activo si fue establecido."""
-    return _ACTIVE_SECURITY_PROFILE
+    """Obsoleto (se retira en v2.0.0): perfil del servicio del proceso, si existe; usa ``service.security_profile``."""
+    from praxeon.server import dependencies
+
+    service = dependencies._runtime_service_instance
+    return getattr(service, "security_profile", None) if service is not None else None
 
 
-_warned_dev_auth = False
+def _warn_dev_auth_once(request: Optional[Request]) -> None:
+    """Avisa una vez por aplicación de que se atiende sin autenticación (perfil dev desde localhost)."""
+    state = getattr(getattr(request, "app", None), "state", None)
+    if state is None:
+        return
+    if not getattr(state, "dev_auth_warned", False):
+        logger.warning("WARNING: PRAXEON running without API key authentication. Do not use in production.")
+        state.dev_auth_warned = True
 
 
 PROXY_HEADERS = ("x-forwarded-for", "forwarded", "x-real-ip")
@@ -87,7 +106,9 @@ def is_auth_required(profile: Optional[str] = None, client_host: Optional[str] =
     """
     if client_host and client_host.lower() not in ("127.0.0.1", "localhost", "::1", "testclient"):
         return True
-    prof = (profile or _ACTIVE_SECURITY_PROFILE or os.environ.get("PRAXEON_PROFILE") or os.environ.get("PRAXEON_ENV") or "dev").lower().strip()
+    from praxeon.server.bootstrap import resolve_security_profile
+
+    prof = resolve_security_profile(profile)
     if prof == "production":
         return True
     if os.environ.get("PRAXEON_REQUIRE_AUTH", "").strip().lower() in ("1", "true", "yes"):
@@ -134,10 +155,7 @@ def get_current_tenant(
 
     if not required and not token:
         # Modo dev sin autenticación obligatoria
-        global _warned_dev_auth
-        if not _warned_dev_auth:
-            logger.warning("WARNING: PRAXEON running without API key authentication. Do not use in production.")
-            _warned_dev_auth = True
+        _warn_dev_auth_once(request)
         return TenantContext(
             tenant_id="dev_tenant",
             user_id="dev_user",
@@ -218,7 +236,6 @@ def verify_api_key(
     auth_service: AuthService = Depends(get_auth_service),
 ) -> Optional[str]:
     """Dependency de FastAPI para validar la presencia y autenticidad de API Key o JWT (compatibilidad retroactiva)."""
-    global _warned_dev_auth
 
     app_profile = getattr(request.app.state, "security_profile", None) if (request and hasattr(request, "app") and hasattr(request.app, "state")) else None
     client_host = effective_client_host(request) if request else None
@@ -240,9 +257,7 @@ def verify_api_key(
             token = auth_val.strip()
 
     if not required and not token:
-        if not _warned_dev_auth:
-            logger.warning("WARNING: PRAXEON running without API key authentication. Do not use in production.")
-            _warned_dev_auth = True
+        _warn_dev_auth_once(request)
         return None
 
     if not token:
