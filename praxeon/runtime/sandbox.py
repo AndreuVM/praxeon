@@ -1,6 +1,7 @@
 """Adaptadores de contención y ejecución (SandboxAdapter) para v0.2.1.
 
-ATENCIÓN: solo `ContainerSandboxAdapter` aísla. `LocalProcessSandbox` es una mitigación de errores, NO una frontera de seguridad (ver su docstring).
+ATENCIÓN: solo el modo aislado aísla (`praxeon.runtime.isolation`: AppContainer, bubblewrap o `ContainerSandboxAdapter`).
+`LocalProcessSandbox` es una mitigación de errores, NO una frontera de seguridad (ver su docstring).
 
 Separa formalmente la arquitectura:
 Policy decision -> Capability -> Sandbox / Tool Adapter -> Host / Isolated Execution
@@ -21,8 +22,9 @@ import subprocess
 import sys
 import threading
 import time
+import uuid
 from typing import Any, Dict, List, Optional, Set, Tuple
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from praxeon.policy.egress import EgressMode, EgressPolicy
 from praxeon.runtime.child_env import child_environment, kill_process_tree, process_group_kwargs
 
@@ -95,7 +97,7 @@ class LocalProcessSandbox(SandboxAdapter):
     No hace: aislar el proceso ni la red. Un comando que construya la URL en ejecución (`'ht'+'tp://…'`) o abra un socket directo no se
     detecta (`_is_network_command` es léxico), las variables de proxy son solo una convención y las rutas absolutas dentro del comando no se
     confinan. La barrera efectiva en este modo es el clasificador de comandos y la confirmación humana; para ejecución no confiable use
-    `ContainerSandboxAdapter`.
+    el modo aislado (`praxeon.runtime.isolation.sandbox.IsolatedSandbox`).
     """
 
     BLOCKED_ENV_VARS: Set[str] = {
@@ -580,7 +582,8 @@ class ContainerSandboxConfig(BaseModel):
     """Configuración para aislamiento fuerte de host mediante contenedores (Docker / Podman)."""
     model_config = ConfigDict(frozen=True)
 
-    image: str = "python:3.11-slim"
+    # La imagen debe tener las herramientas del proyecto (git, intérpretes); PRAXEON_CONTAINER_IMAGE la cambia
+    image: str = Field(default_factory=lambda: os.environ.get("PRAXEON_CONTAINER_IMAGE") or "python:3.11-slim")
     memory_limit: str = "512m"
     cpu_quota: float = 1.0
     network_mode: str = "none"
@@ -623,6 +626,10 @@ class ContainerSandboxAdapter(SandboxAdapter):
         )
         self.runtime_binary = self._detect_runtime()
 
+    # Resultado de `<runtime> version` por binario y momento: no se repite en cada comando (tarda cientos de ms)
+    _availability: Dict[str, Tuple[bool, float]] = {}
+    AVAILABILITY_TTL = 60.0
+
     def _detect_runtime(self) -> Optional[str]:
         if self.config.runtime_binary and self.config.runtime_binary != "auto":
             return self.config.runtime_binary if shutil.which(self.config.runtime_binary) else None
@@ -631,20 +638,27 @@ class ContainerSandboxAdapter(SandboxAdapter):
                 return candidate
         return None
 
-    def is_runtime_available(self) -> bool:
-        """Verifica si el runtime de contenedor está instalado y respondiendo."""
-        if not self.runtime_binary:
-            return False
+    @classmethod
+    def _responds(cls, binary: str) -> bool:
+        cached = cls._availability.get(binary)
+        if cached and time.monotonic() - cached[1] < cls.AVAILABILITY_TTL:
+            return cached[0]
         try:
-            res = subprocess.run(
-                [self.runtime_binary, "version"],
-                capture_output=True,
-                text=True,
-                timeout=3.0,
-            )
-            return res.returncode == 0
-        except Exception:
-            return False
+            res = subprocess.run([binary, "version"], capture_output=True, text=True, timeout=5.0)  # nosec B603
+            ok = res.returncode == 0
+        except (OSError, subprocess.SubprocessError):
+            ok = False
+        cls._availability[binary] = (ok, time.monotonic())
+        return ok
+
+    @classmethod
+    def runtime_ready(cls) -> bool:
+        """Hay Docker o Podman instalado y su servicio responde."""
+        return any(shutil.which(b) and cls._responds(b) for b in ("docker", "podman"))
+
+    def is_runtime_available(self) -> bool:
+        """Verifica si el runtime de contenedor está instalado y respondiendo (resultado cacheado un minuto)."""
+        return bool(self.runtime_binary) and self._responds(str(self.runtime_binary))
 
     def execute_command(
         self,
@@ -702,11 +716,14 @@ class ContainerSandboxAdapter(SandboxAdapter):
         runtime = self.runtime_binary
         if not runtime:      # comprobado arriba (o se usó el fallback local); se repite para el tipo y por seguridad
             raise SandboxViolation("No hay runtime de contenedor disponible (docker/podman).")
+        # Nombre propio: al vencer el tiempo se mata el contenedor, no solo el cliente (que dejaría el contenedor vivo)
+        name = f"praxeon-{uuid.uuid4().hex[:12]}"
         args = [
             runtime,
             "run",
             "--rm",
             "-i",
+            f"--name={name}",
             "--cap-drop=ALL",
             "--security-opt=no-new-privileges",
             "-v",
@@ -720,6 +737,9 @@ class ContainerSandboxAdapter(SandboxAdapter):
         ]
         if self.config.read_only_root:
             args.extend(["--read-only", f"--tmpfs=/tmp:rw,size={self.config.tmpfs_size}"])
+        if sys.platform != "win32":
+            # Con el usuario del host: lo que se cree en el workspace no queda como propiedad de root
+            args.extend([f"--user={os.getuid()}:{os.getgid()}", "-e", "HOME=/tmp"])
 
         clean_env = self._local_fallback._sanitize_environment(env)
         for k, v in clean_env.items():
@@ -753,6 +773,10 @@ class ContainerSandboxAdapter(SandboxAdapter):
             )
         except subprocess.TimeoutExpired:
             elapsed = (time.perf_counter() - start_t) * 1000.0
+            try:
+                subprocess.run([runtime, "kill", name], capture_output=True, timeout=10.0)  # nosec B603
+            except (OSError, subprocess.SubprocessError):
+                pass
             return SandboxExecutionResult(
                 output=f"Timeout superado ({timeout}s) en contenedor ejecutando: {cmd_str[:100]}",
                 success=False,

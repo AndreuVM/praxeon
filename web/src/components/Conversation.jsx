@@ -46,7 +46,7 @@ export default function Conversation({
   const [localConfig, setLocalConfig] = useState({
     llmProvider: 'simulator',
     supervisor: 'laya',
-    executionMode: 'local_restricted',
+    executionMode: 'auto',
     fullAccessConfirmed: false,
     maxSteps: 25,
     customModel: '',
@@ -831,8 +831,9 @@ export default function Conversation({
               style={{ ...selectStyle, color: executionMode === 'full_access' ? 'var(--bad)' : 'var(--muted)' }}
               title="Entorno y modo de contención"
             >
+              <option value="auto">Automático (aislado si es posible)</option>
+              <option value="container">Aislado</option>
               <option value="local_restricted">Local restringido</option>
-              <option value="container">Contenedor (Docker)</option>
               <option value="full_access">Acceso completo ⚠</option>
             </select>
             <select

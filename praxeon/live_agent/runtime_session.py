@@ -86,7 +86,7 @@ class TerminalMission:
         llm_failure_policy: str = "synthetic_fallback",
         chat_history: Optional[List[Dict[str, str]]] = None,
         workspace_root: Optional[str] = None,
-        execution_mode: str = "local_restricted",
+        execution_mode: Optional[str] = None,
     ) -> LiveTaskResult:
         """Lanza la misión y atiende sus eventos hasta que el worker termina."""
         svc = self.service

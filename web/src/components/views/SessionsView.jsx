@@ -33,7 +33,7 @@ export default function SessionsView({
   const [formData, setFormData] = useState({
     goal: '',
     agent_name: 'CodingAgent',
-    execution_mode: 'local_restricted',
+    execution_mode: 'auto',
     workspace_root: '',
     llm_provider: 'simulator',
     llm_model: 'qwen2.5-coder:7b',
@@ -315,8 +315,9 @@ export default function SessionsView({
             </Field>
             <Field label="Aislamiento (sandbox)" htmlFor="sv-mode">
               <select id="sv-mode" value={formData.execution_mode} onChange={(e) => setFormData({ ...formData, execution_mode: e.target.value })} style={{ width: '100%' }}>
-                <option value="local_restricted">Local confinado (recomendado)</option>
-                <option value="container">Contenedor Docker</option>
+                <option value="auto">Automático: aislado si el equipo lo permite (recomendado)</option>
+                <option value="container">Aislado (sin red ni acceso fuera del workspace)</option>
+                <option value="local_restricted">Local confinado (no aísla)</option>
                 <option value="full_access">Acceso directo al host (requiere confirmación)</option>
               </select>
             </Field>

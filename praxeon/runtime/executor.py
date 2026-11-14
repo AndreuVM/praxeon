@@ -29,8 +29,6 @@ from praxeon.runtime.full_access import FullAccessExecutor
 from praxeon.runtime.fs_tools import content_from_args, list_directory
 from praxeon.runtime.nonce_store import InMemoryNonceStore, NonceStore
 from praxeon.runtime.sandbox import (
-    ContainerSandboxAdapter,
-    ContainerSandboxConfig,
     DryRunSandbox,
     LocalProcessSandbox,
     SandboxAdapter,
@@ -97,7 +95,8 @@ class SecureExecutor(Executor):
         self.nonce_store = nonce_store if nonce_store is not None else InMemoryNonceStore()
         self.full_access_executor = full_access_executor or FullAccessExecutor()
         self.allow_full_access = allow_full_access
-        self.container_sandbox: Optional[ContainerSandboxAdapter] = None
+        self.container_sandbox: Optional[SandboxAdapter] = None
+        self._isolated_sandboxes: Dict[str, SandboxAdapter] = {}
         self._custom_handlers: Dict[str, Callable[[Dict[str, Any]], str]] = {}
 
     def register_handler(self, tool_name: str, handler: Callable[[Dict[str, Any]], str]) -> None:
@@ -431,8 +430,14 @@ class SecureExecutor(Executor):
         text, ok = list_directory(target, raw)
         return text, ok, not ok
 
-    def _get_effective_container_sandbox(self, state: Optional[SessionState] = None) -> ContainerSandboxAdapter:
-        """Obtiene o instancia un ContainerSandboxAdapter vinculado estrictamente al workspace_root de la sesión (Finding 9)."""
+    def _get_effective_container_sandbox(self, state: Optional[SessionState] = None) -> SandboxAdapter:
+        """Sandbox del modo aislado (``container``) vinculado al workspace de la sesión (Finding 9, AUD-19).
+
+        El backend lo elige ``praxeon.runtime.isolation`` (AppContainer, bubblewrap o Docker/Podman); sin backend, el
+        sandbox rechaza los comandos (falla cerrado). Se reutiliza por workspace: preparar un AppContainer cuesta.
+        """
+        from praxeon.runtime.isolation.sandbox import IsolatedSandbox
+
         ws = None
         if state is not None:
             ws = (
@@ -440,22 +445,19 @@ class SecureExecutor(Executor):
                 or state.metadata.get("working_directory")
             )
         resolved_ws = os.path.realpath(ws or get_default_workspace_root())
-
+        cached = self._isolated_sandboxes.get(resolved_ws)
+        if cached is not None:
+            return cached
         if self.container_sandbox is not None and getattr(self.container_sandbox, "workspace_root", None) == resolved_ws:
             return self.container_sandbox
-
-        adapter = ContainerSandboxAdapter(
-            config=ContainerSandboxConfig(fallback_to_local=False),
-            workspace_root=resolved_ws,
-        )
-        if not ws:
-            self.container_sandbox = adapter
+        adapter = IsolatedSandbox(workspace_root=resolved_ws)
+        self._isolated_sandboxes[resolved_ws] = adapter
         return adapter
 
     def _execute_builtin_tool_in_container(
         self, tool_name: str, args: Dict[str, Any], state: Optional[SessionState] = None
     ) -> tuple[str, bool, bool]:
-        """Ejecuta controladores en ContainerSandboxAdapter vinculado estrictamente al workspace de la sesión (Finding 9)."""
+        """Ejecuta controladores en el sandbox aislado del workspace de la sesión (Finding 9, AUD-19)."""
         target_container = self._get_effective_container_sandbox(state)
 
         if tool_name in ("read_file", "view_file"):

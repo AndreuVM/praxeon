@@ -80,7 +80,7 @@ class MissionRuntimeMixin:
         goal: str,
         session_id: Optional[str] = None,
         agent_name: str = "CodingAgent",
-        execution_mode: str = "local_restricted",
+        execution_mode: Optional[str] = None,
         workspace_root: Optional[str] = None,
         llm_provider: str = "simulator",
         llm_model: Optional[str] = None,
@@ -102,6 +102,10 @@ class MissionRuntimeMixin:
         Con `workflow_id` (un workflow activo) el grafo gobierna la tarea: ver `WorkflowMissionDriver`.
         """
         sid = session_id or f"s-{uuid.uuid4().hex[:8]}"
+        # Sin modo (o «auto»): aislado si el sistema lo permite (AUD-19); create_session deja el aviso si no
+        from praxeon.runtime import isolation
+
+        execution_mode, _ = isolation.resolve_execution_mode(execution_mode)
         if workflow_id:
             wf = self.workflow_editor_service.get_workflow(workflow_id)
             if wf is None:

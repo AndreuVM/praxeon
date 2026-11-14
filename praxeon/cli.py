@@ -572,6 +572,10 @@ def main() -> None:
     app_parser.add_argument("--debug", action="store_true", help="Habilitar herramientas de desarrollo de la ventana")
     app_parser.add_argument("--no-notifications", action="store_true", help="Desactivar las notificaciones de aprobaciones pendientes")
 
+    sandbox_parser = subparsers.add_parser("sandbox", help="Aislamiento de los comandos: estado o retirada de permisos concedidos")
+    sandbox_parser.add_argument("action", nargs="?", default="status", choices=["status", "revoke"],
+                                help="status: backend disponible; revoke: retira los permisos de los AppContainer (Windows)")
+
     bench_parser = subparsers.add_parser("benchmark", help="Ejecuta la suite formal de benchmarks y ablaciones")
     bench_parser.add_argument("--matrix", action="store_true", help="Ejecutar la matriz científica formal LLMs × Supervisores System-1")
     bench_parser.add_argument("--archive-historical", action="store_true", help="Archivar resultados previos en benchmark_results/historical")
@@ -607,6 +611,10 @@ def main() -> None:
         if args.port:
             flags += ["--port", str(args.port)]
         raise SystemExit(run_desktop_app(flags))
+    if args.command == "sandbox":
+        from praxeon.runtime.isolation.admin import main as sandbox_main
+
+        raise SystemExit(sandbox_main(args.action))
     if args.command == "analyze":
         analyze_trace_file(args.trace_path, config=cfg)
     elif args.command == "simulate":

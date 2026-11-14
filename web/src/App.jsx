@@ -194,7 +194,7 @@ export default function App() {
   const [missionConfig, setMissionConfig] = useState({
     llmProvider: 'simulator',
     supervisor: 'laya',
-    executionMode: 'local_restricted',
+    executionMode: 'auto',
     fullAccessConfirmed: false,
     maxSteps: 25,
     customModel: '',
@@ -435,7 +435,7 @@ export default function App() {
             // Registrar borrador de decisión para inspección inmediata en las 4 pestañas
             const effMode = session.execution_mode || 'local_restricted';
             const effIso = effMode === 'full_access' ? 'None (Host OS)' : 'Active';
-            const effBack = effMode === 'full_access' ? 'FullAccessExecutor' : (effMode === 'container' ? 'DockerContainer' : 'LocalProcessSandbox');
+            const effBack = effMode === 'full_access' ? 'FullAccessExecutor' : (effMode === 'container' ? 'IsolatedSandbox' : 'LocalProcessSandbox');
             const effNet = effMode === 'full_access' ? 'Host Direct' : 'Isolated (Restricted)';
             const effWs = session.workspace_root || session.working_directory || (effMode === 'full_access' ? '.' : '/workspace');
             const effModel = session.decision_model_effective?.model_id || session.decisionModel?.model_id || session.llm_model || missionConfig?.customModel || 'qwen2.5-coder:7b';
@@ -1029,6 +1029,16 @@ export default function App() {
             level: 'INFO',
             message: `Objetivo: ${goal}`,
           },
+          // AUD-19: modo de ejecución efectivo y, si no hay aislamiento fuerte, por qué
+          res.data.isolation_warning
+            ? { time: timeStr, level: 'WARN', message: res.data.isolation_warning }
+            : {
+                time: timeStr,
+                level: 'INFO',
+                message: res.data.isolation_backend
+                  ? `Comandos aislados (${res.data.isolation_backend}): sin red y sin acceso fuera del workspace.`
+                  : `Modo de ejecución: ${res.data.execution_mode || execution_mode}.`,
+              },
         ]);
       }
     } catch (err) {

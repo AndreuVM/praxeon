@@ -56,7 +56,7 @@ def run_mission(
             goal=req.goal,
             session_id=req.session_id,
             agent_name=req.agent_name or "CodingAgent",
-            execution_mode=req.execution_mode or "local_restricted",
+            execution_mode=req.execution_mode,
             workspace_root=req.workspace_root,
             llm_provider=req.llm_provider or "simulator",
             llm_model=req.llm_model,
@@ -186,7 +186,7 @@ def create_session(
         goal=req.goal,
         session_id=req.session_id,
         agent_name=req.agent_name or "CodingAgent",
-        execution_mode=req.execution_mode or "local_restricted",
+        execution_mode=req.execution_mode,
         metadata=metadata,
     )
     summary = service.get_session_summary(meta["session_id"])

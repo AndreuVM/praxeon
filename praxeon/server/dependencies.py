@@ -334,17 +334,27 @@ class RuntimeApplicationService(DecisionPipelineMixin, MissionRuntimeMixin):
         session_id: Optional[str] = None,
         agent_name: str = "CodingAgent",
         metadata: Optional[Dict[str, Any]] = None,
-        execution_mode: str = "local_restricted",
+        execution_mode: Optional[str] = None,
         workspace_root: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Crea formalmente una nueva sesión de supervisión y persiste su estado génesis."""
+        """Crea formalmente una nueva sesión de supervisión y persiste su estado génesis.
+
+        Sin modo de ejecución (o con ``auto``) la sesión es aislada si el sistema lo permite y, si no, local con un
+        aviso que queda en sus metadatos y en el evento de inicio (AUD-19).
+        """
+        from praxeon.runtime import isolation
+
         sid = session_id or f"s-{uuid.uuid4().hex[:8]}"
         now = datetime.now(timezone.utc)
 
         meta = dict(metadata or {})
 
-        mode_val = meta.get("execution_mode") or execution_mode
+        mode_val, isolation_warning = isolation.resolve_execution_mode(meta.get("execution_mode") or execution_mode)
         meta["execution_mode"] = mode_val
+        if mode_val == isolation.ISOLATED_MODE:
+            meta["isolation_backend"] = isolation.status().backend
+        if isolation_warning:
+            meta["isolation_warning"] = isolation_warning
         is_autonomous = bool(meta.get("allow_unattended_execution") or meta.get("autonomous") or False)
         meta["autonomous"] = is_autonomous
         meta["allow_unattended_execution"] = is_autonomous
@@ -390,6 +400,8 @@ class RuntimeApplicationService(DecisionPipelineMixin, MissionRuntimeMixin):
                 "status": "Active",
                 "label": "Start",
                 "execution_mode": mode_val,
+                "isolation_backend": meta.get("isolation_backend"),
+                "isolation_warning": isolation_warning,
                 "created_at": now.isoformat(),
             },
         )
@@ -479,6 +491,8 @@ class RuntimeApplicationService(DecisionPipelineMixin, MissionRuntimeMixin):
             "status": sess.get("status", "Active"),
             "agent_name": sess.get("agent_name", "CodingAgent"),
             "execution_mode": execution_mode,
+            "isolation_backend": meta.get("isolation_backend"),
+            "isolation_warning": meta.get("isolation_warning"),
             "workspace_root": ws_root,
             "operator_approval_status": "Review Required" if waiting > 0 else "Normal",
             "created_at": sess.get("created_at"),

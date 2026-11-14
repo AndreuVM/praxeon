@@ -110,7 +110,7 @@ export default function StepDetail({ decision = null, session = {}, title = '', 
   const networkMode = rawDecisionTab.network_mode || decision.network_mode || (executionMode === 'full_access' ? 'Directa al host' : 'Aislada (restringida)');
   const executionBackend =
     rawDecisionTab.execution_backend || decision.execution_backend || decision.executionBackend ||
-    (executionMode === 'full_access' ? 'FullAccessExecutor' : executionMode === 'container' ? 'DockerContainer' : 'LocalProcessSandbox');
+    (executionMode === 'full_access' ? 'FullAccessExecutor' : executionMode === 'container' ? 'IsolatedSandbox' : 'LocalProcessSandbox');
   const effectiveModel =
     rawDecisionTab.model || rawModel || decision.model || session?.decision_model_effective?.model_id || session?.decisionModel?.model_id || session?.llm_model ||
     (session?.runtime?.provider ? session.runtime.provider.split('+')[0].trim() : null) || 'Automático';

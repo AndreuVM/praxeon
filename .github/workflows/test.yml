@@ -83,6 +83,14 @@ jobs:
           cache: 'npm'
           cache-dependency-path: web/package.json
 
+      # Aislamiento fuerte en Linux (AUD-19): bubblewrap y espacios de nombres de usuario sin privilegios, que Ubuntu
+      # restringe con AppArmor. Así tests/security/test_isolation.py prueba el aislamiento real, no solo los argumentos.
+      - name: Install bubblewrap (isolation tests)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq bubblewrap
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+
       # La interfaz no se versiona: se compila para que los tests de entrega de la UI se ejecuten (no se salten)
       - name: Build Frontend
         run: python scripts/build_frontend.py

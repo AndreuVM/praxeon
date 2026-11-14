@@ -35,7 +35,7 @@ const DEFAULT_SETTINGS = {
   evaluationChunkSize: 3,
 
   // Sandbox & Execution Policies
-  defaultExecutionMode: 'local_restricted',
+  defaultExecutionMode: 'auto',
   defaultNetworkPolicy: 'isolated',
   defaultWorkspaceRoot: '',
   requireConfirmationForFullAccess: true,
@@ -620,8 +620,9 @@ export default function SettingsView({
                   outline: 'none',
                 }}
               >
-                <option value="local_restricted">local_restricted: espacio confinado (recomendado)</option>
-                <option value="container">container: contenedor aislado</option>
+                <option value="auto">auto: aislado si el equipo lo permite (recomendado)</option>
+                <option value="container">container: aislado (AppContainer, bubblewrap o Docker); sin red ni acceso fuera del workspace</option>
+                <option value="local_restricted">local_restricted: sandbox local (mitigación, no aísla)</option>
                 <option value="full_access">full_access: acceso directo al host (requiere confirmación explícita)</option>
               </select>
             </div>

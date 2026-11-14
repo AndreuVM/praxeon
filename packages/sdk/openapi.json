@@ -10574,8 +10574,7 @@
               }
             ],
             "title": "Execution Mode",
-            "description": "Modo de ejecución ('container', 'local_restricted', 'full_access')",
-            "default": "local_restricted"
+            "description": "Modo de ejecución ('auto' o vacío: aislado si el sistema lo permite; 'container', 'local_restricted', 'full_access')"
           },
           "confirmation_required_for_full_access": {
             "type": "boolean",
@@ -11680,8 +11679,7 @@
               }
             ],
             "title": "Execution Mode",
-            "description": "Modo de ejecución física ('container', 'local_restricted', 'full_access')",
-            "default": "local_restricted"
+            "description": "Modo de ejecución física ('auto' o vacío: aislado si el sistema lo permite; 'container', 'local_restricted', 'full_access')"
           },
           "workspace_root": {
             "anyOf": [
@@ -12112,6 +12110,28 @@
             "type": "string",
             "title": "Execution Mode",
             "default": "local_restricted"
+          },
+          "isolation_backend": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Isolation Backend"
+          },
+          "isolation_warning": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Isolation Warning"
           },
           "workspace_root": {
             "anyOf": [

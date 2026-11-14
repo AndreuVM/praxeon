@@ -7,6 +7,14 @@ Todas las modificaciones notables de este proyecto están documentadas en este a
 ## [Unreleased]
 
 ### Security
+- Aislamiento fuerte de la ejecución (auditoría S-01): el modo `container` pasa a ser «aislado» y usa el mecanismo del
+  sistema, sin red, sin acceso al perfil del usuario y con el sistema de ficheros de solo lectura salvo el workspace.
+  - **Windows:** AppContainer + Job Object, sin instalar nada. Se crea uno por workspace y se le conceden solo el
+    workspace y las carpetas de herramientas que lo necesitan; `praxeon sandbox revoke` retira esos permisos.
+  - **Linux:** bubblewrap.
+  - **Docker/Podman:** a petición (`PRAXEON_ISOLATION=container`).
+  - Una conexión con la dirección construida al ejecutar, que el sandbox local deja salir, aquí la rechaza el sistema.
+  - Sin backend, el modo aislado rechaza los comandos.
 - Los capabilities se firman sobre JSON canónico con campo de versión (antes, campos unidos con `:`, que admitían más de una
   lectura si un campo como `session_id` contenía `:`). Los firmados con el formato anterior se aceptan con un aviso en el log
   hasta la próxima versión menor.
@@ -29,6 +37,10 @@ Todas las modificaciones notables de este proyecto están documentadas en este a
     `perl`/`ruby`/`node`/`php` que borra o lanza procesos ya no son «desconocidos»: según el alcance, revisión o veto.
 
 ### Changed
+- Las sesiones sin modo de ejecución explícito (o con `auto`, el nuevo valor por defecto de la interfaz) son aisladas si
+  el equipo lo permite. Si no, usan el sandbox local con un aviso en el registro de la sesión, en su resumen
+  (`isolation_warning`) y en el evento de inicio. `PRAXEON_ISOLATION=off` vuelve al comportamiento anterior.
+  `praxeon sandbox status` muestra el backend disponible.
 - Menos aprobaciones innecesarias: con el análisis sintáctico se aprueban solos los idiomas de shell que solo leen o
   compilan y antes caían en «desconocido» (`cd src && pytest`, `find . -name x`, `git clean -n`, `ls 2>/dev/null`,
   `$env:X='1'; python -m pytest`, `bash -c 'echo'`, y los pipelines de PowerShell con `ForEach-Object { "$($_.Path)…" }`
@@ -86,6 +98,11 @@ Todas las modificaciones notables de este proyecto están documentadas en este a
 - README: insignias de tests (estado del CI) y versión (leída de `pyproject.toml`) dinámicas, en lugar de cifras fijas.
 
 ### Fixed
+- Contenedor (Docker/Podman):
+  - Al vencer el tiempo límite se mata el contenedor, no solo el cliente `docker`, que lo dejaba en marcha.
+  - En Linux/macOS corre con el usuario del host: lo que crea en el workspace ya no queda como propiedad de root.
+  - La comprobación de que Docker responde se cachea un minuto, en lugar de repetirse en cada comando.
+  - La imagen se puede cambiar con `PRAXEON_CONTAINER_IMAGE`.
 - Con `llm_failure_policy="fail_closed"`, un proveedor del agente sin credenciales hacía que la misión siguiera en silencio
   con el planificador sintético (la fábrica devolvía el simulador en vez de fallar). Ahora la misión se detiene.
 - El supervisor TypeSafe elegido sin modelo explícito llamaba al API con el modelo `typesafe` (o `default`), que rechaza

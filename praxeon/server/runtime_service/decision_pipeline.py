@@ -179,7 +179,7 @@ class DecisionPipelineMixin:
         working_dir = (state.metadata.get("working_directory") if state and state.metadata else None) or os.getcwd()
         backend_name = (
             "FullAccessExecutor" if mode_val == "full_access"
-            else ("DockerContainer" if mode_val == "container" else "LocalProcessSandbox")
+            else ("IsolatedSandbox" if mode_val == "container" else "LocalProcessSandbox")
         )
         isolation_str = "None (Host OS)" if mode_val == "full_access" else "Active"
         network_str = "Host Direct" if mode_val == "full_access" else "Isolated (Restricted)"
