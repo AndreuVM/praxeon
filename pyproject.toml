@@ -36,11 +36,9 @@ dev = [
     "mypy>=2.4",
     "typesafe-sdk>=0.7.0",
 ]
-server = [
-    "fastapi>=0.115.0",
-    "uvicorn>=0.30.0",
-    "websockets>=12.0",
-]
+# El servidor ya va en las dependencias obligatorias; el extra se conserva vacío para que `praxeon[server]` siga
+# instalándose sin aviso.
+server = []
 desktop = [
     "pywebview>=5.0",
 ]

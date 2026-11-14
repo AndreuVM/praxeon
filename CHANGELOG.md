@@ -29,6 +29,10 @@ Todas las modificaciones notables de este proyecto están documentadas en este a
 - La interfaz web empaquetada (`praxeon/server/static`) ya no se versiona: `scripts/build_frontend.py` la compila desde
   `web/` antes de empaquetar. La que se versionaba era de mediados de octubre y no incluía los cambios posteriores.
 - `openapi.json` (raíz y SDK) regenerado; un test falla si deja de coincidir con la API.
+- CI: los jobs de tipos y tests instalan con `uv sync --locked`, es decir, con las versiones de `uv.lock`, y fallan si
+  el lockfile no corresponde a `pyproject.toml`.
+- El extra `[server]` queda vacío: FastAPI, Uvicorn y websockets ya son dependencias obligatorias.
+- README: insignias de tests (estado del CI) y versión (leída de `pyproject.toml`) dinámicas, en lugar de cifras fijas.
 
 ### Deprecated
 - Variables de entorno `JEV_*` (`JEV_API_KEY`, `JEV_CACHE_DIR`, `JEV_CHUNK_SIZE`, `JEV_MAX_RETRIES`, `JEV_TIMEOUT_SECONDS`,

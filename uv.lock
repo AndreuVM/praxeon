@@ -1616,11 +1616,6 @@ dev = [
 laya = [
     { name = "laya" },
 ]
-server = [
-    { name = "fastapi" },
-    { name = "uvicorn" },
-    { name = "websockets" },
-]
 typesafe = [
     { name = "typesafe-sdk" },
 ]
@@ -1628,7 +1623,6 @@ typesafe = [
 [package.metadata]
 requires-dist = [
     { name = "fastapi", specifier = ">=0.115.0" },
-    { name = "fastapi", marker = "extra == 'server'", specifier = ">=0.115.0" },
     { name = "google-genai", specifier = ">=2.24.0" },
     { name = "httpx", specifier = ">=0.27.0" },
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.27.0" },
@@ -1652,9 +1646,7 @@ requires-dist = [
     { name = "typesafe-sdk", marker = "extra == 'dev'", specifier = ">=0.7.0" },
     { name = "typesafe-sdk", marker = "extra == 'typesafe'", specifier = ">=0.7.0" },
     { name = "uvicorn", specifier = ">=0.30.0" },
-    { name = "uvicorn", marker = "extra == 'server'", specifier = ">=0.30.0" },
     { name = "websockets", specifier = ">=12.0" },
-    { name = "websockets", marker = "extra == 'server'", specifier = ">=12.0" },
 ]
 provides-extras = ["dev", "server", "desktop", "decision-laya", "decision-typesafe", "decision-all", "laya", "typesafe"]
 
