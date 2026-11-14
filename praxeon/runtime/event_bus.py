@@ -213,6 +213,65 @@ class EventStore(SqliteStore):
             finally:
                 self._close_conn(conn)
 
+    # Contadores del resumen de una sesión por SQL (AUD-20, P-04): antes se cargaban y deserializaban todos los eventos y
+    # se reconstruía el árbol entero solo para contar. Una pasada por los eventos; el JSON solo se lee en decisiones y
+    # acciones propuestas (payloads pequeños), nunca en las salidas de herramientas. _NODES_SQL reproduce las reglas de
+    # TreeReducer: la raíz (session.started), cada acción propuesta y cada rama de política con nodo y padre distintos.
+    _COUNTERS_SQL = """
+        SELECT COUNT(*),
+               COALESCE(SUM(type = 'policy.decided'), 0),
+               COALESCE(SUM(status = 'ALLOW'), 0),
+               COALESCE(SUM(status = 'BLOCK'), 0),
+               COALESCE(SUM(status = 'REVIEW'), 0),
+               COALESCE(SUM(type = 'approval.requested'), 0),
+               MAX(sequence)
+        FROM (
+            SELECT type, sequence,
+                   CASE WHEN type = 'policy.decided' AND json_valid(payload)
+                        THEN UPPER(CAST(json_extract(payload, '$.status') AS TEXT)) END AS status
+            FROM runtime_events WHERE session_id = ?
+        )
+    """
+    _NODES_SQL = """
+        SELECT COUNT(DISTINCT nid) FROM (
+            SELECT CASE
+                WHEN type = 'session.started' THEN COALESCE(NULLIF(node_id, ''), 'root_' || session_id)
+                WHEN type = 'action.proposed' THEN COALESCE(NULLIF(node_id, ''), 'node_' ||
+                    CASE WHEN NOT json_valid(payload) THEN CAST(sequence AS TEXT)
+                         ELSE CASE json_type(payload, '$.action_id')
+                            WHEN 'null' THEN 'None' WHEN 'true' THEN 'True' WHEN 'false' THEN 'False'
+                            ELSE COALESCE(CAST(json_extract(payload, '$.action_id') AS TEXT), CAST(sequence AS TEXT)) END
+                    END)
+                ELSE node_id END AS nid
+            FROM runtime_events
+            WHERE session_id = ? AND (type IN ('session.started', 'action.proposed') OR (
+                type = 'policy.decided' AND NULLIF(node_id, '') IS NOT NULL AND NULLIF(parent_id, '') IS NOT NULL
+                AND node_id != parent_id))
+        )
+    """
+
+    def session_counters(self, session_id: str) -> Dict[str, Any]:
+        """Contadores del resumen de una sesión: eventos, decisiones por estado, aprobaciones, nodos y último evento."""
+        with self._lock:
+            conn = self._get_connection()
+            try:
+                events, decisions, allowed, blocked, review, waiting, last_seq = conn.execute(
+                    self._COUNTERS_SQL, (session_id,)).fetchone()
+                nodes = conn.execute(self._NODES_SQL, (session_id,)).fetchone()[0]
+                last_row = conn.execute("SELECT timestamp FROM runtime_events WHERE session_id = ? AND sequence = ?",
+                                        (session_id, last_seq)).fetchone() if last_seq is not None else None
+            finally:
+                self._close_conn(conn)
+        last_ts = last_row[0] if last_row else None
+        last: Optional[datetime] = None
+        if last_ts:
+            try:
+                last = datetime.fromisoformat(last_ts)
+            except ValueError:
+                last = None
+        return {"event_count": events, "total_decisions": decisions, "allowed_count": allowed, "blocked_count": blocked,
+                "review_count": review, "waiting_count": waiting, "node_count": nodes, "last_event_at": last}
+
     def delete_session_events(self, session_id: str) -> int:
         """Elimina todos los eventos persistidos para una sesión."""
         with self._lock:
@@ -387,6 +446,10 @@ class EventBus:
 
     def list_sessions(self) -> List[str]:
         return self.store.list_sessions()
+
+    def session_counters(self, session_id: str) -> Dict[str, Any]:
+        """Contadores del resumen de una sesión, calculados por el almacén (``EventStore.session_counters``)."""
+        return self.store.session_counters(session_id)
 
     def delete_session(self, session_id: str) -> int:
         """Purga todos los eventos de la sesión y desconecta observadores asociados."""

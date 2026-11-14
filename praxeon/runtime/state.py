@@ -4,8 +4,9 @@ Mantiene el estado completo, auditable y serializable con hash determinista.
 """
 
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Set
-from pydantic import BaseModel, ConfigDict, Field
+from typing import Any, Dict, List, Optional, Set, Tuple
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
+from praxeon.domain.decision import canonical_digest, state_snapshot_digest
 from praxeon.domain.models import (
     ActionCandidate,
     Evidence,
@@ -41,6 +42,37 @@ class SessionState(BaseModel):
     forbidden_tools: Set[str] = Field(default_factory=set)
     checkpoint_ids: List[str] = Field(default_factory=list)
     metadata: Dict[str, Any] = Field(default_factory=dict)
+    # Hash de cada paso y evidencia ya resumidos: {id(objeto): (objeto, hash)}. Se guarda el objeto para que su id no
+    # se reutilice. Los StepRecord son inmutables; la evidencia no se modifica tras añadirla.
+    _item_digests: Dict[int, Tuple[Any, str]] = PrivateAttr(default_factory=dict)
+
+    def state_digest(self, checkpoint_ids: Optional[List[str]] = None) -> str:
+        """Hash del estado que firman los recibos: igual a ``compute_state_hash(self.to_snapshot())``, sin serializar
+        de nuevo los pasos ya vistos (AUD-20, P-03: antes, coste proporcional a toda la trayectoria en cada paso).
+
+        ``checkpoint_ids`` sustituye la lista de checkpoints (el ejecutor acepta también el estado previo al último).
+        """
+        objects: Dict[str, List[Any]] = {"steps": list(self.steps), "evidence": list(self.evidence)}
+
+        def item_digest(key: str, index: int, _item: Any) -> str:
+            obj = objects[key][index]
+            cached = self._item_digests.get(id(obj))
+            if cached is not None and cached[0] is obj:
+                return cached[1]
+            digest = canonical_digest(obj.model_dump())
+            self._item_digests[id(obj)] = (obj, digest)
+            return digest
+
+        header: Dict[str, Any] = {
+            "session_id": self.session_id,
+            "goal": self.goal.model_dump(),
+            "steps": [None] * len(self.steps),
+            "evidence": [None] * len(self.evidence),
+            "forbidden_tools": list(self.forbidden_tools),
+            "checkpoint_ids": list(self.checkpoint_ids if checkpoint_ids is None else checkpoint_ids),
+            "metadata": dict(self.metadata),
+        }
+        return state_snapshot_digest(header, item_digest)
 
     def compute_hash(self) -> str:
         """Calcula el hash SHA-256 canónico y determinista del estado actual."""

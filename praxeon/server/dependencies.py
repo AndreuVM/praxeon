@@ -61,6 +61,21 @@ from praxeon.server.runtime_service.decision_pipeline import DecisionPipelineMix
 from praxeon.server.runtime_service.mission_runtime import MissionRuntimeMixin  # noqa: E402
 
 
+def session_counters_from_events(events: List[Any], session_id: str) -> Dict[str, Any]:
+    """Contadores del resumen calculados recorriendo los eventos (lo que hace ``EventStore.session_counters`` por SQL)."""
+    decided = Counter(str(e.payload.get("status", "")).upper() for e in events if e.type == EventType.POLICY_DECIDED)
+    return {
+        "event_count": len(events),
+        "total_decisions": sum(1 for e in events if e.type == EventType.POLICY_DECIDED),
+        "allowed_count": decided["ALLOW"],                    # estado exacto, no subcadena
+        "blocked_count": decided["BLOCK"],
+        "review_count": decided["REVIEW"],
+        "waiting_count": sum(1 for e in events if e.type == EventType.APPROVAL_REQUESTED),
+        "node_count": reduce_events_to_tree(events, session_id=session_id).node_count,
+        "last_event_at": events[-1].timestamp if events else None,
+    }
+
+
 class RuntimeApplicationService(DecisionPipelineMixin, MissionRuntimeMixin):
     """Servicio central de aplicación que orquesta el ciclo de supervisión para la API Web."""
 
@@ -464,13 +479,14 @@ class RuntimeApplicationService(DecisionPipelineMixin, MissionRuntimeMixin):
         if not sess:
             return None
 
-        events = self.event_bus.get_all_events(session_id)
-        total_decisions = sum(1 for e in events if e.type == EventType.POLICY_DECIDED)
-        decided = Counter(str(e.payload.get("status", "")).upper() for e in events if e.type == EventType.POLICY_DECIDED)
-        allowed, blocked, review = decided["ALLOW"], decided["BLOCK"], decided["REVIEW"]   # estado exacto, no subcadena
-        waiting = sum(1 for e in events if e.type == EventType.APPROVAL_REQUESTED)
-
-        tree = reduce_events_to_tree(events, session_id=session_id)
+        # Contadores por SQL en el almacén de eventos (AUD-20, P-04); un bus sin él (pruebas) los calcula de los eventos
+        counters_of = getattr(self.event_bus, "session_counters", None)
+        try:
+            counters = counters_of(session_id) if callable(counters_of) else None
+        except (AttributeError, NotImplementedError):
+            counters = None
+        if not isinstance(counters, dict):
+            counters = session_counters_from_events(self.event_bus.get_all_events(session_id), session_id)
         meta = sess.get("metadata", {})
         execution_mode = sess.get("execution_mode") or meta.get("execution_mode", "local_restricted")
         ws_root = meta.get("workspace_root") or meta.get("working_directory") or get_default_workspace_root()
@@ -494,16 +510,16 @@ class RuntimeApplicationService(DecisionPipelineMixin, MissionRuntimeMixin):
             "isolation_backend": meta.get("isolation_backend"),
             "isolation_warning": meta.get("isolation_warning"),
             "workspace_root": ws_root,
-            "operator_approval_status": "Review Required" if waiting > 0 else "Normal",
+            "operator_approval_status": "Review Required" if counters["waiting_count"] > 0 else "Normal",
             "created_at": sess.get("created_at"),
-            "updated_at": events[-1].timestamp if events else sess.get("updated_at"),
-            "total_decisions": total_decisions,
-            "allowed_count": allowed,
-            "blocked_count": blocked,
-            "review_count": review,
-            "waiting_count": waiting,
-            "event_count": len(events),
-            "node_count": tree.node_count,
+            "updated_at": counters["last_event_at"] or sess.get("updated_at"),
+            "total_decisions": counters["total_decisions"],
+            "allowed_count": counters["allowed_count"],
+            "blocked_count": counters["blocked_count"],
+            "review_count": counters["review_count"],
+            "waiting_count": counters["waiting_count"],
+            "event_count": counters["event_count"],
+            "node_count": counters["node_count"],
             "decision_model_effective": dec_effective,
         }
 

@@ -37,6 +37,14 @@ Todas las modificaciones notables de este proyecto están documentadas en este a
     `perl`/`ruby`/`node`/`php` que borra o lanza procesos ya no son «desconocidos»: según el alcance, revisión o veto.
 
 ### Changed
+- Rendimiento (auditoría P-03/P-04). Mismos resultados, medidos antes y después:
+  - El hash de estado que firman los recibos es un hash de hashes: cada paso y cada evidencia se resumen por separado
+    y el estado vivo cachea esos resúmenes. Firmar y verificar ya no reserializa toda la trayectoria en cada paso:
+    1,9 ms por paso con 200 pasos (antes 19,4 ms) y 61 ms en una misión de 100 pasos (antes 431 ms). El valor es el
+    mismo desde el estado que desde `to_snapshot()`.
+  - El resumen de una sesión se calcula con SQL agregado en lugar de cargar todos los eventos y reconstruir el árbol:
+    7,9 ms con 600 eventos (antes 26 ms) y 109 ms para listar 20 sesiones (antes 475 ms). Un test diferencial lo
+    compara con el cálculo anterior en 400 sesiones aleatorias.
 - Las sesiones sin modo de ejecución explícito (o con `auto`, el nuevo valor por defecto de la interfaz) son aisladas si
   el equipo lo permite. Si no, usan el sandbox local con un aviso en el registro de la sesión, en su resumen
   (`isolation_warning`) y en el evento de inicio. `PRAXEON_ISOLATION=off` vuelve al comportamiento anterior.
@@ -98,6 +106,7 @@ Todas las modificaciones notables de este proyecto están documentadas en este a
 - README: insignias de tests (estado del CI) y versión (leída de `pyproject.toml`) dinámicas, en lugar de cifras fijas.
 
 ### Fixed
+- Un evento de decisión con un estado no textual (por ejemplo, un número) ya no tumba el árbol de la sesión.
 - Contenedor (Docker/Podman):
   - Al vencer el tiempo límite se mata el contenedor, no solo el cliente `docker`, que lo dejaba en marcha.
   - En Linux/macOS corre con el usuario del host: lo que crea en el workspace ya no queda como propiedad de root.

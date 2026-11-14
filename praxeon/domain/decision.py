@@ -308,8 +308,44 @@ def verify_capability_signature(secret_key: str, capability: Union[CapabilityPay
     )
 
 
+def canonical_digest(value: Any) -> str:
+    """SHA-256 del JSON canónico (claves ordenadas, sin espacios) de ``value``."""
+    canonical = json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+# Listas de un snapshot de estado que se resumen elemento a elemento (hash de hashes): crecen con la sesión, y así el
+# estado vivo puede cachear el hash de cada elemento en lugar de volver a serializarlos todos en cada paso (AUD-20, P-03)
+_ITEMIZED_STATE_LISTS = ("steps", "evidence")
+
+
+def is_state_snapshot(value: Any) -> bool:
+    return isinstance(value, dict) and "session_id" in value and isinstance(value.get("steps"), list)
+
+
+def state_snapshot_digest(snapshot: Dict[str, Any], item_digest: Any = None) -> str:
+    """Hash de un snapshot de estado (``SessionState.to_snapshot()``): cada paso y cada evidencia por separado.
+
+    ``item_digest(obj_dict, original)`` permite reutilizar hashes ya calculados; por defecto, ``canonical_digest``.
+    """
+    body = dict(snapshot)
+    for key in _ITEMIZED_STATE_LISTS:
+        items = body.get(key) or []
+        body[key] = [canonical_digest(item) if item_digest is None else item_digest(key, i, item) for i, item in enumerate(items)]
+    if isinstance(body.get("forbidden_tools"), (list, set, tuple)):
+        body["forbidden_tools"] = sorted(body["forbidden_tools"])
+    body["state_hash_version"] = 2
+    return canonical_digest(body)
+
+
 def compute_state_hash(state_dict: Any) -> str:
-    """Calcula un hash SHA-256 determinista para el estado canónico."""
+    """Hash SHA-256 determinista del estado canónico.
+
+    Un ``SessionState`` (o su snapshot) se resume con ``state_snapshot_digest``: el mismo valor desde el estado vivo
+    (con los hashes de cada paso cacheados) que desde ``to_snapshot()``. Cualquier otro valor, con su JSON canónico.
+    """
+    if hasattr(state_dict, "state_digest"):
+        return str(state_dict.state_digest())
     if hasattr(state_dict, "to_snapshot"):
         state_dict = state_dict.to_snapshot()
     elif hasattr(state_dict, "model_dump"):
@@ -319,6 +355,7 @@ def compute_state_hash(state_dict: Any) -> str:
             state_dict = dict(state_dict)
         except Exception:
             state_dict = {"repr": str(state_dict)}
-    canonical = json.dumps(state_dict, sort_keys=True, separators=(",", ":"), default=str)
-    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    if is_state_snapshot(state_dict):
+        return state_snapshot_digest(state_dict)
+    return canonical_digest(state_dict)
 

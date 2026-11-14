@@ -7,7 +7,7 @@ Soporta tanto actualización continua en tiempo real (Live) como reproducción
 histórica exacta (Replay).
 """
 
-from typing import Iterable, Optional
+from typing import Any, Iterable, Optional
 
 from praxeon.domain.events import EventType, RuntimeEvent
 from praxeon.domain.tree import (
@@ -18,10 +18,10 @@ from praxeon.domain.tree import (
 )
 
 
-def _map_policy_status(status_str: Optional[str]) -> NodeStatus:
+def _map_policy_status(status_str: Optional[Any]) -> NodeStatus:
     if not status_str:
         return NodeStatus.PENDING
-    s = status_str.upper()
+    s = str(status_str).upper()                       # un evento con un estado no textual no debe tumbar el árbol
     if "ALLOW" in s:
         return NodeStatus.ALLOW
     if "BLOCK" in s:

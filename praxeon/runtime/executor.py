@@ -157,18 +157,15 @@ class SecureExecutor(Executor):
                     receipt=receipt,
                 )
 
-            # Verificar hash de estado (evita replay en estados desfasados)
-            snapshot_dict = state.to_snapshot()
-            snapshot_hash = compute_state_hash(snapshot_dict)
+            # Verificar hash de estado (evita replay en estados desfasados). El hash de cada paso está cacheado en el
+            # estado: verificar ya no vuelve a serializar toda la trayectoria (AUD-20, P-03)
+            snapshot_hash = compute_state_hash(state)
             canonical_hash = state.compute_hash()
 
             valid_hashes = {snapshot_hash, canonical_hash}
-            if "checkpoint_ids" in snapshot_dict:
+            if state.checkpoint_ids and hasattr(state, "state_digest"):
                 # Comprobar estado con los checkpoints anteriores al auto-checkpoint actual
-                if len(state.checkpoint_ids) > 0:
-                    snap_prev_chk = dict(snapshot_dict)
-                    snap_prev_chk["checkpoint_ids"] = list(state.checkpoint_ids[:-1])
-                    valid_hashes.add(compute_state_hash(snap_prev_chk))
+                valid_hashes.add(state.state_digest(checkpoint_ids=list(state.checkpoint_ids[:-1])))
 
             if receipt.state_hash not in valid_hashes:
                 raise PolicyViolation(
