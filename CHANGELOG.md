@@ -106,6 +106,9 @@ Todas las modificaciones notables de este proyecto están documentadas en este a
 - README: insignias de tests (estado del CI) y versión (leída de `pyproject.toml`) dinámicas, en lugar de cifras fijas.
 
 ### Fixed
+- Una decisión se anunciaba (`approval.requested`, `capability.issued`, `decision.pruned`) antes de guardarse: quien
+  respondía en ese instante, como `praxeon live` sin terminal interactiva o un cliente de la API, recibía «Decisión no
+  encontrada». Ahora se guarda primero (paso `publish_decision` tras `record_decision`); el orden de los eventos no cambia.
 - Un evento de decisión con un estado no textual (por ejemplo, un número) ya no tumba el árbol de la sesión.
 - Contenedor (Docker/Podman):
   - Al vencer el tiempo límite se mata el contenedor, no solo el cliente `docker`, que lo dejaba en marcha.

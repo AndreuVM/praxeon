@@ -590,7 +590,7 @@ class ResolveStatusStep(Step[ProposalContext]):
 
 
 class IssueCapabilityStep(Step[ProposalContext]):
-    """ALLOW firma el recibo y emite la capability (5 min); REVIEW pide aprobación; BLOCK poda la rama."""
+    """ALLOW firma el recibo y prepara la capability (5 min). Los eventos los emite PublishDecisionStep, tras guardarla."""
 
     name = "issue_capability"
 
@@ -606,21 +606,7 @@ class IssueCapabilityStep(Step[ProposalContext]):
             signed = sign_receipt(receipt, ctx.runtime.policy_engine.secret_key)
             cap = signed.to_capability_payload(allowed_tools=[ctx.tool])
             ctx.capability_data = cap.model_dump(mode="json") if cap else None
-            ctx.emit(EventType.CAPABILITY_ISSUED, ctx.capability_data or {}, decision_id=ctx.decision_id)
             ctx.receipt = signed
-        elif ctx.status == "REVIEW":
-            ctx.emit(
-                EventType.APPROVAL_REQUESTED,
-                {
-                    "risk_level": ctx.risk_dto.level,
-                    "reasons": ctx.risk_dto.reasons,
-                    "reason_code": ctx.policy_dto.reason_codes,
-                    "execution_mode": ctx.session_mode,
-                },
-                decision_id=ctx.decision_id,
-            )
-        elif ctx.status == "BLOCK":
-            ctx.emit(EventType.DECISION_PRUNED, {"reason": ", ".join(ctx.decision.reason_codes)}, decision_id=ctx.decision_id)
         return Outcome.CONTINUE
 
 
@@ -671,7 +657,36 @@ class RecordDecisionStep(Step[ProposalContext]):
         return Outcome.CONTINUE
 
 
-# Orden explícito: es también el orden de los eventos (proposed, classified, evidence, risk, provider, policy, capability)
+class PublishDecisionStep(Step[ProposalContext]):
+    """Anuncia la decisión ya guardada: ALLOW emite la capability, REVIEW pide aprobación y BLOCK poda la rama.
+
+    Va después de RecordDecisionStep: quien reacciona al evento (el operador de la terminal, un cliente de la API) puede
+    confirmar la decisión en ese mismo instante, y tiene que encontrarla (R-080).
+    """
+
+    name = "publish_decision"
+
+    def run(self, ctx: ProposalContext) -> Outcome:
+        if ctx.status == "ALLOW":
+            ctx.emit(EventType.CAPABILITY_ISSUED, ctx.capability_data or {}, decision_id=ctx.decision_id)
+        elif ctx.status == "REVIEW":
+            ctx.emit(
+                EventType.APPROVAL_REQUESTED,
+                {
+                    "risk_level": ctx.risk_dto.level,
+                    "reasons": ctx.risk_dto.reasons,
+                    "reason_code": ctx.policy_dto.reason_codes,
+                    "execution_mode": ctx.session_mode,
+                },
+                decision_id=ctx.decision_id,
+            )
+        elif ctx.status == "BLOCK":
+            ctx.emit(EventType.DECISION_PRUNED, {"reason": ", ".join(ctx.decision.reason_codes)}, decision_id=ctx.decision_id)
+        return Outcome.CONTINUE
+
+
+# Orden explícito: es también el orden de los eventos (proposed, classified, evidence, risk, provider, policy, capability).
+# La decisión se guarda antes de anunciarla: record_decision va antes de publish_decision.
 PROPOSAL_STEPS: tuple[Step[ProposalContext], ...] = (
     LoadSessionStep(),
     BuildActionStep(),
@@ -686,6 +701,7 @@ PROPOSAL_STEPS: tuple[Step[ProposalContext], ...] = (
     ResolveStatusStep(),
     IssueCapabilityStep(),
     RecordDecisionStep(),
+    PublishDecisionStep(),
 )
 
 

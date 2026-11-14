@@ -53,7 +53,7 @@ def test_proposal_steps_run_in_an_explicit_order():
     assert [step.name for step in P.PROPOSAL_STEPS] == [
         "load_session", "build_action", "emit_proposed", "classify_operation", "missing_resource", "premature_finish",
         "assess_evidence", "assess_risk", "evaluate_supervisor", "decide_policy", "resolve_status", "issue_capability",
-        "record_decision",
+        "record_decision", "publish_decision",
     ]
 
 
@@ -195,3 +195,29 @@ def test_every_step_lets_the_pipeline_continue(svc):
     ctx = P.ProposalContext(runtime=svc, session_id="s1", proposal=ProposeActionRequest(tool="list_dir", arguments={"path": "."}))
     assert [step.run(ctx) for step in P.PROPOSAL_STEPS] == [Outcome.CONTINUE] * len(P.PROPOSAL_STEPS)
     assert ctx.response().status == ctx.status
+
+
+@pytest.mark.parametrize("tool, arguments, event_type", [
+    ("write_file", {"path": "app.py", "content": "x"}, EventType.APPROVAL_REQUESTED),
+    ("read_file", {"path": "app.py"}, EventType.CAPABILITY_ISSUED),
+    ("run_command", {"command": "sudo ls"}, EventType.DECISION_PRUNED),
+])
+def test_a_decision_is_recorded_before_it_is_announced(svc, tool, arguments, event_type):
+    """R-080: quien reacciona al evento (operador, cliente de la API) ya encuentra la decisión guardada."""
+    seen = []
+
+    def on_event(event):
+        if event.type == event_type:
+            seen.append((svc.decision_repository.get(event.decision_id) or {}).get("status"))
+            if event_type == EventType.APPROVAL_REQUESTED:
+                seen.append(svc.confirm_decision(decision_id=event.decision_id, approved=False, reason="no",
+                                                 operator_id="op", role="operator").status)
+
+    unsubscribe = svc.event_bus.subscribe(on_event, session_id="s1")
+    try:
+        resp = svc.propose_action("s1", ProposeActionRequest(action_id="a1", tool=tool, arguments=arguments))
+    finally:
+        unsubscribe()
+    assert seen and seen[0] == resp.status, seen
+    if event_type == EventType.APPROVAL_REQUESTED:
+        assert resp.status == "REVIEW" and seen[1] == "BLOCKED"
