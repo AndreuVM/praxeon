@@ -103,7 +103,7 @@ def test_turn_steps_run_in_an_explicit_order():
 def test_run_turn_stops_at_the_first_step_that_closes_the_turn():
     calls = []
 
-    class Probe(L.Step):
+    class Probe(L.Step):  # el contrato común (praxeon.core.pipeline)
         def __init__(self, name, outcome):
             self.name, self.outcome = name, outcome
 
@@ -111,8 +111,8 @@ def test_run_turn_stops_at_the_first_step_that_closes_the_turn():
             calls.append(self.name)
             return self.outcome
 
-    steps = (Probe("a", L.Outcome.CONTINUE), Probe("b", L.Outcome.END_TURN), Probe("c", L.Outcome.CONTINUE))
-    assert L.run_turn(steps, _ctx()) is L.Outcome.END_TURN and calls == ["a", "b"]
+    steps = (Probe("a", L.Outcome.CONTINUE), Probe("b", L.Outcome.END), Probe("c", L.Outcome.CONTINUE))
+    assert L.run_turn(steps, _ctx()) is L.Outcome.END and calls == ["a", "b"]
 
 
 def test_loop_reads_executes_and_finishes(tmp_path):
@@ -203,7 +203,7 @@ def test_parse_forces_an_inspection_on_the_first_step_of_a_technical_task():
 def test_parse_in_a_node_rejects_output_without_an_action():
     ctx = _ctx(trace={"node_id": "n1"})
     ctx.llm_output = "Solo texto."
-    assert L.ParseActionStep().run(ctx) is L.Outcome.END_TURN
+    assert L.ParseActionStep().run(ctx) is L.Outcome.END
     assert ctx.step_records[-1]["reason_code"] == "INVALID_ACTION_FORMAT" and ctx.consecutive_failures == 1
 
 
@@ -213,27 +213,27 @@ def test_semantic_fixation_prunes_the_third_identical_action():
     for _ in range(3):
         _act(ctx, "read_file", {"path": "a"})
         outcomes.append(step.run(ctx))
-    assert outcomes == [L.Outcome.CONTINUE, L.Outcome.CONTINUE, L.Outcome.END_TURN]
+    assert outcomes == [L.Outcome.CONTINUE, L.Outcome.CONTINUE, L.Outcome.END]
     assert ctx.step_records[-1]["reason_code"] == "SEMANTIC_CIRCUIT_BREAKER_LOOP" and ctx.semantic_fixations == 0
 
 
 def test_a_node_cannot_finish_by_announcing_what_it_will_do():
     ctx = _act(_ctx(trace={"node_id": "n1"}), "finish", {"summary": "Voy a revisar el archivo y luego lo arreglo."})
-    assert L.PrematureNodeFinishStep().run(ctx) is L.Outcome.END_TURN
+    assert L.PrematureNodeFinishStep().run(ctx) is L.Outcome.END
     assert ctx.step_records[-1]["reason_code"] == "PREMATURE_NODE_FINISH"
 
 
 def test_finish_fields_are_required_until_the_rejection_limit():
     ctx = _act(_ctx(finish_check=lambda summary: "Falta el campo resultado"), "finish", {"summary": "algo"})
     step = L.FinishFieldsStep()
-    assert step.run(ctx) is L.Outcome.END_TURN and ctx.finish_rejections == 1
+    assert step.run(ctx) is L.Outcome.END and ctx.finish_rejections == 1
     ctx.finish_rejections = L.MAX_FINISH_REJECTIONS
     assert step.run(ctx) is L.Outcome.CONTINUE
 
 
 def test_tool_permission_blocks_tools_the_agent_does_not_have():
     ctx = _act(_ctx(tool_filter=lambda tool: "no permitida" if tool == "run_command" else None), "run_command", {"command": "ls"})
-    assert L.ToolPermissionStep().run(ctx) is L.Outcome.END_TURN
+    assert L.ToolPermissionStep().run(ctx) is L.Outcome.END
     assert ctx.step_records[-1]["verdict"] == "BLOCK" and ctx.consecutive_failures == 1
     assert L.ToolPermissionStep().run(_act(ctx, "read_file")) is L.Outcome.CONTINUE
 
@@ -284,7 +284,7 @@ def test_missing_path_feedback_lists_what_does_exist(tmp_path):
 def test_pending_approval_is_recorded_without_counting_as_a_failure():
     ctx = _act(_ctx())
     ctx.pending_approval, ctx.obs_output = True, "pendiente"
-    assert L.PendingApprovalStep().run(ctx) is L.Outcome.END_TURN
+    assert L.PendingApprovalStep().run(ctx) is L.Outcome.END
     assert ctx.step_records[-1]["pending_approval"] and ctx.consecutive_failures == 0
 
 
@@ -300,7 +300,7 @@ def test_a_success_moves_the_tree_cursor_and_truncates_long_observations(monkeyp
 def test_the_second_failure_in_a_row_trips_the_circuit_breaker_once():
     ctx = _act(_ctx())
     ctx.step_idx, ctx.action_node_id, ctx.consecutive_failures, ctx.active_parent_id = 2, "act_2", 1, "act_1"
-    assert L.RecordResultStep().run(ctx) is L.Outcome.END_TURN
+    assert L.RecordResultStep().run(ctx) is L.Outcome.END
     assert ctx.circuit_breaker_triggered and ctx.active_parent_id == ctx.anchor_id
     assert "[CIRCUIT BREAKER]" in ctx.step_records[-1]["observation"]
     interventions = [e["payload"]["intervention"] for e in ctx.runtime.event_bus.events]
@@ -325,7 +325,7 @@ def test_an_executed_finish_ends_the_loop_with_the_answer():
 def test_a_vetoed_finish_is_sent_back_to_the_agent():
     ctx = _act(_ctx(), "finish", {"summary": "Resultado."})
     ctx.record("BLOCK", "LOW_GROUNDED_PROBABILITY", "vetado")
-    assert L.FinishStep().run(ctx) is L.Outcome.END_TURN
+    assert L.FinishStep().run(ctx) is L.Outcome.END
     last = ctx.step_records[-1]
     assert last["verdict"] == "REPLAN" and "VETO DEL SUPERVISOR" in last["observation"]
 

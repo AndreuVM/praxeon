@@ -31,6 +31,10 @@ Todas las modificaciones notables de este proyecto están documentadas en este a
   (`praxeon.server.runtime_service.agent_loop`): una clase por paso con `run(ctx) -> Outcome`, en un orden explícito
   (`TURN_STEPS`), y tests por paso. Comportamiento idéntico en 3 200 escenarios aleatorios comparados, salvo la
   corrección de abajo.
+- El pipeline formal de una propuesta (`_propose_action_impl`: evidencia, riesgo, supervisor, política, capability) es
+  una secuencia de pasos (`praxeon.server.runtime_service.proposal_pipeline`, `PROPOSAL_STEPS`) con tests por paso.
+  Respuestas, eventos y estado de la sesión idénticos al anterior en las secuencias aleatorias comparadas. Los pipelines
+  comparten el contrato `Step.run(ctx) -> Outcome` de `praxeon.core.pipeline`.
 - La interfaz web empaquetada (`praxeon/server/static`) ya no se versiona: `scripts/build_frontend.py` la compila desde
   `web/` antes de empaquetar. La que se versionaba era de mediados de octubre y no incluía los cambios posteriores.
 - `openapi.json` (raíz y SDK) regenerado; un test falla si deja de coincidir con la API.

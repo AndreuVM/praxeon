@@ -4,7 +4,7 @@ Cada turno del bucle (Thought/Action -> política -> ejecución -> observación)
 contrato común, ``Step.run(ctx) -> Outcome``:
 
 - ``Outcome.CONTINUE``: el paso no cierra el turno; sigue el siguiente paso.
-- ``Outcome.END_TURN``: el turno termina aquí (ya registrado); tras la pausa entre pasos empieza el siguiente.
+- ``Outcome.END``: el turno termina aquí (ya registrado); tras la pausa entre pasos empieza el siguiente.
 - ``Outcome.STOP``: el bucle termina (finish aceptado, cortacircuitos técnico, terminación forzada...).
 
 ``TURN_STEPS`` fija el orden. ``AgentLoop`` envuelve los turnos: pausa/parada del operador, límite de pasos y el resumen
@@ -18,11 +18,10 @@ import logging
 import os
 import re
 import time
-from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from enum import Enum
-from typing import Any, Callable, ClassVar, Dict, Iterable, List, Optional
+from typing import Any, Callable, Dict, Iterable, List, Optional
 
+from praxeon.core.pipeline import Outcome, Step, run_steps
 from praxeon.domain.events import EventType
 from praxeon.runtime.sandbox import get_default_workspace_root
 from praxeon.server.runtime_service.mission_prompt import build_mission_system_prompt
@@ -197,14 +196,6 @@ def build_loop_system_prompt(
 # ------------------------------------------------------------------------------------------------ contrato de pasos
 
 
-class Outcome(Enum):
-    """Qué hace el bucle tras un paso."""
-
-    CONTINUE = "continue"
-    END_TURN = "end_turn"
-    STOP = "stop"
-
-
 @dataclass
 class LoopContext:
     """Configuración del bucle, su estado entre turnos y el estado del turno en curso."""
@@ -310,32 +301,15 @@ class LoopContext:
         self.runtime.event_bus.emit(session_id=self.sid, event_type=event_type, node_id=node_id, payload=payload, **kw)
 
 
-class Step(ABC):
-    """Un paso del turno: actúa sobre el contexto y dice si el turno sigue, termina o el bucle se detiene."""
-
-    name: ClassVar[str]
-
-    @abstractmethod
-    def run(self, ctx: LoopContext) -> Outcome:
-        """Ejecuta el paso."""
-
-    def __repr__(self) -> str:
-        return f"<Step {self.name}>"
-
-
-def run_turn(steps: Iterable[Step], ctx: LoopContext) -> Outcome:
-    """Ejecuta los pasos en orden hasta que uno cierra el turno o detiene el bucle."""
-    for step in steps:
-        outcome = step.run(ctx)
-        if outcome is not Outcome.CONTINUE:
-            return outcome
-    return Outcome.CONTINUE
+def run_turn(steps: Iterable[Step[LoopContext]], ctx: LoopContext) -> Outcome:
+    """Ejecuta los pasos de un turno en orden hasta que uno cierra el turno o detiene el bucle."""
+    return run_steps(steps, ctx)
 
 
 # ------------------------------------------------------------------------------------------------ pasos del turno
 
 
-class PersistMissionStep(Step):
+class PersistMissionStep(Step[LoopContext]):
     """Guarda el estado de la misión en SQLite (reconciliación periódica). Un fallo no detiene la misión."""
 
     name = "persist_mission"
@@ -350,7 +324,7 @@ class PersistMissionStep(Step):
         return Outcome.CONTINUE
 
 
-class NodeBudgetWarningStep(Step):
+class NodeBudgetWarningStep(Step[LoopContext]):
     """Avisa a un nodo de workflow de que le quedan pocos pasos, para que concluya con lo hecho en vez de agotarlos."""
 
     name = "node_budget_warning"
@@ -366,7 +340,7 @@ class NodeBudgetWarningStep(Step):
         return Outcome.CONTINUE
 
 
-class GenerateStep(Step):
+class GenerateStep(Step[LoopContext]):
     """Pide al LLM el siguiente Thought/Action.
 
     Ante un fallo del proveedor: tras MAX_TECHNICAL_FAILURES seguidos abre el cortacircuitos técnico (STOP); con la
@@ -474,10 +448,10 @@ class GenerateStep(Step):
         return Outcome.CONTINUE
 
 
-class ParseActionStep(Step):
+class ParseActionStep(Step[LoopContext]):
     """Extrae del texto del LLM la herramienta, sus argumentos y el razonamiento.
 
-    Sin acción reconocible: un nodo de workflow recibe un aviso de formato (END_TURN); la misión interpreta un finish
+    Sin acción reconocible: un nodo de workflow recibe un aviso de formato (END); la misión interpreta un finish
     explícito o una respuesta directa, salvo en el primer paso de una tarea técnica, que fuerza una inspección.
     """
 
@@ -500,7 +474,7 @@ class ParseActionStep(Step):
                 "observation": NODE_FORMAT_FEEDBACK,
                 "success": False,
             })
-            return Outcome.END_TURN
+            return Outcome.END
         if parsed:
             self._from_parsed_step(ctx, parsed[0])
         else:
@@ -545,7 +519,7 @@ class ParseActionStep(Step):
         ctx.thought = output[:250].strip() or "Paso inicial de inspección de archivos."
 
 
-class SemanticFixationStep(Step):
+class SemanticFixationStep(Step[LoopContext]):
     """Cortacircuitos semántico: la misma acción con los mismos argumentos tres veces seguidas poda la rama (REPLAN)."""
 
     name = "semantic_fixation"
@@ -579,14 +553,14 @@ class SemanticFixationStep(Step):
             "DEBES formular una alternativa de razonamiento diferente, inspeccionar otros archivos o cambiar tu estrategia."
         ))
         ctx.semantic_fixations = 0
-        return Outcome.END_TURN
+        return Outcome.END
 
 
 def _finish_summary(args: Dict[str, Any]) -> str:
     return str(args.get("summary") or args.get("final_answer") or "")
 
 
-class PrematureNodeFinishStep(Step):
+class PrematureNodeFinishStep(Step[LoopContext]):
     """Un nodo de workflow que «termina» anunciando lo que va a hacer, en vez de entregarlo, debe seguir (REPLAN)."""
 
     name = "premature_node_finish"
@@ -594,11 +568,11 @@ class PrematureNodeFinishStep(Step):
     def run(self, ctx: LoopContext) -> Outcome:
         if ctx.is_node and ctx.is_finish and looks_like_intention(_finish_summary(ctx.args)):
             ctx.record("REPLAN", "PREMATURE_NODE_FINISH", NODE_INTENTION_FEEDBACK)
-            return Outcome.END_TURN
+            return Outcome.END
         return Outcome.CONTINUE
 
 
-class FinishFieldsStep(Step):
+class FinishFieldsStep(Step[LoopContext]):
     """El finish de un nodo debe traer los campos que el grafo necesita; tras MAX_FINISH_REJECTIONS se acepta igual."""
 
     name = "finish_fields"
@@ -613,10 +587,10 @@ class FinishFieldsStep(Step):
             return Outcome.CONTINUE
         ctx.finish_rejections += 1
         ctx.record("REPLAN", "FINISH_MISSING_REQUIRED_FIELDS", rejection)
-        return Outcome.END_TURN
+        return Outcome.END
 
 
-class ToolPermissionStep(Step):
+class ToolPermissionStep(Step[LoopContext]):
     """El agente del nodo solo puede usar sus herramientas permitidas (BLOCK, cuenta como fallo)."""
 
     name = "tool_permission"
@@ -629,10 +603,10 @@ class ToolPermissionStep(Step):
             return Outcome.CONTINUE
         ctx.consecutive_failures += 1
         ctx.record("BLOCK", "AGENT_TOOL_NOT_ALLOWED", denied)
-        return Outcome.END_TURN
+        return Outcome.END
 
 
-class SuperviseAndExecuteStep(Step):
+class SuperviseAndExecuteStep(Step[LoopContext]):
     """Propone la acción a la política y, según el veredicto, la ejecuta, espera a una persona o explica el veto."""
 
     name = "supervise_and_execute"
@@ -726,7 +700,7 @@ class SuperviseAndExecuteStep(Step):
             )
 
 
-class MissingPathFeedbackStep(Step):
+class MissingPathFeedbackStep(Step[LoopContext]):
     """Si la acción falló sobre una ruta que no existe, el agente ve lo que sí hay en el ancestro más cercano.
 
     La primera petición de una ruta inexistente se ejecuta (no se veta): así rectifica en lugar de insistir.
@@ -742,7 +716,7 @@ class MissingPathFeedbackStep(Step):
         return Outcome.CONTINUE
 
 
-class PendingApprovalStep(Step):
+class PendingApprovalStep(Step[LoopContext]):
     """Aprobación humana en curso: sin poda, sin retroceso y sin contar como fallo consecutivo."""
 
     name = "pending_approval"
@@ -751,12 +725,12 @@ class PendingApprovalStep(Step):
         if not ctx.pending_approval:
             return Outcome.CONTINUE
         ctx.record("REVIEW", ctx.step_reasons or "APPROVAL_PENDING", ctx.obs_output, pending_approval=True)
-        return Outcome.END_TURN
+        return Outcome.END
 
 
-class RecordResultStep(Step):
+class RecordResultStep(Step[LoopContext]):
     """Registra el resultado. Un éxito avanza el cursor del árbol; un fallo retrocede y, si se repite, activa los
-    cortacircuitos: a los 2 fallos seguidos poda la rama y orienta al agente (END_TURN), a MAX_CONSECUTIVE_FAILURES
+    cortacircuitos: a los 2 fallos seguidos poda la rama y orienta al agente (END), a MAX_CONSECUTIVE_FAILURES
     termina la misión (STOP).
     """
 
@@ -868,7 +842,7 @@ class RecordResultStep(Step):
         )
         ctx.record(self._failure_verdict(ctx), ctx.step_reasons or "CIRCUIT_BREAKER_GROUNDING", observation)
         ctx.active_parent_id = ctx.anchor_id
-        return Outcome.END_TURN
+        return Outcome.END
 
     def _forced_termination(self, ctx: LoopContext) -> Outcome:
         """Demasiados fallos seguidos sin avance: el supervisor termina la misión."""
@@ -901,7 +875,7 @@ class RecordResultStep(Step):
         return Outcome.STOP
 
 
-class FinishStep(Step):
+class FinishStep(Step[LoopContext]):
     """Un finish ejecutado cierra el bucle con la respuesta final; uno vetado se devuelve al agente para que siga."""
 
     name = "finish"
@@ -942,11 +916,11 @@ class FinishStep(Step):
         if ctx.step_records and ctx.step_records[-1]["step"] == ctx.step_idx:
             last = ctx.step_records[-1]
             last["observation"], last["verdict"], last["reason_code"] = feedback, "REPLAN", reason
-        return Outcome.END_TURN
+        return Outcome.END
 
 
 # Orden explícito de los pasos de un turno
-TURN_STEPS: tuple[Step, ...] = (
+TURN_STEPS: tuple[Step[LoopContext], ...] = (
     PersistMissionStep(),
     NodeBudgetWarningStep(),
     GenerateStep(),
@@ -969,7 +943,7 @@ TURN_STEPS: tuple[Step, ...] = (
 class AgentLoop:
     """Ejecuta turnos hasta un finish, una parada o el límite de pasos (``max_steps <= 0``: sin límite)."""
 
-    def __init__(self, ctx: LoopContext, steps: Iterable[Step] = TURN_STEPS):
+    def __init__(self, ctx: LoopContext, steps: Iterable[Step[LoopContext]] = TURN_STEPS):
         self.ctx = ctx
         self.steps = tuple(steps)
 
