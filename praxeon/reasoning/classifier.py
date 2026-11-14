@@ -19,9 +19,13 @@ from praxeon.domain.assessment import (
     CommandRiskAssessment,
     RiskLevel,
 )
+from praxeon.reasoning.syntactic_rules import _LEVEL, SyntacticAnalysisMixin
+
+# Herramientas cuya operación es una línea de shell (las de ficheros reciben una ruta, no un comando)
+SHELL_TOOLS = (None, "", "run_command", "shell", "execute_command")
 
 
-class CommandClassifier:
+class CommandClassifier(SyntacticAnalysisMixin):
     """Clasifica operaciones de shell o llamadas a herramientas en una taxonomía multidimensional."""
 
     # 0. Reglas deterministas para ADVERSARIAL_EVASION (precedencia máxima)
@@ -325,7 +329,7 @@ class CommandClassifier:
         if not cls._DELETE_RECURSIVE.match(op):
             return False
         targets = cls._delete_targets(op)
-        return bool(targets) and all(cls._is_safe_delete_target(t) for t in targets)
+        return bool(targets) and all(cls._is_safe_delete_target(t) for t in targets or [])
 
     def _split_compound_command(self, cmd: str) -> List[str]:
         """Divide un comando compuesto en subcomandos respetando comillas y delimitadores shell."""
@@ -390,7 +394,20 @@ class CommandClassifier:
         ]
         if not sub_assessments:
             return self._classify_atomic(op_clean=op_clean, tool=tool, arguments=None, context=context)
+        has_redirection = bool(re.search(r">\s*\S+", op_clean))
+        extra = ["Redirección de salida a archivo detectada (mutación local no de sólo lectura)."] if has_redirection else []
+        return self._aggregate(sub_assessments, op_clean, context, extra_reasons=extra, has_redirection=has_redirection)
 
+    def _aggregate(
+        self,
+        sub_assessments: List[CommandRiskAssessment],
+        op_clean: str,
+        context: Optional[Dict[str, Any]],
+        extra_reasons: Optional[List[str]] = None,
+        classifier: str = "deterministic_compound",
+        has_redirection: bool = False,
+    ) -> CommandRiskAssessment:
+        """Agrega de forma conservadora las evaluaciones de los comandos de una línea: manda el peor."""
         level_order = {
             RiskLevel.LOW: 1,
             RiskLevel.MEDIUM: 2,
@@ -400,8 +417,6 @@ class CommandClassifier:
         max_level_val = max(level_order.get(sub.risk_level, 2) for sub in sub_assessments)
         val_to_level = {1: RiskLevel.LOW, 2: RiskLevel.MEDIUM, 3: RiskLevel.HIGH, 4: RiskLevel.CRITICAL}
         overall_risk = val_to_level[max_level_val]
-
-        has_redirection = bool(re.search(r">\s*\S+", op_clean))
 
         overall_read_only = all(sub.read_only for sub in sub_assessments) and not has_redirection
         overall_destructive = any(sub.destructive for sub in sub_assessments)
@@ -437,8 +452,7 @@ class CommandClassifier:
         ]
         for sub in sub_assessments:
             combined_reasons.extend([f"[{sub.operation}]: {r}" for r in sub.reasons])
-        if has_redirection:
-            combined_reasons.append("Redirección de salida a archivo detectada (mutación local no de sólo lectura).")
+        combined_reasons.extend(extra_reasons or [])
 
         matched_rules = list(dict.fromkeys(r for sub in sub_assessments for r in sub.matched_rules))
         matched_rules.append("RULE_COMPOUND_COMMAND_EVALUATION")
@@ -458,7 +472,7 @@ class CommandClassifier:
             confidence=min(sub.confidence for sub in sub_assessments),
             reasons=combined_reasons,
             matched_rules=matched_rules,
-            classifier="deterministic_compound",
+            classifier=classifier,
             context_hash=ctx_hash,
         )
 
@@ -490,14 +504,34 @@ class CommandClassifier:
         ):
             return atomic_res
 
-        # 2. AUDITORÍA (Finding 1): Si contiene operadores shell o pipelines, descomponer y evaluar
-        # cada subcomando para evitar que comandos destructivos/mutantes encadenados se camuflen
-        # tras una regla permisiva (ej. cat archivo; rm -rf /).
+        legacy = self._classify_by_segments(op_clean, tool, context, atomic_res)
+        if tool not in SHELL_TOOLS:
+            return legacy
+
+        # 2. AUD-18: análisis sintáctico real (comillas, sustituciones, bloques, cargas de bash -c...) y rutas objetivo.
+        # Red de seguridad: si la ruta por segmentos ve un riesgo HIGH/CRITICAL mayor, manda esa.
+        syntactic = self._classify_syntactic(op_clean, context)
+        if syntactic is None:
+            return legacy
+        if _LEVEL[legacy.risk_level] >= _LEVEL[RiskLevel.HIGH] and _LEVEL[legacy.risk_level] > _LEVEL[syntactic.risk_level]:
+            return legacy
+        return syntactic
+
+    def _classify_by_segments(
+        self,
+        op_clean: str,
+        tool: Optional[str],
+        context: Optional[Dict[str, Any]],
+        atomic_res: CommandRiskAssessment,
+    ) -> CommandRiskAssessment:
+        """Ruta anterior al análisis sintáctico: divide por operadores (`;`, `&&`, `|`...) y clasifica cada trozo.
+
+        AUDITORÍA (Finding 1): evita que comandos destructivos/mutantes encadenados se camuflen tras una regla
+        permisiva (ej. cat archivo; rm -rf /). Se usa si el texto no se puede analizar y como red de seguridad.
+        """
         sub_commands = self._split_compound_command(op_clean)
         if len(sub_commands) > 1:
-            compound_res = self._classify_compound(sub_commands, op_clean=op_clean, tool=tool, context=context)
-            return compound_res
-
+            return self._classify_compound(sub_commands, op_clean=op_clean, tool=tool, context=context)
         return atomic_res
 
     def _sensitive_read(self, op_clean: str, op_lower: str, ctx_hash: str) -> Optional[CommandRiskAssessment]:

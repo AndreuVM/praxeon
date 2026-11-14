@@ -16,8 +16,26 @@ Todas las modificaciones notables de este proyecto están documentadas en este a
   (caducado, revocado, firma…) queda solo en el log del servidor.
 - Con el perfil `production`, una `JEV_API_KEY` débil ya no pasa la comprobación de arranque: solo se miraba
   `PRAXEON_API_KEY`, aunque la autenticación aceptaba también el nombre antiguo.
+- El clasificador de comandos analiza la sintaxis del shell (`praxeon.reasoning.shell_syntax`, POSIX y PowerShell, sin
+  dependencias nuevas) y juzga cada comando por lo que hace, no solo por su verbo (auditoría §4.2):
+  - Rutas objetivo frente al workspace: escribir, mover o borrar fuera de él, en rutas protegidas (`.git`, `.env`,
+    claves) o en un destino que depende de una variable sube el riesgo a HIGH (revisión). También tras un `cd`
+    (`cd /etc && echo x > hosts`), por enlaces simbólicos que salen fuera y con `cp`, `tee`, `Set-Content`, `Out-File`,
+    `curl -o` o `Invoke-WebRequest -OutFile`, no solo con `>`. Sobrescribir un fichero existente con ellos va a revisión.
+  - Deshace la ofuscación del programa (`r''m`, `"rm"`, `r\m`, `$(echo rm)`) y analiza lo que se ejecuta dentro de
+    `bash -c`, `powershell -Command`, `cmd /c`, `eval`, `find -exec`, `xargs`, `env`, `timeout` y bloques de
+    PowerShell. Si el programa sale de una variable, o se cambian `PATH`/`LD_PRELOAD`, la acción va a revisión.
+  - `find -delete`, `git clean -f`, `truncate`, `shred`, `Clear-Content`, `robocopy /MIR` y el código en línea de
+    `perl`/`ruby`/`node`/`php` que borra o lanza procesos ya no son «desconocidos»: según el alcance, revisión o veto.
 
 ### Changed
+- Menos aprobaciones innecesarias: con el análisis sintáctico se aprueban solos los idiomas de shell que solo leen o
+  compilan y antes caían en «desconocido» (`cd src && pytest`, `find . -name x`, `git clean -n`, `ls 2>/dev/null`,
+  `$env:X='1'; python -m pytest`, `bash -c 'echo'`, y los pipelines de PowerShell con `ForEach-Object { "$($_.Path)…" }`
+  de los benchmarks). Volcar ficheros cuya ruta solo se conoce al ejecutar (`Get-Content $_.FullName`) sigue sin
+  aprobarse solo. Si el texto no se puede analizar (here-docs, comillas sin cerrar) se clasifica como antes, y si la
+  clasificación anterior ve un riesgo HIGH/CRITICAL mayor, manda la anterior.
+- `git checkout -- <rutas>` y `git restore` (descartan cambios sin copia) piden confirmación; antes eran LOW.
 - Almacenes SQLite sobre una base común: WAL activado una vez y esquema versionado con migraciones (`PRAGMA user_version`).
   Las bases de datos existentes se adoptan sin cambios.
 - Cliente HTTP compartido (`praxeon.http_client`, sobre `httpx`) con conexiones persistentes en lugar de `urllib`: cada

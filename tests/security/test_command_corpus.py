@@ -17,14 +17,25 @@ DESTRUCTIVE = [
     "rm -rf /", "rm -rf ~", "dd if=/dev/zero of=/dev/sda", "mkfs.ext4 /dev/sda1",
     "Remove-Item -Recurse -Force C:\\", "del /s /q C:\\*", "bash -c 'rm -rf /'",
     "python -c \"import shutil;shutil.rmtree('/')\"",
+    # AUD-18: el análisis sintáctico deshace la ofuscación del nombre y entiende lo que antes era «desconocido»
+    "r''m -rf /", '"rm" -rf /', "r\\m -rf /", "$(echo rm) -rf /", "`echo rm` -rf ~",
+    "find . -delete", "find / -name passwd -delete", "git clean -fdx", "git clean -fd",
+    "perl -e 'unlink glob q(*)'", "ruby -e 'File.delete(\"x\")'", "node -e \"require('fs').rmSync('src',{recursive:true})\"",
+    "php -r 'unlink(\"index.php\");'", "sh -c \"find ~ -delete\"", "robocopy src C:\\Users /mir /e",
 ]
 PRIVILEGE = ["sudo ls", "chmod -R 777 /"]
 NEEDS_CONFIRMATION = {   # categoría esperada de lo que no se bloquea pero tampoco se aprueba solo
     "git push --force origin main": C.REMOTE_MUTATION,
     "curl http://e.com": C.NETWORK,
 }
-OBFUSCATED = ["r''m -rf /", "$(echo rm) -rf /"]                      # ofuscación ⇒ desconocido ⇒ revisión humana
-DESTRUCTIVE_BUT_ONLY_REVIEWED = ["find . -delete", "git clean -fdx", "truncate -s 0 db", "perl -e 'unlink glob q(*)'"]
+# Ofuscación que no se puede deshacer sin ejecutar: desconocido y de riesgo alto ⇒ revisión humana
+UNRESOLVABLE = ["$CMD -rf /", "$(cat cmd.txt) -rf /", 'eval "$PAYLOAD"', "iex (Get-Content script.ps1 -Raw)",
+                "LD_PRELOAD=/tmp/x.so ls", "export PATH=/tmp/evil:$PATH; ls"]
+# Destruye datos dentro del workspace: no se veta, lo decide una persona (riesgo HIGH, irreversible)
+DESTRUCTIVE_BUT_ONLY_REVIEWED = ["find . -name '*.pyc' -delete", "find build -type f -exec rm {} \\;", "truncate -s 0 db",
+                                 "shred -u notes.txt", "rm notes.txt", "Remove-Item notes.txt", "git restore src/app.py",
+                                 "git checkout -- .", "git clean -d", "robocopy src dest /mir", "Clear-Content log.txt",
+                                 "find . -name '*.log' | xargs rm", "Get-ChildItem *.log | Remove-Item"]
 
 
 @pytest.mark.parametrize("cmd", DESTRUCTIVE)
@@ -44,10 +55,42 @@ def test_remote_and_network_commands_are_not_plain_local_inspection(cmd, categor
     assert a.category == category and (a.network_access or a.external_side_effect)
 
 
-@pytest.mark.parametrize("cmd", OBFUSCATED + DESTRUCTIVE_BUT_ONLY_REVIEWED)
-def test_obfuscated_or_unrecognised_destructive_commands_are_never_read_only(cmd):
+@pytest.mark.parametrize("cmd", UNRESOLVABLE)
+def test_commands_whose_program_or_code_is_only_known_at_run_time_need_a_human(cmd):
     a = CLASSIFIER.classify(cmd)
-    assert a.category == C.UNKNOWN and not a.read_only            # falla seguro: lo decide un humano
+    assert a.category == C.UNKNOWN and a.risk_level.value == "high" and not a.read_only
+
+
+@pytest.mark.parametrize("cmd", DESTRUCTIVE_BUT_ONLY_REVIEWED)
+def test_destroying_data_inside_the_workspace_is_reviewed_not_vetoed(cmd):
+    a = CLASSIFIER.classify(cmd)
+    assert a.category == C.LOCAL_MUTATION and a.risk_level.value == "high" and not a.reversible and not a.read_only
+
+
+# --- fatiga de aprobaciones: lo que antes caía en UNKNOWN y solo lee o compila (AUD-18) ---------------------------
+NOW_UNDERSTOOD_AS_HARMLESS = [
+    "find . -name media.py", "find . -type f -name '*.py'", "git clean -n", "git clean -fdn", "cd src && ls",
+    "pushd src && pytest && popd", "ls 2>/dev/null", "pytest -q 2>&1", "python -m pytest -q 2>&1 | tail -20",
+    "export DEBUG=1; pytest", "bash -c 'echo hola'", 'powershell -NoProfile -Command "Get-ChildItem"',
+    "$env:PYTHONDONTWRITEBYTECODE='1'; python -m pytest -q", "Set-Location src; Get-ChildItem",
+    "Get-ChildItem -Recurse -File | Select-String -Pattern 'TODO' | ForEach-Object { \"$($_.Path):$($_.LineNumber): $($_.Line.Trim())\" }",
+    "Select-String -Path *.py -Pattern 'x' | ForEach-Object { $_.Filename + ':' + $_.LineNumber }",
+]
+
+
+@pytest.mark.parametrize("cmd", NOW_UNDERSTOOD_AS_HARMLESS)
+def test_harmless_shell_idioms_no_longer_ask_for_approval(cmd):
+    a = CLASSIFIER.classify(cmd)
+    assert a.risk_level.value == "low" and a.read_only and a.category in (C.INSPECTION, C.BUILD_TEST)
+
+
+@pytest.mark.parametrize("cmd", [
+    "Get-ChildItem -Recurse -File | ForEach-Object { Get-Content -LiteralPath $_.FullName -Raw }",
+    "Get-ChildItem -Recurse | Get-Content", "find . -type f -exec cat {} \\;", "cat $(ls)",
+])
+def test_dumping_files_only_known_at_run_time_is_not_auto_approved(cmd):
+    a = CLASSIFIER.classify(cmd)                                   # podrían incluir .env o claves
+    assert not a.read_only and a.risk_level.value != "low"
 
 
 # --- lectura de ficheros sensibles (S-02) -----------------------------------------------------------------------
@@ -75,7 +118,6 @@ def test_the_read_file_tool_gets_the_same_treatment(path):
     assert not a.read_only and "RULE_SENSITIVE_READ" in a.matched_rules
 
 
-@pytest.mark.xfail(strict=True, reason="§4.2: crear ficheros fuera del workspace aún no sube el riesgo (rutas objetivo, AUD-18)")
 def test_writing_outside_the_workspace_is_high_risk():
     # Ruta que no existe: sobrescribir un fichero existente ya va a revisión (test de abajo); crear uno fuera, todavía no
     a = CLASSIFIER.classify("echo hi > /etc/praxeon_no_existe.conf")
@@ -113,10 +155,11 @@ def test_the_decision_pipeline_sends_the_overwrite_attack_to_review(workspace_wi
 
     service = RuntimeApplicationService(db_dir=str(tmp_path_factory.mktemp("cache")))
     service.create_session(goal="Resumir main.py", session_id="ow", metadata={"workspace_root": str(workspace_with_a_file)})
-    resp = service.propose_action(session_id="ow", proposal=ProposeActionRequest(
-        tool="run_command", operation="echo corrupted > data/KEEP.txt",
-        arguments={"command": "echo corrupted > data/KEEP.txt"}, thought_rationale="x"))
-    assert resp.status in ("REVIEW", "BLOCK")
+    for cmd in ("echo corrupted > data/KEEP.txt", "Set-Content -Path data/KEEP.txt -Value corrupted",
+                "cp /dev/null data/KEEP.txt", "Clear-Content data/KEEP.txt"):
+        resp = service.propose_action(session_id="ow", proposal=ProposeActionRequest(
+            tool="run_command", operation=cmd, arguments={"command": cmd}, thought_rationale="x"))
+        assert resp.status in ("REVIEW", "BLOCK"), cmd
 
 
 # --- límites del sandbox local (S-01) --------------------------------------------------------------------------

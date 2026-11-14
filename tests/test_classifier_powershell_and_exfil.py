@@ -115,9 +115,13 @@ def test_harmless_pipes_are_still_inspection(command):
     assert _cls(command).category == CommandCategory.INSPECTION
 
 
-def test_powershell_overwrites_still_go_to_review_as_unknown():
-    res = _cls("Set-Content -Path data/KEEP.txt -Value corrupted")
-    assert res.category == CommandCategory.UNKNOWN          # REVIEW, no ALLOW: es una escritura que el clasificador no entiende
+def test_powershell_writes_are_understood_and_overwrites_go_to_review(tmp_path):
+    # AUD-18: Set-Content ya no es «desconocido»: es una escritura; si el fichero existe, una sobrescritura (REVIEW)
+    assert _cls("Set-Content -Path data/KEEP.txt -Value corrupted").category == CommandCategory.LOCAL_MUTATION
+    (tmp_path / "data").mkdir()
+    (tmp_path / "data" / "KEEP.txt").write_text("importante")
+    res = CommandClassifier().classify("Set-Content -Path data/KEEP.txt -Value corrupted", context={"workspace_root": str(tmp_path)})
+    assert res.risk_level == RiskLevel.HIGH and "RULE_OVERWRITE_EXISTING_FILE" in res.matched_rules
 
 
 @pytest.mark.parametrize("command", ['grep -rn "rm -rf" src', "git log --grep=delete --oneline", "Select-String -Pattern 'Remove-Item' -Path *.ps1", 'findstr "sudo" notes.txt'])
