@@ -203,7 +203,12 @@ def run_script(sandbox, ws, code, *, cwd=None, timeout=60):
     """Escribe ``code`` como script dentro del workspace y lo ejecuta aislado (sin pelearse con las comillas del shell)."""
     script = ws / "sonda.py"
     script.write_text(code, encoding="utf-8")
-    py = os.path.join(sys.base_prefix, "python.exe") if sys.platform == "win32" else sys.executable
+    # El intérprete base, no el del entorno virtual de la suite: ese vive fuera del workspace (en Linux, bajo /home,
+    # que el aislamiento oculta) y no debe verse. El base es una de las herramientas que PRAXEON deja leer.
+    if sys.platform == "win32":
+        py = os.path.join(sys.base_prefix, "python.exe")
+    else:
+        py = getattr(sys, "_base_executable", None) or os.path.join(sys.base_prefix, "bin", "python3")
     command = f"& '{py}' '{script}'" if sys.platform == "win32" else f"'{py}' '{script}'"
     return sandbox.execute_command(command, cwd=cwd, timeout=timeout)
 
