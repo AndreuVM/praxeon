@@ -13,6 +13,16 @@ os.environ.setdefault("PRAXEON_CACHE_DIR", tempfile.mkdtemp(prefix="praxeon_test
 # La suite reproduce la app de escritorio, donde Full Access está disponible; los tests del bloqueo lo desactivan ellos mismos.
 os.environ.setdefault("PRAXEON_ALLOW_FULL_ACCESS", "1")
 
+# Sin claves reales: importar praxeon carga el .env del directorio de trabajo, y con las claves del desarrollador los tests
+# llamaban de verdad a TypeSafe o Gemini (cuota y datos). Los tests que necesitan una clave la fijan ellos mismos.
+os.environ["PRAXEON_NO_DOTENV"] = "1"
+PROVIDER_CREDENTIALS = (
+    "TYPESAFE_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY", "OPENAI_API_KEY", "GROQ_API_KEY", "OPENROUTER_API_KEY",
+    "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "KEV_API_KEY", "LAYA_AUTH_TOKEN", "BRAVE_API_KEY",
+)
+for _name in PROVIDER_CREDENTIALS:
+    os.environ.pop(_name, None)
+
 
 def pytest_collection_modifyitems(config, items):
     """Asigna markers canónicos a cada prueba según su ubicación y naturaleza."""

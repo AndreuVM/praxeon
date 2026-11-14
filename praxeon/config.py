@@ -316,8 +316,12 @@ class PraxeonConfig(BaseModel):
 
     @classmethod
     def from_env(cls, load_env_file: bool = False) -> "PraxeonConfig":
-        """Instancia la configuración leyendo variables de entorno de forma explícita."""
-        if load_env_file:
+        """Instancia la configuración leyendo variables de entorno de forma explícita.
+
+        Con ``load_env_file`` carga antes el ``.env`` del directorio de trabajo, salvo que ``PRAXEON_NO_DOTENV`` esté
+        activo (lo activa la suite de tests para no usar las claves reales del desarrollador).
+        """
+        if load_env_file and os.getenv("PRAXEON_NO_DOTENV", "").strip().lower() not in ("1", "true", "yes"):
             try:
                 from dotenv import load_dotenv
                 load_dotenv()

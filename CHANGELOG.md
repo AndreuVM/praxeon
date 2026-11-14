@@ -49,6 +49,9 @@ Todas las modificaciones notables de este proyecto están documentadas en este a
   cuando falla el modelo.
 - Las acciones del planificador sintético quedan marcadas como sintéticas en su procedencia (`synthetic_fallback`,
   `model_source="synthetic:fallback"`).
+- `PRAXEON_NO_DOTENV=1` impide que importar `praxeon` cargue el `.env` del directorio de trabajo. La suite de tests lo
+  activa y retira del entorno las claves de proveedores: en local, los tests llamaban de verdad a TypeSafe o Gemini con
+  las claves del desarrollador.
 - La interfaz web empaquetada (`praxeon/server/static`) ya no se versiona: `scripts/build_frontend.py` la compila desde
   `web/` antes de empaquetar. La que se versionaba era de mediados de octubre y no incluía los cambios posteriores.
 - `openapi.json` (raíz y SDK) regenerado; un test falla si deja de coincidir con la API.
