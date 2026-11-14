@@ -2,7 +2,6 @@
 
 import logging
 import os
-import time
 from typing import Any, Dict, List, Optional
 
 from praxeon.config import PraxeonConfig, default_config
@@ -10,26 +9,8 @@ from praxeon.models.schema import ActionCandidate, LoopType, Step
 
 logger = logging.getLogger("praxeon.typesafe")
 
-# Fallback limpio si typesafe-sdk no está instalado en el entorno
-try:
-    from typesafe_sdk import Choice, Noul, Score, TypeSafeClient
-except ImportError:
-    class Choice:  # type: ignore
-        def __init__(self, *args: Any, **kwargs: Any) -> None:
-            self.args = args
-            self.kwargs = kwargs
-
-    class Noul:  # type: ignore
-        def __init__(self, *args: Any, **kwargs: Any) -> None:
-            self.args = args
-            self.kwargs = kwargs
-
-    class Score:  # type: ignore
-        def __init__(self, *args: Any, **kwargs: Any) -> None:
-            self.args = args
-            self.kwargs = kwargs
-
-    TypeSafeClient = None  # type: ignore
+# El acceso al SDK (importación opcional, creación del cliente y reintentos) es el del proveedor TypeSafe
+from praxeon.providers.typesafe import Choice, Noul, Score, create_sdk_client, invoke_system_one  # noqa: E402
 
 
 class TypeSafeJEVClient:
@@ -49,15 +30,7 @@ class TypeSafeJEVClient:
 
     def _init_client(self) -> None:
         """Inicializa TypeSafeClient desde typesafe-sdk."""
-        try:
-            if TypeSafeClient is not None:
-                self._client = TypeSafeClient(api_key=self.api_key)
-            else:
-                from typesafe_sdk import TypeSafeClient as _TSC
-                self._client = _TSC(api_key=self.api_key)
-        except Exception as e:
-            logger.warning(f"No se pudo inicializar TypeSafeClient: {e}")
-            self._client = None
+        self._client = create_sdk_client(self.api_key)
 
     def is_available(self) -> bool:
         """Verifica si el cliente y la clave API están listos para operar."""
@@ -71,26 +44,8 @@ class TypeSafeJEVClient:
         questions: Dict[str, Any],
         max_retries: int = 2,
     ) -> Any:
-        """Invoca system_one con reintentos exponenciales ante errores de conexión o timeouts transitorios."""
-        last_err = None
-        for attempt in range(max_retries + 1):
-            try:
-                return self._client.system_one(
-                    state=state,
-                    questions=questions,
-                    model=self.config.typesafe_model,
-                )
-            except Exception as e:
-                last_err = e
-                err_msg = str(e).lower()
-                is_transient = any(kw in err_msg for kw in ("timeout", "connection", "503", "502", "504", "reset", "retry", "econnreset"))
-                if attempt < max_retries and is_transient:
-                    backoff = 0.5 * (2 ** attempt)
-                    logger.info(f"Fallo transitorio en TypeSafe AI ({e}). Reintentando en {backoff:.1f}s...")
-                    time.sleep(backoff)
-                else:
-                    break
-        raise last_err
+        """Invoca system_one con los reintentos del proveedor TypeSafe ante fallos transitorios."""
+        return invoke_system_one(self._client, state, questions, self.config.typesafe_model, max_retries)
 
     def evaluate_step_chunk(
         self,

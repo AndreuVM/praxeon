@@ -7,7 +7,7 @@ sino analizando sus argumentos, rutas de destino y patrones de comandos.
 import re
 from typing import Optional
 from praxeon.domain.models import ActionCandidate, RiskAssessment, RiskLevel
-from praxeon.policy.risk import ToolRegistry
+from praxeon.policy.registry import ToolRegistry
 
 
 class RiskEngine:

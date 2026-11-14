@@ -41,6 +41,51 @@ except ImportError:
     TypeSafeClient = None  # type: ignore
 
 
+# Fallos transitorios del API que merecen reintento (red, sobrecarga, límite de peticiones)
+TRANSIENT_ERROR_MARKERS = ("timeout", "connection", "502", "503", "504", "reset", "429", "rate", "retry")
+
+
+def create_sdk_client(api_key: Optional[str]) -> Any:
+    """Cliente de typesafe-sdk, o None si no hay clave, falta el SDK o no se puede crear (único punto de acceso al SDK)."""
+    if not api_key:
+        return None
+    try:
+        if TypeSafeClient is not None:
+            return TypeSafeClient(api_key=api_key)
+        from typesafe_sdk import TypeSafeClient as _TSC
+        return _TSC(api_key=api_key)
+    except Exception as e:
+        logger.warning(f"No se pudo inicializar TypeSafeClient: {e}")
+        return None
+
+
+def invoke_system_one(
+    client: Any,
+    state: Dict[str, Any],
+    questions: Dict[str, Any],
+    model: str,
+    max_retries: int = 2,
+    circuit_breaker: Optional[CircuitBreaker] = None,
+) -> Any:
+    """Llama a ``system_one`` reintentando los fallos transitorios con espera exponencial con jitter (y Retry-After)."""
+    last_error: Optional[Exception] = None
+    for attempt in range(max_retries + 1):
+        try:
+            res = client.system_one(state=state, questions=questions, model=model)
+            if circuit_breaker is not None:
+                circuit_breaker.record_success()
+            return res
+        except Exception as e:
+            last_error = e
+            if circuit_breaker is not None:
+                circuit_breaker.record_failure(e)
+            err_lower = str(e).lower()
+            if attempt < max_retries and any(kw in err_lower for kw in TRANSIENT_ERROR_MARKERS):
+                time.sleep(calculate_jittered_backoff(attempt=attempt, base_backoff=0.4, retry_after=parse_retry_after(err_lower)))
+            else:
+                break
+    raise last_error if last_error is not None else RuntimeError("system_one no llegó a invocarse")
+
 class TypeSafeAdapter(BaseReasoningProvider):
     """Adaptador que implementa ReasoningProvider utilizando TypeSafe AI (System One)."""
 
@@ -67,15 +112,7 @@ class TypeSafeAdapter(BaseReasoningProvider):
 
     def _init_sdk_client(self) -> None:
         """Inicializa TypeSafeClient desde typesafe-sdk."""
-        try:
-            if TypeSafeClient is not None:
-                self._client = TypeSafeClient(api_key=self.api_key)
-            else:
-                from typesafe_sdk import TypeSafeClient as _TSC
-                self._client = _TSC(api_key=self.api_key)
-        except Exception as e:
-            logger.warning(f"No se pudo inicializar TypeSafeClient: {e}")
-            self._client = None
+        self._client = create_sdk_client(self.api_key)
 
     def is_available(self) -> bool:
         """Verifica si el cliente y credenciales están disponibles para realizar inferencias."""
@@ -236,31 +273,10 @@ class TypeSafeAdapter(BaseReasoningProvider):
 
     def _invoke_with_retry(self, state: Dict[str, Any], questions: Dict[str, Any]) -> Any:
         """Ejecuta system_one con reintentos para fallos transitorios y control de CircuitBreaker."""
-        last_error = None
-        for attempt in range(self.max_retries + 1):
-            try:
-                res = self._client.system_one(
-                    state=state,
-                    questions=questions,
-                    model=self.model_name,
-                )
-                self.circuit_breaker.record_success()
-                return res
-            except Exception as e:
-                last_error = e
-                self.circuit_breaker.record_failure(e)
-                err_lower = str(e).lower()
-                is_transient = any(kw in err_lower for kw in ("timeout", "connection", "502", "503", "504", "reset", "429", "rate"))
-                if attempt < self.max_retries and is_transient:
-                    retry_after = parse_retry_after(err_lower)
-                    backoff = calculate_jittered_backoff(attempt=attempt, base_backoff=0.4, retry_after=retry_after)
-                    time.sleep(backoff)
-                else:
-                    break
-        raise last_error
+        return invoke_system_one(self._client, state, questions, self.model_name, self.max_retries, self.circuit_breaker)
 
 
 # Alias canónico
 TypeSafeProvider = TypeSafeAdapter
 
-__all__ = ["TypeSafeAdapter", "TypeSafeProvider"]
+__all__ = ["TypeSafeAdapter", "TypeSafeProvider", "create_sdk_client", "invoke_system_one"]

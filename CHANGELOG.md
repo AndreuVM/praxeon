@@ -38,6 +38,9 @@ Todas las modificaciones notables de este proyecto están documentadas en este a
 - La ejecución de un nodo de workflow (`WorkflowEngine.execute_node`) son tres pasos (preparar, ejecutar, registrar el
   resultado) en `praxeon.workflows.node_execution`, con un ejecutor por tipo de nodo (`NODE_EXECUTORS`) y tests por paso.
   Valor devuelto y estado de la ejecución idénticos al anterior en las 318 ejecuciones de nodo de los tests de workflows.
+- Un único acceso al SDK de TypeSafe (`praxeon.providers.typesafe`: `create_sdk_client`, `invoke_system_one`) para el
+  proveedor del runtime y el cliente del `DecisionEngine`. Este último reintenta ahora como el proveedor: también ante
+  429 y límites de peticiones, con espera exponencial con jitter y respetando `Retry-After`.
 - La interfaz web empaquetada (`praxeon/server/static`) ya no se versiona: `scripts/build_frontend.py` la compila desde
   `web/` antes de empaquetar. La que se versionaba era de mediados de octubre y no incluía los cambios posteriores.
 - `openapi.json` (raíz y SDK) regenerado; un test falla si deja de coincidir con la API.
@@ -51,6 +54,8 @@ Todas las modificaciones notables de este proyecto están documentadas en este a
   la acción anterior (p. ej. un `TOOL_FORBIDDEN_BY_SUPERVISOR` que no le correspondía). Ahora se registra como `ERROR`.
 
 ### Deprecated
+- `praxeon.policy.risk`: importa `ToolRegistry`/`ToolSpec` de `praxeon.policy.registry` y `RiskLevel`/`RiskAssessment` de
+  `praxeon.domain.models`. Avisa con `DeprecationWarning` y se retira en v2.0.0.
 - Variables de entorno `JEV_*` (`JEV_API_KEY`, `JEV_CACHE_DIR`, `JEV_CHUNK_SIZE`, `JEV_MAX_RETRIES`, `JEV_TIMEOUT_SECONDS`,
   `JEV_MAX_HISTORY_STEPS`, `JEV_CRITICAL_THRESHOLD`): usa `PRAXEON_*`. Se siguen leyendo con `DeprecationWarning` hasta v2.0.0.
   Los procesos del sandbox reciben `PRAXEON_SANDBOX_ACTIVE=1` además de `JEV_SANDBOX_ACTIVE=1`.

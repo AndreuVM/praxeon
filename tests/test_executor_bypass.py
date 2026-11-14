@@ -17,7 +17,7 @@ from praxeon.domain.action import ActionCandidate, ToolCall, compute_action_hash
 from praxeon.domain.decision import DecisionReceipt, DecisionStatus, PolicyDecision, compute_state_hash
 from praxeon.domain.goal import Goal
 from praxeon.policy.engine import PolicyEngine
-from praxeon.policy.risk import ToolRegistry
+from praxeon.policy.registry import ToolRegistry
 from praxeon.providers.replay import ReplayProvider
 from praxeon.runtime.executor import PolicyViolation, SecureExecutor
 from praxeon.runtime.navigator import Navigator

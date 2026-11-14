@@ -22,7 +22,7 @@ from praxeon.domain.branch import (
     BranchStep,
 )
 from praxeon.domain.decision import DecisionStatus, PolicyDecision
-from praxeon.policy.risk import ToolRegistry
+from praxeon.policy.registry import ToolRegistry
 from praxeon.reasoning.pruner import BranchPruner
 
 if TYPE_CHECKING:

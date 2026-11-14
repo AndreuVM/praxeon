@@ -23,7 +23,7 @@ from praxeon.evaluation.scenarios import (
 )
 from praxeon.policy.engine import PolicyEngine
 from praxeon.policy.failsafe import FailSafePolicy
-from praxeon.policy.risk import ToolRegistry
+from praxeon.policy.registry import ToolRegistry
 from praxeon.providers.replay import ReplayProvider
 from praxeon.runtime.executor import SecureExecutor
 from praxeon.runtime.navigator import Navigator
@@ -321,7 +321,8 @@ class BenchmarkRunner:
             # Registro permisivo donde todo es seguro
             reg = ToolRegistry(register_defaults=False)
             tool_name = sc.candidate_action.tool_call.tool_name if sc.candidate_action.tool_call else "default"
-            from praxeon.policy.risk import ToolSpec, RiskLevel
+            from praxeon.domain.models import RiskLevel
+            from praxeon.policy.registry import ToolSpec
             reg.register(ToolSpec(name=tool_name, category="general", risk_level=RiskLevel.LOW))
             pol = PolicyEngine(registry=reg)
             dec, _ = pol.evaluate_action(

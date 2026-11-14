@@ -27,7 +27,7 @@ from praxeon.evaluation.runner import BenchmarkRunner
 from praxeon.evaluation.scenarios import ScenarioCatalog
 from praxeon.policy.engine import PolicyEngine
 from praxeon.policy.failsafe import FailSafePolicy
-from praxeon.policy.risk import ToolRegistry
+from praxeon.policy.registry import ToolRegistry
 from praxeon.policy.sanitizer import DataSanitizer
 from praxeon.providers.replay import ReplayProvider
 from praxeon.providers.resilience import CircuitBreaker, CircuitState

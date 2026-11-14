@@ -23,7 +23,7 @@ from praxeon.domain.decision import (
 )
 from praxeon.domain.interfaces import Executor
 from praxeon.domain.models import ActionCandidate
-from praxeon.policy.risk import ToolRegistry
+from praxeon.policy.registry import ToolRegistry
 from praxeon.policy.sanitizer import DataSanitizer
 from praxeon.runtime.full_access import FullAccessExecutor
 from praxeon.runtime.fs_tools import content_from_args, list_directory

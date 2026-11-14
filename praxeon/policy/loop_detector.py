@@ -11,6 +11,9 @@ Reglas:
 - Una repetición aislada es un reintento razonable (0,5, por debajo del umbral de veto); la segunda ya es un bucle (0,88).
 - Estancamiento: fallos seguidos SIN cambiar nada entre medias.
 - Las palabras del propio agente («reintentar», «bucle»…) no deciden nada.
+
+Es la detección canónica de bucles del runtime (pipeline de propuestas, LAYA, generador de fine-tuning).
+``praxeon.reasoning.loop_detector`` es otra cosa: el análisis de anomalías de las ramas del árbol de búsqueda.
 """
 
 from __future__ import annotations

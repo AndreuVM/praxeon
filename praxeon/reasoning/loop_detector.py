@@ -4,6 +4,10 @@ Segrega las anomalías en tres dimensiones ortogonales:
 1. Convergencia Algorítmica: Repetición unihop, ciclos n-hop, estancamiento entrópico, fijación semántica.
 2. Solidez Empírica: Premisas no fundamentadas, alucinación de hechos, contradicción de evidencia.
 3. Riesgo Instrumental: Llamadas repetitivas destructivas, herramientas no autorizadas o sin confirmación.
+
+Ámbito: analiza ramas del árbol de búsqueda del navegador de razonamiento (lo usa ``BranchPruner``). La probabilidad de
+bucle de la acción que propone un agente en vivo, común a todos los supervisores, es la de
+``praxeon.policy.loop_detector`` (la canónica para el runtime).
 """
 
 import json
