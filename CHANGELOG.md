@@ -138,6 +138,10 @@ Todas las modificaciones notables de este proyecto están documentadas en este a
   (FE-009), una aprobación pedida o una misión terminada en un panel sin foco avisan con una notificación y una insignia en su
   pestaña. La disposición se guarda por workspace y se restaura al volver o recargar. Con un solo panel todo se ve igual que antes.
   Cerrar un panel no detiene su misión: sigue en el servidor y se ve en Sesiones.
+- Cada panel tiene su propia configuración de misión (FE-011): proveedor, modelo, supervisor, modo de ejecución, pasos, flujo y
+  workspace. Antes era una sola para todos y cambiar una cambiaba las de todos los paneles. Un panel nuevo parte de una copia de la
+  del panel enfocado, salvo la confirmación de Full Access, que se da en cada panel y nunca se copia ni se guarda. Lo último que se
+  configura sigue guardándose como valor por defecto y la configuración de cada panel se restaura al recargar (sin claves de API).
 - Límite de misiones concurrentes (FE-008): `PRAXEON_MAX_CONCURRENT_MISSIONS` (por defecto 4). Al superarlo, iniciar otra misión
   devuelve 429 con el motivo («Hay 4 misiones en curso y el límite es 4… Detén una o espera a que termine») y no crea ninguna sesión.
   Antes no había tope y varias misiones a la vez habían agotado la memoria.

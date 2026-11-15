@@ -55,7 +55,7 @@ function PanelTabs({ registry, layout, unread, onFocus, onClose, onAdd }) {
  * quedan montados —los que no se ven, ocultos— para que su texto y su sesión no se pierdan al enfocar otro.
  */
 export default function PanelsArea({
-  registry, layout, narrow, unread, missionConfig, onConfigChange, drawerTab, openDrawer, onFocus, onMaximize, onClose, onAdd, hidden,
+  registry, layout, narrow, unread, drawerTab, openDrawer, onFocus, onMaximize, onClose, onAdd, hidden,
 }) {
   const visible = visibleIds(layout, narrow ? 1 : undefined);
   const { columns, rows } = gridFor(visible.length);
@@ -79,8 +79,6 @@ export default function PanelsArea({
                 maximized={layout.maximizedId === id}
                 canClose={layout.order.length > 1}
                 unread={unread[id] || 0}
-                missionConfig={missionConfig}
-                onConfigChange={onConfigChange}
                 drawerTab={drawerTab}
                 openDrawer={openDrawer}
                 onFocus={onFocus}

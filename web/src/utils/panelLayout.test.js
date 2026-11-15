@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  MAIN_ID, MAX_PANELS, STORAGE_KEY, addPanel, closePanel, createLayoutStore, focusPanel, gridFor, initialLayout, nextPanelId, sanitize, toggleMaximize, visibleIds,
+  MAIN_ID, MAX_PANELS, STORAGE_KEY, addPanel, closePanel, createLayoutStore, focusPanel, gridFor, initialLayout, nextPanelId, pickConfig, sanitize, toggleMaximize, visibleIds,
 } from './panelLayout.js';
 import { approvalQueue, latestConflict, noticeFor, panelStatus, pendingApprovals } from './approvals.js';
 
@@ -90,12 +90,13 @@ describe('qué se ve', () => {
 
 describe('sanitize', () => {
   it('lo no válido da el panel principal', () => {
-    for (const raw of [null, undefined, 5, 'x', {}, { panels: 'no' }]) expect(sanitize(raw)).toEqual({ panels: [{ id: 'main', sessionId: null }], focusedId: 'main' });
+    for (const raw of [null, undefined, 5, 'x', {}, { panels: 'no' }]) expect(sanitize(raw)).toEqual({ panels: [{ id: 'main', sessionId: null, config: {} }], focusedId: 'main' });
   });
   it('descarta ids raros y duplicados, añade el principal si falta y limpia sesiones inválidas', () => {
     const s = sanitize({ panels: [{ id: 'p2', sessionId: 'abc' }, { id: 'p2', sessionId: 'otra' }, { id: '../x' }, { id: 'p3', sessionId: 'ready' }, { id: 'p4', sessionId: 5 }, null], focusedId: 'p9' });
     expect(s.panels.map((p) => p.id)).toEqual(['main', 'p2', 'p3', 'p4']);
     expect(s.panels.map((p) => p.sessionId)).toEqual([null, 'abc', null, null]);
+    expect(s.panels.every((p) => typeof p.config === 'object')).toBe(true);
     expect(s.focusedId).toBe('main');
   });
   it('limita la cantidad de paneles', () => {
@@ -104,14 +105,31 @@ describe('sanitize', () => {
   });
 });
 
+describe('configuración guardada de cada panel (FE-011)', () => {
+  it('solo se guardan los campos permitidos y valores simples: nunca claves ni Full Access', () => {
+    const cfg = pickConfig({ llmProvider: 'groq', customModel: 'm', apiKey: 'SECRETO', fullAccessConfirmed: true, maxSteps: 12, baseUrl: 'http://x', workflowId: null, executionMode: { a: 1 }, extra: 'x', supervisor: 'x'.repeat(600) });
+    expect(cfg).toEqual({ llmProvider: 'groq', customModel: 'm', maxSteps: 12, baseUrl: 'http://x' });
+    expect(JSON.stringify(cfg)).not.toContain('SECRETO');
+    expect(pickConfig(null)).toEqual({});
+    expect(pickConfig({ maxSteps: Infinity })).toEqual({});
+  });
+  it('el almacén no guarda claves aunque se las pasen', () => {
+    const mem = memory();
+    createLayoutStore(mem).save('/w', { panels: [{ id: 'main', sessionId: null, config: { llmProvider: 'groq', apiKey: 'SECRETO', fullAccessConfirmed: true } }] });
+    expect(mem.data[STORAGE_KEY]).not.toContain('SECRETO');
+    expect(mem.data[STORAGE_KEY]).not.toContain('fullAccessConfirmed');
+    expect(createLayoutStore(mem).load('/w').panels[0].config).toEqual({ llmProvider: 'groq' });
+  });
+});
+
 describe('almacén por workspace', () => {
   it('guarda y recupera la disposición de cada workspace sin mezclar', () => {
     const store = createLayoutStore(memory());
-    store.save('/w/a', { panels: [{ id: 'main', sessionId: 's1' }, { id: 'p2', sessionId: 's2' }], focusedId: 'p2' });
+    store.save('/w/a', { panels: [{ id: 'main', sessionId: 's1', config: { llmProvider: 'groq' } }, { id: 'p2', sessionId: 's2', config: { llmProvider: 'ollama', maxSteps: 7 } }], focusedId: 'p2' });
     store.save('/w/b', { panels: [{ id: 'main', sessionId: 'x' }], focusedId: 'main' });
-    expect(store.load('/w/a')).toEqual({ panels: [{ id: 'main', sessionId: 's1' }, { id: 'p2', sessionId: 's2' }], focusedId: 'p2' });
+    expect(store.load('/w/a')).toEqual({ panels: [{ id: 'main', sessionId: 's1', config: { llmProvider: 'groq' } }, { id: 'p2', sessionId: 's2', config: { llmProvider: 'ollama', maxSteps: 7 } }], focusedId: 'p2' });
     expect(store.load('/w/b').panels).toHaveLength(1);
-    expect(store.load('/w/nuevo').panels).toEqual([{ id: 'main', sessionId: null }]);
+    expect(store.load('/w/nuevo').panels).toEqual([{ id: 'main', sessionId: null, config: {} }]);
   });
   it('JSON corrupto, sin almacenamiento o sin workspace no rompe nada', () => {
     expect(createLayoutStore(memory({ [STORAGE_KEY]: '{no json' })).load('/w').focusedId).toBe('main');

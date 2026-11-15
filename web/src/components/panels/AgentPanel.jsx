@@ -48,7 +48,7 @@ function PanelHeader({ label, state, focused, maximized, canClose, unread, onMax
  * y avisa en el propio panel de un conflicto de escritura con otra sesión (FE-009). Con un solo panel se ve igual que siempre.
  */
 export default function AgentPanel({
-  id, store, label, focused, multi, maximized, canClose, unread, missionConfig, onConfigChange, drawerTab, onFocus, onMaximize, onClose, openDrawer,
+  id, store, label, focused, multi, maximized, canClose, unread, drawerTab, onFocus, onMaximize, onClose, openDrawer,
 }) {
   const state = useAgentSession(store);
   const [dismissed, setDismissed] = useState(0);
@@ -101,8 +101,8 @@ export default function AgentPanel({
         events={state.events}
         chatMessages={state.chatMessages}
         onMessagesChange={store.updateChat}
-        missionConfig={missionConfig}
-        onConfigChange={onConfigChange}
+        missionConfig={state.missionConfig}
+        onConfigChange={store.setMissionConfig}
         onStartMission={focusThen((cfg) => store.startMission(cfg))}
         onPauseMission={focusThen(() => store.pause())}
         onResumeMission={focusThen(() => store.resume())}

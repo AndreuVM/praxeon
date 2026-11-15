@@ -14,13 +14,14 @@ const EMPTY_METRICS = () => ({ totalDecisions: 0, allowed: 0, blocked: 0, review
 /**
  * deps:
  *  api, notify, chats (registro de chats), rebuildChat(…), buildCascade()
- *  getMissionConfig(), getSessionsList(), setSessionsList(fn)
+ *  getSessionsList(), setSessionsList(fn)
  *  ui: { showLive(), closeDrawer(), openStep() }   // lo que la interfaz hace al cambiar de sesión
  *  onRuntimeActive(bool)                           // el WebSocket confirmó que el servidor responde
  *  onEvent(ev)                                     // opcional: cada evento recibido, ya aplicado al estado
+ *  onConfigChange(config)                          // opcional: la configuración de este panel cambió (la última usada pasa a ser el valor por defecto)
  */
 export class AgentSession {
-  constructor(deps, { workspaceNote = 'Runtime de PRAXEON inicializado. Listo para recibir una misión.' } = {}) {
+  constructor(deps, { workspaceNote = 'Runtime de PRAXEON inicializado. Listo para recibir una misión.', config = {} } = {}) {
     this.deps = deps;
     this.sid = null;                                  // sesión cuyo chat se está escribiendo
     this.stream = null;
@@ -34,6 +35,7 @@ export class AgentSession {
       isPaused: false,
       followExecution: null,
       chatMessages: [],
+      missionConfig: { ...config },          // proveedor, modelo, supervisor, modo, pasos…: PROPIOS de este panel (FE-011)
     };
   }
 
@@ -86,6 +88,12 @@ export class AgentSession {
   setFollowExecution = (v) => this.set('followExecution', v);
   setChatMessages = (v) => this.set('chatMessages', v);
 
+  /** Configuración de la misión de ESTE panel: valor o función del valor anterior, como un `useState`. */
+  setMissionConfig = (v) => {
+    this.set('missionConfig', v);
+    this.deps.onConfigChange?.(this.state.missionConfig);
+  };
+
   log(level, message) {
     this.setLogs((prev) => [...prev, { time: now(), level, message }]);
   }
@@ -110,7 +118,7 @@ export class AgentSession {
 
   onMessage(msg) {
     if (this.disposed || msg?.action !== 'event' || !msg.data) return;
-    this.update((s) => reduceEvent(s, msg.data, { customModel: this.deps.getMissionConfig?.()?.customModel }));
+    this.update((s) => reduceEvent(s, msg.data, { customModel: s.missionConfig?.customModel }));
     this.deps.onEvent?.(msg.data);               // avisos por panel (aprobación pedida, conflicto de escritura, misión terminada)
   }
 
@@ -257,7 +265,7 @@ export class AgentSession {
 
   /** Sesión nueva y vacía (grafo y chat en blanco, sin memoria previa). */
   newClean() {
-    const cfg = this.deps.getMissionConfig();
+    const cfg = this.state.missionConfig;
     const newSid = `s-${Math.random().toString(36).substring(2, 9)}`;
     const timeStr = now();
     this.batch(() => {

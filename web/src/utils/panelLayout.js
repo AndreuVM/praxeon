@@ -2,6 +2,8 @@
 //   { order: ['main', 'p2', …], focusedId, maximizedId }
 // más un almacén por workspace en `localStorage`. Un panel aloja una sesión de agente; todos trabajan sobre el workspace actual.
 
+import { CONFIG_FIELDS } from './chatStore';
+
 export const MAIN_ID = 'main';
 export const MAX_PANELS = 8;            // abiertos a la vez (el límite de misiones en marcha lo pone el servidor)
 export const MAX_VISIBLE = 4;           // visibles a la vez (D9): 1, 2 en columnas o 2×2; el resto, en pestañas
@@ -65,9 +67,20 @@ export function gridFor(count) {
 
 // ------------------------------------------------------------------ persistencia por workspace --------------------------------------
 
-/** Normaliza lo guardado (puede venir manipulado o de otra versión) a `{ panels: [{ id, sessionId }], focusedId }`. */
+/** Solo los campos de configuración que se guardan (nunca claves de API ni la confirmación de Full Access) y solo valores simples. */
+export function pickConfig(config) {
+  const out = {};
+  if (!config || typeof config !== 'object') return out;
+  for (const key of CONFIG_FIELDS) {
+    const v = config[key];
+    if (typeof v === 'string' ? v.length < 500 : typeof v === 'number' ? Number.isFinite(v) : typeof v === 'boolean') out[key] = v;
+  }
+  return out;
+}
+
+/** Normaliza lo guardado (puede venir manipulado o de otra versión) a `{ panels: [{ id, sessionId, config }], focusedId }`. */
 export function sanitize(raw) {
-  const out = { panels: [{ id: MAIN_ID, sessionId: null }], focusedId: MAIN_ID };
+  const out = { panels: [{ id: MAIN_ID, sessionId: null, config: {} }], focusedId: MAIN_ID };
   if (!raw || typeof raw !== 'object' || !Array.isArray(raw.panels)) return out;
   const seen = new Set();
   const panels = [];
@@ -76,9 +89,9 @@ export function sanitize(raw) {
     if (!id || seen.has(id) || !/^(main|p\d{1,2})$/.test(id) || panels.length >= MAX_PANELS) continue;
     seen.add(id);
     const sid = p.sessionId;
-    panels.push({ id, sessionId: typeof sid === 'string' && sid && sid !== 'ready' && sid.length < 200 ? sid : null });
+    panels.push({ id, sessionId: typeof sid === 'string' && sid && sid !== 'ready' && sid.length < 200 ? sid : null, config: pickConfig(p.config) });
   }
-  if (!seen.has(MAIN_ID)) panels.unshift({ id: MAIN_ID, sessionId: null });
+  if (!seen.has(MAIN_ID)) panels.unshift({ id: MAIN_ID, sessionId: null, config: {} });
   out.panels = panels.slice(0, MAX_PANELS);
   out.focusedId = out.panels.some((p) => p.id === raw.focusedId) ? raw.focusedId : MAIN_ID;
   return out;

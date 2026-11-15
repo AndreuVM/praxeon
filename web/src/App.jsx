@@ -22,7 +22,7 @@ import useWorkspace from './components/workspace/useWorkspace';
 import { loadChatConfig, persistChatConfig, chatRegistry } from './utils/chatStore';
 import { createSessionRegistry } from './state/agentSession';
 import useAgentSession, { useSessionRegistryVersion } from './state/useAgentSession';
-import { MAIN_ID, addPanel, closePanel, focusPanel, initialLayout, layoutStore, panelLabel, toggleMaximize } from './utils/panelLayout';
+import { MAIN_ID, addPanel, closePanel, focusPanel, initialLayout, layoutStore, panelLabel, pickConfig, toggleMaximize } from './utils/panelLayout';
 import { approvalQueue, noticeFor } from './utils/approvals';
 import { buildCascadeDecisionModel } from './utils/cascadeConfig';
 import { rebuildChatFromSession } from './utils/chatFromEvents';
@@ -116,8 +116,9 @@ export default function App() {
     };
   }, []);
 
-  // Estado persistente del Chat de Misión y configuración de modelos
-  const [missionConfig, setMissionConfig] = useState({
+  // Valores por defecto de la configuración de la misión: lo ÚLTIMO usado, que arranca el primer panel y se copia a los nuevos.
+  // Cada panel tiene después la suya (FE-011): modelo, supervisor, modo y pasos distintos en cada uno.
+  const [defaultConfig, setDefaultConfig] = useState({
     llmProvider: 'simulator',
     supervisor: 'laya',
     executionMode: 'auto',
@@ -129,16 +130,14 @@ export default function App() {
     ...loadChatConfig(), // última configuración usada: modelo, supervisor, modo, workflow, pasos…
   });
   useEffect(() => {
-    persistChatConfig(missionConfig);
-  }, [missionConfig]);
+    persistChatConfig(defaultConfig);
+  }, [defaultConfig]);
 
 
   // Sesión en vivo de este panel (FE-007): estado, WebSocket y acciones viven en AgentSession; aquí solo se conecta con la interfaz.
   // Las funciones de `deps` leen siempre el último valor mediante refs, porque el almacén se crea una sola vez.
-  const missionConfigRef = useRef(missionConfig);
   const sessionsListRef = useRef(sessionsList);
   useLayoutEffect(() => {
-    missionConfigRef.current = missionConfig;
     sessionsListRef.current = sessionsList;
   });
   // Un registro de sesiones, una por panel (FE-008). El aviso de lo que pasa en un panel sin foco lo decide `panelEventRef`.
@@ -149,7 +148,7 @@ export default function App() {
     chats: chatRegistry(),
     rebuildChat: rebuildChatFromSession,
     buildCascade: buildCascadeDecisionModel,
-    getMissionConfig: () => missionConfigRef.current,
+    onConfigChange: setDefaultConfig,                      // la última configuración usada pasa a ser el valor por defecto
     getSessionsList: () => sessionsListRef.current,
     setSessionsList,
     onRuntimeActive: setRuntimeActive,
@@ -159,7 +158,7 @@ export default function App() {
   const [layout, setLayout] = useState(initialLayout);
   const [unread, setUnread] = useState({});                // avisos sin ver de cada panel que no tiene el foco
   const layoutOwnerRef = useRef(null);                     // workspace al que pertenece la disposición actual (para guardarla)
-  useState(() => sessions.open(MAIN_ID));
+  useState(() => sessions.open(MAIN_ID, { config: defaultConfig }));
   // El ciclo de vida de los WebSockets es del conjunto, no de cada panel: un panel oculto o en pestaña sigue conectado.
   useEffect(() => {
     sessions.activateAll();
@@ -167,7 +166,7 @@ export default function App() {
   }, [sessions]);
   const registryVersion = useSessionRegistryVersion(sessions);
   const live = sessions.get(layout.focusedId) || sessions.get(MAIN_ID);   // la sesión del panel con el foco: la que ven la cabecera y el cajón
-  const { session, nodes, decisionsMap, selectedNodeId, logs, events, isRunning, isPaused, followExecution } = useAgentSession(live);
+  const { session, nodes, decisionsMap, selectedNodeId, logs, events, isRunning, isPaused, followExecution, missionConfig } = useAgentSession(live);   // missionConfig: la del panel enfocado
   const { setSelectedNodeId } = live;
 
   // Aprobaciones de TODOS los paneles: una pendiente en un panel sin foco no se pierde
@@ -183,7 +182,8 @@ export default function App() {
       notify('Hay ya el máximo de paneles abiertos. Cierra alguno para abrir otro.', { tone: 'info' });
       return;
     }
-    sessions.open(result.id).newClean();
+    // Un panel nuevo parte de una COPIA de la configuración del enfocado; la confirmación de Full Access se da en cada panel
+    sessions.open(result.id, { config: { ...live.getState().missionConfig, fullAccessConfirmed: false } }).newClean();
     setLayout(result.layout);
     setActiveNav('live');
   };
@@ -218,22 +218,25 @@ export default function App() {
   // Paneles de un workspace que se guardaron: se abren de nuevo con su sesión (la conversación y el estado vienen del servidor)
   const restorePanels = async (path) => {
     const saved = layoutStore.load(path);
+    const savedMain = saved.panels.find((x) => x.id === MAIN_ID);
+    if (savedMain && Object.keys(savedMain.config).length > 0) sessions.get(MAIN_ID).setMissionConfig((c) => ({ ...c, ...savedMain.config }));
     const extras = saved.panels.filter((x) => x.id !== MAIN_ID);
     if (extras.length === 0) return;
+    const base = { ...sessions.get(MAIN_ID).getState().missionConfig, fullAccessConfirmed: false };
     await Promise.all(extras.map((x) => {
-      const store = sessions.open(x.id);
+      const store = sessions.open(x.id, { config: { ...base, ...x.config } });
       return x.sessionId ? store.loadSession(x.sessionId) : Promise.resolve(store.newClean());
     }));
     setLayout({ order: [MAIN_ID, ...extras.map((x) => x.id)], focusedId: saved.focusedId, maximizedId: null });
   };
 
   // La disposición se guarda por workspace (paneles abiertos, la sesión de cada uno y cuál tiene el foco)
-  const layoutKey = JSON.stringify([layout.order.map((id) => [id, sessions.get(id)?.getState().session.sessionId || null]), layout.focusedId, registryVersion >= 0]);
+  const layoutKey = JSON.stringify([layout.order.map((id) => [id, sessions.get(id)?.getState().session.sessionId || null, pickConfig(sessions.get(id)?.getState().missionConfig)]), layout.focusedId, registryVersion >= 0]);
   useEffect(() => {
     const path = workspace?.path;
     if (!path || layoutOwnerRef.current !== path) return;
     layoutStore.save(path, {
-      panels: layout.order.map((id) => ({ id, sessionId: sessions.get(id)?.getState().session.sessionId || null })),
+      panels: layout.order.map((id) => ({ id, sessionId: sessions.get(id)?.getState().session.sessionId || null, config: pickConfig(sessions.get(id)?.getState().missionConfig) })),
       focusedId: layout.focusedId,
     });
   }, [layoutKey, workspace?.path]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -497,8 +500,6 @@ export default function App() {
               layout={layout}
               narrow={narrow}
               unread={unread}
-              missionConfig={missionConfig}
-              onConfigChange={setMissionConfig}
               drawerTab={drawerTab}
               openDrawer={openDrawer}
               onFocus={focusPanelById}
@@ -597,7 +598,10 @@ export default function App() {
               {activeNav === 'settings' && (
                 <SettingsView
                   missionConfig={missionConfig}
-                  onConfigChange={setMissionConfig}
+                  onConfigChange={(update) => {
+                    setDefaultConfig(update);                 // valores por defecto de los paneles nuevos…
+                    live.setMissionConfig(update);            // …y el panel enfocado, como antes con un solo panel
+                  }}
                 />
               )}
             </Suspense>

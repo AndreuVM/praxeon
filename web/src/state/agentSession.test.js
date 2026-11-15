@@ -44,7 +44,6 @@ function makeEnv(overrides = {}) {
     chats: createChatRegistry({ load: () => ({}), persist: persisted, delayMs: 10 }),
     rebuildChat: vi.fn(() => []),
     buildCascade: () => ({ provider: 'cascade' }),
-    getMissionConfig: () => ({ executionMode: 'local_restricted', llmProvider: 'simulator', supervisor: 'laya', customModel: '' }),
     getSessionsList: () => sessionsList,
     setSessionsList: (v) => { sessionsList = typeof v === 'function' ? v(sessionsList) : v; },
     onRuntimeActive: vi.fn(),
@@ -166,6 +165,67 @@ describe('dos sesiones a la vez', () => {
     registry.closeAll();
     expect(streams.every((s) => s.closed)).toBe(true);
     expect(registry.ids()).toEqual([]);
+  });
+});
+
+describe('configuración propia de cada panel (FE-011)', () => {
+  const two = () => {
+    const seen = [];
+    const mk = () => makeEnv({ deps: { onConfigChange: (c) => seen.push(c) } });
+    const a = new AgentSession(mk().deps, { config: { llmProvider: 'groq', customModel: 'llama-70b', supervisor: 'laya', executionMode: 'local_restricted', maxSteps: 10 } });
+    const b = new AgentSession(mk().deps, { config: { llmProvider: 'ollama', customModel: 'qwen', supervisor: 'kev', executionMode: 'container', maxSteps: 40 } });
+    return { a, b, seen };
+  };
+
+  it('cada panel parte de la suya y cambiar una no toca la otra', () => {
+    const { a, b } = two();
+    const bBefore = b.getState().missionConfig;
+    a.setMissionConfig((prev) => ({ ...prev, llmProvider: 'openai', customModel: 'gpt-x' }));
+    expect(a.getState().missionConfig).toMatchObject({ llmProvider: 'openai', customModel: 'gpt-x', supervisor: 'laya' });
+    expect(b.getState().missionConfig).toBe(bBefore);
+    expect(b.getState().missionConfig).toMatchObject({ llmProvider: 'ollama', customModel: 'qwen', supervisor: 'kev', maxSteps: 40 });
+  });
+
+  it('la configuración dada se copia: cambiar el original después no afecta al panel', () => {
+    const cfg = { llmProvider: 'groq' };
+    const store = new AgentSession(makeEnv().deps, { config: cfg });
+    cfg.llmProvider = 'otra';
+    expect(store.getState().missionConfig.llmProvider).toBe('groq');
+  });
+
+  it('acepta un valor o una función y avisa de lo último usado', () => {
+    const { a, seen } = two();
+    a.setMissionConfig({ llmProvider: 'x' });
+    a.setMissionConfig((prev) => ({ ...prev, maxSteps: 3 }));
+    expect(seen).toEqual([{ llmProvider: 'x' }, { llmProvider: 'x', maxSteps: 3 }]);
+  });
+
+  it('el modelo propio de cada panel llega a las decisiones de su sesión', () => {
+    const { a, b } = two();
+    const ev = { type: 'action.proposed', node_id: 'a1', timestamp: '2026-11-15T12:30:00Z', sequence: 1, payload: { tool: 'read_file', step: 1 } };
+    a.onMessage({ action: 'event', data: ev });
+    b.onMessage({ action: 'event', data: ev });
+    expect(a.getState().decisionsMap.a1.model).toBe('llama-70b');
+    expect(b.getState().decisionsMap.a1.model).toBe('qwen');
+  });
+
+  it('newClean usa la configuración del propio panel', () => {
+    const { a, b } = two();
+    a.newClean();
+    b.newClean();
+    expect(a.getState().session.execution_mode).toBe('local_restricted');
+    expect(b.getState().session.execution_mode).toBe('container');
+    expect(a.getState().session.runtime.provider).toBe('GROQ + LAYA');
+    expect(b.getState().session.runtime.provider).toBe('OLLAMA + KEV');
+  });
+
+  it('el registro abre cada panel con su configuración', () => {
+    const registry = createSessionRegistry(() => makeEnv().deps);
+    const p1 = registry.open('main', { config: { llmProvider: 'groq' } });
+    const p2 = registry.open('p2', { config: { llmProvider: 'ollama', fullAccessConfirmed: false } });
+    p1.setMissionConfig((c) => ({ ...c, supervisor: 'kev' }));
+    expect(p1.getState().missionConfig).toEqual({ llmProvider: 'groq', supervisor: 'kev' });
+    expect(p2.getState().missionConfig).toEqual({ llmProvider: 'ollama', fullAccessConfirmed: false });
   });
 });
 
@@ -315,7 +375,7 @@ describe('acciones', () => {
 
   it('newClean: sesión local nueva, chat vacío, cajón cerrado y vista en conversación', () => {
     const env = makeEnv();
-    const store = new AgentSession(env.deps);
+    const store = new AgentSession(env.deps, { config: { executionMode: 'local_restricted', llmProvider: 'simulator', supervisor: 'laya' } });
     store.setChatMessages([{ id: 'x' }]);
     store.newClean();
     const s = store.getState();

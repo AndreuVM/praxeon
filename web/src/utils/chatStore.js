@@ -6,7 +6,7 @@ const CONFIG_KEY = 'praxeon_chat_config_v1';
 const MAX_SESSIONS = 40;
 const MAX_TEXT = 20000;
 
-const CONFIG_FIELDS = ['llmProvider', 'customModel', 'supervisor', 'executionMode', 'workflowId', 'maxSteps', 'baseUrl', 'workspaceRoot'];
+export const CONFIG_FIELDS = ['llmProvider', 'customModel', 'supervisor', 'executionMode', 'workflowId', 'maxSteps', 'baseUrl', 'workspaceRoot'];
 
 function read(key) {
   try {
