@@ -21,6 +21,7 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['src/**/*.test.js'],
+    env: { TZ: 'UTC' },               // las pruebas que formatean horas locales (sessionReducer) usan una zona fija
   },
   server: {
     port: 5173,
