@@ -143,6 +143,8 @@ class RuntimeApplicationService(DecisionPipelineMixin, MissionRuntimeMixin):
         self._sessions_meta: dict[str, dict[str, Any]] = {}
         self._decisions: dict[str, dict[str, Any]] = {}
         self._running_missions: dict[str, dict[str, Any]] = {}
+        self._mission_threads: dict[str, threading.Thread] = {}
+        self._missions_starting = 0
 
         # Agentes, contexto, workflows y enrutamiento
         self.context_manager = c.context_manager

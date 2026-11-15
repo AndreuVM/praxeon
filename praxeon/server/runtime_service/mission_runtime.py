@@ -5,11 +5,12 @@ from __future__ import annotations
 from datetime import datetime, UTC
 
 
+import functools
 import logging
 import os
 import threading
 import time
-from typing import Any
+from typing import Any, Concatenate, ParamSpec
 from collections.abc import Callable
 import uuid
 
@@ -49,6 +50,41 @@ from praxeon.server.runtime_service.agent_loop import (  # noqa: E402,F401
 # Proveedores que piden expresamente el planificador sintético (no un modelo)
 SIMULATOR_PROVIDERS = ("simulator", "simulated", "mock", "sim")
 
+DEFAULT_MAX_CONCURRENT_MISSIONS = 4
+
+_P = ParamSpec("_P")
+
+
+class MissionLimitError(RuntimeError):
+    """Hay ya tantas misiones en curso como permite `PRAXEON_MAX_CONCURRENT_MISSIONS` (FE-008)."""
+
+
+def max_concurrent_missions() -> int:
+    """Misiones que pueden correr a la vez: `PRAXEON_MAX_CONCURRENT_MISSIONS` (por defecto 4; un valor no válido o menor que 1 usa el defecto).
+
+    Cada misión es un hilo con su bucle de agente y, a menudo, un modelo; sin tope, varios paneles pueden agotar la memoria.
+    """
+    try:
+        value = int(os.getenv("PRAXEON_MAX_CONCURRENT_MISSIONS", "") or DEFAULT_MAX_CONCURRENT_MISSIONS)
+    except ValueError:
+        return DEFAULT_MAX_CONCURRENT_MISSIONS
+    return value if value >= 1 else DEFAULT_MAX_CONCURRENT_MISSIONS
+
+
+def _limited(fn: Callable[Concatenate[Any, _P], dict[str, Any]]) -> Callable[Concatenate[Any, _P], dict[str, Any]]:
+    """Reserva un hueco de misión antes de crear nada (sin efectos si se rechaza) y lo suelta cuando la misión ya tiene hilo o falló."""
+
+    @functools.wraps(fn)
+    def wrapper(self: Any, /, *args: _P.args, **kwargs: _P.kwargs) -> dict[str, Any]:
+        self._reserve_mission_slot()
+        try:
+            return fn(self, *args, **kwargs)
+        finally:
+            with self._lock:
+                self._missions_starting -= 1
+
+    return wrapper
+
 
 class MissionRuntimeMixin(RuntimeHost):
     """Ciclo de vida de misiones autónomas, checkpoints, rollback y worker de misión."""
@@ -77,6 +113,28 @@ class MissionRuntimeMixin(RuntimeHost):
             status = record.get("status") if record else None
         return status if status in ("ALLOW", "BLOCKED") else None
 
+    def active_mission_count(self) -> int:
+        """Misiones en curso: las que tienen su hilo vivo más las que están arrancando."""
+        with self._lock:
+            return self._active_missions_locked() + self._missions_starting
+
+    def _active_missions_locked(self) -> int:
+        for sid in [s for s, t in self._mission_threads.items() if not t.is_alive()]:
+            del self._mission_threads[sid]
+        return len(self._mission_threads)
+
+    def _reserve_mission_slot(self) -> None:
+        limit = max_concurrent_missions()
+        with self._lock:
+            active = self._active_missions_locked() + self._missions_starting
+            if active >= limit:
+                raise MissionLimitError(
+                    f"Hay {active} misiones en curso y el límite es {limit} (PRAXEON_MAX_CONCURRENT_MISSIONS). "
+                    "Detén una o espera a que termine antes de iniciar otra."
+                )
+            self._missions_starting += 1
+
+    @_limited
     def start_mission(
         self,
         goal: str,
@@ -233,6 +291,8 @@ class MissionRuntimeMixin(RuntimeHost):
             daemon=True,
             name=f"mission-worker-{sid}",
         )
+        with self._lock:
+            self._mission_threads[sid] = worker_thread
         worker_thread.start()
 
         return meta

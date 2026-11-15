@@ -6,6 +6,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from praxeon.server.dependencies import RuntimeApplicationService, get_runtime_service
+from praxeon.server.runtime_service.mission_runtime import MissionLimitError
 from praxeon.server.schemas.action import ProposeActionRequest
 from praxeon.server.schemas.common import APIResponse
 from praxeon.server.schemas.decision import DecisionResponse
@@ -76,6 +77,8 @@ def run_mission(
                 "require_step_confirmation": bool(req.require_step_confirmation),
             },
         )
+    except MissionLimitError as exc:
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     summary = service.get_session_summary(meta["session_id"])

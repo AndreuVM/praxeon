@@ -81,6 +81,8 @@ class RuntimeHost:
     _sessions_meta: dict[str, dict[str, Any]]
     _decisions: dict[str, dict[str, Any]]
     _running_missions: dict[str, dict[str, Any]]
+    _mission_threads: dict[str, threading.Thread]   # hilo de cada misión (límite de misiones concurrentes, FE-008)
+    _missions_starting: int                         # misiones que están arrancando y aún no tienen hilo
 
     context_manager: ContextManager
     agent_bus: AgentMessageBus
