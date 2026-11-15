@@ -1,5 +1,5 @@
-import React from 'react';
-import { AlertTriangle, ChevronDown, Plus, Search } from 'lucide-react';
+import React, { useState } from 'react';
+import { AlertTriangle, ChevronDown, Columns2, Plus, Search } from 'lucide-react';
 
 /**
  * Cabecera de 46 px (RD-H1…H3): estado de la sesión, objetivo, identificador y, solo cuando ocurre algo
@@ -15,13 +15,18 @@ export default function Header({
   isRunning = false,
   isPaused = false,
   pendingApprovals = 0,
+  approvalQueue = [],
+  panelCount = 1,
   drawerTab = null,
   onOpenSessions,
   onNewSession,
+  onNewPanel,
+  onGoToApproval,
   onOpenMap,
   onOpenPalette,
   onGoToConversation,
 }) {
+  const [queueOpen, setQueueOpen] = useState(false);
   const mode = (executionMode || '').toLowerCase();
   const isFull = mode === 'full_access' || mode.startsWith('full_access');
   const isReady = (session.status || '').toLowerCase() === 'ready';
@@ -105,10 +110,42 @@ export default function Header({
         </span>
       )}
       {pendingApprovals > 0 && (
-        <button type="button" className="chip accent" onClick={onGoToConversation} title="Ir a la solicitud de aprobación">
-          <span className="dot run" />
-          Aprobación pendiente{pendingApprovals > 1 ? ` (${pendingApprovals})` : ''}
-        </button>
+        <span style={{ position: 'relative', display: 'inline-flex' }}>
+          <button
+            type="button"
+            className="chip accent"
+            onClick={panelCount > 1 ? () => setQueueOpen((v) => !v) : onGoToConversation}
+            title={panelCount > 1 ? 'Ver las aprobaciones pendientes de todos los paneles' : 'Ir a la solicitud de aprobación'}
+            aria-haspopup={panelCount > 1 ? 'menu' : undefined}
+            aria-expanded={panelCount > 1 ? queueOpen : undefined}
+          >
+            <span className="dot run" />
+            Aprobación pendiente{pendingApprovals > 1 ? ` (${pendingApprovals})` : ''}
+          </button>
+          {panelCount > 1 && queueOpen && (
+            <div
+              role="menu"
+              aria-label="Aprobaciones pendientes"
+              style={{ position: 'absolute', right: 0, top: '110%', zIndex: 40, minWidth: 280, maxWidth: 420, background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 8, boxShadow: 'var(--shadow-pop, 0 8px 24px rgba(0,0,0,.35))', padding: 4 }}
+              onKeyDown={(e) => { if (e.key === 'Escape') setQueueOpen(false); }}
+            >
+              {approvalQueue.map((item) => (
+                <button
+                  key={`${item.panelId}:${item.nodeId}`}
+                  type="button"
+                  role="menuitem"
+                  onClick={() => { setQueueOpen(false); onGoToApproval?.(item); }}
+                  style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2, width: '100%', padding: '6px 10px', border: 0, background: 'transparent', color: 'inherit', cursor: 'pointer', textAlign: 'left', borderRadius: 6, fontSize: 12 }}
+                >
+                  <b style={{ fontWeight: 600 }}>{item.panelLabel}</b>
+                  <span style={{ color: 'var(--muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>
+                    {[item.tool, item.command].filter(Boolean).join(' · ')}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </span>
       )}
 
       <button
@@ -119,6 +156,15 @@ export default function Header({
         aria-label="Nueva sesión"
       >
         <Plus size={16} strokeWidth={1.6} />
+      </button>
+      <button
+        type="button"
+        className="btn-icon"
+        onClick={onNewPanel}
+        title="Abrir un panel con otro agente sobre este workspace"
+        aria-label="Nuevo panel"
+      >
+        <Columns2 size={16} strokeWidth={1.6} />
       </button>
       <button
         type="button"

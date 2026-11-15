@@ -17,6 +17,7 @@ const EMPTY_METRICS = () => ({ totalDecisions: 0, allowed: 0, blocked: 0, review
  *  getMissionConfig(), getSessionsList(), setSessionsList(fn)
  *  ui: { showLive(), closeDrawer(), openStep() }   // lo que la interfaz hace al cambiar de sesión
  *  onRuntimeActive(bool)                           // el WebSocket confirmó que el servidor responde
+ *  onEvent(ev)                                     // opcional: cada evento recibido, ya aplicado al estado
  */
 export class AgentSession {
   constructor(deps, { workspaceNote = 'Runtime de PRAXEON inicializado. Listo para recibir una misión.' } = {}) {
@@ -110,6 +111,7 @@ export class AgentSession {
   onMessage(msg) {
     if (this.disposed || msg?.action !== 'event' || !msg.data) return;
     this.update((s) => reduceEvent(s, msg.data, { customModel: this.deps.getMissionConfig?.()?.customModel }));
+    this.deps.onEvent?.(msg.data);               // avisos por panel (aprobación pedida, conflicto de escritura, misión terminada)
   }
 
   /** Vuelve a dejar el almacén en marcha tras un `dispose` (StrictMode monta, desmonta y vuelve a montar). */
@@ -125,7 +127,6 @@ export class AgentSession {
     this.stream = null;
     this.streamSid = null;
     this.disposed = true;
-    this.listeners.clear();
   }
 
   // ------------------------------------------------------------------ chat -------------------------------------------------------------
@@ -592,22 +593,54 @@ function demoChat() {
   ];
 }
 
-/** Sesiones abiertas, una por panel. Cerrar un panel cierra su WebSocket. */
+/**
+ * Sesiones abiertas, una por panel. Cerrar un panel cierra su WebSocket. Un panel que no se ve (pestaña u otro maximizado) sigue
+ * abierto: su misión y sus avisos no se detienen. `subscribe`/`getVersion` avisan de cualquier cambio en cualquiera de ellas
+ * (para la cola global de aprobaciones).
+ */
 export function createSessionRegistry(makeDeps) {
   const sessions = new Map();
+  const unsubs = new Map();
+  const listeners = new Set();
+  let version = 0;
+  const bump = () => {
+    version += 1;
+    listeners.forEach((l) => l());
+  };
   return {
     open(panelId, options) {
-      if (!sessions.has(panelId)) sessions.set(panelId, new AgentSession(makeDeps(panelId), options));
+      if (!sessions.has(panelId)) {
+        const session = new AgentSession(makeDeps(panelId), options);
+        sessions.set(panelId, session);
+        unsubs.set(panelId, session.subscribe(bump));
+        bump();
+      }
       return sessions.get(panelId);
     },
     get: (panelId) => sessions.get(panelId) || null,
     close(panelId) {
-      sessions.get(panelId)?.dispose();
+      if (!sessions.has(panelId)) return;
+      unsubs.get(panelId)?.();
+      unsubs.delete(panelId);
+      sessions.get(panelId).dispose();
       sessions.delete(panelId);
+      bump();
     },
     ids: () => [...sessions.keys()],
     closeAll() {
       [...sessions.keys()].forEach((id) => this.close(id));
     },
+    /** Ciclo de vida del conjunto (lo hace quien lo posee, no cada panel): StrictMode desmonta y vuelve a montar. */
+    activateAll() {
+      sessions.forEach((s) => s.activate());
+    },
+    disposeAll() {
+      sessions.forEach((s) => s.dispose());
+    },
+    subscribe(fn) {
+      listeners.add(fn);
+      return () => listeners.delete(fn);
+    },
+    getVersion: () => version,
   };
 }

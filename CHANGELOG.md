@@ -131,6 +131,16 @@ Todas las modificaciones notables de este proyecto están documentadas en este a
 - La interfaz web empaquetada (`praxeon/server/static`) ya no se versiona: `scripts/build_frontend.py` la compila desde
   `web/` antes de empaquetar. La que se versionaba era de mediados de octubre y no incluía los cambios posteriores.
 - Frontend: primer ejecutor de tests (Vitest, `npm test` en `web/`) y paso nuevo en el job de CI del frontend.
+- Paneles de agentes (FE-008, nota N-001): varios agentes sobre el mismo workspace, cada uno en su panel (botón «Nuevo panel» o la
+  paleta). Hasta 4 paneles a la vez (1, 2 en columnas o 2×2) y pestañas para el resto (máximo 8 abiertos); crear, cerrar, maximizar y
+  enfocar. Cada panel tiene cabecera con agente, modelo, modo y estado (en curso, esperando aprobación, pausado, terminado). Las
+  aprobaciones de TODOS los paneles se reúnen en la cabecera, para no perder una en un panel sin foco; un conflicto de escritura
+  (FE-009), una aprobación pedida o una misión terminada en un panel sin foco avisan con una notificación y una insignia en su
+  pestaña. La disposición se guarda por workspace y se restaura al volver o recargar. Con un solo panel todo se ve igual que antes.
+  Cerrar un panel no detiene su misión: sigue en el servidor y se ve en Sesiones.
+- Límite de misiones concurrentes (FE-008): `PRAXEON_MAX_CONCURRENT_MISSIONS` (por defecto 4). Al superarlo, iniciar otra misión
+  devuelve 429 con el motivo («Hay 4 misiones en curso y el límite es 4… Detén una o espera a que termine») y no crea ninguna sesión.
+  Antes no había tope y varias misiones a la vez habían agotado la memoria.
 - Varias sesiones sobre un mismo workspace ya no se pisan los archivos sin aviso (FE-009): si una sesión leyó un archivo y otra lo
   modificó después, la escritura de la primera (`edit_file`/`write_file`) se rechaza con un error claro («la sesión 'B' lo modificó a las
   HH:MM después de que lo leyeras; vuelve a leerlo»), no se escribe nada y se emite el evento `workspace.file_conflict`. También se

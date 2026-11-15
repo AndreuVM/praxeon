@@ -1,13 +1,13 @@
-import React, { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback, Suspense } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, Suspense } from 'react';
 import ErrorBoundary from './components/ErrorBoundary';
 import {
   Activity, FolderOpen,
-  Plus, Map as MapIcon, ScrollText, History, FlaskConical, SquarePen, KeyRound, Pause, Play, Square,
+  Plus, Map as MapIcon, ScrollText, History, FlaskConical, SquarePen, KeyRound, Pause, Play, Square, Columns2, X, Maximize2, Minimize2,
 } from 'lucide-react';
 import Header from './components/Header';
 import Rail, { NAV_ITEMS } from './components/Rail';
 import Drawer from './components/Drawer';
-import Conversation from './components/Conversation';
+import PanelsArea from './components/panels/PanelsArea';
 import CommandPalette from './components/CommandPalette';
 import StepDetail from './components/StepDetail';
 import EventsPanel from './components/EventsPanel';
@@ -15,13 +15,15 @@ import DecisionTree from './components/DecisionTree';
 import ProposeActionModal from './components/ProposeActionModal';
 import SessionsModal from './components/SessionsModal';
 import UnauthorizedModal from './components/UnauthorizedModal';
-import DialogsHost, { notify } from './components/Dialogs';
+import DialogsHost, { confirmDialog, notify } from './components/Dialogs';
 import WorkspacePicker from './components/workspace/WorkspacePicker';
 import WorkspaceFlyout from './components/workspace/WorkspaceFlyout';
 import useWorkspace from './components/workspace/useWorkspace';
 import { loadChatConfig, persistChatConfig, chatRegistry } from './utils/chatStore';
 import { createSessionRegistry } from './state/agentSession';
-import useAgentSession from './state/useAgentSession';
+import useAgentSession, { useSessionRegistryVersion } from './state/useAgentSession';
+import { MAIN_ID, addPanel, closePanel, focusPanel, initialLayout, layoutStore, panelLabel, toggleMaximize } from './utils/panelLayout';
+import { approvalQueue, noticeFor } from './utils/approvals';
 import { buildCascadeDecisionModel } from './utils/cascadeConfig';
 import { rebuildChatFromSession } from './utils/chatFromEvents';
 
@@ -80,35 +82,6 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, [switchWorkspace]);
 
-  // Cada workspace tiene su propia conversación: al cambiar de workspace no se conserva la sesión actual (sigue en el servidor y
-  // en la lista de sesiones), se carga la última usada en el workspace nuevo o, si no tiene ninguna, se abre una sesión limpia.
-  const activeNavRef = useRef(activeNav);
-  activeNavRef.current = activeNav;
-  const lastWorkspacePathRef = useRef(null);
-  useEffect(() => {
-    const path = workspace?.path;
-    if (!path) return undefined;
-    const previous = lastWorkspacePathRef.current;
-    lastWorkspacePathRef.current = path;
-    if (previous === path) return undefined;                        // el mismo workspace; al arrancar (previous === null) también se carga su última sesión
-    let cancelled = false;
-    (async () => {
-      const nav = activeNavRef.current;
-      const same = (a, b) => Boolean(a && b) && a.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase() === b.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
-      let target = null;
-      try {
-        const res = await api.fetchSessions();
-        target = (res?.data || [])
-          .filter((sess) => same(sess.workspace_root, path))
-          .sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at))[0] || null;
-      } catch { /* sin lista de sesiones: se abre una limpia */ }
-      if (cancelled) return;
-      if (target) await handleLoadSession(target.session_id);
-      else handleNewCleanSession();
-      if (nav !== 'live') setActiveNav(nav);                          // cambiar de workspace no te saca de la vista en que estabas
-    })();
-    return () => { cancelled = true; };
-  }, [workspace?.path]); // eslint-disable-line react-hooks/exhaustive-deps
   // Cajón de detalle: null (cerrado) | 'map' | 'step' | 'events'
   const [drawerTab, setDrawerTab] = useState(null);
   const [drawerWide, setDrawerWide] = useState(false);
@@ -168,8 +141,9 @@ export default function App() {
     missionConfigRef.current = missionConfig;
     sessionsListRef.current = sessionsList;
   });
-  // Un registro de sesiones, una por panel (FE-008 abrirá más); hoy solo existe el panel principal.
-  const [sessions] = useState(() => createSessionRegistry(() => ({
+  // Un registro de sesiones, una por panel (FE-008). El aviso de lo que pasa en un panel sin foco lo decide `panelEventRef`.
+  const panelEventRef = useRef(null);
+  const [sessions] = useState(() => createSessionRegistry((panelId) => ({
     api,
     notify,
     chats: chatRegistry(),
@@ -179,11 +153,127 @@ export default function App() {
     getSessionsList: () => sessionsListRef.current,
     setSessionsList,
     onRuntimeActive: setRuntimeActive,
+    onEvent: (ev) => panelEventRef.current?.(panelId, ev),
     ui: { showLive: () => setActiveNav('live'), closeDrawer: () => setDrawerTab(null), openStep: () => setDrawerTab('step') },
   })));
-  const [live] = useState(() => sessions.open('main'));
-  const { session, nodes, decisionsMap, selectedNodeId, logs, events, isRunning, isPaused, followExecution, chatMessages } = useAgentSession(live);
-  const { setSelectedNodeId, updateChat } = live;
+  const [layout, setLayout] = useState(initialLayout);
+  const [unread, setUnread] = useState({});                // avisos sin ver de cada panel que no tiene el foco
+  const layoutOwnerRef = useRef(null);                     // workspace al que pertenece la disposición actual (para guardarla)
+  useState(() => sessions.open(MAIN_ID));
+  // El ciclo de vida de los WebSockets es del conjunto, no de cada panel: un panel oculto o en pestaña sigue conectado.
+  useEffect(() => {
+    sessions.activateAll();
+    return () => sessions.disposeAll();
+  }, [sessions]);
+  const registryVersion = useSessionRegistryVersion(sessions);
+  const live = sessions.get(layout.focusedId) || sessions.get(MAIN_ID);   // la sesión del panel con el foco: la que ven la cabecera y el cajón
+  const { session, nodes, decisionsMap, selectedNodeId, logs, events, isRunning, isPaused, followExecution } = useAgentSession(live);
+  const { setSelectedNodeId } = live;
+
+  // Aprobaciones de TODOS los paneles: una pendiente en un panel sin foco no se pierde
+  const queue = approvalQueue(layout.order.map((id) => ({ id, label: panelLabel(id), state: sessions.get(id)?.getState() })).filter((x) => x.state));
+
+  const focusPanelById = (id) => {
+    setLayout((l) => focusPanel(l, id));
+    setUnread((u) => (u[id] ? { ...u, [id]: 0 } : u));
+  };
+  const handleNewPanel = () => {
+    const result = addPanel(layout);
+    if (!result) {
+      notify('Hay ya el máximo de paneles abiertos. Cierra alguno para abrir otro.', { tone: 'info' });
+      return;
+    }
+    sessions.open(result.id).newClean();
+    setLayout(result.layout);
+    setActiveNav('live');
+  };
+  const handleClosePanel = async (id) => {
+    const store = sessions.get(id);
+    if (!store || layout.order.length <= 1) return;
+    if (store.getState().isRunning) {
+      const ok = await confirmDialog(`${panelLabel(id)} tiene una misión en curso. Cerrar el panel no la detiene: sigue en el servidor y la verás en Sesiones.`, { confirmLabel: 'Cerrar panel' });
+      if (!ok) return;
+    }
+    sessions.close(id);
+    setLayout((l) => closePanel(l, id));
+    setUnread((u) => {
+      const { [id]: _gone, ...rest } = u;
+      return rest;
+    });
+  };
+  const handleMaximizePanel = (id) => setLayout((l) => toggleMaximize(l, id));
+
+  // Avisos por panel: algo que pasa en un panel sin foco (aprobación pedida, conflicto de escritura, misión terminada)
+  const focusedRef = useRef(MAIN_ID);
+  useLayoutEffect(() => {
+    focusedRef.current = layout.focusedId;
+    panelEventRef.current = (panelId, ev) => {
+      const notice = noticeFor(ev);
+      if (!notice || panelId === focusedRef.current) return;
+      setUnread((u) => ({ ...u, [panelId]: (u[panelId] || 0) + 1 }));
+      notify(`${panelLabel(panelId)}: ${notice.text}`, { tone: notice.kind === 'conflict' ? 'error' : 'info' });
+    };
+  });
+
+  // Paneles de un workspace que se guardaron: se abren de nuevo con su sesión (la conversación y el estado vienen del servidor)
+  const restorePanels = async (path) => {
+    const saved = layoutStore.load(path);
+    const extras = saved.panels.filter((x) => x.id !== MAIN_ID);
+    if (extras.length === 0) return;
+    await Promise.all(extras.map((x) => {
+      const store = sessions.open(x.id);
+      return x.sessionId ? store.loadSession(x.sessionId) : Promise.resolve(store.newClean());
+    }));
+    setLayout({ order: [MAIN_ID, ...extras.map((x) => x.id)], focusedId: saved.focusedId, maximizedId: null });
+  };
+
+  // La disposición se guarda por workspace (paneles abiertos, la sesión de cada uno y cuál tiene el foco)
+  const layoutKey = JSON.stringify([layout.order.map((id) => [id, sessions.get(id)?.getState().session.sessionId || null]), layout.focusedId, registryVersion >= 0]);
+  useEffect(() => {
+    const path = workspace?.path;
+    if (!path || layoutOwnerRef.current !== path) return;
+    layoutStore.save(path, {
+      panels: layout.order.map((id) => ({ id, sessionId: sessions.get(id)?.getState().session.sessionId || null })),
+      focusedId: layout.focusedId,
+    });
+  }, [layoutKey, workspace?.path]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Cada workspace tiene su propia conversación: al cambiar de workspace no se conserva la sesión actual (sigue en el servidor y
+  // en la lista de sesiones), se carga la última usada en el workspace nuevo o, si no tiene ninguna, se abre una sesión limpia.
+  const activeNavRef = useRef(activeNav);
+  activeNavRef.current = activeNav;
+  const lastWorkspacePathRef = useRef(null);
+  useEffect(() => {
+    const path = workspace?.path;
+    if (!path) return undefined;
+    const previous = lastWorkspacePathRef.current;
+    lastWorkspacePathRef.current = path;
+    if (previous === path) return undefined;                        // el mismo workspace; al arrancar (previous === null) también se carga su última sesión
+    let cancelled = false;
+    (async () => {
+      const nav = activeNavRef.current;
+      const same = (a, b) => Boolean(a && b) && a.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase() === b.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+      let target = null;
+      try {
+        const res = await api.fetchSessions();
+        target = (res?.data || [])
+          .filter((sess) => same(sess.workspace_root, path))
+          .sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at))[0] || null;
+      } catch { /* sin lista de sesiones: se abre una limpia */ }
+      if (cancelled) return;
+      // Los paneles extra del workspace anterior se cierran (sus sesiones siguen en el servidor); el principal carga la última sesión
+      sessions.ids().filter((id) => id !== MAIN_ID).forEach((id) => sessions.close(id));
+      setLayout(initialLayout());
+      setUnread({});
+      const main = sessions.get(MAIN_ID);
+      if (target) await main.loadSession(target.session_id);
+      else main.newClean();
+      await restorePanels(path);                                      // los paneles que este workspace tenía abiertos
+      layoutOwnerRef.current = path;
+      if (nav !== 'live') setActiveNav(nav);                          // cambiar de workspace no te saca de la vista en que estabas
+    })();
+    return () => { cancelled = true; };
+  }, [workspace?.path]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Comprobar salud del backend y listar sesiones previas
   useEffect(() => {
@@ -295,21 +385,6 @@ export default function App() {
   const handleReject = (decisionId, customReason, nodeId) => live.reject(decisionId, customReason, nodeId);
   const handleExecute = (decisionId, capability) => live.execute(decisionId, capability);
 
-  // Aprobaciones pendientes: decisiones que la política retiene para que las resuelva el operador (RD-6.3.3)
-  const pendingApprovals = useMemo(() => {
-    if (!isRunning) return [];
-    return Object.entries(decisionsMap)
-      .filter(([, d]) => d.status === 'REVIEW' && !d.capability?.issued)
-      .map(([nodeId, d]) => ({
-        nodeId,
-        decisionId: d.decisionId || `d_${nodeId}`,
-        tool: d.tool,
-        command: d.actionCommand,
-        riskLevel: d.riskLevel,
-        laya: d.semanticEvaluation?.[0]?.score,
-      }));
-  }, [decisionsMap, isRunning]);
-
   const openDrawer = (tab) => {
     setActiveNav('live');
     setDrawerTab(tab);
@@ -331,6 +406,13 @@ export default function App() {
   const paletteItems = [
     { id: 'go-live', group: 'Conversación', label: 'Volver a la conversación', icon: Activity, run: () => setActiveNav('live') },
     { id: 'new-session', group: 'Conversación', label: 'Nueva sesión limpia', icon: Plus, run: handleNewCleanSession },
+    { id: 'new-panel', group: 'Conversación', label: 'Abrir un panel con otro agente', icon: Columns2, run: handleNewPanel },
+    ...(layout.order.length > 1
+      ? [
+          { id: 'close-panel', group: 'Conversación', label: `Cerrar el panel ${panelLabel(layout.focusedId)}`, icon: X, run: () => handleClosePanel(layout.focusedId) },
+          { id: 'max-panel', group: 'Conversación', label: layout.maximizedId ? 'Restaurar los paneles' : 'Maximizar el panel actual', icon: layout.maximizedId ? Minimize2 : Maximize2, run: () => handleMaximizePanel(layout.focusedId) },
+        ]
+      : []),
     { id: 'open-map', group: 'Conversación', label: 'Abrir el mapa de decisiones', icon: MapIcon, run: () => openDrawer('map') },
     { id: 'open-events', group: 'Conversación', label: 'Ver los eventos de la sesión', icon: ScrollText, run: () => openDrawer('events') },
     { id: 'open-sessions', group: 'Conversación', label: 'Abrir las sesiones registradas', icon: History, run: () => setIsSessionsOpen(true) },
@@ -373,7 +455,7 @@ export default function App() {
         onOpenWorkspace={() => setIsWsFlyoutOpen((v) => !v)}
         onOpenPalette={() => setIsPaletteOpen(true)}
         onOpenAccount={() => setIsAuthModalOpen(true)}
-        pendingApprovals={pendingApprovals.length}
+        pendingApprovals={queue.length}
       />
 
       <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
@@ -386,10 +468,18 @@ export default function App() {
           fallbackReason={session.fallbackReason}
           isRunning={isRunning}
           isPaused={isPaused}
-          pendingApprovals={pendingApprovals.length}
+          pendingApprovals={queue.length}
+          approvalQueue={queue}
+          panelCount={layout.order.length}
           drawerTab={drawerTab}
           onOpenSessions={() => setIsSessionsOpen(true)}
           onNewSession={handleNewCleanSession}
+          onNewPanel={handleNewPanel}
+          onGoToApproval={(item) => {
+            focusPanelById(item.panelId);
+            sessions.get(item.panelId)?.setSelectedNodeId(item.nodeId);
+            openDrawer('step');
+          }}
           onOpenMap={() => (activeNav === 'live' && drawerTab === 'map' ? setDrawerTab(null) : openDrawer('map'))}
           onOpenPalette={() => setIsPaletteOpen(true)}
           onGoToConversation={() => setActiveNav('live')}
@@ -397,38 +487,22 @@ export default function App() {
 
         <div style={{ flex: 1, minHeight: 0, display: 'flex', position: 'relative', overflow: 'hidden' }}>
           <main style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-            {/* La conversación permanece montada al cambiar de vista para no perder el texto ni la configuración */}
-            <div style={{ display: activeNav === 'live' ? 'flex' : 'none', flex: 1, minHeight: 0, flexDirection: 'column' }}>
-              <Conversation
-                session={session}
-                isRunning={isRunning}
-                isPaused={isPaused}
-                events={events}
-                chatMessages={chatMessages}
-                onMessagesChange={updateChat}
-                missionConfig={missionConfig}
-                onConfigChange={setMissionConfig}
-                onStartMission={handleStartMission}
-                onPauseMission={handlePauseMission}
-                onResumeMission={handleResumeMission}
-                onStopMission={handleStopMission}
-                nodes={nodes}
-                selectedNodeId={selectedNodeId}
-                drawerTab={drawerTab}
-                pendingApprovals={pendingApprovals}
-                onSelectStep={(nodeId) => {
-                  if (nodeId) handleSelectNode(nodeId);
-                  else setDrawerTab('step');
-                }}
-                onOpenDrawer={openDrawer}
-                onApprove={(a) => handleApprove(a.decisionId, a.nodeId)}
-                onReject={(a, reason) => handleReject(a.decisionId, reason, a.nodeId)}
-                onViewApproval={(a) => {
-                  setSelectedNodeId(a.nodeId);
-                  setDrawerTab('step');
-                }}
-              />
-            </div>
+            {/* Los paneles permanecen montados al cambiar de vista para no perder el texto ni la configuración */}
+            <PanelsArea
+              registry={sessions}
+              layout={layout}
+              narrow={narrow}
+              unread={unread}
+              missionConfig={missionConfig}
+              onConfigChange={setMissionConfig}
+              drawerTab={drawerTab}
+              openDrawer={openDrawer}
+              onFocus={focusPanelById}
+              onMaximize={handleMaximizePanel}
+              onClose={handleClosePanel}
+              onAdd={handleNewPanel}
+              hidden={activeNav !== 'live'}
+            />
 
             {activeNav !== 'live' && (
               <div style={{ display: 'flex', flex: 1, overflow: 'hidden', minWidth: 0 }}>

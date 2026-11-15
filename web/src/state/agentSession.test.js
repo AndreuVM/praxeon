@@ -169,6 +169,64 @@ describe('dos sesiones a la vez', () => {
   });
 });
 
+describe('registro de sesiones: avisos y ciclo de vida del conjunto', () => {
+  const build = () => {
+    const streams = [];
+    const registry = createSessionRegistry(() => {
+      const env = makeEnv();
+      env.api.createWebSocketStream.mockImplementation((sid) => { const s = { sid, closed: false, close() { s.closed = true; } }; streams.push(s); return s; });
+      return env.deps;
+    });
+    return { registry, streams };
+  };
+
+  it('avisa de cualquier cambio de cualquier sesión y de abrir o cerrar paneles', () => {
+    const { registry } = build();
+    const listener = vi.fn();
+    registry.subscribe(listener);
+    const v0 = registry.getVersion();
+    const a = registry.open('a');
+    expect(registry.getVersion()).toBeGreaterThan(v0);
+    const b = registry.open('b');
+    const before = registry.getVersion();
+    a.setIsRunning(true);
+    b.setIsRunning(true);
+    expect(registry.getVersion()).toBe(before + 2);
+    registry.close('a');
+    expect(registry.getVersion()).toBe(before + 3);
+    a.setIsRunning(false);                                  // una sesión cerrada ya no avisa
+    expect(registry.getVersion()).toBe(before + 3);
+    expect(listener).toHaveBeenCalled();
+  });
+
+  it('desmontar y volver a montar el conjunto (StrictMode) reconecta cada sesión y conserva los avisos', () => {
+    const { registry, streams } = build();
+    const a = registry.open('a');
+    const b = registry.open('b');
+    seed(a, 'sa');
+    seed(b, 'sb');
+    registry.disposeAll();
+    expect(streams.every((s) => s.closed)).toBe(true);
+    registry.activateAll();
+    expect(streams.filter((s) => !s.closed).map((s) => s.sid).sort()).toEqual(['sa', 'sb']);
+    const v = registry.getVersion();
+    a.setIsRunning(true);
+    expect(registry.getVersion()).toBe(v + 1);               // el registro sigue suscrito tras dispose + activate
+  });
+
+  it('entrega cada evento ya aplicado al estado, y solo los de su sesión', () => {
+    const seen = [];
+    const env = makeEnv({ deps: { onEvent: (ev) => seen.push(ev.type) } });
+    const store = new AgentSession(env.deps);
+    seed(store);
+    pushAll(env.streams[0], MANUAL.events.slice(0, 3));
+    expect(seen).toEqual(MANUAL.events.slice(0, 3).map((e) => e.type));
+    store.dispose();
+    pushAll(env.streams[0], MANUAL.events.slice(3, 5));
+    expect(seen).toHaveLength(3);
+  });
+});
+
 describe('suscripción', () => {
   it('avisa una vez por cambio y una sola vez dentro de un lote', () => {
     const store = new AgentSession(makeEnv().deps);

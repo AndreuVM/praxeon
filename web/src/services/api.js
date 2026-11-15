@@ -428,7 +428,15 @@ export async function runMission(missionConfig) {
     method: 'POST',
     body: JSON.stringify(missionConfig),
   });
-  if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+  if (!res.ok) {
+    const body = await res.text();
+    if (res.status === 429) {                       // límite de misiones concurrentes (FE-008): el servidor ya explica qué hacer
+      let detail = body;
+      try { detail = JSON.parse(body).detail || body; } catch { /* no es JSON */ }
+      throw new Error(String(detail));
+    }
+    throw new Error(`HTTP ${res.status}: ${body}`);
+  }
   return await res.json();
 }
 

@@ -1,13 +1,12 @@
-import { useEffect, useSyncExternalStore } from 'react';
+import { useSyncExternalStore } from 'react';
 
-/**
- * Conecta un `AgentSession` a un componente: devuelve su estado y re-renderiza al cambiar. Al montarse abre su WebSocket y al
- * desmontarse lo cierra (con StrictMode el efecto se ejecuta dos veces: `activate` deja el almacén listo de nuevo).
- */
+/** Estado de un `AgentSession` en un componente: re-renderiza al cambiar. El ciclo de vida (abrir y cerrar el WebSocket) NO es
+ *  del componente sino del registro de sesiones: un panel oculto o en una pestaña sigue conectado aunque no se dibuje. */
 export default function useAgentSession(store) {
-  useEffect(() => {
-    store.activate();
-    return () => store.dispose();
-  }, [store]);
   return useSyncExternalStore(store.subscribe, store.getState);
+}
+
+/** Cambios de cualquiera de las sesiones del registro (para la cola global de aprobaciones y los avisos de pestañas). */
+export function useSessionRegistryVersion(registry) {
+  return useSyncExternalStore(registry.subscribe, registry.getVersion);
 }
