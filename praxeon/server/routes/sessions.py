@@ -5,7 +5,7 @@ from praxeon.server.services.auth_service import constant_time_equals
 from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from praxeon import attachments, vision, workspace_files
+from praxeon import agy_tools, attachments, vision, workspace_files
 from praxeon.agent_llm import PROVIDER_PRESETS
 from praxeon.server.dependencies import RuntimeApplicationService, get_runtime_service
 from praxeon.server.runtime_service.mission_runtime import MissionLimitError
@@ -45,6 +45,24 @@ def ensure_full_access_available(execution_mode: str | None, service: Any) -> No
         )
 
 
+def agy_tools_selection(req: RunMissionRequest) -> list[str]:
+    """Grupos de herramientas de agy pedidos, ya validados y CONFIRMADOS (400 si no): lo activado lo ejecuta agy sin la política de PRAXEON."""
+    if not req.agy_tools:
+        return []
+    if (req.llm_provider or "").lower().strip() not in ("agy", "antigravity"):
+        raise HTTPException(status_code=400, detail="Las herramientas de agy solo se pueden activar con el proveedor agy.")
+    try:
+        chosen = list(agy_tools.validate(req.agy_tools, req.agy_tools_ack))
+        if any(agy_tools.GROUPS[g].needs_images for g in chosen):
+            # lo generado se guarda en el workspace activo: la misión no puede apuntar a otra carpeta
+            active = workspace_files.workspace_root()
+            if req.workspace_root and os.path.realpath(req.workspace_root) != os.path.realpath(active):
+                raise ValueError("Las imágenes generadas se guardan en el workspace activo y esta misión usa otra carpeta.")
+    except (ValueError, workspace_files.WorkspacePathError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return chosen
+
+
 def attachments_prompt_block(req: RunMissionRequest) -> tuple[str | None, list[str]]:
     """Bloque de adjuntos del mensaje y rutas de sus imágenes, validados en el servidor.
 
@@ -82,6 +100,7 @@ def run_mission(
     ensure_full_access_available(req.execution_mode, service)
     full_access_authorized = is_full_access_authorized(req.execution_mode, req.full_access_confirmed)
     prompt_context, image_paths = attachments_prompt_block(req)
+    agy_groups = agy_tools_selection(req)
     try:
         meta = service.start_mission(
             workflow_id=req.workflow_id,
@@ -104,6 +123,7 @@ def run_mission(
             chat_history=req.chat_history,
             prompt_context=prompt_context,
             image_paths=image_paths,
+            agy_tools=agy_groups,
             metadata={
                 "created_by": "api_client",
                 "full_access_authorized_by_operator": full_access_authorized,

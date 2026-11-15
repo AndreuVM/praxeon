@@ -5,6 +5,7 @@
 // así que se prueba sin navegador y cada panel puede tener el suyo. Está fijada por pruebas diferenciales contra lo que producía
 // el código original (`sessionReducer.test.js` y sus fixtures).
 import { computeTreeLayout } from './treeLayout';
+import { imageFromEvent } from './agyTools';
 
 export const READY_SESSION = {
   sessionId: 'ready',
@@ -67,13 +68,16 @@ export function describeEvent(ev, executionMode) {
     case 'workflow.node_completed': return `[FLUJO] Nodo «${p?.node_name || p?.node_id}» completado por ${p?.agent_name || 'agente'}`;
     case 'session.completed': return `Misión completada: ${p?.summary || 'terminó correctamente'}`;
     case 'workspace.file_conflict': return `[CONFLICTO] ${p?.message || `Otra sesión modificó '${p?.path}'`}`;
+    case 'agy.tools_enabled': return `[AGY] Herramientas activadas por el usuario: ${(p?.titles || p?.groups || []).join(', ')}. Las ejecuta agy sin la política de PRAXEON.`;
+    case 'agy.tool_used': return `[AGY] Herramientas usadas: ${(p?.tools || []).map((t) => (t.detail ? `${t.name} (${t.detail})` : t.name)).join(', ') || 'ninguna'}${p?.denied ? ` · ${p.denied} bloqueada(s)` : ''}`;
+    case 'agy.image_generated': return `[AGY] Imagen generada: ${p?.name || p?.rel_path}`;
     default: return `[${evType}]`;
   }
 }
 
 function levelOf(evType, ev) {
   if (evType.includes('error') || evType.includes('pruned') || evType.includes('blocked')) return 'ERROR';
-  if (evType.includes('warn') || evType === 'workspace.file_conflict' || evType === 'approval.requested' || (evType === 'policy.decided' && ev.payload?.status === 'REVIEW')) return 'WARN';
+  if (evType.includes('warn') || evType === 'workspace.file_conflict' || evType === 'agy.tools_enabled' || evType === 'approval.requested' || (evType === 'policy.decided' && ev.payload?.status === 'REVIEW')) return 'WARN';
   return 'INFO';
 }
 
@@ -455,6 +459,13 @@ export function reduceEvent(state, ev, ctx = {}) {
       runtime: { ...session.runtime, executionTime: 'Completed' },
     };
     isRunning = false;
+  }
+
+  if (evType === 'agy.image_generated') {
+    const img = imageFromEvent(ev.payload);
+    if (img && !(session.generatedImages || []).some((x) => x.rel_path === img.rel_path)) {
+      session = { ...session, generatedImages: [...(session.generatedImages || []), img] };
+    }
   }
 
   return { ...state, session, nodes, decisionsMap, selectedNodeId, isRunning, events, logs, maxSeq };

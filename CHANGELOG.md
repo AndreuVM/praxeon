@@ -222,6 +222,19 @@ Todas las modificaciones notables de este proyecto están documentadas en este a
   llegan a ejecutarse (prueba opt-in `PRAXEON_TEST_REAL_AGY=1`). Límites: no admite imágenes por este canal, cada turno gasta unos
   21 000 tokens de entrada por las definiciones de herramientas de agy, el primer turno tarda ~35 s, y depende de que agy siga
   respetando los hooks. Nunca se elige en modo `auto`.
+- **Herramientas de agy activables a mano** desde la configuración del modelo (FE-015, nota N-020): con el proveedor agy, la
+  configuración de cada panel muestra un catálogo (`GET /v1/providers/agy/tools`) de grupos con su nivel de riesgo y su aviso.
+  Hoy: **Generación de imágenes** (el subagente `image-generator` de agy: PRAXEON recoge lo que genera de la carpeta de artefactos de agy,
+  lo recodifica desde sus píxeles sin metadatos, lo guarda en `.praxeon/generated/<sesión>/` y lo muestra en el chat) y **Búsqueda web**
+  (`search_web`). Todo desactivado por defecto: el hook de FE-014 pasa a ser `praxeon/agy_hook.py`, que solo deja pasar lo activado (falla
+  cerrado: un error, una política ilegible o una herramienta desconocida bloquean; `invoke_subagent` solo con los tipos permitidos y con el
+  espacio de trabajo heredado; tope de llamadas por turno). Lo activado lo ejecuta agy por su cuenta, **sin pasar por la política, el supervisor
+  ni el sandbox de PRAXEON**, y por eso cada grupo exige una confirmación explícita que el **servidor** comprueba (una petición sin ella, con un
+  grupo desconocido, repetido o con otro proveedor se rechaza con 400); ni las herramientas ni las confirmaciones se guardan ni pasan a otros
+  paneles: se piden cada vez. La activación, lo usado (y lo bloqueado) y cada imagen generada quedan en el log de eventos de la sesión
+  (`agy.tools_enabled`, `agy.tool_used`, `agy.image_generated`). Corrige además un punto flojo de FE-014: los pasos de `invoke_subagent` llegan
+  con `step_type: "subagent"` y el monitor solo miraba `"tool"`. **El navegador de agy NO se puede ofrecer**: en modo `-p` no está declarado como
+  herramienta, no existe subagente de navegador, `/browser` no se expande y ningún ajuste de `--settings` lo activa. Probado con el agy real.
 - Con `llm_failure_policy="fail_closed"`, un proveedor del agente sin credenciales hacía que la misión siguiera en silencio
   con el planificador sintético (la fábrica devolvía el simulador en vez de fallar). Ahora la misión se detiene.
 - El supervisor TypeSafe elegido sin modelo explícito llamaba al API con el modelo `typesafe` (o `default`), que rechaza

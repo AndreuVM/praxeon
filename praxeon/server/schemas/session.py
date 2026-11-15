@@ -85,5 +85,7 @@ class RunMissionRequest(BaseModel):
     autonomous: bool | None = Field(False, description="Activa ejecución autónoma desatendida")
     llm_failure_policy: str | None = Field("synthetic_fallback", description="Política ante fallos del LLM: 'fail_closed' o 'synthetic_fallback'")
     chat_history: list[dict[str, str]] | None = Field(None, description="Historial previo de conversación para memoria multi-turno")
+    agy_tools: list[str] | None = Field(None, max_length=20, description="Grupos de herramientas propias de agy que el usuario activa (solo con el proveedor agy; ver GET /v1/providers/agy/tools). Las ejecuta agy por su cuenta, sin la política de PRAXEON")
+    agy_tools_ack: list[str] | None = Field(None, max_length=20, description="Grupos de agy_tools que el usuario ha confirmado explícitamente; cada grupo activado debe estar aquí o la petición se rechaza")
     attachments: list[str] | None = Field(None, max_length=500, description="Rutas (relativas al workspace) de los archivos adjuntos al mensaje, subidos antes con /v1/workspace/attachments. Se validan en el servidor")
 

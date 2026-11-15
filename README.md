@@ -159,6 +159,12 @@ llegara a ejecutarse, mata el proceso y falla el turno. Quita `GEMINI_API_KEY`/`
 imágenes por este canal; cada turno gasta unos 21 000 tokens de entrada por las definiciones de herramientas de agy; el primer turno tarda
 unos 35 s; y la barrera depende de que agy siga respetando los hooks (hay una prueba opt-in con el agy real: `PRAXEON_TEST_REAL_AGY=1`).
 
+**Activar herramientas de agy a mano.** En la configuración de la misión (Ajustes), con el proveedor agy, aparece el catálogo de
+herramientas: *Generación de imágenes* (el subagente `image-generator`; la imagen se limpia de metadatos y se muestra en el chat) y *Búsqueda
+web*. Están desactivadas y cada una pide una confirmación explícita, porque **lo activado lo ejecuta agy por su cuenta, sin pasar por la
+política, el supervisor ni el sandbox de PRAXEON**. No se guardan: se vuelven a pedir en cada panel y cada vez. Todo lo no activado sigue
+bloqueado. El navegador de agy no se puede ofrecer por este canal (en modo `-p` no está disponible).
+
 ### 4. Recuperación Interactiva en Caliente (*Self-Healing / Fallback*)
 Si un proveedor experimenta un fallo de cuota (error HTTP 429), pérdida de conexión o clave inválida durante una sesión en vivo, PRAXEON no detiene el proceso abruptamente: despliega un menú interactivo en terminal que permite alternar a otro proveedor (ej. de Gemini a Groq o a Ollama local) e introducir una clave al vuelo sin perder la memoria acumulada de la sesión.
 

@@ -88,6 +88,23 @@ describe('piezas sueltas', () => {
     expect(s.nodes).toBe(before.nodes);
     expect(describeEvent({ type: 'workspace.file_conflict', payload: { path: 'x.txt' } }, undefined)).toBe("[CONFLICTO] Otra sesión modificó 'x.txt'");
   });
+  it('las herramientas de agy (FE-015): la activación avisa, el uso se resume y las imágenes se acumulan sin repetirse', () => {
+    const at = (type, payload, sequence) => ({ type, node_id: 'root', timestamp: '2026-11-15T12:30:00Z', sequence, payload });
+    let s = createSessionState();
+    s = reduceEvent(s, at('agy.tools_enabled', { groups: ['images'], titles: ['Generación de imágenes'] }, 1), {});
+    expect(s.logs.at(-1)).toMatchObject({ level: 'WARN' });
+    expect(s.logs.at(-1).message).toContain('Generación de imágenes');
+    expect(s.logs.at(-1).message).toContain('sin la política de PRAXEON');
+    s = reduceEvent(s, at('agy.tool_used', { tools: [{ name: 'generate_image', detail: 'circulo' }], denied: 2 }, 2), {});
+    expect(s.logs.at(-1).message).toBe('[AGY] Herramientas usadas: generate_image (circulo) · 2 bloqueada(s)');
+    const img = { rel_path: '.praxeon/generated/s-1/circulo.jpg', name: 'circulo.jpg', width: 1024, height: 1024 };
+    s = reduceEvent(s, at('agy.image_generated', img, 3), {});
+    s = reduceEvent(s, at('agy.image_generated', img, 4), {});                              // el mismo evento repetido no duplica
+    expect(s.session.generatedImages).toEqual([img]);
+    s = reduceEvent(s, at('agy.image_generated', { ...img, rel_path: '../../fuera.png' }, 5), {});   // una ruta fuera de la carpeta de imágenes se ignora
+    s = reduceEvent(s, at('agy.image_generated', { ...img, rel_path: '.praxeon/attachments/s/a.png' }, 6), {});
+    expect(s.session.generatedImages).toEqual([img]);
+  });
   it('el rótulo de execution.started depende del modo', () => {
     expect(describeEvent({ type: 'execution.started', payload: { tool: 't' } }, 'full_access')).toContain('Full Access');
     expect(describeEvent({ type: 'execution.started', payload: { tool: 't' } }, 'local_restricted')).toContain('local sandbox');

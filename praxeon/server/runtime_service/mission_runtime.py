@@ -164,6 +164,7 @@ class MissionRuntimeMixin(RuntimeHost):
         workflow_id: str | None = None,
         prompt_context: str | None = None,
         image_paths: list[str] | None = None,
+        agy_tools: list[str] | None = None,
     ) -> dict[str, Any]:
         """Inicia una misión interactiva supervisada en tiempo real.
 
@@ -283,6 +284,7 @@ class MissionRuntimeMixin(RuntimeHost):
             "chat_history": chat_history,
             "prompt_context": prompt_context,
             "image_paths": list(image_paths or []),      # rutas de las imágenes adjuntas; los bytes se leen y limpian al enviarlos, no se guardan aquí
+            "agy_tools": list(agy_tools or []),         # grupos de herramientas de agy que el usuario activó y confirmó (la ruta ya los validó)
             "workflow_id": workflow_id,
             # Tiempo máximo (s) que la misión espera una aprobación humana antes de seguir sin vetar la acción
             "approval_timeout_seconds": (metadata or {}).get("approval_timeout_seconds"),
@@ -504,6 +506,23 @@ class MissionRuntimeMixin(RuntimeHost):
         )
         return AgentLoop(ctx).run()
 
+    def _announce_agy_tools(self, sid: str, groups: list[str]) -> None:
+        """Deja constancia en el log de eventos de que el usuario activó herramientas de agy (las ejecuta agy sin la política de PRAXEON)."""
+        from praxeon import agy_tools
+
+        self.event_bus.emit(
+            session_id=sid,
+            event_type=EventType.AGY_TOOLS_ENABLED,
+            node_id=f"root_{sid}",
+            payload={
+                "groups": list(groups),
+                "titles": [agy_tools.GROUPS[g].title for g in groups],
+                "risks": {g: agy_tools.GROUPS[g].risk for g in groups},
+                "confirmed": True,
+                "message": "Herramientas propias de agy activadas por el usuario: las ejecuta agy sin pasar por la política, el supervisor ni el sandbox de PRAXEON.",
+            },
+        )
+
     def _run_workflow_mission(self, mission: dict[str, Any], base_llm: Any, session_mode: str) -> bool:
         """Ejecuta la tarea siguiendo el workflow: el grafo manda y cada agente trabaja dentro de su nodo."""
         from praxeon import agent_llm as llm_mod
@@ -622,6 +641,7 @@ class MissionRuntimeMixin(RuntimeHost):
                     api_key=api_key,
                     base_url=base_url,
                     timeout=llm_timeout,
+                    agy_tools=mission.get("agy_tools") or None,
                 )
                 if isinstance(agent_llm, SimulatedAgentLLM):
                     # El proveedor pedido no está disponible (p. ej. sin credenciales) y la fábrica devolvió el simulador:
@@ -629,6 +649,8 @@ class MissionRuntimeMixin(RuntimeHost):
                     raise RuntimeError(f"proveedor '{provider_name}' no disponible (sin credenciales válidas o sin servidor)")
                 use_real_llm = True
                 logger.info("Misión inicializada con LLM real: %s (%s)", agent_llm.provider_name, agent_llm.model_name)
+                if mission.get("agy_tools"):
+                    self._announce_agy_tools(sid, mission["agy_tools"])
             except Exception as err:  # noqa: BLE001 - frontera con el proveedor LLM: la política de fallo decide si la misión se detiene o usa el planificador sintético
                 llm_fail_policy = (mission.get("llm_failure_policy") or "synthetic_fallback").lower().strip()
                 if llm_fail_policy == "fail_closed":

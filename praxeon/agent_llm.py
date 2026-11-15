@@ -834,7 +834,16 @@ class _AgySession(_CliSession):
     label = "agy"
     cli_name = "la CLI de agy"
     thread_name = "praxeon-agy-cli"
+    # Pasos del flujo que NO son una acción de agy; todo lo demás (tool, subagent…) se vigila.
+    _PASSIVE_STEPS = frozenset({"user_input", "agent_response", "system_message"})
+
     blocked_tools: list[str]
+    executed_tools: list[str]
+    allowed_tools: frozenset[str] = frozenset()   # lo que el usuario activó (nombres de paso del flujo); vacío = ninguna
+    state_dir: str | None = None                  # donde el hook deja sus eventos y PRAXEON el número de turno
+    conversation_id: str | None = None
+    turn = 0
+    turn_started = 0.0
 
     def _encode(self, text: str) -> str:
         return json.dumps({"event": "user", "message": {"content": text}})
@@ -846,16 +855,33 @@ class _AgySession(_CliSession):
 
     def _begin_turn(self) -> None:
         self.blocked_tools = []
+        self.executed_tools = []
+        self.turn += 1
+        self.turn_started = time.time()
+        if self.state_dir:
+            # el hook cuenta las llamadas permitidas POR TURNO: este fichero le dice en cuál está
+            Path(self.state_dir, "turn").write_text(str(self.turn), encoding="utf-8")
 
     def _observe(self, event: Any) -> None:
-        step = event.get("step_update") if isinstance(event, dict) else None
-        if not isinstance(step, dict) or step.get("step_type") != "tool":
+        if not isinstance(event, dict):
             return
-        name = str(step.get("tool_name") or "?")
+        if event.get("event") == "init" and isinstance(event.get("conversation_id"), str):
+            self.conversation_id = event["conversation_id"]
+            return
+        step = event.get("step_update")
+        if not isinstance(step, dict):
+            return
+        name = str(step.get("tool_name") or "")
+        if step.get("step_type") in self._PASSIVE_STEPS and not name:
+            return
+        name = name or str(step.get("step_type") or "?")
         state = step.get("state")
         if state == "DONE":
+            if name in self.allowed_tools:
+                self.executed_tools.append(name)
+                return
             raise RuntimeError(
-                f"[agy] La CLI ejecutó por su cuenta la herramienta «{name}»: el bloqueo de herramientas no ha funcionado. "
+                f"[agy] La CLI ejecutó por su cuenta «{name}», que no está activada: el bloqueo de herramientas no ha funcionado. "
                 "Se cierra la sesión; no uses este proveedor hasta revisar la versión de agy."
             )
         if state == "ERROR":
@@ -868,19 +894,49 @@ class AgyCLILLM(ClaudeCLILLM):
     Mismo esquema que `ClaudeCLILLM`: un proceso por conversación, solo se envía el mensaje nuevo y se reinicia si el
     historial no continúa. Diferencias: agy no tiene `--system-prompt-file`, así que el prompt de sistema viaja dentro del
     primer mensaje; y sus herramientas se cierran como se explica arriba.
+
+    `tools` son los grupos de `praxeon.agy_tools` que el usuario activó (ya validados y confirmados). Con ninguno, el hook
+    es el `exit 2` de siempre. Con alguno, el hook es `praxeon/agy_hook.py` con una lista de permitidas: lo demás sigue
+    bloqueado. Lo que agy genere (imágenes) se recoge con `take_activity()` tras cada turno.
     """
 
     _STRIP_ENV = ("GEMINI_API_KEY", "GOOGLE_API_KEY")   # que use el inicio de sesión de la cuenta, no una clave de API
     _NO_IMAGES = "[agy] La CLI de agy no admite imágenes por este canal: usa un proveedor con clave de API y un modelo con visión."
     _BINARY = "agy"
     _MISSING = "No se encuentra la CLI 'agy' en el PATH. Instálala e inicia sesión con tu cuenta (ejecuta 'agy' una vez)."
+    MAX_IMAGES_PER_TURN = 4
+    MAX_IMAGE_BYTES = 15 * 1024 * 1024
+    _IMAGE_SUFFIXES = (".jpg", ".jpeg", ".png", ".webp")
 
-    def __init__(self, model: str = "gemini-3.8-flash-medium", executable: str | None = None, timeout: float = 300.0) -> None:
+    def __init__(
+        self,
+        model: str = "gemini-3.8-flash-medium",
+        executable: str | None = None,
+        timeout: float = 300.0,
+        tools: tuple[str, ...] | list[str] | None = None,
+    ) -> None:
         super().__init__(model=model, executable=executable, timeout=timeout)
+        from praxeon import agy_tools
+
+        self._tools = tuple(tools or ())
+        self._policy = agy_tools.build_policy(self._tools) if self._tools else None
+        self._activity: dict[str, Any] = {"tools": [], "denied": 0, "images": []}
 
     @property
     def provider_name(self) -> str:
         return "agy"
+
+    @property
+    def enabled_tools(self) -> tuple[str, ...]:
+        return self._tools
+
+    @staticmethod
+    def _quote(path: str) -> str:
+        return '"' + path.replace('"', "") + '"'
+
+    def _hook_command(self, hook: Path, policy: Path, state: Path) -> str:
+        """Comando del hook. Un solo par de comillas por argumento: agy lo ejecuta con el shell del sistema."""
+        return f"{self._quote(sys.executable)} -I {self._quote(str(hook))} {self._quote(str(policy))} {self._quote(str(state))}"
 
     def _open(self, system: str) -> _CliSession:
         env = {k: v for k, v in os.environ.items() if k not in self._STRIP_ENV}
@@ -888,22 +944,46 @@ class AgyCLILLM(ClaudeCLILLM):
         root = Path(workdir)
         try:
             (root / ".agents").mkdir()
-            (root / ".agents" / "hooks.json").write_text(json.dumps(_AGY_HOOKS), encoding="utf-8")
+            hooks = _AGY_HOOKS
+            allowed: set[str] = set()
+            if self._policy is not None:
+                # copia del hook DENTRO de la sesión: no depende de dónde esté instalado PRAXEON
+                hook = root / "agy_hook.py"
+                shutil.copyfile(Path(__file__).with_name("agy_hook.py"), hook)
+                policy = root / "agy_policy.json"
+                policy.write_text(json.dumps(self._policy), encoding="utf-8")
+                hooks = {"hooks": {"PreToolUse": [{"matcher": ".*", "hooks": [{"type": "command", "command": self._hook_command(hook, policy, root)}]}]}}
+                allowed = set(self._policy["tools"]) | ({"invoke_subagent"} if self._policy["subagents"] else set())
+            (root / ".agents" / "hooks.json").write_text(json.dumps(hooks), encoding="utf-8")
             settings = root / "praxeon-agy-settings.json"
             settings.write_text(json.dumps(_AGY_SETTINGS), encoding="utf-8")
             cmd = [
                 self._executable, "--input-format", "stream-json", "--output-format", "stream-json", "--model", self._model,
                 "--settings", str(settings), "--disable-slash-commands", "--sandbox", "-p=",
             ]
-            return _AgySession(cmd, env, workdir)
+            session = _AgySession(cmd, env, workdir)
+            session.allowed_tools = frozenset(allowed)
+            session.state_dir = workdir if self._policy is not None else None
+            session.blocked_tools, session.executed_tools = [], []
+            return session
         except OSError as exc:
             shutil.rmtree(workdir, ignore_errors=True)
             raise ConnectionError(f"[agy] No se pudo ejecutar la CLI de agy: {exc}") from exc
 
     def _first_message(self, system: str, text: str) -> str:
         head = f"<instrucciones_del_sistema>\n{system}\n</instrucciones_del_sistema>\n\n" if system else ""
-        return f"{head}{_AGY_NO_TOOLS_NOTE}\n\n{text}"
+        return f"{head}{_AGY_NO_TOOLS_NOTE if self._policy is None else self._tools_note()}\n\n{text}"
 
+    def _tools_note(self) -> str:
+        from praxeon import agy_tools
+
+        names = ", ".join(agy_tools.GROUPS[g].title.lower() for g in self._tools)
+        return (
+            "Eres un módulo de razonamiento. Solo tienes activadas estas capacidades: " + names + ". Úsalas solo si la tarea las pide; "
+            "cualquier otra herramienta tuya está desactivada y se bloquea. Responde con texto siguiendo exactamente las instrucciones anteriores."
+        )
+
+    # ---------------------------------------------------------------------------------------- resultado y actividad
     def _read_result(self, data: dict[str, Any], session: _CliSession) -> str:
         status = str(data.get("status") or "").upper()
         if status != "SUCCESS":
@@ -919,7 +999,86 @@ class AgyCLILLM(ClaudeCLILLM):
             logging.getLogger(__name__).warning("[agy] PRAXEON bloqueó %d intento(s) de la CLI de usar herramientas propias: %s", len(blocked), ", ".join(blocked))
         usage = data.get("usage") or {}
         self._record_usage(usage.get("input_tokens"), usage.get("output_tokens"), usage.get("cache_read_tokens"))
+        if self._policy is not None and isinstance(session, _AgySession):
+            self._collect_activity(session)
         return str(data.get("response") or "").strip()
+
+    @staticmethod
+    def _agy_home() -> Path:
+        return Path(os.environ.get("PRAXEON_AGY_HOME") or Path.home() / ".gemini" / "antigravity-cli")
+
+    def _artifact_dir(self, session: _AgySession) -> Path | None:
+        """Carpeta de artefactos de esta conversación, solo si está DENTRO de `<agy>/brain/` (nunca una ruta que dé agy sin comprobar)."""
+        if not session.conversation_id:
+            return None
+        brain = (self._agy_home() / "brain").resolve()
+        try:
+            resolved = (brain / session.conversation_id).resolve()
+        except (OSError, ValueError):
+            return None
+        # el id viene del flujo de agy: solo vale si cae directamente dentro de brain/ (sin «..» ni separadores)
+        return resolved if resolved.parent == brain and resolved.is_dir() else None
+
+    def _collect_activity(self, session: _AgySession) -> None:
+        """Anota las herramientas permitidas que se usaron y recoge las imágenes nuevas que agy generó en este turno."""
+        events = Path(session.state_dir or "", "hook_events.jsonl")
+        offset = getattr(session, "events_offset", 0)
+        try:
+            with open(events, encoding="utf-8") as f:
+                f.seek(offset)
+                lines = f.read().splitlines()
+                session.events_offset = f.tell()  # type: ignore[attr-defined]
+        except OSError:
+            lines = []
+        for line in lines:
+            try:
+                rec = json.loads(line)
+            except ValueError:
+                continue
+            if rec.get("decision") == "allow":
+                self._activity["tools"].append({"name": rec.get("name"), "detail": rec.get("detail") or ""})
+            else:
+                self._activity["denied"] += 1
+        if "image-generator" not in (self._policy or {}).get("subagents", []):
+            return
+        self._collect_images(session)
+
+    def _collect_images(self, session: _AgySession) -> None:
+        if not vision.available():
+            logging.getLogger(__name__).warning("[agy] No se recogen las imágenes generadas: falta Pillow (%s)", vision.INSTALL_HINT)
+            return
+        art = self._artifact_dir(session)
+        if art is None:
+            logging.getLogger(__name__).warning("[agy] No se encontró la carpeta de artefactos de la conversación: no se recogen imágenes.")
+            return
+        seen: set[str] = getattr(session, "seen_artifacts", set())
+        session.seen_artifacts = seen  # type: ignore[attr-defined]
+        taken = 0
+        for path in sorted(art.iterdir(), key=lambda q: q.stat().st_mtime if q.exists() else 0.0):
+            if taken >= self.MAX_IMAGES_PER_TURN:
+                break
+            if path.suffix.lower() not in self._IMAGE_SUFFIXES or path.name in seen or path.is_symlink() or not path.is_file():
+                continue
+            try:
+                st = path.stat()
+                if st.st_mtime < session.turn_started - 2 or st.st_size > self.MAX_IMAGE_BYTES:
+                    seen.add(path.name)
+                    continue
+                processed = vision.process_image(path.read_bytes())
+            except (OSError, vision.ImageError) as exc:
+                logging.getLogger(__name__).warning("[agy] Se descarta el archivo generado «%s»: %s", path.name, exc)
+                seen.add(path.name)
+                continue
+            seen.add(path.name)
+            taken += 1
+            self._activity["images"].append({
+                "name": path.stem, "data": processed.data, "mime": processed.mime, "width": processed.width, "height": processed.height,
+            })
+
+    def take_activity(self) -> dict[str, Any]:
+        """Lo que agy hizo con las herramientas activadas desde la última vez: usadas, bloqueadas e imágenes (ya sin metadatos)."""
+        activity, self._activity = self._activity, {"tools": [], "denied": 0, "images": []}
+        return activity
 
 
 class GeminiLLM(BaseAgentLLM):
@@ -1121,6 +1280,7 @@ def create_agent_llm(
     base_url: str | None = None,
     timeout: float = 120.0,
     max_tokens: int = 1024,
+    agy_tools: tuple[str, ...] | list[str] | None = None,
 ) -> BaseAgentLLM:
     """Fábrica universal para inicializar el cliente LLM del Agente Autónomo.
 
@@ -1130,6 +1290,7 @@ def create_agent_llm(
         api_key: Clave de API (o tomada automáticamente de variables de entorno).
         base_url: URL base personalizada para endpoints OpenAI-compatible.
         timeout: Timeout de conexión y generación en segundos.
+        agy_tools: Grupos de herramientas de agy que el usuario activó (solo con el proveedor agy; ver ``praxeon.agy_tools``).
 
     Returns:
         Instancia de BaseAgentLLM lista para generar respuestas.
@@ -1322,7 +1483,7 @@ def create_agent_llm(
 
     # Proveedor: CLI de Antigravity (agy), solo como LLM y con sus herramientas bloqueadas (nunca se elige en modo auto)
     elif prov_key in ("agy", "antigravity"):
-        return AgyCLILLM(model=model or PROVIDER_PRESETS["agy"]["default_model"], timeout=max(timeout, 300.0))
+        return AgyCLILLM(model=model or PROVIDER_PRESETS["agy"]["default_model"], timeout=max(timeout, 300.0), tools=agy_tools)
 
     elif prov_key in ("simulator", "simulated"):
         return SimulatedAgentLLM(model_name=model or "simulated-agent-v04")

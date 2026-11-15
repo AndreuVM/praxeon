@@ -20,6 +20,7 @@ import WorkspacePicker from './components/workspace/WorkspacePicker';
 import WorkspaceFlyout from './components/workspace/WorkspaceFlyout';
 import useWorkspace from './components/workspace/useWorkspace';
 import { loadChatConfig, persistChatConfig, chatRegistry } from './utils/chatStore';
+import { withoutAgyTools } from './utils/agyTools';
 import { createSessionRegistry } from './state/agentSession';
 import useAgentSession, { useSessionRegistryVersion } from './state/useAgentSession';
 import { MAIN_ID, addPanel, closePanel, focusPanel, initialLayout, layoutStore, panelLabel, pickConfig, toggleMaximize } from './utils/panelLayout';
@@ -148,7 +149,7 @@ export default function App() {
     chats: chatRegistry(),
     rebuildChat: rebuildChatFromSession,
     buildCascade: buildCascadeDecisionModel,
-    onConfigChange: setDefaultConfig,                      // la última configuración usada pasa a ser el valor por defecto
+    onConfigChange: (cfg) => setDefaultConfig(withoutAgyTools(cfg)),   // la última configuración usada pasa a ser el valor por defecto (sin las herramientas de agy: se confirman en cada panel)
     getSessionsList: () => sessionsListRef.current,
     setSessionsList,
     onRuntimeActive: setRuntimeActive,
@@ -599,7 +600,7 @@ export default function App() {
                 <SettingsView
                   missionConfig={missionConfig}
                   onConfigChange={(update) => {
-                    setDefaultConfig(update);                 // valores por defecto de los paneles nuevos…
+                    setDefaultConfig(withoutAgyTools(update));  // valores por defecto de los paneles nuevos…
                     live.setMissionConfig(update);            // …y el panel enfocado, como antes con un solo panel
                   }}
                 />

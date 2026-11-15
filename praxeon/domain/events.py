@@ -61,6 +61,10 @@ class EventType(str, Enum):
     WORKFLOW_NODE_COMPLETED = "workflow.node_completed"
     # FE-009: una escritura se rechazó porque otra sesión cambió el archivo desde que el agente lo leyó
     WORKSPACE_FILE_CONFLICT = "workspace.file_conflict"
+    # FE-015: el usuario activó herramientas propias de agy (las ejecuta agy por su cuenta, sin la política de PRAXEON), lo que usó y lo que generó
+    AGY_TOOLS_ENABLED = "agy.tools_enabled"
+    AGY_TOOL_USED = "agy.tool_used"
+    AGY_IMAGE_GENERATED = "agy.image_generated"
 
 
 class RuntimeEvent(BaseModel):

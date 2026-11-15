@@ -157,6 +157,7 @@ export class AgentSession {
   async startMission({
     goal, execution_mode, autonomous = false, allow_unattended_execution = false, full_access_confirmed = false, llm_provider, llm_model,
     decision_model, supervisor, max_steps, llm_failure_policy, api_key, base_url, workspace_root, chat_history, workflow_id, attachments,
+    agy_tools, agy_tools_ack,
   }) {
     const { api, chats } = this.deps;
     this.batch(() => { this.setIsRunning(true); this.setIsPaused(false); });
@@ -168,7 +169,7 @@ export class AgentSession {
       const res = await api.runMission({
         goal, execution_mode, autonomous, allow_unattended_execution, full_access_confirmed, llm_provider, llm_model, decision_model,
         api_key, base_url, supervisor: decision_model?.provider || supervisor, max_steps, llm_failure_policy, step_delay_ms: 1000,
-        workspace_root, chat_history, workflow_id, attachments,
+        workspace_root, chat_history, workflow_id, attachments, agy_tools, agy_tools_ack,
       });
       if (!res?.data) return;
 
@@ -208,6 +209,7 @@ export class AgentSession {
             executionTime: 'Live',
           },
           finalAnswer: null,
+          generatedImages: [],
         });
         this.deps.setSessionsList((list) => [res.data, ...list.filter((s) => s.session_id !== sid)]);
         this.setNodes([{ ...START_NODE }]);
@@ -286,6 +288,7 @@ export class AgentSession {
           executionTime: 'Live',
         },
         finalAnswer: null,
+        generatedImages: [],
       });
       this.setNodes([{ ...START_NODE }]);
       this.setSelectedNodeId('start');

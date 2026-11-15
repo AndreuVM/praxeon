@@ -3911,6 +3911,88 @@
         }
       }
     },
+    "/v1/providers/agy/tools": {
+      "get": {
+        "tags": [
+          "Providers"
+        ],
+        "summary": "Get Agy Tools",
+        "description": "Herramientas propias de agy que se pueden activar a mano, con su nivel de riesgo y el aviso que el usuario debe confirmar.",
+        "operationId": "get_agy_tools_v1_providers_agy_tools_get",
+        "parameters": [
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "praxeon_access_token",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Praxeon Access Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIResponse_dict_str__Any__"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/workflows": {
       "get": {
         "tags": [
@@ -12170,6 +12252,38 @@
             ],
             "title": "Chat History",
             "description": "Historial previo de conversación para memoria multi-turno"
+          },
+          "agy_tools": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array",
+                "maxItems": 20
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agy Tools",
+            "description": "Grupos de herramientas propias de agy que el usuario activa (solo con el proveedor agy; ver GET /v1/providers/agy/tools). Las ejecuta agy por su cuenta, sin la política de PRAXEON"
+          },
+          "agy_tools_ack": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array",
+                "maxItems": 20
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agy Tools Ack",
+            "description": "Grupos de agy_tools que el usuario ha confirmado explícitamente; cada grupo activado debe estar aquí o la petición se rechaza"
           },
           "attachments": {
             "anyOf": [

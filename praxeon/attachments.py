@@ -130,6 +130,22 @@ def save_attachment(session_id: str | None, name: str | None, chunks: Iterable[b
     return out
 
 
+GENERATED_DIR = ".praxeon/generated"
+
+
+def save_generated_image(session_id: str | None, name: str | None, data: bytes, mime: str) -> dict[str, Any]:
+    """Guarda una imagen que generó el modelo en ``.praxeon/generated/<sesión>/`` del workspace activo (nombre saneado, sin sobrescribir).
+
+    `data` debe ser ya el resultado de ``vision.process_image`` (recodificado, sin metadatos): aquí solo se vuelve a comprobar que lo es.
+    """
+    processed = vision.process_image(data)               # nunca se confía en que el llamador la limpiara: se limpia otra vez (idempotente)
+    root = workspace_files.workspace_root()
+    rel_dir = f"{GENERATED_DIR}/{safe_session(session_id)}"
+    final = _unique(rel_dir, _image_name(name or "imagen", processed.mime), root)
+    saved = workspace_files.save_upload(f"{rel_dir}/{final}", [processed.data], overwrite=False, max_bytes=limits()["max_file_bytes"])
+    return {"rel_path": saved["rel_path"], "name": final, "size": saved["size"], "mime": processed.mime, "width": processed.width, "height": processed.height}
+
+
 def _resolve(rel_path: str) -> tuple[Path, Path]:
     """Archivo normal DENTRO de la carpeta de adjuntos del workspace (y su raíz), o ``WorkspacePathError``."""
     root = workspace_files.workspace_root()

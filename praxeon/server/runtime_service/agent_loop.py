@@ -399,9 +399,39 @@ class GenerateStep(Step[LoopContext]):
             )
             ctx.technical_failures = 0
             self._record_usage(ctx)
+            self._publish_agy_activity(ctx)
         except Exception as gen_err:  # noqa: BLE001 - frontera con el LLM del agente: cualquier fallo lo gestiona _on_failure (reintento o corte)
             return self._on_failure(ctx, gen_err)
         return Outcome.CONTINUE
+
+    @staticmethod
+    def _publish_agy_activity(ctx: LoopContext) -> None:
+        """Con herramientas de agy activadas: anota en el log de eventos lo que usó y guarda en el workspace las imágenes que generó."""
+        take = getattr(ctx.agent_llm, "take_activity", None)
+        if not callable(take):
+            return
+        try:
+            activity = take()
+        except Exception as exc:  # noqa: BLE001 - recoger lo generado nunca debe tumbar el turno
+            logger.warning("No se pudo leer la actividad de agy: %s", exc)
+            return
+        if activity.get("tools") or activity.get("denied"):
+            ctx.emit(ctx.root_id, {
+                "tools": [{"name": t.get("name"), "detail": t.get("detail", "")} for t in activity.get("tools", [])],
+                "denied": int(activity.get("denied") or 0),
+                "step": ctx.step_idx,
+            }, EventType.AGY_TOOL_USED)
+        for image in activity.get("images", []):
+            try:
+                saved = attachments.save_generated_image(ctx.sid, image.get("name"), image["data"], image.get("mime", ""))
+            except Exception as exc:  # noqa: BLE001 - una imagen que no se puede guardar se descarta con aviso, no rompe la misión
+                logger.warning("Se descarta una imagen generada por agy: %s", exc)
+                ctx.emit(ctx.root_id, {"message": f"Se descartó una imagen generada: {exc}"}, EventType.INTERVENTION_APPLIED)
+                continue
+            ctx.emit(ctx.root_id, {
+                "rel_path": saved["rel_path"], "name": saved["name"], "width": saved["width"], "height": saved["height"], "size": saved["size"],
+                "step": ctx.step_idx,
+            }, EventType.AGY_IMAGE_GENERATED)
 
     @staticmethod
     def _record_usage(ctx: LoopContext) -> None:

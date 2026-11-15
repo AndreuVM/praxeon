@@ -202,7 +202,7 @@ def test_a_tool_that_actually_ran_kills_the_session_and_fails_loudly(fake_agy, m
     monkeypatch.setenv("FAKE_AGY_MODE", "executed")
     llm = AgyCLILLM(executable=exe)
     try:
-        with pytest.raises(RuntimeError, match="ejecutó por su cuenta la herramienta «run_command»"):
+        with pytest.raises(RuntimeError, match="ejecutó por su cuenta «run_command»"):
             llm.generate([U("x")])
         assert not llm._sessions
     finally:

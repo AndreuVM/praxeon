@@ -12,6 +12,10 @@ import useAttachments from './attachments/useAttachments';
 import AttachmentTray from './attachments/AttachmentTray';
 import useVisionCapability from './attachments/useVisionCapability';
 import { filesFromTransfer, hasFiles, visionNotice } from '../utils/attachmentRules';
+import AgyToolsPicker from './AgyToolsPicker';
+import useAgyTools from './useAgyTools';
+import GeneratedImages from './GeneratedImages';
+import { agyNotice, agySelection, isAgy, missionFields } from '../utils/agyTools';
 
 /** Posición del último mensaje del asistente (-1 si no hay): los mensajes del operador pueden ir detrás. */
 function lastAssistantIndex(messages) {
@@ -80,6 +84,9 @@ export default function Conversation({
   // Imágenes adjuntas (FE-006): ¿admite el modelo elegido imágenes? ¿saldrían de este equipo?
   const visionCap = useVisionCapability(attach.items.some((it) => it.kind === 'image' && it.status === 'ready'), llmProvider, (customModel || '').trim(), (baseUrl || '').trim());
   const visionNote = visionNotice(attach.items, visionCap);
+  // Herramientas propias de agy (FE-015): activadas a mano y confirmadas una a una; las ejecuta agy sin la política de PRAXEON
+  const agyCatalog = useAgyTools(isAgy(llmProvider));
+  const agyNote = agyNotice(agySelection(effectiveConfig), agyCatalog.data?.groups);
 
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [activeWorkflows, setActiveWorkflows] = useState([]);
@@ -257,6 +264,7 @@ export default function Conversation({
               currentThought: currentThoughtText || lastMsg.currentThought,
               status: session.status === 'Completed' || session.finalAnswer ? 'completed' : 'running',
               finalAnswer: session.finalAnswer || lastMsg.finalAnswer,
+              images: session.generatedImages?.length ? session.generatedImages : lastMsg.images,
             },
             ...prev.slice(idx + 1),
           ];
@@ -264,7 +272,7 @@ export default function Conversation({
         return prev;
       });
     });
-  }, [events, isRunning, session.status, session.finalAnswer, setMessages]);
+  }, [events, isRunning, session.status, session.finalAnswer, session.generatedImages, setMessages]);
 
   // Si la sesión concluye, asegurar que el mensaje del asistente refleje el estado completado
   useEffect(() => {
@@ -280,6 +288,7 @@ export default function Conversation({
                 ...lastMsg,
                 status: 'completed',
                 finalAnswer: session.finalAnswer || lastMsg.finalAnswer || 'Misión completada satisfactoriamente bajo la supervisión de PRAXEON.',
+                images: session.generatedImages?.length ? session.generatedImages : lastMsg.images,
               },
               ...prev.slice(idx + 1),
             ];
@@ -288,7 +297,7 @@ export default function Conversation({
         });
       });
     }
-  }, [session.status, session.finalAnswer, setMessages]);
+  }, [session.status, session.finalAnswer, session.generatedImages, setMessages]);
 
   const handleSend = (e) => {
     e?.preventDefault();
@@ -298,7 +307,7 @@ export default function Conversation({
     if (executionMode === 'full_access' && !fullAccessConfirmed) {
       return; // el aviso de confirmación ya está visible bajo el campo de texto
     }
-    if (attach.uploading || visionNote?.blocked) return;   // espera a los adjuntos; una imagen no se manda a un modelo que no la admite
+    if (attach.uploading || visionNote?.blocked || agyNote?.blocked) return;   // espera a los adjuntos; una imagen no se manda a un modelo que no la admite
 
     const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
@@ -361,6 +370,7 @@ export default function Conversation({
       workflow_id: workflowId || undefined,
       chat_history: history.length > 0 ? history : undefined,
       attachments: attachedPaths.length > 0 ? attachedPaths : undefined,
+      ...missionFields(effectiveConfig),
     });
   };
 
@@ -547,6 +557,8 @@ export default function Conversation({
           </details>
         )}
 
+        {msg.images?.length > 0 && <div className="rise"><GeneratedImages items={msg.images} /></div>}
+
         {msg.finalAnswer && (
           <div className="rise" style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxWidth: '64ch' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', color: 'var(--muted)', fontSize: 'var(--fs-label)', letterSpacing: '0.07em', textTransform: 'uppercase' }}>
@@ -594,7 +606,7 @@ export default function Conversation({
   };
 
   const fullAccessBlocked = executionMode === 'full_access' && !fullAccessConfirmed;
-  const sendDisabled = !inputText.trim() || fullAccessBlocked || attach.uploading || Boolean(visionNote?.blocked);
+  const sendDisabled = !inputText.trim() || fullAccessBlocked || attach.uploading || Boolean(visionNote?.blocked) || Boolean(agyNote?.blocked);
   const selectStyle = { background: 'transparent', border: 0, color: 'var(--muted)', padding: '3px 2px', fontSize: 'var(--fs-secondary)', maxWidth: '140px', minWidth: 0, textOverflow: 'ellipsis', cursor: isRunning ? 'not-allowed' : 'pointer' };
   const fieldLabel = { fontSize: 'var(--fs-secondary)', color: 'var(--muted)', display: 'block', marginBottom: '4px' };
 
@@ -693,6 +705,11 @@ export default function Conversation({
                   compact
                 />
               </div>
+              {isAgy(llmProvider) && (
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <AgyToolsPicker config={effectiveConfig} onChange={updateConfig} disabled={isRunning} catalog={agyCatalog} />
+                </div>
+              )}
               <ModelPicker
                 provider={llmProvider}
                 value={customModel}
@@ -791,6 +808,14 @@ export default function Conversation({
           ) : null}
 
           <AttachmentTray items={attach.items} onRemove={isRunning ? undefined : attach.remove} />
+          {agyNote && (
+            <div
+              role="status"
+              style={{ fontSize: 12, padding: '4px 8px', borderRadius: 6, color: agyNote.level === 'error' ? 'var(--bad, #e5484d)' : 'var(--muted)', background: agyNote.level === 'error' ? 'rgba(229,72,77,.10)' : 'transparent', border: agyNote.level === 'warn' ? '1px solid var(--line)' : '0' }}
+            >
+              {agyNote.message}
+            </div>
+          )}
           {visionNote && (
             <div
               role="status"
