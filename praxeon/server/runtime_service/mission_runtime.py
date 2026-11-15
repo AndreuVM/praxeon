@@ -23,6 +23,7 @@ from praxeon.domain.decision_provider import DecisionModelConfig
 from praxeon.providers.registry import default_registry
 from praxeon.runtime.decision_runtime import DecisionRuntime
 from praxeon.runtime.session_runtime import SessionRuntime
+from praxeon.server.runtime_service.host import RuntimeHost
 from praxeon.server.schemas.action import ProposeActionRequest
 from praxeon.server.services import (
     generate_goal_tailored_steps,
@@ -49,7 +50,7 @@ from praxeon.server.runtime_service.agent_loop import (  # noqa: E402,F401
 SIMULATOR_PROVIDERS = ("simulator", "simulated", "mock", "sim")
 
 
-class MissionRuntimeMixin:
+class MissionRuntimeMixin(RuntimeHost):
     """Ciclo de vida de misiones autónomas, checkpoints, rollback y worker de misión."""
 
     # =========================================================================
@@ -119,7 +120,7 @@ class MissionRuntimeMixin:
             from praxeon.policy.egress import validate_provider_endpoint
             prof = getattr(self, "security_profile", None) or "dev"
             allow_custom = getattr(self.config.security, "allow_custom_endpoints", False)
-            allowed_hosts = getattr(self.config.security, "allowed_custom_hosts", set())
+            allowed_hosts: set[str] = getattr(self.config.security, "allowed_custom_hosts", set())
             base_url = validate_provider_endpoint(
                 url=base_url,
                 allow_custom=allow_custom,
@@ -602,8 +603,9 @@ class MissionRuntimeMixin:
             try:
                 wf_ok = self._run_workflow_mission(mission, agent_llm if use_real_llm else None, session_mode)
             finally:
-                if callable(getattr(agent_llm, "end_session", None)):
-                    agent_llm.end_session()
+                end_session = getattr(agent_llm, "end_session", None)
+                if callable(end_session):
+                    end_session()
             step_records = [{"success": wf_ok}]
         elif use_real_llm and agent_llm is not None:
             try:
@@ -617,8 +619,9 @@ class MissionRuntimeMixin:
                     session_mode=session_mode,
                 )
             finally:
-                if callable(getattr(agent_llm, "end_session", None)):
-                    agent_llm.end_session()
+                end_session = getattr(agent_llm, "end_session", None)
+                if callable(end_session):
+                    end_session()
             step_records = loop_result["step_records"]
             step_idx = loop_result["steps_used"]
 

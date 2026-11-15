@@ -130,8 +130,8 @@ class WorkflowMissionDriver:
         llm_for_agent: Callable[[Any], Any],
         supervised_runner: Any = None,
         poll_seconds: float = 0.3,
-        on_node_completed: Callable[[str, dict[str, Any]], None] | None = None,
-        on_node_started: Callable[[str, dict[str, Any]], None] | None = None,
+        on_node_completed: Callable[[str, dict[str, Any]], object] | None = None,
+        on_node_started: Callable[[str, dict[str, Any]], object] | None = None,
     ):
         self.workflow = workflow
         self.mission = mission

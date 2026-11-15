@@ -126,7 +126,7 @@ def get_auth_service(runtime: RuntimeApplicationService = Depends(get_runtime_se
 
 
 def get_current_tenant(
-    request: Request = None,
+    request: Request = None,  # type: ignore[assignment]  # FastAPI lo inyecta por su clase: `Request | None` no es válido
     x_api_key: str | None = Header(None, alias="X-API-Key"),
     authorization: str | None = Header(None, alias="Authorization"),
     praxeon_access_token: str | None = Cookie(None, alias=AuthService.COOKIE_ACCESS_NAME),
@@ -229,7 +229,7 @@ def require_route_permission(read: Permission, write: Permission):
 
 
 def verify_api_key(
-    request: Request = None,
+    request: Request = None,  # type: ignore[assignment]  # FastAPI lo inyecta por su clase: `Request | None` no es válido
     x_api_key: str | None = Header(None, alias="X-API-Key"),
     authorization: str | None = Header(None, alias="Authorization"),
     praxeon_access_token: str | None = Cookie(None, alias=AuthService.COOKIE_ACCESS_NAME),

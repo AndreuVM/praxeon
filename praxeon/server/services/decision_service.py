@@ -60,8 +60,9 @@ class DecisionService:
 
     def list_decisions(self, session_id: str | None = None) -> list[dict[str, Any]]:
         """Lista las decisiones registradas filtradas opcionalmente por sesión."""
-        results = self.decision_repository.list_all(session_id=session_id)
-        return results
+        if session_id:
+            return self.decision_repository.list_by_session(session_id)
+        return self.decision_repository.list_all()
 
     def confirm_decision(
         self,

@@ -67,7 +67,7 @@ def get_decision_detail(
 def confirm_decision(
     decision_id: str,
     req: ConfirmDecisionRequest,
-    request: Request = None,
+    request: Request = None,  # type: ignore[assignment]  # FastAPI lo inyecta por su clase: `Request | None` no es válido
     service: RuntimeApplicationService = Depends(get_runtime_service),
 ):
     """Aprueba o deniega una decisión humana en estado REVIEW."""
@@ -114,7 +114,7 @@ def confirm_decision(
 def reject_decision(
     decision_id: str,
     req: RejectDecisionRequest,
-    request: Request = None,
+    request: Request = None,  # type: ignore[assignment]  # FastAPI lo inyecta por su clase: `Request | None` no es válido
     service: RuntimeApplicationService = Depends(get_runtime_service),
 ):
     """Rechaza explícitamente una decisión en estado REVIEW con justificación obligatoria del operador."""

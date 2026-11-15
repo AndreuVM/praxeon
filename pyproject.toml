@@ -123,10 +123,10 @@ ignore = ["UP042"]
 "run_praxeon.py" = ["F401", "F841", "UP"]
 
 [tool.mypy]
-# Etapa 1 (AUD-12): el núcleo de decisión y ejecución sin errores en modo normal. Siguientes etapas: server/, y después
-# --strict paquete a paquete. Las dependencias sin tipos se tratan como Any.
+# Etapa 1 (AUD-12): el núcleo de decisión y ejecución sin errores en modo normal. Etapa 2 (AUD-23): también praxeon/server.
+# Siguiente: --strict paquete a paquete. Las dependencias sin tipos se tratan como Any.
 python_version = "3.11"
-files = ["praxeon/domain", "praxeon/policy", "praxeon/runtime", "praxeon/core/pipeline.py"]
+files = ["praxeon/domain", "praxeon/policy", "praxeon/runtime", "praxeon/server", "praxeon/core/pipeline.py"]
 ignore_missing_imports = true
 follow_imports = "silent"
 warn_unused_ignores = true

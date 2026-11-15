@@ -51,9 +51,9 @@ def validate_security_profile(profile: str | None = None) -> list[str]:
             )
         return origins
 
-    cors_env = os.environ.get("PRAXEON_CORS_ORIGINS")
-    if cors_env:
-        return [o.strip() for o in cors_env.split(",") if o.strip()]
+    configured_origins = os.environ.get("PRAXEON_CORS_ORIGINS")
+    if configured_origins:
+        return [o.strip() for o in configured_origins.split(",") if o.strip()]
     return [
         "http://localhost:5173",
         "http://127.0.0.1:5173",

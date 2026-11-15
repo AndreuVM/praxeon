@@ -1,53 +1,18 @@
-"""Servicio Modular de Ejecución Segura y Sandboxing (F3/SEC).
+"""Servicio de ejecución: el workspace por defecto del servidor.
 
-Centraliza:
-- Ejecución aislada de herramientas y comandos en LocalProcessSandbox.
-- Verificación de límites de ejecución y captura de observaciones.
-- Generación y verificación de diffs y parches unificados.
+La ejecución de herramientas no pasa por aquí: la hace ``praxeon.runtime.executor.SecureExecutor`` con el sandbox que
+corresponde al modo de la sesión (``praxeon.runtime.sandbox`` y ``praxeon.runtime.isolation``).
+
+Hasta AUD-23 este servicio tenía ``get_sandbox`` y ``execute_action``, que ningún código llamaba y que no podían
+funcionar (usaban ``SandboxTier.RESTRICTED_SUBPROCESS``, ``HOST_ELEVATED``, ``CONTAINER_ISOLATED`` y ``LocalProcessSandbox.execute``,
+que no existen). Se quitaron en vez de arreglarlos: qué sandbox se construye para cada modo lo decide el ejecutor.
 """
 
-
-from praxeon.domain.models import ActionCandidate
-from praxeon.runtime.sandbox import (
-    LocalProcessSandbox,
-    SandboxExecutionResult,
-    SandboxTier,
-    get_default_workspace_root,
-)
+from praxeon.runtime.sandbox import get_default_workspace_root
 
 
 class ExecutionService:
-    """Gestiona el entorno de ejecución en sandbox y la aplicación de herramientas."""
+    """Workspace por defecto sobre el que operan las sesiones que no indican uno."""
 
     def __init__(self, default_workspace: str | None = None):
         self.default_workspace = default_workspace or get_default_workspace_root()
-
-    def get_sandbox(
-        self,
-        execution_mode: str = "local_restricted",
-        workspace_root: str | None = None,
-    ) -> LocalProcessSandbox:
-        """Instancia un sandbox configurado según el perfil de aislamiento solicitado."""
-        tier = SandboxTier.RESTRICTED_SUBPROCESS
-        if execution_mode == "full_access":
-            tier = SandboxTier.HOST_ELEVATED
-        elif execution_mode == "container":
-            tier = SandboxTier.CONTAINER_ISOLATED
-
-        effective_ws = workspace_root or self.default_workspace
-        return LocalProcessSandbox(
-            workspace_root=effective_ws,
-            tier=tier,
-        )
-
-    def execute_action(
-        self,
-        action: ActionCandidate,
-        execution_mode: str = "local_restricted",
-        workspace_root: str | None = None,
-    ) -> SandboxExecutionResult:
-        """Ejecuta una acción aprobada dentro del sandbox correspondiente."""
-        sandbox = self.get_sandbox(execution_mode=execution_mode, workspace_root=workspace_root)
-        tool_name = action.tool_call.tool_name if action.tool_call else "unknown"
-        args = action.tool_call.arguments if action.tool_call else {}
-        return sandbox.execute(tool_name, args)

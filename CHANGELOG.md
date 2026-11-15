@@ -40,6 +40,10 @@ Todas las modificaciones notables de este proyecto están documentadas en este a
 - Calidad (auditoría AUD-23, etapa 2): `praxeon/` usa las anotaciones y APIs de Python 3.11 (`list[int]`, `X | None`,
   `datetime.UTC`) y `ruff` pasa a exigirlo (regla UP). Cambio mecánico y aislado en su propio commit; `class X(str, Enum)` se
   mantiene a propósito (UP042), porque `StrEnum` cambia lo que devuelve `str()` en valores que ya están serializados.
+- Calidad (auditoría AUD-23, etapa 2): mypy también comprueba `praxeon/server` (168 errores a 0) y es parte de CI. Los mixins
+  del servicio declaran lo que esperan del servicio en `runtime_service/host.py` (solo anotaciones, sin código en ejecución).
+  Se quitaron `ExecutionService.get_sandbox` y `execute_action`: ningún código los llamaba y no podían funcionar (usaban
+  miembros de `SandboxTier` y un `LocalProcessSandbox.execute` que no existen). La ejecución sigue en `SecureExecutor`.
 - Rendimiento (auditoría P-03/P-04). Mismos resultados, medidos antes y después:
   - El hash de estado que firman los recibos es un hash de hashes: cada paso y cada evidencia se resumen por separado
     y el estado vivo cachea esos resúmenes. Firmar y verificar ya no reserializa toda la trayectoria en cada paso:
@@ -109,6 +113,8 @@ Todas las modificaciones notables de este proyecto están documentadas en este a
 - README: insignias de tests (estado del CI) y versión (leída de `pyproject.toml`) dinámicas, en lugar de cifras fijas.
 
 ### Fixed
+- `DecisionService.list_decisions(session_id)` lanzaba `TypeError` (llamaba a `list_all(session_id=...)`, que no acepta ese
+  argumento); ahora filtra por sesión con `list_by_session`. Lo encontró mypy al activarlo en `praxeon/server`.
 - Una decisión se anunciaba (`approval.requested`, `capability.issued`, `decision.pruned`) antes de guardarse: quien
   respondía en ese instante, como `praxeon live` sin terminal interactiva o un cliente de la API, recibía «Decisión no
   encontrada». Ahora se guarda primero (paso `publish_decision` tras `record_decision`); el orden de los eventos no cambia.

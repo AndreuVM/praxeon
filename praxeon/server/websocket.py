@@ -159,7 +159,7 @@ async def consume_ws_ticket(ticket: str, session_id: str) -> bool:
 
 
 def is_remote_client(client_host: str | None) -> bool:
-    return bool(client_host) and client_host.lower() not in ("127.0.0.1", "localhost", "::1", "testclient")
+    return bool(client_host and client_host.lower() not in ("127.0.0.1", "localhost", "::1", "testclient"))
 
 
 @ws_router.post("/v1/sessions/{session_id}/ws-ticket")

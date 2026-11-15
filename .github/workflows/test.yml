@@ -26,7 +26,7 @@ jobs:
         run: ruff check .
 
   types:
-    name: Types (mypy, núcleo)
+    name: Types (mypy)
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository

@@ -363,7 +363,7 @@ class SessionLifecycleCoordinator:
             from praxeon.policy.egress import validate_provider_endpoint
             prof = (os.environ.get("PRAXEON_PROFILE") or os.environ.get("PRAXEON_ENV") or "dev").lower().strip()
             allow_custom = getattr(self.service.config.security, "allow_custom_endpoints", False)
-            allowed_hosts = getattr(self.service.config.security, "allowed_custom_hosts", set())
+            allowed_hosts: set[str] = getattr(self.service.config.security, "allowed_custom_hosts", set())
             base_url = validate_provider_endpoint(
                 url=base_url,
                 allow_custom=allow_custom,

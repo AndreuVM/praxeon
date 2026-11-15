@@ -32,6 +32,7 @@ from praxeon.domain.models import (
 from praxeon.runtime.executor import PolicyViolation
 from praxeon.runtime.state import SessionState, StepRecord
 from praxeon.server.schemas.action import ProposeActionRequest
+from praxeon.server.runtime_service.host import RuntimeHost
 from praxeon.server.runtime_service.proposal_pipeline import run_proposal
 from praxeon.server.schemas.decision import (
     ConfirmDecisionResponse,
@@ -51,7 +52,7 @@ def is_auth_required(*args, **kwargs):
     return auth_deps.is_auth_required(*args, **kwargs)
 
 
-class DecisionPipelineMixin:
+class DecisionPipelineMixin(RuntimeHost):
     """Pipeline formal de decisiones: propuesta, inspección, confirmación y ejecución."""
 
     # =========================================================================
@@ -172,7 +173,7 @@ class DecisionPipelineMixin:
         providers: list[ProviderEvaluationDTO] = record["providers"]
 
         # Determinar atributos de ejecución para la subsección Execution
-        mode_val = record.get("execution_mode") or getattr(receipt, "execution_mode", "local_restricted")
+        mode_val: Any = record.get("execution_mode") or getattr(receipt, "execution_mode", "local_restricted")
         if hasattr(mode_val, "value"):
             mode_val = mode_val.value
         state = self.state_store.load_state(record["session_id"])
@@ -296,7 +297,7 @@ class DecisionPipelineMixin:
         for d in records:
             act = d.get("action")
             tool_name = None
-            args = {}
+            args: dict[str, Any] = {}
             description = ""
             if act:
                 tool_name = act.tool_call.tool_name if hasattr(act, "tool_call") and act.tool_call else None
@@ -334,7 +335,7 @@ class DecisionPipelineMixin:
                 receipt_sig = receipt.get("signature")
                 action_hash = receipt.get("action_hash")
 
-            risk_dto = d.get("risk")
+            risk_dto: Any = d.get("risk")
             risk_level = risk_dto.level if hasattr(risk_dto, "level") else (risk_dto.get("level") if isinstance(risk_dto, dict) else "LOW")
             created_at_val = d.get("created_at")
             if isinstance(created_at_val, datetime):
@@ -515,7 +516,7 @@ class DecisionPipelineMixin:
                 confirmed_at=now,
             )
         else:
-            receipt: DecisionReceipt = record["receipt"]
+            receipt = record["receipt"]
             receipt_updated = receipt.model_copy(
                 update={
                     "decision_status": DecisionStatus.BLOCK,

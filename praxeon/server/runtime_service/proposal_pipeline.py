@@ -109,15 +109,28 @@ class ProposalContext:
             session_id=self.session_id, event_type=event_type, node_id=node_id or self.action_id, payload=payload, **kw
         )
 
+    def built_action(self) -> ActionCandidate:
+        """La acción que construye BuildActionStep; si falta, un paso corrió antes que él."""
+        if self.action is None:
+            raise RuntimeError("Paso del pipeline de propuestas ejecutado antes de construir la acción")
+        return self.action
+
+    def assessed(self) -> tuple[RiskDTO, PolicyDTO]:
+        """Riesgo y política ya evaluados; si faltan, se respondió o anunció la decisión antes de decidirla."""
+        if self.risk_dto is None or self.policy_dto is None:
+            raise RuntimeError("Decisión respondida o anunciada antes de evaluar el riesgo y la política")
+        return self.risk_dto, self.policy_dto
+
     def response(self) -> DecisionResponse:
+        risk, policy = self.assessed()
         return DecisionResponse(
             decision_id=self.decision_id,
             session_id=self.session_id,
             status=self.status,
             action_hash=self.receipt.action_hash,
-            risk=self.risk_dto,
+            risk=risk,
             providers=self.provider_dtos,
-            policy=self.policy_dto,
+            policy=policy,
             execution_mode=self.session_mode,
             capability=self.capability_data,
             expires_at=self.expires_at,
@@ -569,7 +582,8 @@ class ResolveStatusStep(Step[ProposalContext]):
         mode_val = str(mode.value if hasattr(mode, "value") else mode or "").lower()
         full_access_authorized = bool(session_meta.get("full_access_authorized_by_operator") or session_meta.get("operator_authorized"))
         step_confirmation = bool(session_meta.get("require_step_confirmation"))
-        tool = ctx.action.tool_call.tool_name if ctx.action.tool_call else None
+        tool_call = ctx.built_action().tool_call
+        tool = tool_call.tool_name if tool_call else None
         if mode_val == "full_access" and full_access_authorized and not step_confirmation and ctx.runtime._may_auto_confirm(tool):
             # FULL_ACCESS autorizado por el operador (doble confirmación al activarlo): no se pide confirmación por paso.
             # BLOCK, REPLAN y riesgo CRÍTICO se resolvieron antes y siguen siendo innegociables.
@@ -580,7 +594,7 @@ class ResolveStatusStep(Step[ProposalContext]):
                 "[SECURITY AUDIT] Sesión '%s' en FULL_ACCESS autorizado por el operador: confirmación por paso "
                 "omitida para la acción '%s' (motivos de revisión: %s).",
                 ctx.session_id,
-                ctx.action.tool_call.tool_name if ctx.action.tool_call else "cognitive",
+                tool or "cognitive",
                 ", ".join(ctx.decision.reason_codes),
             )
         else:
@@ -670,12 +684,13 @@ class PublishDecisionStep(Step[ProposalContext]):
         if ctx.status == "ALLOW":
             ctx.emit(EventType.CAPABILITY_ISSUED, ctx.capability_data or {}, decision_id=ctx.decision_id)
         elif ctx.status == "REVIEW":
+            risk, policy = ctx.assessed()
             ctx.emit(
                 EventType.APPROVAL_REQUESTED,
                 {
-                    "risk_level": ctx.risk_dto.level,
-                    "reasons": ctx.risk_dto.reasons,
-                    "reason_code": ctx.policy_dto.reason_codes,
+                    "risk_level": risk.level,
+                    "reasons": risk.reasons,
+                    "reason_code": policy.reason_codes,
                     "execution_mode": ctx.session_mode,
                 },
                 decision_id=ctx.decision_id,
