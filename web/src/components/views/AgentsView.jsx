@@ -734,6 +734,7 @@ export default function AgentsView({
                     <option value="openai">OpenAI</option>
                     <option value="anthropic">Anthropic</option>
                     <option value="claude_cli">Claude CLI</option>
+                    <option value="agy">Antigravity CLI (agy)</option>
                     <option value="ollama">Ollama</option>
                     <option value="mock">Proveedor simulado</option>
                   </select>

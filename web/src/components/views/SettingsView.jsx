@@ -486,6 +486,7 @@ export default function SettingsView({
                 <option value="gemini">Google Gemini API</option>
                 <option value="anthropic">Claude (API de Anthropic)</option>
                 <option value="claude_cli">Claude CLI (suscripción)</option>
+                <option value="agy">Antigravity CLI (agy)</option>
               </select>
             </div>
 

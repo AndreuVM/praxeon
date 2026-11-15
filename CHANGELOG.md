@@ -210,6 +210,18 @@ Todas las modificaciones notables de este proyecto están documentadas en este a
   tras recargar, el texto sin guardar no se restaura, pero el navegador avisa antes de perderlo. Un archivo que ya no existe se
   descarta sin error; las pestañas siguen al archivo renombrado y se cierran al eliminarlo. Antes, al cambiar de workspace se
   cerraban todas las pestañas con un aviso; ahora cada workspace conserva las suyas.
+- Nuevo proveedor **`agy`** (CLI de Antigravity) como LLM del agente (FE-014, nota N-017): usa la sesión de tu cuenta de Google, sin
+  clave de API, con un proceso por conversación (como `claude_cli`) y los modelos que lista `agy models` (Gemini, Claude, GPT-OSS).
+  **`agy` no es un LLM sino un agente con ~60 herramientas propias** (ejecutar comandos, escribir archivos, buscar en la web,
+  subagentes, programar tareas…) que en modo `-p` puede arrancar con todo aprobado y que no tiene un equivalente de
+  `claude --tools ""`; en las pruebas, sin restricciones, creó archivos y ejecutó comandos por su cuenta. PRAXEON lo usa solo como
+  generador de texto y le **cierra todas las herramientas**: carpeta temporal vacía con un hook `PreToolUse` que rechaza cualquier
+  herramienta y falla cerrado (un hook que no se puede ejecutar también bloquea), `toolPermission: request-review`, reglas de
+  denegación, `--sandbox` y `--settings` solo para esa sesión (no toca tu `settings.json`); si aun así una herramienta llegara a
+  ejecutarse, se mata el proceso y falla el turno. Se verificó con el agy real que un archivo y un comando pedidos expresamente no
+  llegan a ejecutarse (prueba opt-in `PRAXEON_TEST_REAL_AGY=1`). Límites: no admite imágenes por este canal, cada turno gasta unos
+  21 000 tokens de entrada por las definiciones de herramientas de agy, el primer turno tarda ~35 s, y depende de que agy siga
+  respetando los hooks. Nunca se elige en modo `auto`.
 - Con `llm_failure_policy="fail_closed"`, un proveedor del agente sin credenciales hacía que la misión siguiera en silencio
   con el planificador sintético (la fábrica devolvía el simulador en vez de fallar). Ahora la misión se detiene.
 - El supervisor TypeSafe elegido sin modelo explícito llamaba al API con el modelo `typesafe` (o `default`), que rechaza

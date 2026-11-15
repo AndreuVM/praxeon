@@ -100,6 +100,7 @@ Para evitar cuotas y rate-limits estrictos (como los límites gratuitos de Googl
 | **OpenAI** | Nube | De pago, por tokens | Estándar | `praxeon live --provider openai` |
 | **Claude (API)** | Nube | De pago, por tokens (aparte de la suscripción de claude.ai) | Estándar | `praxeon live --provider anthropic` |
 | **Claude CLI** | Local (CLI instalada) | Usa tu suscripción de claude.ai, sin clave de API | Según el plan | `praxeon live --provider claude_cli` |
+| **Antigravity CLI (agy)** | Local (CLI instalada) | Usa la sesión de tu cuenta de Google, sin clave de API; herramientas de agy bloqueadas | Según tu plan de Antigravity | `praxeon live --provider agy` |
 | **Simulador Offline** | Determinista | **Ilimitado / 0€** | Inmediato | `praxeon live --provider simulated` |
 
 ### 1. Usar Ollama en Local (Sin conexión a internet ni claves API)
@@ -135,7 +136,7 @@ Para evitar cuotas y rate-limits estrictos (como los límites gratuitos de Googl
 
 > **Ollama** se usa por su API nativa con un contexto fijo (`PRAXEON_OLLAMA_NUM_CTX`, 8192 por defecto): el endpoint compatible con
 > OpenAI ignora `num_ctx` y Ollama truncaría por el principio los prompts largos (justo donde van las instrucciones).
-> **Claude API** y **Claude CLI** nunca se eligen en el modo `auto` (aunque exista `ANTHROPIC_API_KEY`): hay que seleccionarlos, para que no se
+> **Claude API**, **Claude CLI** y **agy** nunca se eligen en el modo `auto` (aunque exista `ANTHROPIC_API_KEY`): hay que seleccionarlos, para que no se
 > gaste saldo sin pedirlo. El modo `auto` prueba, por este orden: Groq, Ollama local, OpenRouter, Gemini y OpenAI, según las claves o servicios disponibles.
 
 ### 3. Usar Claude (API o CLI)
@@ -147,6 +148,16 @@ Para evitar cuotas y rate-limits estrictos (como los límites gratuitos de Googl
   y mantiene **un proceso abierto por nodo de workflow** (se cierra al terminar el nodo o la misión) en lugar de uno por turno.
   Su uso se descuenta de tu plan de claude.ai según las condiciones de este (consúltalas): un workflow largo con varios agentes
   puede consumir más cupo que una conversación normal.
+
+**Antigravity CLI (`--provider agy`):** requiere tener `agy` instalado y haber iniciado sesión una vez. `agy` no es un LLM
+sino un **agente con unas 60 herramientas propias** (ejecutar comandos, escribir archivos, buscar en la web, subagentes, programar
+tareas…) que en modo `-p` puede arrancar con todo aprobado, y no ofrece un equivalente de `claude --tools ""`. PRAXEON lo usa solo
+como generador de texto y **cierra todas sus herramientas**: lo lanza en una carpeta temporal vacía con un hook `PreToolUse` que rechaza
+cualquier herramienta (falla cerrado: si el hook no se puede ejecutar, también bloquea), con `toolPermission: request-review`, reglas de
+denegación, `--sandbox` y `--settings` solo para esa sesión (no toca tu `settings.json`). Además vigila el flujo de eventos: si una herramienta
+llegara a ejecutarse, mata el proceso y falla el turno. Quita `GEMINI_API_KEY`/`GOOGLE_API_KEY` del entorno para usar tu cuenta. Límites: no admite
+imágenes por este canal; cada turno gasta unos 21 000 tokens de entrada por las definiciones de herramientas de agy; el primer turno tarda
+unos 35 s; y la barrera depende de que agy siga respetando los hooks (hay una prueba opt-in con el agy real: `PRAXEON_TEST_REAL_AGY=1`).
 
 ### 4. Recuperación Interactiva en Caliente (*Self-Healing / Fallback*)
 Si un proveedor experimenta un fallo de cuota (error HTTP 429), pérdida de conexión o clave inválida durante una sesión en vivo, PRAXEON no detiene el proceso abruptamente: despliega un menú interactivo en terminal que permite alternar a otro proveedor (ej. de Gemini a Groq o a Ollama local) e introducir una clave al vuelo sin perder la memoria acumulada de la sesión.
@@ -270,7 +281,7 @@ praxeon/
 │   │   ├── metrics.py            # Métricas decisionales, de ejecución física y económicas
 │   │   ├── reports.py            # Generador formal de informes de benchmark
 │   │   └── runner.py             # BenchmarkRunner con verificación física y ablaciones
-│   ├── agent_llm.py              # Clientes LLM del agente (Ollama, Groq, OpenRouter, OpenAI, Gemini, Claude API, Claude CLI)
+│   ├── agent_llm.py              # Clientes LLM del agente (Ollama, Groq, OpenRouter, OpenAI, Gemini, Claude API, Claude CLI, agy)
 │   ├── workspace_store.py        # Workspace del proyecto: elegir, recordar y explorar carpetas
 │   ├── cli.py                    # Consola interactiva CLI enriquecida con Rich
 │   ├── live_agent/               # Agente autónomo en vivo (multiproveedor) supervisado en tiempo real

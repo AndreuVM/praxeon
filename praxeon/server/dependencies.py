@@ -705,6 +705,7 @@ class RuntimeApplicationService(DecisionPipelineMixin, MissionRuntimeMixin):
             {"provider_id": "gemini", "name": "Google Gemini", "default_model": "gemini-1.5-flash", "type": "cloud"},
             {"provider_id": "anthropic", "name": "Anthropic Claude (API)", "default_model": "claude-sonnet-5-5", "type": "cloud"},
             {"provider_id": "claude_cli", "name": "Claude CLI (suscripción)", "default_model": "sonnet", "type": "local"},
+            {"provider_id": "agy", "name": "Antigravity CLI (agy)", "default_model": "gemini-3.8-flash-medium", "type": "local"},
             {"provider_id": "openai", "name": "OpenAI", "default_model": "gpt-4o-mini", "type": "cloud"},
             {"provider_id": "openrouter", "name": "OpenRouter", "default_model": "anthropic/claude-3.5-sonnet", "type": "cloud"},
         ]

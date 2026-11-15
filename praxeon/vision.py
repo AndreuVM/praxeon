@@ -190,6 +190,11 @@ _VISION_PATTERNS: dict[str, tuple[str, ...]] = {
 }
 _NO_VISION = {"openai": ("o1-mini", "o1-preview", "o3-mini", "gpt-3.5", "gpt-4-0", "gpt-4-32k"), "anthropic": ("claude-2", "claude-instant")}
 _SIMULATOR = {"simulator", "simulated", "mock", "sim"}
+# CLI de modelos usadas como LLM puro: no admiten imágenes por ese canal (ver `agent_llm.ClaudeCLILLM` y `AgyCLILLM`)
+_CLI_PROVIDERS = {
+    "claude_cli": "La CLI de Claude no admite imágenes por este canal: usa el proveedor Anthropic con su clave de API.",
+    "agy": "La CLI de agy no admite imágenes por este canal: usa un proveedor con clave de API y un modelo con visión.",
+}
 
 
 def _extra_patterns() -> tuple[str, ...]:
@@ -204,8 +209,8 @@ def model_supports_vision(provider: str | None, model: str | None) -> bool:
     name = (model or "").strip().lower()
     if prov in _SIMULATOR:
         return True
-    if prov == "claude_cli":
-        return False                                                  # la CLI de Claude no admite imágenes por este canal
+    if prov in _CLI_PROVIDERS:
+        return False                                                  # las CLI (Claude, agy) no admiten imágenes por este canal
     if any(p in name for p in _extra_patterns()):
         return True
     if any(bad in name for bad in _NO_VISION.get(prov, ())):
@@ -227,7 +232,7 @@ def _is_local_host(host: str) -> bool:
 def is_remote(provider: str | None, base_url: str | None = None) -> bool:
     """¿La imagen saldría de esta máquina? Todo proveedor salvo el simulador, la CLI local y un Ollama/endpoint en este equipo."""
     prov = (provider or "").strip().lower()
-    if prov in _SIMULATOR or prov == "claude_cli":
+    if prov in _SIMULATOR or prov in _CLI_PROVIDERS:
         return False
     if prov == "ollama" and not base_url:
         return False
@@ -243,8 +248,8 @@ def capability(provider: str | None, model: str | None, base_url: str | None = N
     supported = model_supports_vision(prov, model)
     if not available():
         reason = INSTALL_HINT
-    elif prov == "claude_cli":
-        reason = "La CLI de Claude no admite imágenes por este canal: usa el proveedor Anthropic con su clave de API."
+    elif prov in _CLI_PROVIDERS:
+        reason = _CLI_PROVIDERS[prov]
     elif not supported:
         reason = f"El modelo «{model or 'por defecto'}» de {prov or 'este proveedor'} no admite imágenes. Elige uno con visión o quita la imagen."
     return {

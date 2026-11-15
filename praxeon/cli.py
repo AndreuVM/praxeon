@@ -477,7 +477,7 @@ def main() -> None:
         "--provider",
         type=str,
         default=None,
-        help="Proveedor del Agent LLM (groq, ollama, openrouter, gemini, lmstudio, openai, anthropic, claude_cli, simulated)",
+        help="Proveedor del Agent LLM (groq, ollama, openrouter, gemini, lmstudio, openai, anthropic, claude_cli, agy, simulated)",
     )
     dash_parser.add_argument(
         "--base-url",
@@ -544,7 +544,7 @@ def main() -> None:
         "--provider",
         type=str,
         default=None,
-        help="Proveedor del Agent LLM (groq, ollama, openrouter, gemini, lmstudio, openai, anthropic, claude_cli, simulated)",
+        help="Proveedor del Agent LLM (groq, ollama, openrouter, gemini, lmstudio, openai, anthropic, claude_cli, agy, simulated)",
     )
     live_parser.add_argument("--model", type=str, default=None, help="Modelo LLM a utilizar")
     live_parser.add_argument(

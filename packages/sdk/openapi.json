@@ -12012,7 +12012,7 @@
               }
             ],
             "title": "Llm Provider",
-            "description": "Proveedor del LLM ('simulator', 'groq', 'ollama', 'gemini', 'openai', 'anthropic', 'claude_cli', 'openrouter')",
+            "description": "Proveedor del LLM ('simulator', 'groq', 'ollama', 'gemini', 'openai', 'anthropic', 'claude_cli', 'agy', 'openrouter')",
             "default": "simulator"
           },
           "llm_model": {

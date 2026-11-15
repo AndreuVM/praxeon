@@ -9,6 +9,7 @@ export const PROVIDERS = [
   { value: 'openai', label: 'OpenAI' },
   { value: 'anthropic', label: 'Claude (Anthropic)' },
   { value: 'claude_cli', label: 'Claude CLI (suscripción)' },
+  { value: 'agy', label: 'Antigravity CLI (agy)' },
   { value: 'openrouter', label: 'OpenRouter' },
 ];
 
@@ -19,6 +20,15 @@ export const BUILTIN_MODELS = {
   openai: ['gpt-4o-mini', 'gpt-4o'],
   anthropic: ['claude-sonnet-5-5', 'claude-opus-5-5', 'claude-haiku-5-5', 'claude-fable-5-1'],
   claude_cli: ['sonnet', 'opus', 'haiku'],
+  agy: [
+    'gemini-3.8-flash-low', 'gemini-3.8-flash-medium', 'gemini-3.8-flash-high',
+    'gemini-4-carbon-low', 'gemini-4-carbon-medium', 'gemini-4-carbon-high',
+    'gemini-4-argon-low', 'gemini-4-argon-medium', 'gemini-4-argon-high',
+    'gemini-4-hydrogen-low', 'gemini-4-hydrogen-medium', 'gemini-4-hydrogen-high', 'gemini-4-hydrogen-xhigh',
+    'claude-sonnet-5-5-low', 'claude-sonnet-5-5-medium', 'claude-sonnet-5-5-high',
+    'claude-opus-5-5-low', 'claude-opus-5-5-medium', 'claude-opus-5-5-high',
+    'gpt-oss-120b-medium',
+  ],
   openrouter: ['qwen/qwen-2.5-coder-32b-instruct:free', 'meta-llama/llama-3.3-70b-instruct:free', 'deepseek/deepseek-r1:free'],
 };
 

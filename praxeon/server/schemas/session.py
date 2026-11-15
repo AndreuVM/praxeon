@@ -71,7 +71,7 @@ class RunMissionRequest(BaseModel):
     execution_mode: str | None = Field(None, description="Modo de ejecución física ('auto' o vacío: aislado si el sistema lo permite; 'container', 'local_restricted', 'full_access')")
     workspace_root: str | None = Field(None, description="Ruta raíz del workspace para la misión")
     network_policy: str | None = Field("isolated", description="Política de red ('isolated', 'restricted', 'host')")
-    llm_provider: str | None = Field("simulator", description="Proveedor del LLM ('simulator', 'groq', 'ollama', 'gemini', 'openai', 'anthropic', 'claude_cli', 'openrouter')")
+    llm_provider: str | None = Field("simulator", description="Proveedor del LLM ('simulator', 'groq', 'ollama', 'gemini', 'openai', 'anthropic', 'claude_cli', 'agy', 'openrouter')")
     llm_model: str | None = Field(None, description="Modelo específico de LLM")
     api_key: str | None = Field(None, description="Clave de API opcional para el proveedor LLM")
     base_url: str | None = Field(None, description="URL base opcional para endpoints locales o personalizados")

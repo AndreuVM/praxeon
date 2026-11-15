@@ -337,6 +337,7 @@ export default function SessionsView({
                 <option value="gemini">Google Gemini</option>
                 <option value="anthropic">Claude (API de Anthropic)</option>
                 <option value="claude_cli">Claude CLI (suscripción)</option>
+                <option value="agy">Antigravity CLI (agy)</option>
               </select>
             </Field>
             <Field label="Supervisor cognitivo" htmlFor="sv-supervisor">

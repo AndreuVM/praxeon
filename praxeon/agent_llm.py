@@ -100,6 +100,22 @@ PROVIDER_PRESETS: dict[str, dict[str, Any]] = {
         "requires_key": False,
         "recommended_models": ["sonnet", "opus", "haiku"],
     },
+    "agy": {
+        "base_url": None,
+        "default_model": "gemini-3.8-flash-medium",
+        "description": "CLI de Antigravity (agy) en segundo plano, solo como generador de texto y con sus herramientas bloqueadas (usa la sesión de tu cuenta de Google, sin clave de API)",
+        "env_key": None,
+        "requires_key": False,
+        "recommended_models": [
+            "gemini-3.8-flash-low", "gemini-3.8-flash-medium", "gemini-3.8-flash-high",
+            "gemini-4-carbon-low", "gemini-4-carbon-medium", "gemini-4-carbon-high",
+            "gemini-4-argon-low", "gemini-4-argon-medium", "gemini-4-argon-high",
+            "gemini-4-hydrogen-low", "gemini-4-hydrogen-medium", "gemini-4-hydrogen-high", "gemini-4-hydrogen-xhigh",
+            "claude-sonnet-5-5-low", "claude-sonnet-5-5-medium", "claude-sonnet-5-5-high",
+            "claude-opus-5-5-low", "claude-opus-5-5-medium", "claude-opus-5-5-high",
+            "gpt-oss-120b-medium",
+        ],
+    },
     "gemini": {
         "base_url": None,
         "default_model": "gemini-3.6-flash",
@@ -539,7 +555,15 @@ class AnthropicLLM(BaseAgentLLM):
 
 
 class _CliSession:
-    """Un proceso `claude -p` en modo stream-json que se mantiene abierto entre turnos."""
+    """Un proceso de una CLI de modelos (`claude -p` en modo stream-json) que se mantiene abierto entre turnos.
+
+    Las subclases cambian solo el protocolo: cómo se codifica un mensaje de usuario (`_encode`), cuál de las líneas que
+    devuelve es el resultado del turno (`_result_of`) y qué se vigila del resto del flujo (`_observe`).
+    """
+
+    label = "claude_cli"
+    cli_name = "la CLI de Claude"
+    thread_name = "praxeon-claude-cli"
 
     def __init__(self, cmd: list[str], env: dict[str, str], workdir: str) -> None:
         self.workdir = workdir
@@ -551,7 +575,7 @@ class _CliSession:
             cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             text=True, encoding="utf-8", errors="replace", cwd=workdir, env=env,
         )
-        threading.Thread(target=self._pump, name="praxeon-claude-cli", daemon=True).start()
+        threading.Thread(target=self._pump, name=self.thread_name, daemon=True).start()
 
     def _pump(self) -> None:
         try:
@@ -564,11 +588,24 @@ class _CliSession:
     def alive(self) -> bool:
         return self.proc.poll() is None
 
+    def _encode(self, text: str) -> str:
+        return json.dumps({"type": "user", "message": {"role": "user", "content": text}})
+
+    def _result_of(self, event: Any) -> dict[str, Any] | None:
+        """El resultado del turno si `event` es el evento final; None si no."""
+        return event if isinstance(event, dict) and event.get("type") == "result" else None
+
+    def _begin_turn(self) -> None:
+        """Se llama antes de enviar cada turno (para reiniciar contadores propios de la subclase)."""
+
+    def _observe(self, event: Any) -> None:
+        """Se llama con cada evento JSON del flujo que no es el resultado. Puede lanzar para abortar el turno."""
+
     def ask(self, text: str, timeout: float) -> dict[str, Any]:
-        """Envía un turno de usuario y espera el evento `result` de la CLI."""
-        message = {"type": "user", "message": {"role": "user", "content": text}}
+        """Envía un turno de usuario y espera el evento de resultado de la CLI."""
+        self._begin_turn()
         assert self.proc.stdin is not None
-        self.proc.stdin.write(json.dumps(message) + "\n")
+        self.proc.stdin.write(self._encode(text) + "\n")
         self.proc.stdin.flush()
         deadline = time.monotonic() + timeout
         tail: list[str] = []
@@ -576,18 +613,20 @@ class _CliSession:
             try:
                 line = self._lines.get(timeout=max(0.1, deadline - time.monotonic()))
             except queue.Empty:
-                raise TimeoutError(f"[claude_cli] Timeout tras {timeout:.0f}s esperando a la CLI de Claude.") from None
+                raise TimeoutError(f"[{self.label}] Timeout tras {timeout:.0f}s esperando a {self.cli_name}.") from None
             if line is None:
-                raise RuntimeError(f"[claude_cli] La CLI terminó inesperadamente. Salida: {' '.join(tail)[-400:]}")
+                raise RuntimeError(f"[{self.label}] La CLI terminó inesperadamente. Salida: {' '.join(tail)[-400:]}")
             try:
                 event = json.loads(line)
             except ValueError:
                 tail.append(line.strip())
                 continue
-            if isinstance(event, dict) and event.get("type") == "result":
-                return event
+            result = self._result_of(event)
+            if result is not None:
+                return result
+            self._observe(event)
             if time.monotonic() > deadline:
-                raise TimeoutError(f"[claude_cli] Timeout tras {timeout:.0f}s esperando a la CLI de Claude.")
+                raise TimeoutError(f"[{self.label}] Timeout tras {timeout:.0f}s esperando a {self.cli_name}.")
 
     def close(self) -> None:
         try:
@@ -614,17 +653,18 @@ class ClaudeCLILLM(BaseAgentLLM):
     _STRIP_ENV = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")
     MAX_SESSIONS = 4
     stateful_session = True   # la CLI guarda la conversación: el historial no se comprime
+    _NO_IMAGES = "[claude_cli] La CLI de Claude no admite imágenes por este canal: usa el proveedor Anthropic con su clave de API."
+    _BINARY = "claude"
+    _MISSING = "No se encuentra la CLI 'claude' en el PATH. Instálala e inicia sesión con tu cuenta (ejecuta 'claude' una vez)."
 
     def __init__(self, model: str = "sonnet", executable: str | None = None, timeout: float = 300.0) -> None:
         self._model = model
-        self._executable = executable or shutil.which("claude")
+        self._executable = executable or shutil.which(self._BINARY)
         self._timeout = timeout
         self._sessions: dict[Any, _CliSession] = {}
         self._lock = threading.RLock()
         if not self._executable:
-            raise ValueError(
-                "No se encuentra la CLI 'claude' en el PATH. Instálala e inicia sesión con tu cuenta (ejecuta 'claude' una vez)."
-            )
+            raise ValueError(self._MISSING)
         atexit.register(self.end_session)
 
     @property
@@ -671,7 +711,7 @@ class ClaudeCLILLM(BaseAgentLLM):
 
     def generate(self, messages: list[dict[str, Any]], system_prompt: str | None = None) -> str:
         if any(vision.valid_images(m.get("images")) for m in messages):
-            raise RuntimeError("[claude_cli] La CLI de Claude no admite imágenes por este canal: usa el proveedor Anthropic con su clave de API.")
+            raise RuntimeError(self._NO_IMAGES)
         system_parts = [system_prompt] if system_prompt else []
         turns: list[Any] = []
         for m in messages:
@@ -702,34 +742,47 @@ class ClaudeCLILLM(BaseAgentLLM):
                 session = self._open(system)
                 self._sessions[key] = session
                 outgoing = turns[0][1] if len(turns) == 1 and turns[0][0] == "user" else self._transcript(turns)
+                outgoing = self._first_message(system, outgoing)
 
             try:
                 data = session.ask(outgoing or "", self._timeout)
             except Exception:
                 self._drop(key)   # el estado del proceso es incierto: el siguiente turno empieza de cero
                 raise
-            if data.get("is_error"):
+            try:
+                text = self._read_result(data, session)
+            except Exception:
                 self._drop(key)
-                detail = str(data.get("result") or "")[:500]
-                if "login" in detail.lower() or "authenticat" in detail.lower():
-                    raise RuntimeError(f"[claude_cli] La CLI no tiene sesión iniciada. Ejecuta 'claude' y haz login. Detalle: {detail}")
-                raise RuntimeError(f"[claude_cli] La CLI devolvió un error: {detail}")
-            if data.get("permission_denials"):
-                logging.getLogger(__name__).warning("[claude_cli] La CLI denegó usos de herramientas")
-            usage = data.get("usage") or {}
-            read = usage.get("cache_read_input_tokens") or 0
-            self._record_usage(
-                (usage.get("input_tokens") or 0) + read + (usage.get("cache_creation_input_tokens") or 0),
-                usage.get("output_tokens"), read,
-            )
-            total_cost = data.get("total_cost_usd")
-            if isinstance(total_cost, (int, float)):
-                # la CLI informa el coste acumulado del proceso: el de este turno es la diferencia
-                self.last_cost_usd = max(0.0, float(total_cost) - session.cost_total)
-                session.cost_total = float(total_cost)
+                raise
             session.n_turns = len(turns)
             session.users = [t for r, t in turns if r == "user"]
-            return str(data.get("result") or "").strip()
+            return text
+
+    def _first_message(self, system: str, text: str) -> str:
+        """Texto del primer mensaje de una conversación nueva. Claude recibe el sistema por archivo, así que no cambia."""
+        return text
+
+    def _read_result(self, data: dict[str, Any], session: _CliSession) -> str:
+        """Texto de la respuesta a partir del evento de resultado; registra uso y coste. Lanza si la CLI informa un error."""
+        if data.get("is_error"):
+            detail = str(data.get("result") or "")[:500]
+            if "login" in detail.lower() or "authenticat" in detail.lower():
+                raise RuntimeError(f"[claude_cli] La CLI no tiene sesión iniciada. Ejecuta 'claude' y haz login. Detalle: {detail}")
+            raise RuntimeError(f"[claude_cli] La CLI devolvió un error: {detail}")
+        if data.get("permission_denials"):
+            logging.getLogger(__name__).warning("[claude_cli] La CLI denegó usos de herramientas")
+        usage = data.get("usage") or {}
+        read = usage.get("cache_read_input_tokens") or 0
+        self._record_usage(
+            (usage.get("input_tokens") or 0) + read + (usage.get("cache_creation_input_tokens") or 0),
+            usage.get("output_tokens"), read,
+        )
+        total_cost = data.get("total_cost_usd")
+        if isinstance(total_cost, (int, float)):
+            # la CLI informa el coste acumulado del proceso: el de este turno es la diferencia
+            self.last_cost_usd = max(0.0, float(total_cost) - session.cost_total)
+            session.cost_total = float(total_cost)
+        return str(data.get("result") or "").strip()
 
     @staticmethod
     def _continuation(session: _CliSession, turns: list[Any]) -> str | None:
@@ -745,6 +798,128 @@ class ClaudeCLILLM(BaseAgentLLM):
         if not rest or any(r != "user" for r, _ in rest):
             return None
         return "\n\n".join(t for _, t in rest)
+
+
+# --------------------------------------------------------------------------------------------------------------------
+# agy (CLI de Antigravity) como LLM puro (FE-014, nota N-017).
+#
+# `agy` es un AGENTE: en modo `-p` arranca con ~60 herramientas propias (ejecutar comandos, escribir archivos, buscar en la web,
+# subagentes, programar tareas, navegador…) y, según el settings.json del usuario, con todas aprobadas de antemano. No tiene un
+# equivalente de `claude --tools ""`. Una CLI que actúa por su cuenta se saltaría la política, el supervisor y el sandbox de
+# PRAXEON, así que se la usa solo como generador de texto y se le CIERRAN todas las herramientas con varias barreras
+# (comprobado con el agy real, ver la nota N-018 de MarQ y docs/plans/…-plan-funciones-pendientes.md §4.7):
+#   1. Un hook PreToolUse en `<workdir>/.agents/hooks.json` que rechaza CUALQUIER herramienta. Es la barrera principal: las
+#      reglas `permissions.deny` solo cubren siete categorías y `deny:["*"]` no es un comodín. FALLA CERRADO: un comando que
+#      no existe o que sale con código distinto de cero también bloquea.
+#   2. `toolPermission: request-review`, reglas deny de esas siete categorías y `allowNonWorkspaceAccess: false`
+#      (con `--settings`, solo para esta sesión: no toca el settings.json del usuario) y `--sandbox`.
+#   3. El flujo de eventos se vigila: una herramienta que llegue a ejecutarse (estado DONE) mata el proceso y falla el turno.
+# El directorio de trabajo es temporal y vacío.
+_AGY_DENIED_CATEGORIES = ("command", "write_file", "read_file", "read_url", "mcp", "execute_url", "download_url")
+_AGY_HOOKS = {"hooks": {"PreToolUse": [{"matcher": ".*", "hooks": [{"type": "command", "command": "exit 2"}]}]}}
+_AGY_SETTINGS = {
+    "toolPermission": "request-review",
+    "allowNonWorkspaceAccess": False,
+    "permissions": {"allow": [], "ask": [], "deny": [f"{c}(*)" for c in _AGY_DENIED_CATEGORIES]},
+}
+_AGY_NO_TOOLS_NOTE = (
+    "Eres un módulo de razonamiento puro: NO uses ninguna de tus herramientas propias (están desactivadas y cualquier intento "
+    "se bloquea). Responde solo con texto, siguiendo exactamente las instrucciones anteriores."
+)
+
+
+class _AgySession(_CliSession):
+    """Un proceso `agy -p= --input-format stream-json` abierto entre turnos (protocolo NDJSON propio de agy)."""
+
+    label = "agy"
+    cli_name = "la CLI de agy"
+    thread_name = "praxeon-agy-cli"
+    blocked_tools: list[str]
+
+    def _encode(self, text: str) -> str:
+        return json.dumps({"event": "user", "message": {"content": text}})
+
+    def _result_of(self, event: Any) -> dict[str, Any] | None:
+        if isinstance(event, dict) and event.get("event") == "result" and isinstance(event.get("result"), dict):
+            return event["result"]
+        return None
+
+    def _begin_turn(self) -> None:
+        self.blocked_tools = []
+
+    def _observe(self, event: Any) -> None:
+        step = event.get("step_update") if isinstance(event, dict) else None
+        if not isinstance(step, dict) or step.get("step_type") != "tool":
+            return
+        name = str(step.get("tool_name") or "?")
+        state = step.get("state")
+        if state == "DONE":
+            raise RuntimeError(
+                f"[agy] La CLI ejecutó por su cuenta la herramienta «{name}»: el bloqueo de herramientas no ha funcionado. "
+                "Se cierra la sesión; no uses este proveedor hasta revisar la versión de agy."
+            )
+        if state == "ERROR":
+            self.blocked_tools.append(name)
+
+
+class AgyCLILLM(ClaudeCLILLM):
+    """Usa la CLI `agy` (Antigravity) como LLM puro, con la sesión de tu cuenta de Google y SIN sus herramientas.
+
+    Mismo esquema que `ClaudeCLILLM`: un proceso por conversación, solo se envía el mensaje nuevo y se reinicia si el
+    historial no continúa. Diferencias: agy no tiene `--system-prompt-file`, así que el prompt de sistema viaja dentro del
+    primer mensaje; y sus herramientas se cierran como se explica arriba.
+    """
+
+    _STRIP_ENV = ("GEMINI_API_KEY", "GOOGLE_API_KEY")   # que use el inicio de sesión de la cuenta, no una clave de API
+    _NO_IMAGES = "[agy] La CLI de agy no admite imágenes por este canal: usa un proveedor con clave de API y un modelo con visión."
+    _BINARY = "agy"
+    _MISSING = "No se encuentra la CLI 'agy' en el PATH. Instálala e inicia sesión con tu cuenta (ejecuta 'agy' una vez)."
+
+    def __init__(self, model: str = "gemini-3.8-flash-medium", executable: str | None = None, timeout: float = 300.0) -> None:
+        super().__init__(model=model, executable=executable, timeout=timeout)
+
+    @property
+    def provider_name(self) -> str:
+        return "agy"
+
+    def _open(self, system: str) -> _CliSession:
+        env = {k: v for k, v in os.environ.items() if k not in self._STRIP_ENV}
+        workdir = tempfile.mkdtemp(prefix="praxeon-agy-")
+        root = Path(workdir)
+        try:
+            (root / ".agents").mkdir()
+            (root / ".agents" / "hooks.json").write_text(json.dumps(_AGY_HOOKS), encoding="utf-8")
+            settings = root / "praxeon-agy-settings.json"
+            settings.write_text(json.dumps(_AGY_SETTINGS), encoding="utf-8")
+            cmd = [
+                self._executable, "--input-format", "stream-json", "--output-format", "stream-json", "--model", self._model,
+                "--settings", str(settings), "--disable-slash-commands", "--sandbox", "-p=",
+            ]
+            return _AgySession(cmd, env, workdir)
+        except OSError as exc:
+            shutil.rmtree(workdir, ignore_errors=True)
+            raise ConnectionError(f"[agy] No se pudo ejecutar la CLI de agy: {exc}") from exc
+
+    def _first_message(self, system: str, text: str) -> str:
+        head = f"<instrucciones_del_sistema>\n{system}\n</instrucciones_del_sistema>\n\n" if system else ""
+        return f"{head}{_AGY_NO_TOOLS_NOTE}\n\n{text}"
+
+    def _read_result(self, data: dict[str, Any], session: _CliSession) -> str:
+        status = str(data.get("status") or "").upper()
+        if status != "SUCCESS":
+            detail = str(data.get("error") or data.get("response") or status or "sin detalle")[:500]
+            low = detail.lower()
+            if any(w in low for w in ("login", "log in", "sign in", "authenticat", "credential", "unauthorized")):
+                raise RuntimeError(f"[agy] La CLI no tiene sesión iniciada. Ejecuta 'agy' y haz login. Detalle: {detail}")
+            if any(w in low for w in ("quota", "rate limit", "resource_exhausted", "exhausted", "429")):
+                raise RuntimeError(f"[agy] Cuota o límite de uso agotado en tu cuenta. Detalle: {detail}")
+            raise RuntimeError(f"[agy] La CLI devolvió un error: {detail}")
+        blocked = getattr(session, "blocked_tools", [])
+        if blocked:
+            logging.getLogger(__name__).warning("[agy] PRAXEON bloqueó %d intento(s) de la CLI de usar herramientas propias: %s", len(blocked), ", ".join(blocked))
+        usage = data.get("usage") or {}
+        self._record_usage(usage.get("input_tokens"), usage.get("output_tokens"), usage.get("cache_read_tokens"))
+        return str(data.get("response") or "").strip()
 
 
 class GeminiLLM(BaseAgentLLM):
@@ -1145,6 +1320,10 @@ def create_agent_llm(
     elif prov_key in ("claude_cli", "claude-cli"):
         return ClaudeCLILLM(model=model or PROVIDER_PRESETS["claude_cli"]["default_model"], timeout=max(timeout, 300.0))
 
+    # Proveedor: CLI de Antigravity (agy), solo como LLM y con sus herramientas bloqueadas (nunca se elige en modo auto)
+    elif prov_key in ("agy", "antigravity"):
+        return AgyCLILLM(model=model or PROVIDER_PRESETS["agy"]["default_model"], timeout=max(timeout, 300.0))
+
     elif prov_key in ("simulator", "simulated"):
         return SimulatedAgentLLM(model_name=model or "simulated-agent-v04")
 
@@ -1160,5 +1339,5 @@ def create_agent_llm(
             )
         raise ValueError(
             f"Proveedor de LLM desconocido: '{provider}'. Opciones válidas: "
-            f"auto, groq, ollama, openrouter, lmstudio, openai, anthropic, claude_cli, gemini, simulator."
+            f"auto, groq, ollama, openrouter, lmstudio, openai, anthropic, claude_cli, agy, gemini, simulator."
         )
