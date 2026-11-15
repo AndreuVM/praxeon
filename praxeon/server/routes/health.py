@@ -22,7 +22,7 @@ from praxeon.core.session_context import SessionContextManager, get_default_work
 @router.get("/health", response_model=APIResponse[dict[str, Any]])
 def healthcheck(
     service: RuntimeApplicationService = Depends(get_runtime_service),
-):
+) -> APIResponse[dict[str, Any]]:
     """Comprobación de salud y estado de los subsistemas del runtime."""
     uptime = time.time() - _START_TIME
     data = {
@@ -44,7 +44,7 @@ def healthcheck(
 def get_system_context(
     workspace_root: str | None = None,
     _auth: None = Depends(verify_api_key),
-):
+) -> APIResponse[dict[str, Any]]:
     """Obtiene información contextual del entorno, sistema operativo y archivos del workspace garantizando contención."""
     default_root = os.path.realpath(get_default_workspace_root())
     

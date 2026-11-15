@@ -59,7 +59,7 @@ async def send_ws_json(websocket: WebSocket, data: Any) -> None:
 class WebSocketConnectionManager:
     """Administrador concurrente de conexiones WebSocket agrupadas por sesión."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._active_connections: dict[str, set[WebSocket]] = {}
         self._lock = asyncio.Lock()
 
@@ -162,13 +162,13 @@ def is_remote_client(client_host: str | None) -> bool:
     return bool(client_host and client_host.lower() not in ("127.0.0.1", "localhost", "::1", "testclient"))
 
 
-@ws_router.post("/v1/sessions/{session_id}/ws-ticket")
-@ws_router.post("/v1/auth/ws-ticket")
+@ws_router.post("/v1/sessions/{session_id}/ws-ticket", response_model=None)
+@ws_router.post("/v1/auth/ws-ticket", response_model=None)
 async def create_ws_ticket(
     session_id: str | None = None,
     payload: dict[str, Any] | None = None,
     api_key: str | None = Depends(verify_api_key),
-):
+) -> dict[str, Any]:
     """Genera un ticket efímero de un solo uso para conectarse al canal WebSocket de una sesión."""
     target_session = session_id or (payload.get("session_id") if payload else None)
     if not target_session:
@@ -189,7 +189,7 @@ async def websocket_session_stream(
     after_sequence: int | None = None,
     token: str | None = None,
     ticket: str | None = None,
-):
+) -> None:
     """Endpoint WebSocket para recibir en tiempo real los eventos de la sesión con gap recovery."""
     # 0. Finding 20: Prevención de CSWSH (Cross-Site WebSocket Hijacking)
     if not _is_origin_allowed(websocket):
@@ -254,7 +254,7 @@ async def websocket_session_stream(
     await ws_manager.connect(session_id, websocket)
 
 
-    queue: asyncio.Queue = asyncio.Queue(maxsize=1000)
+    queue: asyncio.Queue[Any] = asyncio.Queue(maxsize=1000)
     unregister = service.event_bus.register_async_queue(queue, session_id=session_id)
     sent_event_ids: set[str] = set()
 
@@ -289,7 +289,7 @@ async def websocket_session_stream(
                 })
 
         # 2. Tarea concurrente para escuchar mensajes entrantes del cliente (sync / ping)
-        async def client_listener():
+        async def client_listener() -> None:
             while True:
                 try:
                     data_text = await websocket.receive_text()
@@ -313,7 +313,7 @@ async def websocket_session_stream(
                     logger.debug("Error procesando mensaje entrante WebSocket: %s", ex)
 
         # 3. Tarea concurrente para despachar eventos emitidos por el EventBus
-        async def event_dispatcher():
+        async def event_dispatcher() -> None:
             while True:
                 try:
                     event: RuntimeEvent = await queue.get()

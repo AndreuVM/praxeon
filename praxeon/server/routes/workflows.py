@@ -5,6 +5,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
 from praxeon.server.auth_deps import get_current_tenant
+from praxeon.server.services.auth_service import TenantContext
+from praxeon.server.services.workflow_service import WorkflowService
 from praxeon.server.schemas.common import APIResponse
 from praxeon.workflows.editor_service import WorkflowEditorService
 from praxeon.workflows.models import (
@@ -96,14 +98,14 @@ class BacktrackRequest(BaseModel):
 
 
 @router.get("", response_model=APIResponse[list[dict[str, Any]]])
-def list_workflows():
+def list_workflows() -> APIResponse[list[dict[str, Any]]]:
     """Lista todos los flujos de trabajo registrados."""
     service = get_workflow_editor_service()
     return APIResponse(data=service.list_workflows())
 
 
 @router.post("", response_model=APIResponse[dict[str, Any]])
-def create_workflow(payload: CreateWorkflowRequest):
+def create_workflow(payload: CreateWorkflowRequest) -> APIResponse[dict[str, Any]]:
     """Crea un nuevo flujo de trabajo."""
     service = get_workflow_editor_service()
     wf = service.create_workflow(
@@ -115,7 +117,7 @@ def create_workflow(payload: CreateWorkflowRequest):
 
 
 @router.get("/{workflow_id}", response_model=APIResponse[dict[str, Any]])
-def get_workflow_detail(workflow_id: str):
+def get_workflow_detail(workflow_id: str) -> APIResponse[dict[str, Any]]:
     """Obtiene la definición canónica del workflow."""
     service = get_workflow_editor_service()
     wf = service.get_workflow(workflow_id)
@@ -128,13 +130,13 @@ def get_workflow_detail(workflow_id: str):
 
 
 @router.post("/{workflow_id}/activate", response_model=APIResponse[dict[str, Any]])
-def activate_workflow(workflow_id: str):
+def activate_workflow(workflow_id: str) -> APIResponse[dict[str, Any]]:
     """Activa el workflow: queda disponible para gobernar tareas lanzadas por el usuario."""
     return _set_active(workflow_id, True)
 
 
 @router.post("/{workflow_id}/deactivate", response_model=APIResponse[dict[str, Any]])
-def deactivate_workflow(workflow_id: str):
+def deactivate_workflow(workflow_id: str) -> APIResponse[dict[str, Any]]:
     """Desactiva el workflow: deja de ofrecerse para nuevas tareas (las en curso no se ven afectadas)."""
     return _set_active(workflow_id, False)
 
@@ -148,7 +150,7 @@ def _set_active(workflow_id: str, active: bool) -> APIResponse[dict[str, Any]]:
 
 
 @router.post("/{workflow_id}/nodes", response_model=APIResponse[dict[str, Any]])
-def add_node(workflow_id: str, payload: AddNodeRequest):
+def add_node(workflow_id: str, payload: AddNodeRequest) -> APIResponse[dict[str, Any]]:
     """Añade un nodo al flujo de trabajo."""
     service = get_workflow_editor_service()
     try:
@@ -168,7 +170,7 @@ def add_node(workflow_id: str, payload: AddNodeRequest):
 
 
 @router.put("/{workflow_id}/nodes/{node_id}/position", response_model=APIResponse[dict[str, Any]])
-def update_node_position(workflow_id: str, node_id: str, payload: UpdateNodePositionRequest):
+def update_node_position(workflow_id: str, node_id: str, payload: UpdateNodePositionRequest) -> APIResponse[dict[str, Any]]:
     """Actualiza las coordenadas de un nodo en el lienzo tras arrastrar."""
     service = get_workflow_editor_service()
     try:
@@ -184,7 +186,7 @@ def update_node_position(workflow_id: str, node_id: str, payload: UpdateNodePosi
 
 
 @router.put("/{workflow_id}/nodes/{node_id}", response_model=APIResponse[dict[str, Any]])
-def update_node(workflow_id: str, node_id: str, payload: UpdateNodeRequest):
+def update_node(workflow_id: str, node_id: str, payload: UpdateNodeRequest) -> APIResponse[dict[str, Any]]:
     """Actualiza las propiedades de un nodo (nombre, agente asignado, tipo, herramienta, inputs, control_config)."""
     service = get_workflow_editor_service()
     try:
@@ -206,7 +208,7 @@ def update_node(workflow_id: str, node_id: str, payload: UpdateNodeRequest):
 
 
 @router.delete("/{workflow_id}/nodes/{node_id}", response_model=APIResponse[dict[str, Any]])
-def delete_node(workflow_id: str, node_id: str):
+def delete_node(workflow_id: str, node_id: str) -> APIResponse[dict[str, Any]]:
     """Elimina un nodo y sus aristas conectadas."""
     service = get_workflow_editor_service()
     try:
@@ -219,7 +221,7 @@ def delete_node(workflow_id: str, node_id: str):
 
 
 @router.post("/{workflow_id}/edges", response_model=APIResponse[dict[str, Any]])
-def connect_nodes(workflow_id: str, payload: ConnectNodesRequest):
+def connect_nodes(workflow_id: str, payload: ConnectNodesRequest) -> APIResponse[dict[str, Any]]:
     """Crea una arista dirigida entre dos nodos."""
     service = get_workflow_editor_service()
     try:
@@ -236,7 +238,7 @@ def connect_nodes(workflow_id: str, payload: ConnectNodesRequest):
 
 
 @router.put("/{workflow_id}/edges/{edge_id}", response_model=APIResponse[dict[str, Any]])
-def update_edge(workflow_id: str, edge_id: str, payload: UpdateEdgeRequest):
+def update_edge(workflow_id: str, edge_id: str, payload: UpdateEdgeRequest) -> APIResponse[dict[str, Any]]:
     """Actualiza una arista existente (etiqueta, condición lógica de transición/unión)."""
     service = get_workflow_editor_service()
     try:
@@ -252,7 +254,7 @@ def update_edge(workflow_id: str, edge_id: str, payload: UpdateEdgeRequest):
 
 
 @router.delete("/{workflow_id}/edges/{edge_id}", response_model=APIResponse[dict[str, Any]])
-def delete_edge(workflow_id: str, edge_id: str):
+def delete_edge(workflow_id: str, edge_id: str) -> APIResponse[dict[str, Any]]:
     """Elimina una conexión existente."""
     service = get_workflow_editor_service()
     ok = service.disconnect_nodes(workflow_id, edge_id)
@@ -262,7 +264,7 @@ def delete_edge(workflow_id: str, edge_id: str):
 
 
 @router.post("/{workflow_id}/validate", response_model=APIResponse[dict[str, Any]])
-def validate_workflow(workflow_id: str):
+def validate_workflow(workflow_id: str) -> APIResponse[dict[str, Any]]:
     """Verifica si el grafo es un DAG válido y no contiene ciclos ni nodos huérfanos."""
     service = get_workflow_editor_service()
     wf = service.get_workflow(workflow_id)
@@ -274,7 +276,7 @@ def validate_workflow(workflow_id: str):
 
 
 @router.post("/{workflow_id}/execute", response_model=APIResponse[dict[str, Any]])
-def execute_workflow(workflow_id: str, max_steps: int = Query(100, ge=1, le=1000)):
+def execute_workflow(workflow_id: str, max_steps: int = Query(100, ge=1, le=1000)) -> APIResponse[dict[str, Any]]:
     """Ejecuta el flujo de trabajo supervisado por gobernanza física."""
     service = get_workflow_editor_service()
     try:
@@ -285,7 +287,7 @@ def execute_workflow(workflow_id: str, max_steps: int = Query(100, ge=1, le=1000
 
 
 @router.post("/{workflow_id}/step", response_model=APIResponse[dict[str, Any]])
-def step_workflow(workflow_id: str):
+def step_workflow(workflow_id: str) -> APIResponse[dict[str, Any]]:
     """Avanza un paso en el workflow."""
     service = get_workflow_editor_service()
     try:
@@ -296,7 +298,7 @@ def step_workflow(workflow_id: str):
 
 
 @router.post("/{workflow_id}/backtrack", response_model=APIResponse[dict[str, Any]])
-def backtrack_workflow(workflow_id: str, payload: BacktrackRequest):
+def backtrack_workflow(workflow_id: str, payload: BacktrackRequest) -> APIResponse[dict[str, Any]]:
     """Aplica retroceso determinista hacia un nodo objetivo."""
     service = get_workflow_editor_service()
     try:
@@ -307,7 +309,7 @@ def backtrack_workflow(workflow_id: str, payload: BacktrackRequest):
 
 
 @router.post("/{workflow_id}/reset", response_model=APIResponse[dict[str, Any]])
-def reset_workflow(workflow_id: str):
+def reset_workflow(workflow_id: str) -> APIResponse[dict[str, Any]]:
     """Reinicia la ejecución del workflow a IDLE."""
     service = get_workflow_editor_service()
     service.reset_execution(workflow_id)
@@ -319,8 +321,8 @@ def approve_workflow_node(
     workflow_id: str,
     node_id: str,
     payload: ApproveNodeRequest,
-    tenant=Depends(get_current_tenant),
-):
+    tenant: TenantContext = Depends(get_current_tenant),
+) -> APIResponse[dict[str, Any]]:
     """Aprueba o rechaza la ejecución de un nodo en estado WAITING_APPROVAL."""
     service = get_workflow_editor_service()
     try:
@@ -336,13 +338,13 @@ def approve_workflow_node(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
-def _workflow_service():
+def _workflow_service() -> WorkflowService:
     from praxeon.server.dependencies import get_runtime_service
     return get_runtime_service().get_workflow_service()
 
 
 @router.post("/{workflow_id}/executions", response_model=APIResponse[dict[str, Any]])
-def start_execution(workflow_id: str, payload: StartExecutionRequest | None = None):
+def start_execution(workflow_id: str, payload: StartExecutionRequest | None = None) -> APIResponse[dict[str, Any]]:
     """Inicia una ejecución independiente (un motor por ejecución) gestionada por el scheduler."""
     execution = _workflow_service().run_workflow_execution(
         workflow_id, initial_variables=(payload.variables if payload else None)
@@ -353,7 +355,7 @@ def start_execution(workflow_id: str, payload: StartExecutionRequest | None = No
 
 
 @router.get("/executions/{execution_id}", response_model=APIResponse[dict[str, Any]])
-def get_execution(execution_id: str):
+def get_execution(execution_id: str) -> APIResponse[dict[str, Any]]:
     """Estado actual (o final persistido) de una ejecución."""
     svc = _workflow_service()
     engine = svc.scheduler.get_active_engines().get(execution_id)
@@ -364,7 +366,7 @@ def get_execution(execution_id: str):
 
 
 @router.post("/executions/{execution_id}/cancel", response_model=APIResponse[dict[str, Any]])
-def cancel_execution(execution_id: str):
+def cancel_execution(execution_id: str) -> APIResponse[dict[str, Any]]:
     """Cancela una ejecución activa."""
     execution = _workflow_service().cancel_execution(execution_id)
     if execution is None:
@@ -377,8 +379,8 @@ def approve_execution_node(
     execution_id: str,
     node_id: str,
     payload: ApproveNodeRequest,
-    tenant=Depends(get_current_tenant),
-):
+    tenant: TenantContext = Depends(get_current_tenant),
+) -> APIResponse[dict[str, Any]]:
     """Aprueba o rechaza un nodo en espera de una ejecución activa."""
     ok = _workflow_service().approve_execution_node(
         execution_id, node_id, payload.approved, payload.comment, approver_id=tenant.user_id
@@ -389,7 +391,7 @@ def approve_execution_node(
 
 
 @router.post("/executions/{execution_id}/nodes/{node_id}/resolve", response_model=APIResponse[dict[str, Any]])
-def resolve_failed_node(execution_id: str, node_id: str, payload: ResolveFailedNodeRequest):
+def resolve_failed_node(execution_id: str, node_id: str, payload: ResolveFailedNodeRequest) -> APIResponse[dict[str, Any]]:
     """Decide qué hacer con un nodo fallido de una misión con workflow: retry | skip | abort."""
     try:
         ok = _workflow_service().resolve_failed_node(execution_id, node_id, payload.action)
@@ -403,14 +405,14 @@ def resolve_failed_node(execution_id: str, node_id: str, payload: ResolveFailedN
 
 
 @router.get("/templates/canonical", response_model=APIResponse[list[dict[str, Any]]])
-def list_canonical_templates():
+def list_canonical_templates() -> APIResponse[list[dict[str, Any]]]:
     """Lista las plantillas canónicas de flujos de trabajo multiagente."""
     service = get_workflow_editor_service()
     return APIResponse(data=service.list_templates())
 
 
 @router.post("/templates/{template_key}/instantiate", response_model=APIResponse[dict[str, Any]])
-def instantiate_canonical_template(template_key: str, name: str | None = None):
+def instantiate_canonical_template(template_key: str, name: str | None = None) -> APIResponse[dict[str, Any]]:
     """Crea un nuevo workflow a partir de una plantilla canónica."""
     service = get_workflow_editor_service()
     try:

@@ -9,6 +9,8 @@ from __future__ import annotations
 import os
 from collections.abc import Iterable
 
+from starlette.types import ASGIApp, Receive, Scope, Send
+
 LOOPBACK_HOSTS = ("localhost", "127.0.0.1", "::1", "testserver", "testclient")     # los dos últimos: clientes de prueba de Starlette
 
 
@@ -37,10 +39,10 @@ def host_is_allowed(host_header: str, allowed: Iterable[str]) -> bool:
 class HostGuardMiddleware:
     """Middleware ASGI (HTTP y WebSocket): responde 400 si `Host` no es de confianza. Lee el entorno en cada petición."""
 
-    def __init__(self, app) -> None:
+    def __init__(self, app: ASGIApp) -> None:
         self.app = app
 
-    async def __call__(self, scope, receive, send):
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] in ("http", "websocket"):
             headers = dict(scope.get("headers") or [])
             host = headers.get(b"host", b"").decode("latin-1")

@@ -12,7 +12,7 @@ router = APIRouter(prefix="/v1/providers", tags=["Providers"])
 @router.get("", response_model=APIResponse[ProvidersCatalogResponse])
 def get_providers(
     service: RuntimeApplicationService = Depends(get_runtime_service),
-):
+) -> APIResponse[ProvidersCatalogResponse]:
     """Retorna el catálogo dinámico de Decision Providers y LLM Providers con disponibilidad y telemetría observada."""
     data = service.get_available_providers()
     return APIResponse(data=ProvidersCatalogResponse(**data))

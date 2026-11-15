@@ -25,7 +25,7 @@ def list_agents(
     skill: str | None = Query(None, description="Filtrar por habilidad"),
     tag: str | None = Query(None, description="Filtrar por tag, capacidad o habilidad"),
     service: AgentService = Depends(get_agent_service),
-):
+) -> APIResponse[list[dict[str, Any]]]:
     """Lista todos los agentes registrados aplicando filtros opcionales."""
     agents = service.list_agents(status=status_filter, role=role)
 
@@ -59,7 +59,7 @@ def list_agents(
 def create_agent(
     payload: CreateAgentRequest,
     service: AgentService = Depends(get_agent_service),
-):
+) -> APIResponse[dict[str, Any]]:
     """Registra un nuevo agente calculando su hash criptográfico determinista."""
     agent_id = payload.agent_id or f"ag_{uuid.uuid4().hex[:8]}"
 
@@ -92,7 +92,7 @@ def create_agent(
 def get_agent_detail(
     agent_id: str,
     service: AgentService = Depends(get_agent_service),
-):
+) -> APIResponse[dict[str, Any]]:
     """Obtiene la definición canónica y el estado de un agente."""
     agent = service.get_agent(agent_id)
     if not agent:
@@ -108,7 +108,7 @@ def update_agent(
     agent_id: str,
     payload: UpdateAgentRequest,
     service: AgentService = Depends(get_agent_service),
-):
+) -> APIResponse[dict[str, Any]]:
     """Actualiza parcialmente un agente e incrementa su versión determinista."""
     existing = service.get_agent(agent_id)
     if not existing:
@@ -136,7 +136,7 @@ def delete_agent(
     agent_id: str,
     hard_delete: bool = Query(False, description="Si es True, elimina físicamente del almacén"),
     service: AgentService = Depends(get_agent_service),
-):
+) -> APIResponse[dict[str, Any]]:
     """Elimina lógicamente (TERMINATED) o físicamente un agente."""
     existing = service.get_agent(agent_id)
     if not existing:
@@ -167,7 +167,7 @@ def create_agent_version(
     agent_id: str,
     payload: CreateAgentVersionRequest,
     service: AgentService = Depends(get_agent_service),
-):
+) -> APIResponse[dict[str, Any]]:
     """Crea una nueva versión inmutable para el agente con los cambios provistos."""
     existing = service.get_agent(agent_id)
     if not existing:
@@ -191,7 +191,7 @@ def create_agent_version(
 def list_agent_versions(
     agent_id: str,
     service: AgentService = Depends(get_agent_service),
-):
+) -> APIResponse[list[dict[str, Any]]]:
     """Obtiene el historial inmutable de versiones de un agente."""
     existing = service.get_agent(agent_id)
     if not existing:
@@ -210,7 +210,7 @@ def get_agent_historical_version(
     agent_id: str,
     version: int,
     service: AgentService = Depends(get_agent_service),
-):
+) -> APIResponse[dict[str, Any]]:
     """Obtiene una versión histórica inmutable específica de un agente."""
     existing = service.get_agent(agent_id)
     if not existing:

@@ -42,7 +42,7 @@ def list_decisions(
     session_id: str | None = None,
     limit: int = 150,
     service: RuntimeApplicationService = Depends(get_runtime_service),
-):
+) -> APIResponse[list[dict[str, Any]]]:
     """Lista las decisiones emitidas (filtradas opcionalmente por sesión)."""
     decisions = service.list_all_decisions(session_id=session_id, limit=limit)
     return APIResponse(data=decisions)
@@ -52,7 +52,7 @@ def list_decisions(
 def get_decision_detail(
     decision_id: str,
     service: RuntimeApplicationService = Depends(get_runtime_service),
-):
+) -> APIResponse[DecisionDetailResponse]:
     """Obtiene el detalle contextualizado en 4 pestañas (Decision, Evidence, Policy, Receipt)."""
     detail = service.get_decision_detail(decision_id)
     if not detail:
@@ -69,7 +69,7 @@ def confirm_decision(
     req: ConfirmDecisionRequest,
     request: Request = None,  # type: ignore[assignment]  # FastAPI lo inyecta por su clase: `Request | None` no es válido
     service: RuntimeApplicationService = Depends(get_runtime_service),
-):
+) -> APIResponse[ConfirmDecisionResponse]:
     """Aprueba o deniega una decisión humana en estado REVIEW."""
     try:
         op_token = _operator_token(req.operator_token, request)
@@ -116,7 +116,7 @@ def reject_decision(
     req: RejectDecisionRequest,
     request: Request = None,  # type: ignore[assignment]  # FastAPI lo inyecta por su clase: `Request | None` no es válido
     service: RuntimeApplicationService = Depends(get_runtime_service),
-):
+) -> APIResponse[ConfirmDecisionResponse]:
     """Rechaza explícitamente una decisión en estado REVIEW con justificación obligatoria del operador."""
     try:
         op_token = _operator_token(req.operator_token, request)
@@ -161,7 +161,7 @@ def execute_decision(
     decision_id: str,
     req: ExecuteDecisionRequest | None = None,
     service: RuntimeApplicationService = Depends(get_runtime_service),
-):
+) -> APIResponse[ExecuteDecisionResponse]:
     """Solicita la ejecución física de la acción autorizada dentro del sandbox."""
     cap_token = req.capability_token if req else None
     operator_id = req.operator_id if req else None

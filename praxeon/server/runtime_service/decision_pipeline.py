@@ -46,10 +46,10 @@ from praxeon.server.schemas.decision import (
 
 
 
-def is_auth_required(*args, **kwargs):
+def is_auth_required(profile: str | None = None, client_host: str | None = None) -> bool:
     """Resuelve en tiempo de llamada la política de autenticación (evita el import circular con el servidor)."""
     from praxeon.server import auth_deps
-    return auth_deps.is_auth_required(*args, **kwargs)
+    return auth_deps.is_auth_required(profile=profile, client_host=client_host)
 
 
 class DecisionPipelineMixin(RuntimeHost):

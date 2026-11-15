@@ -46,11 +46,14 @@ Todas las modificaciones notables de este proyecto están documentadas en este a
   se dejaron anchos con `# noqa: BLE001 - motivo`: fronteras con proveedores, el host, el sandbox o la base de datos,
   limpiezas y rutas fail-closed (ahí cualquier fallo debe significar «denegado» o «error devuelto»). De paso se corrigieron
   los motivos genéricos que la etapa 1 copió en varios `noqa: S110`.
-- Calidad (auditoría AUD-23/AUD-26): `mypy --strict` en `praxeon/domain`, `praxeon/policy`, `praxeon/runtime` y
-  `praxeon/core/pipeline.py` (8 + 33 errores a 0, también con `--platform linux`, que es el de CI), comprobado en CI mediante un `override` por módulo en `pyproject.toml`. mypy demostró que una
-  comparación de `policy/reconciliation.py` era código muerto —el riesgo crítico ya se resuelve antes y no llega al ajuste
-  de Full Access—; se quitó la condición redundante y 8 tests nuevos fijan que Full Access nunca relaja un riesgo crítico.
-  Pendiente: `praxeon/server` (154 errores).
+- Calidad (auditoría AUD-23/AUD-26): `mypy --strict` en todo lo que mypy comprueba en CI (`praxeon/domain`, `policy`, `runtime`,
+  `server` y `core/pipeline.py`; 8 + 33 + 153 errores a 0, también con `--platform linux`, que es el de CI), mediante un
+  `override` por módulo en `pyproject.toml`. En `server/`, 86 manejadores de FastAPI se anotaron con el mismo tipo que ya
+  declaraba su `response_model=` (sin cambiar lo que FastAPI valida) y los dos que no lo tienen (`/health` y el ticket de
+  WebSocket) llevan `response_model=None` explícito para que la anotación no cree un esquema nuevo; el `openapi.json`
+  regenerado es idéntico. mypy demostró además que una comparación de `policy/reconciliation.py` era código muerto —el riesgo
+  crítico ya se resuelve antes y no llega al ajuste de Full Access—; se quitó y 8 tests nuevos fijan que Full Access nunca
+  relaja un riesgo crítico.
 - Calidad (auditoría AUD-23, etapa 2, Q-03): cobertura mínima por módulo. `scripts/check_module_coverage.py` compara
   `coverage.json` con los mínimos de `[tool.praxeon-coverage]` en `pyproject.toml` (líneas + ramas, como `--cov-fail-under`;
   una clave que termina en `/` es un paquete entero; falla si un módulo configurado ya no existe) y corre en CI tras los

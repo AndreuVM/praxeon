@@ -15,7 +15,7 @@ from typing import Any
 class MissionService:
     """Gestiona el ciclo de vida y estado de ejecución de misiones interactivas."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._lock = threading.Lock()
         self._running_missions: dict[str, dict[str, Any]] = {}
 

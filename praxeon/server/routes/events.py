@@ -15,7 +15,7 @@ def get_session_events(
     after_sequence: int = Query(0, ge=0, description="Recuperar solo eventos con secuencia mayor a este valor"),
     limit: int = Query(100, ge=1, le=1000, description="Límite máximo de eventos devueltos"),
     service: RuntimeApplicationService = Depends(get_runtime_service),
-):
+) -> APIResponse[EventsListResponse]:
     """Consulta el historial de eventos ordenados por secuencia monótona para gap recovery."""
     events = service.event_bus.get_events(session_id, after_sequence=after_sequence, limit=limit + 1)
     has_more = len(events) > limit

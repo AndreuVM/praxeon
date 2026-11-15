@@ -46,7 +46,7 @@ def ensure_full_access_available(execution_mode: str | None, service: Any) -> No
 def run_mission(
     req: RunMissionRequest,
     service: RuntimeApplicationService = Depends(get_runtime_service),
-):
+) -> APIResponse[SessionSummaryResponse]:
     """Inicia una nueva misión interactiva con ejecución y supervisión en tiempo real."""
     ensure_full_access_available(req.execution_mode, service)
     full_access_authorized = is_full_access_authorized(req.execution_mode, req.full_access_confirmed)
@@ -88,7 +88,7 @@ def run_mission(
 def pause_mission(
     session_id: str,
     service: RuntimeApplicationService = Depends(get_runtime_service),
-):
+) -> APIResponse[dict[str, Any]]:
     """Pausa temporalmente una misión en ejecución."""
     ok = service.pause_mission(session_id)
     if not ok:
@@ -100,7 +100,7 @@ def pause_mission(
 def resume_mission(
     session_id: str,
     service: RuntimeApplicationService = Depends(get_runtime_service),
-):
+) -> APIResponse[dict[str, Any]]:
     """Reanuda una misión pausada."""
     ok = service.resume_mission(session_id)
     if not ok:
@@ -112,7 +112,7 @@ def resume_mission(
 def stop_mission(
     session_id: str,
     service: RuntimeApplicationService = Depends(get_runtime_service),
-):
+) -> APIResponse[dict[str, Any]]:
     """Detiene definitivamente una misión en ejecución."""
     ok = service.stop_mission(session_id)
     if not ok:
@@ -125,7 +125,7 @@ def rollback_session(
     session_id: str,
     req: dict[str, Any] | None = None,
     service: RuntimeApplicationService = Depends(get_runtime_service),
-):
+) -> APIResponse[dict[str, Any]]:
     """Revierte la sesión a un checkpoint de estado seguro."""
     data = req or {}
     checkpoint_id = data.get("checkpoint_id")
@@ -150,7 +150,7 @@ def rollback_session(
 def create_session(
     req: CreateSessionRequest,
     service: RuntimeApplicationService = Depends(get_runtime_service),
-):
+) -> APIResponse[SessionSummaryResponse]:
     """Crea una nueva sesión de supervisión para un agente autónomo."""
     ensure_full_access_available(req.execution_mode, service)
     metadata = dict(req.metadata or {})
@@ -198,7 +198,7 @@ def create_session(
 @router.get("", response_model=APIResponse[list[SessionSummaryResponse]])
 def list_sessions(
     service: RuntimeApplicationService = Depends(get_runtime_service),
-):
+) -> APIResponse[list[SessionSummaryResponse]]:
     """Devuelve la lista de todas las sesiones registradas con sus contadores de decisión."""
     summaries = service.list_sessions()
     return APIResponse(data=[SessionSummaryResponse(**s) for s in summaries])
@@ -209,7 +209,7 @@ def list_sessions(
 def get_session_snapshot(
     session_id: str,
     service: RuntimeApplicationService = Depends(get_runtime_service),
-):
+) -> APIResponse[SessionSnapshotResponse]:
     """Obtiene el snapshot completo de una sesión junto con el árbol de decisiones derivado."""
     snapshot = service.get_session_snapshot(session_id)
     if not snapshot:
@@ -222,7 +222,7 @@ def propose_action(
     session_id: str,
     proposal: ProposeActionRequest,
     service: RuntimeApplicationService = Depends(get_runtime_service),
-):
+) -> APIResponse[DecisionResponse]:
     """Propone una acción para su evaluación formal a través del pipeline de supervisión."""
     try:
         decision_resp = service.propose_action(session_id, proposal)
@@ -238,7 +238,7 @@ def propose_action(
 def list_session_decisions(
     session_id: str,
     service: RuntimeApplicationService = Depends(get_runtime_service),
-):
+) -> APIResponse[list[dict[str, Any]]]:
     """Lista las decisiones emitidas en el contexto de una sesión."""
     decisions = service.list_decisions_for_session(session_id)
     return APIResponse(data=decisions)
@@ -250,7 +250,7 @@ def list_session_decisions(
 def delete_session(
     session_id: str,
     service: RuntimeApplicationService = Depends(get_runtime_service),
-):
+) -> APIResponse[dict[str, Any]]:
     """Elimina permanentemente una sesión y todos sus registros asociados."""
     ok = service.delete_session(session_id)
     if not ok:
@@ -268,7 +268,7 @@ def clear_old_sessions(
     only_completed: bool = True,
     exclude_session_id: str | None = None,
     service: RuntimeApplicationService = Depends(get_runtime_service),
-):
+) -> APIResponse[dict[str, Any]]:
     """Purga sesiones antiguas para liberar espacio acumulado."""
     deleted_count = service.clear_old_sessions(
         only_completed=only_completed,
@@ -281,7 +281,7 @@ def clear_old_sessions(
 def get_session_context_stats(
     session_id: str,
     service: RuntimeApplicationService = Depends(get_runtime_service),
-):
+) -> APIResponse[dict[str, Any]]:
     """Retorna las métricas cuantitativas de context caching e invalidación para esta sesión."""
     session = service.get_session(session_id)
     if not session:

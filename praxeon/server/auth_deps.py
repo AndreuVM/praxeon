@@ -8,6 +8,7 @@ nombres siguen importándose también desde `praxeon.server.dependencies` por co
 import logging
 import os
 import warnings
+from collections.abc import Callable
 from typing import Any
 
 from fastapi import Cookie, Depends, Header, HTTPException, Request, status
@@ -200,7 +201,7 @@ def get_current_tenant(
     )
 
 
-def require_permission(permission: Permission):
+def require_permission(permission: Permission) -> Callable[..., TenantContext]:
     """Dependency factory para enforcing declarativo de permisos RBAC en rutas FastAPI."""
     def _perm_checker(tenant: TenantContext = Depends(get_current_tenant)) -> TenantContext:
         if not tenant.has_permission(permission):
@@ -212,7 +213,7 @@ def require_permission(permission: Permission):
     return _perm_checker
 
 
-def require_route_permission(read: Permission, write: Permission):
+def require_route_permission(read: Permission, write: Permission) -> Callable[..., TenantContext]:
     """Dependency para routers: exige `read` en GET/HEAD/OPTIONS y `write` en métodos mutantes."""
     def _checker(
         request: Request,

@@ -13,7 +13,7 @@ from datetime import datetime as dt, UTC
 import logging
 import os
 import threading
-from typing import Any
+from typing import TYPE_CHECKING, Any
 import uuid
 from praxeon.domain.events import EventType, RuntimeEvent
 from praxeon.domain.models import (
@@ -43,10 +43,14 @@ def get_default_workspace_root() -> str:
     return resolve_default_workspace()[0]
 
 
+if TYPE_CHECKING:
+    from praxeon.server.dependencies import RuntimeApplicationService
+
+
 class SessionLifecycleCoordinator:
     """Coordinador responsable del ciclo de vida de sesiones y misiones interactivas."""
 
-    def __init__(self, service: Any):
+    def __init__(self, service: RuntimeApplicationService):
         self.service = service
 
     def create_session(
@@ -511,7 +515,7 @@ class SessionLifecycleCoordinator:
 class StepExecutionCoordinator:
     """Coordinador responsable de propuestas de acción, evaluación semántica, confirmación y ejecución física."""
 
-    def __init__(self, service: Any):
+    def __init__(self, service: RuntimeApplicationService):
         self.service = service
 
     def propose_action(
@@ -590,7 +594,7 @@ class StepExecutionCoordinator:
 class CheckpointCoordinator:
     """Coordinador responsable de snapshots atómicos, checkpoints persistentes y reversiones (rollback)."""
 
-    def __init__(self, service: Any):
+    def __init__(self, service: RuntimeApplicationService):
         self.service = service
 
     def create_checkpoint(self, session_id: str, label: str | None = None) -> dict[str, Any]:
@@ -686,7 +690,7 @@ class CheckpointCoordinator:
 class DiagnosticsCoordinator:
     """Coordinador responsable de inspección de decisiones, auditoría, eventos y catálogo de proveedores."""
 
-    def __init__(self, service: Any):
+    def __init__(self, service: RuntimeApplicationService):
         self.service = service
 
     def get_decision_detail(self, decision_id: str) -> DecisionDetailResponse | None:

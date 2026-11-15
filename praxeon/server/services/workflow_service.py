@@ -62,7 +62,7 @@ class WorkflowService:
         return definition
 
     def delete_workflow(self, workflow_id: str) -> bool:
-        return self.editor_service.delete_workflow(workflow_id)
+        return bool(self.editor_service.delete_workflow(workflow_id))
 
     def get_workflow(self, workflow_id: str) -> WorkflowDefinition | None:
         return self.editor_service.get_workflow(workflow_id)

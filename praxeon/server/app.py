@@ -7,6 +7,7 @@ from typing import Any
 import uvicorn
 from fastapi import Depends, FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.types import Scope
 
 from praxeon import __version__
 from praxeon.env import env_setting
@@ -123,8 +124,8 @@ def create_app(
         )
 
     # Endpoint raíz /health para balanceadores de carga y sondas Kubernetes
-    @app.get("/health", include_in_schema=True)
-    def health_root():
+    @app.get("/health", include_in_schema=True, response_model=None)
+    def health_root() -> dict[str, str]:
         """Healthcheck raíz para balanceadores de carga y sondas Kubernetes."""
         return {"status": "healthy", "version": __version__}
 
@@ -148,7 +149,7 @@ def create_app(
             El HTML se revalida siempre; los archivos con hash en su nombre (`assets/`) no cambian nunca, así que se cachean.
             """
 
-            async def get_response(self, path, scope):
+            async def get_response(self, path: str, scope: Scope) -> Response:
                 response = await super().get_response(path, scope)
                 if response.status_code in (200, 304):
                     hashed = path.replace("\\", "/").startswith("assets/")
@@ -211,7 +212,7 @@ def ensure_local_token(host: str) -> str | None:
     return token
 
 
-def start():
+def start() -> None:
     """Función de arranque del servidor Uvicorn vía script o CLI."""
     parser = argparse.ArgumentParser(description="PRAXEON Web Server")
     parser.add_argument("--host", default="127.0.0.1", help="Host de escucha")
@@ -228,7 +229,7 @@ def start():
     uvicorn.run("praxeon.server.app:create_app", factory=True, host=args.host, port=args.port, reload=args.reload)
 
 
-def launch_web():
+def launch_web() -> None:
     """Lanzador interactivo de la aplicación web y servidor de supervisión PRAXEON."""
     import threading
     import webbrowser

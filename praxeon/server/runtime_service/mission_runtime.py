@@ -70,7 +70,7 @@ class MissionRuntimeMixin(RuntimeHost):
                 record = self._decisions.get(decision_id)
                 status = record.get("status") if record else None
             if status in ("ALLOW", "BLOCKED"):
-                return status
+                return str(status)
             time.sleep(0.25)
         with self._lock:
             record = self._decisions.get(decision_id)

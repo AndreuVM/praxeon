@@ -9,8 +9,8 @@ from typing import Any, Literal
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
-from praxeon.integrations.mcp_client import McpServerConfig, ToolOverride
-from praxeon.server.dependencies import get_runtime_service
+from praxeon.integrations.mcp_client import McpManager, McpServerConfig, ToolOverride
+from praxeon.server.dependencies import RuntimeApplicationService, get_runtime_service
 from praxeon.server.schemas.common import APIResponse
 
 router = APIRouter(prefix="/v1/mcp", tags=["MCP"])
@@ -40,7 +40,7 @@ class ApproveRequest(BaseModel):
     tools_hash: str = Field(..., min_length=8, description="Huella de las herramientas que has revisado")
 
 
-def _mcp(service=Depends(get_runtime_service)):
+def _mcp(service: RuntimeApplicationService = Depends(get_runtime_service)) -> McpManager:
     return service.mcp
 
 
@@ -49,12 +49,12 @@ def _missing(name: str) -> HTTPException:
 
 
 @router.get("/servers", response_model=APIResponse[list[dict[str, Any]]])
-def list_servers(mcp=Depends(_mcp)):
+def list_servers(mcp: McpManager = Depends(_mcp)) -> APIResponse[list[dict[str, Any]]]:
     return APIResponse(data=mcp.status())
 
 
 @router.put("/servers/{name}", response_model=APIResponse[dict[str, Any]])
-def put_server(name: str, req: ServerRequest, mcp=Depends(_mcp)):
+def put_server(name: str, req: ServerRequest, mcp: McpManager = Depends(_mcp)) -> APIResponse[dict[str, Any]]:
     """Crea o actualiza un servidor. Si cambia lo que se ejecuta, queda desactivado y sin aprobar."""
     current = mcp.store.get(name)
     fields = req.model_dump()
@@ -86,14 +86,14 @@ def put_server(name: str, req: ServerRequest, mcp=Depends(_mcp)):
 
 
 @router.delete("/servers/{name}", response_model=APIResponse[dict[str, Any]])
-def delete_server(name: str, mcp=Depends(_mcp)):
+def delete_server(name: str, mcp: McpManager = Depends(_mcp)) -> APIResponse[dict[str, Any]]:
     if not mcp.remove(name):
         raise _missing(name)
     return APIResponse(data={"deleted": name})
 
 
 @router.post("/servers/{name}/enable", response_model=APIResponse[dict[str, Any]])
-def enable_server(name: str, mcp=Depends(_mcp)):
+def enable_server(name: str, mcp: McpManager = Depends(_mcp)) -> APIResponse[dict[str, Any]]:
     """Activa y arranca el servidor para que puedas revisar sus herramientas (aún no se exponen al agente)."""
     try:
         return APIResponse(data=mcp.enable(name))
@@ -102,7 +102,7 @@ def enable_server(name: str, mcp=Depends(_mcp)):
 
 
 @router.post("/servers/{name}/disable", response_model=APIResponse[dict[str, Any]])
-def disable_server(name: str, mcp=Depends(_mcp)):
+def disable_server(name: str, mcp: McpManager = Depends(_mcp)) -> APIResponse[dict[str, Any]]:
     try:
         return APIResponse(data=mcp.disable(name))
     except KeyError as exc:
@@ -110,7 +110,7 @@ def disable_server(name: str, mcp=Depends(_mcp)):
 
 
 @router.post("/servers/{name}/restart", response_model=APIResponse[dict[str, Any]])
-def restart_server(name: str, mcp=Depends(_mcp)):
+def restart_server(name: str, mcp: McpManager = Depends(_mcp)) -> APIResponse[dict[str, Any]]:
     try:
         return APIResponse(data=mcp.start_server(name))
     except KeyError as exc:
@@ -118,7 +118,7 @@ def restart_server(name: str, mcp=Depends(_mcp)):
 
 
 @router.post("/servers/{name}/approve", response_model=APIResponse[dict[str, Any]])
-def approve_server(name: str, req: ApproveRequest, mcp=Depends(_mcp)):
+def approve_server(name: str, req: ApproveRequest, mcp: McpManager = Depends(_mcp)) -> APIResponse[dict[str, Any]]:
     """Aprueba las herramientas revisadas (por huella) y las expone a los agentes."""
     try:
         return APIResponse(data=mcp.approve(name, req.tools_hash))
@@ -129,7 +129,7 @@ def approve_server(name: str, req: ApproveRequest, mcp=Depends(_mcp)):
 
 
 @router.put("/servers/{name}/tools/{tool}", response_model=APIResponse[dict[str, Any]])
-def put_tool_override(name: str, tool: str, req: ToolOverride, mcp=Depends(_mcp)):
+def put_tool_override(name: str, tool: str, req: ToolOverride, mcp: McpManager = Depends(_mcp)) -> APIResponse[dict[str, Any]]:
     """Ajusta riesgo, solo-lectura, confirmación o desactiva una herramienta concreta."""
     cfg = mcp.store.get(name)
     if cfg is None:

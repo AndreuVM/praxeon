@@ -11,15 +11,16 @@ from typing import Any, Literal
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from praxeon import workspace_store
+from praxeon.skills import SkillStore
 from praxeon.server.auth_deps import effective_client_host
-from praxeon.server.dependencies import get_runtime_service
+from praxeon.server.dependencies import RuntimeApplicationService, get_runtime_service
 from praxeon.server.websocket import is_remote_client
 from praxeon.server.schemas.common import APIResponse
 
 router = APIRouter(prefix="/v1/skills", tags=["Skills"])
 
 
-def _skills(service=Depends(get_runtime_service)):
+def _skills(service: RuntimeApplicationService = Depends(get_runtime_service)) -> SkillStore:
     return service.skills
 
 
@@ -28,7 +29,7 @@ def _workspace() -> str:
 
 
 @router.get("", response_model=APIResponse[list[dict[str, Any]]])
-def list_skills(skills=Depends(_skills)):
+def list_skills(skills: SkillStore = Depends(_skills)) -> APIResponse[list[dict[str, Any]]]:
     """Skills de la carpeta de usuario y del workspace activo, con su estado (enabled / disabled / changed / invalid)."""
     return APIResponse(data=skills.list(_workspace()))
 
@@ -44,7 +45,7 @@ def open_in_file_manager(path: str) -> None:
 
 
 @router.post("/open-folder", response_model=APIResponse[dict[str, Any]])
-def open_skills_folder(request: Request, scope: Literal["user", "project"] = "user", skills=Depends(_skills)):
+def open_skills_folder(request: Request, scope: Literal["user", "project"] = "user", skills: SkillStore = Depends(_skills)) -> APIResponse[dict[str, Any]]:
     """Abre la carpeta de skills en el explorador del sistema, para dejar ahí las nuevas (se crea si no existe).
 
     Solo desde la propia máquina: abrir una ventana en el equipo del servidor no tiene sentido (ni es seguro) para un cliente remoto.
@@ -62,7 +63,7 @@ def open_skills_folder(request: Request, scope: Literal["user", "project"] = "us
 
 
 @router.get("/{name}", response_model=APIResponse[dict[str, Any]])
-def get_skill(name: str, skills=Depends(_skills)):
+def get_skill(name: str, skills: SkillStore = Depends(_skills)) -> APIResponse[dict[str, Any]]:
     """Instrucciones completas de una skill, para revisarlas antes de habilitarla."""
     info = skills.get(name, _workspace())
     if info is None:
@@ -71,7 +72,7 @@ def get_skill(name: str, skills=Depends(_skills)):
 
 
 @router.post("/{name}/enable", response_model=APIResponse[dict[str, Any]])
-def enable_skill(name: str, skills=Depends(_skills)):
+def enable_skill(name: str, skills: SkillStore = Depends(_skills)) -> APIResponse[dict[str, Any]]:
     try:
         return APIResponse(data=skills.set_enabled(name, True, _workspace()))
     except KeyError:
@@ -79,5 +80,5 @@ def enable_skill(name: str, skills=Depends(_skills)):
 
 
 @router.post("/{name}/disable", response_model=APIResponse[dict[str, Any]])
-def disable_skill(name: str, skills=Depends(_skills)):
+def disable_skill(name: str, skills: SkillStore = Depends(_skills)) -> APIResponse[dict[str, Any]]:
     return APIResponse(data=skills.set_enabled(name, False, _workspace()))

@@ -1,5 +1,6 @@
 """Workspace del proyecto: consultar, elegir, explorar carpetas, gestionar recientes y acceder a sus archivos."""
 
+from collections.abc import Callable
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request, status
@@ -58,13 +59,13 @@ def _http_error(exc: Exception) -> HTTPException:
 
 
 @router.get("", response_model=APIResponse[dict[str, Any]])
-def get_workspace():
+def get_workspace() -> APIResponse[dict[str, Any]]:
     """Workspace en uso, de dónde sale (elegido / variable de entorno / autodetectado) y los recientes."""
     return APIResponse(data=workspace_store.describe_workspace())
 
 
 @router.put("", response_model=APIResponse[dict[str, Any]])
-def select_workspace(req: SelectWorkspaceRequest):
+def select_workspace(req: SelectWorkspaceRequest) -> APIResponse[dict[str, Any]]:
     """Fija el workspace por defecto de las nuevas misiones."""
     try:
         workspace_store.select_workspace(req.path)
@@ -74,21 +75,21 @@ def select_workspace(req: SelectWorkspaceRequest):
 
 
 @router.delete("", response_model=APIResponse[dict[str, Any]])
-def clear_workspace():
+def clear_workspace() -> APIResponse[dict[str, Any]]:
     """Quita la elección y vuelve a la detección automática."""
     workspace_store.clear_selection()
     return APIResponse(data=workspace_store.describe_workspace())
 
 
 @router.post("/forget", response_model=APIResponse[dict[str, Any]])
-def forget_workspace(req: ForgetWorkspaceRequest):
+def forget_workspace(req: ForgetWorkspaceRequest) -> APIResponse[dict[str, Any]]:
     """Quita una carpeta de la lista de recientes."""
     workspace_store.forget_recent(req.path)
     return APIResponse(data=workspace_store.describe_workspace())
 
 
 @router.post("/pin", response_model=APIResponse[dict[str, Any]])
-def pin_workspace(req: PinWorkspaceRequest):
+def pin_workspace(req: PinWorkspaceRequest) -> APIResponse[dict[str, Any]]:
     """Fija (o quita) un workspace como favorito para el acceso rápido Alt+1…9. Fijar uno nuevo lo añade sin elegirlo."""
     try:
         workspace_store.pin_workspace(req.path, req.pinned)
@@ -98,7 +99,7 @@ def pin_workspace(req: PinWorkspaceRequest):
 
 
 @router.post("/alias", response_model=APIResponse[dict[str, Any]])
-def alias_workspace(req: AliasWorkspaceRequest):
+def alias_workspace(req: AliasWorkspaceRequest) -> APIResponse[dict[str, Any]]:
     """Pone o quita un nombre corto a un workspace de la lista."""
     try:
         workspace_store.set_alias(req.path, req.alias)
@@ -108,7 +109,7 @@ def alias_workspace(req: AliasWorkspaceRequest):
 
 
 @router.get("/validate", response_model=APIResponse[dict[str, Any]])
-def validate_workspace(path: str):
+def validate_workspace(path: str) -> APIResponse[dict[str, Any]]:
     """Comprueba si una ruta escrita a mano es una carpeta utilizable."""
     norm, reason = workspace_store.validate_directory(path)
     return APIResponse(
@@ -122,7 +123,7 @@ def validate_workspace(path: str):
 
 
 @router.get("/browse", response_model=APIResponse[dict[str, Any]])
-def browse_workspace(path: str | None = None, show_hidden: bool = False):
+def browse_workspace(path: str | None = None, show_hidden: bool = False) -> APIResponse[dict[str, Any]]:
     """Subcarpetas de una ruta, para elegir el workspace sin escribir rutas."""
     try:
         return APIResponse(data=workspace_store.browse_directory(path, show_hidden=show_hidden))
@@ -134,7 +135,7 @@ def browse_workspace(path: str | None = None, show_hidden: bool = False):
 
 
 @router.get("/tree", response_model=APIResponse[dict[str, Any]])
-def workspace_tree(path: str = "", show_hidden: bool = False):
+def workspace_tree(path: str = "", show_hidden: bool = False) -> APIResponse[dict[str, Any]]:
     """Entradas de una carpeta del workspace (carga perezosa, carpetas primero)."""
     try:
         return APIResponse(data=workspace_files.list_tree(path, show_hidden=show_hidden))
@@ -146,7 +147,7 @@ def workspace_tree(path: str = "", show_hidden: bool = False):
 
 
 @router.get("/file", response_model=APIResponse[dict[str, Any]])
-def read_workspace_file(path: str):
+def read_workspace_file(path: str) -> APIResponse[dict[str, Any]]:
     """Contenido de texto y etag de un archivo; los binarios devuelven solo metadatos."""
     try:
         return APIResponse(data=workspace_files.read_file(path))
@@ -155,7 +156,7 @@ def read_workspace_file(path: str):
 
 
 @router.get("/file/raw")
-def raw_workspace_file(path: str):
+def raw_workspace_file(path: str) -> FileResponse:
     """Bytes del archivo con su Content-Type (PDF, imágenes) para previsualizar."""
     try:
         target, mime = workspace_files.read_raw(path)
@@ -165,7 +166,7 @@ def raw_workspace_file(path: str):
 
 
 @router.put("/file", response_model=APIResponse[dict[str, Any]])
-def save_workspace_file(req: SaveFileRequest):
+def save_workspace_file(req: SaveFileRequest) -> APIResponse[dict[str, Any]]:
     """Guarda el archivo de forma atómica; 409 si cambió en disco desde la lectura."""
     try:
         return APIResponse(data=workspace_files.write_file(req.path, req.content, req.etag, req.encoding))
@@ -178,7 +179,7 @@ def save_workspace_file(req: SaveFileRequest):
 # --- gestión: crear, renombrar y eliminar archivos y carpetas -------------------------------------------------------
 
 
-def _manage(action, *args):
+def _manage(action: Callable[..., Any], *args: Any) -> APIResponse[dict[str, Any]]:
     try:
         return APIResponse(data=action(*args))
     except (workspace_files.WorkspacePathError, workspace_files.WorkspaceExists, workspace_files.WorkspaceConflict) as exc:
@@ -188,25 +189,25 @@ def _manage(action, *args):
 
 
 @router.post("/entry", response_model=APIResponse[dict[str, Any]], status_code=status.HTTP_201_CREATED)
-def create_workspace_entry(req: CreateEntryRequest):
+def create_workspace_entry(req: CreateEntryRequest) -> APIResponse[dict[str, Any]]:
     """Crea un archivo vacío o una carpeta (409 si ya existe)."""
     return _manage(workspace_files.create_entry, req.path, req.kind)
 
 
 @router.patch("/entry", response_model=APIResponse[dict[str, Any]])
-def rename_workspace_entry(req: RenameEntryRequest):
+def rename_workspace_entry(req: RenameEntryRequest) -> APIResponse[dict[str, Any]]:
     """Renombra o mueve dentro del workspace (409 si el destino existe)."""
     return _manage(workspace_files.rename_entry, req.path, req.new_path)
 
 
 @router.delete("/entry", response_model=APIResponse[dict[str, Any]])
-def delete_workspace_entry(path: str):
+def delete_workspace_entry(path: str) -> APIResponse[dict[str, Any]]:
     """Elimina un archivo o una carpeta con todo su contenido. No se puede deshacer."""
     return _manage(workspace_files.delete_entry, path)
 
 
 @router.post("/upload", response_model=APIResponse[dict[str, Any]], status_code=status.HTTP_201_CREATED)
-async def upload_workspace_file(request: Request, path: str, overwrite: bool = False):
+async def upload_workspace_file(request: Request, path: str, overwrite: bool = False) -> APIResponse[dict[str, Any]]:
     """Sube un archivo (cuerpo = bytes en bruto) a `path`, creando las carpetas que falten. 409 si existe y no se sobrescribe."""
     declared = request.headers.get("content-length")
     if declared and declared.isdigit() and int(declared) > workspace_files.MAX_UPLOAD_BYTES:

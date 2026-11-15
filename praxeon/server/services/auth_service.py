@@ -170,7 +170,7 @@ def decode_jwt_hs256(token: str, secret_key: str) -> dict[str, Any]:
         raise ValueError("Firma criptográfica del token JWT inválida.")
 
     payload_bytes = _b64url_decode(segment2)
-    payload = json.loads(payload_bytes.decode("utf-8"))
+    payload: dict[str, Any] = json.loads(payload_bytes.decode("utf-8"))
 
     # Validar expiración
     exp = payload.get("exp")
