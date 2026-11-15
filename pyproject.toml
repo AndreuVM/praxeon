@@ -110,7 +110,9 @@ extend-exclude = ["web", "dist", "videos", "scratch", ".venv"]
 # Etapa 2 (AUD-23): UP (anotaciones y APIs modernas de Python 3.11: `list[int]`, `X | None`, `datetime.UTC`).
 # BLE001 (AUD-23): ningún `except Exception` sin decidir. Se estrecha a las excepciones reales o se deja ancho con
 # `# noqa: BLE001 - motivo` (frontera con un proveedor, el disco o el host; limpieza; rutas fail-closed).
-# Siguiente etapa prevista: E501, en su propio commit.
+# E501 (líneas de más de 120) NO se exige, por decisión (AUD-23, 2026-11-15): hay 1 237 en praxeon/, 963 de ellas pasan
+# el límite por menos de 20 caracteres, y `ruff format` reformatearía 206 de 248 ficheros (~10 500 líneas) y borraría el
+# `git blame` sin arreglar nada de fondo. Se reconsidera si se adopta un formateador de forma deliberada.
 select = ["F", "E9", "B904", "B033", "B007", "B905", "S110", "S112", "UP", "BLE001"]
 # UP042 (`class X(str, Enum)` -> `StrEnum`) cambia lo que devuelve `str()` y `format()` de los valores, que están
 # serializados en eventos, recibos y la API: se mantiene `(str, Enum)` a propósito.
