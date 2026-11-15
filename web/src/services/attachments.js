@@ -37,3 +37,15 @@ export async function uploadAttachment(sessionId, file) {
   if (!res.ok) throw await failure(res);
   return (await res.json()).data;
 }
+
+/** ¿Admite imágenes ese proveedor/modelo y saldrían de la máquina? Si el servidor no responde, no se bloquea nada (él vuelve a comprobarlo). */
+export async function fetchVisionCapability({ provider, model, baseUrl }) {
+  try {
+    const q = new URLSearchParams({ provider: provider || '', model: model || '', base_url: baseUrl || '' });
+    const res = await authFetch(`${BASE}/vision?${q}`);
+    if (!res.ok) return null;
+    return (await res.json()).data;
+  } catch {
+    return null;
+  }
+}

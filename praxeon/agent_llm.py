@@ -7,6 +7,7 @@ estándar de chat completions (usando urllib nativo, sin dependencias externas p
 
 from abc import ABC, abstractmethod
 import atexit
+import base64
 import json
 import logging
 import os
@@ -21,7 +22,7 @@ import time
 from typing import Any
 import urllib.error
 
-from praxeon import http_client
+from praxeon import http_client, vision
 import urllib.parse
 import urllib.request
 
@@ -190,8 +191,11 @@ class BaseAgentLLM(ABC):
         pass
 
     @abstractmethod
-    def generate(self, messages: list[dict[str, str]], system_prompt: str | None = None) -> str:
-        """Genera una respuesta en formato texto para el turno del agente."""
+    def generate(self, messages: list[dict[str, Any]], system_prompt: str | None = None) -> str:
+        """Genera una respuesta en formato texto para el turno del agente.
+
+        Un mensaje puede traer `images` (lista de `{mime, data (base64)}`, ver `praxeon.vision`): cada cliente las pone con la forma de su proveedor.
+        """
         pass
 
     def end_session(self) -> None:
@@ -236,16 +240,19 @@ class OpenAICompatibleLLM(BaseAgentLLM):
     def endpoint(self) -> str:
         return self._endpoint
 
-    def generate(self, messages: list[dict[str, str]], system_prompt: str | None = None) -> str:
-        payload_messages: list[dict[str, str]] = []
+    def generate(self, messages: list[dict[str, Any]], system_prompt: str | None = None) -> str:
+        payload_messages: list[dict[str, Any]] = []
         if system_prompt:
             payload_messages.append({"role": "system", "content": system_prompt})
 
         for m in messages:
             role = m.get("role", "user")
-            content = m.get("content", "")
+            content: Any = m.get("content", "")
             if role not in ("system", "user", "assistant"):
                 role = "user"
+            images = vision.valid_images(m.get("images"))
+            if images and role == "user":
+                content = vision.openai_content(str(content), images)      # `image_url` con una URL de datos (OpenAI, Groq, OpenRouter…)
             payload_messages.append({"role": role, "content": content})
 
         payload = {
@@ -349,15 +356,19 @@ class OllamaLLM(OpenAICompatibleLLM):
     def num_ctx(self) -> int:
         return self._num_ctx
 
-    def generate(self, messages: list[dict[str, str]], system_prompt: str | None = None) -> str:
+    def generate(self, messages: list[dict[str, Any]], system_prompt: str | None = None) -> str:
         if not self._use_native:
             return super().generate(messages, system_prompt)
-        payload_messages: list[dict[str, str]] = []
+        payload_messages: list[dict[str, Any]] = []
         if system_prompt:
             payload_messages.append({"role": "system", "content": system_prompt})
         for m in messages:
             role = m.get("role", "user")
-            payload_messages.append({"role": role if role in ("system", "user", "assistant") else "user", "content": m.get("content", "")})
+            msg: dict[str, Any] = {"role": role if role in ("system", "user", "assistant") else "user", "content": m.get("content", "")}
+            images = vision.valid_images(m.get("images"))
+            if images and msg["role"] == "user":
+                msg["images"] = vision.ollama_images(images)               # Ollama nativo: lista de base64 sin cabecera
+            payload_messages.append(msg)
         payload = {
             "model": self._model,
             "messages": payload_messages,
@@ -432,13 +443,14 @@ class AnthropicLLM(BaseAgentLLM):
         return self._endpoint
 
     @staticmethod
-    def _build_messages(messages: list[dict[str, str]], system_prompt: str | None):
+    def _build_messages(messages: list[dict[str, Any]], system_prompt: str | None):
         """La API exige turnos que alternen user/assistant empezando por user y sin textos vacíos."""
         system_parts = [system_prompt] if system_prompt else []
-        turns: list[dict[str, str]] = []
+        turns: list[dict[str, Any]] = []
         for m in messages:
             text = str(m.get("content", "")).strip()
-            if not text:
+            images = vision.valid_images(m.get("images")) if m.get("role") != "assistant" else []
+            if not text and not images:
                 continue
             role = m.get("role", "user")
             if role == "system":
@@ -446,14 +458,22 @@ class AnthropicLLM(BaseAgentLLM):
                 continue
             role = "assistant" if role == "assistant" else "user"
             if turns and turns[-1]["role"] == role:
-                turns[-1]["content"] += "\n\n" + text
+                if text:
+                    turns[-1]["content"] = (turns[-1]["content"] + "\n\n" + text) if turns[-1]["content"] else text
+                turns[-1]["images"].extend(images)
             else:
-                turns.append({"role": role, "content": text})
+                turns.append({"role": role, "content": text, "images": list(images)})
         if not turns or turns[0]["role"] != "user":
-            turns.insert(0, {"role": "user", "content": "Comienza."})
-        return "\n\n".join(system_parts), turns
+            turns.insert(0, {"role": "user", "content": "Comienza.", "images": []})
+        built: list[dict[str, Any]] = []
+        for t in turns:
+            if t["images"]:                                              # imágenes antes del texto, como bloques `image` en base64
+                built.append({"role": t["role"], "content": vision.anthropic_content(t["content"] or "Mira la imagen adjunta.", t["images"])})
+            else:
+                built.append({"role": t["role"], "content": t["content"]})
+        return "\n\n".join(system_parts), built
 
-    def generate(self, messages: list[dict[str, str]], system_prompt: str | None = None) -> str:
+    def generate(self, messages: list[dict[str, Any]], system_prompt: str | None = None) -> str:
         system, turns = self._build_messages(messages, system_prompt)
         payload: dict[str, Any] = {"model": self._model, "max_tokens": self._max_tokens, "messages": turns}
         if system:
@@ -649,7 +669,9 @@ class ClaudeCLILLM(BaseAgentLLM):
             for key in list(self._sessions):
                 self._drop(key)
 
-    def generate(self, messages: list[dict[str, str]], system_prompt: str | None = None) -> str:
+    def generate(self, messages: list[dict[str, Any]], system_prompt: str | None = None) -> str:
+        if any(vision.valid_images(m.get("images")) for m in messages):
+            raise RuntimeError("[claude_cli] La CLI de Claude no admite imágenes por este canal: usa el proveedor Anthropic con su clave de API.")
         system_parts = [system_prompt] if system_prompt else []
         turns: list[Any] = []
         for m in messages:
@@ -751,7 +773,7 @@ class GeminiLLM(BaseAgentLLM):
     def model_name(self) -> str:
         return self._model
 
-    def generate(self, messages: list[dict[str, str]], system_prompt: str | None = None) -> str:
+    def generate(self, messages: list[dict[str, Any]], system_prompt: str | None = None) -> str:
         from google.genai import types
 
         is_antigravity = "antigravity" in self._model.lower()
@@ -775,13 +797,22 @@ class GeminiLLM(BaseAgentLLM):
         last_role = None
         for m in messages:
             text = str(m.get("content", ""))
-            if not text.strip():
+            images = vision.valid_images(m.get("images")) if m.get("role") != "assistant" else []
+            if not text.strip() and not images:
                 continue
             role = "model" if m.get("role") == "assistant" else "user"
+            # imágenes como partes `inline_data` (bytes + tipo) antes del texto
+            new_parts = [types.Part.from_bytes(data=base64.b64decode(im["data"]), mime_type=im["mime"]) for im in images]
+            if text.strip():
+                new_parts.append(types.Part(text=text))
             if role == last_role:
-                contents[-1] = types.Content(role=role, parts=[types.Part(text=contents[-1].parts[0].text + "\n\n" + text)])
+                prev = contents[-1].parts
+                if not images and prev and getattr(prev[-1], "text", None) is not None:
+                    prev[-1] = types.Part(text=prev[-1].text + "\n\n" + text)    # solo texto: se unen, como siempre
+                else:
+                    prev.extend(new_parts)
             else:
-                contents.append(types.Content(role=role, parts=[types.Part(text=text)]))
+                contents.append(types.Content(role=role, parts=new_parts))
             last_role = role
         if not contents or contents[0].role != "user":
             contents.insert(0, types.Content(role="user", parts=[types.Part(text="Comienza.")]))
@@ -817,7 +848,7 @@ class SimulatedAgentLLM(BaseAgentLLM):
     def model_name(self) -> str:
         return self._model_name
 
-    def generate(self, messages: list[dict[str, str]], system_prompt: str | None = None) -> str:
+    def generate(self, messages: list[dict[str, Any]], system_prompt: str | None = None) -> str:
         self._step_counter += 1
 
         if self._step_counter == 1:

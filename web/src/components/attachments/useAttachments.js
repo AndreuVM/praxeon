@@ -33,14 +33,17 @@ export default function useAttachments(sessionId) {
     update((list) => [
       ...list,
       ...rejected.map((r) => ({ id: `att-${++counter}`, name: r.name, size: 0, status: 'error', error: r.reason })),
-      ...toUpload.map(({ id, file }) => ({ id, name: file.name, size: file.size, status: 'uploading' })),
+      ...toUpload.map(({ id, file }) => ({
+        id, name: file.name, size: file.size, status: 'uploading',
+        preview: file.type?.startsWith('image/') && typeof URL.createObjectURL === 'function' ? URL.createObjectURL(file) : null,   // vista previa local
+      })),
     ]);
     const queue = [...toUpload];
     const worker = async () => {
       for (let next = queue.shift(); next; next = queue.shift()) {
         try {
           const saved = await uploadAttachment(session.current, next.file);
-          patch(next.id, { status: 'ready', name: saved.name, size: saved.size, rel_path: saved.rel_path, mime: saved.mime });
+          patch(next.id, { status: 'ready', name: saved.name, size: saved.size, rel_path: saved.rel_path, mime: saved.mime, kind: saved.kind || 'file', image: saved.image || null });
         } catch (err) {
           patch(next.id, { status: 'error', error: err.message || 'No se pudo subir el archivo.' });
         }
@@ -52,12 +55,16 @@ export default function useAttachments(sessionId) {
   /** Quita la ficha; si el archivo ya estaba subido y no se envió, también se borra del workspace (mejor esfuerzo). */
   const remove = useCallback((id) => {
     const gone = itemsRef.current.find((it) => it.id === id);
+    if (gone?.preview) URL.revokeObjectURL(gone.preview);
     if (gone?.status === 'ready' && gone.rel_path) deleteWorkspaceEntry(gone.rel_path).catch(() => {});
     update((list) => list.filter((it) => it.id !== id));
   }, [update]);
 
   /** Vacía las fichas tras enviar el mensaje (los archivos se quedan en el workspace: la misión los referencia). */
-  const clear = useCallback(() => update(() => []), [update]);
+  const clear = useCallback(() => {
+    itemsRef.current.forEach((it) => it.preview && URL.revokeObjectURL(it.preview));
+    update(() => []);
+  }, [update]);
 
   return {
     items,

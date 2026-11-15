@@ -35,6 +35,28 @@ export function checkNewFiles(existing, files, limits = DEFAULT_LIMITS) {
   return { accepted, rejected };
 }
 
+/**
+ * Aviso de las imágenes del mensaje según el modelo elegido (FE-006). `capability` es lo que dice el servidor
+ * (`{ supported, remote, provider, reason }`) o null si aún no se sabe. Devuelve null si no hay imágenes.
+ *   - modelo sin visión: bloquea el envío (nunca se manda una imagen a ciegas ni se ignora en silencio);
+ *   - proveedor remoto: avisa de que la imagen sale de este equipo (sin metadatos).
+ */
+export function visionNotice(items, capability) {
+  const images = (items || []).filter((it) => it.kind === 'image' && it.status !== 'error');
+  if (images.length === 0) return null;
+  if (!capability) return { blocked: false, level: 'info', message: 'Comprobando si el modelo admite imágenes…' };
+  if (!capability.supported) return { blocked: true, level: 'error', message: capability.reason || 'Este modelo no admite imágenes.' };
+  if (capability.remote) {
+    const many = images.length > 1;
+    return {
+      blocked: false,
+      level: 'warn',
+      message: `${many ? 'Las imágenes se enviarán' : 'La imagen se enviará'} a ${capability.provider || 'el proveedor'} (servicio remoto): sale${many ? 'n' : ''} de este equipo, sin metadatos (ubicación, fecha ni dispositivo).`,
+    };
+  }
+  return null;
+}
+
 /** Archivos de un evento de arrastrar/pegar (vacío si lo soltado no son archivos: texto, enlaces…). */
 export function filesFromTransfer(dataTransfer) {
   if (!dataTransfer) return [];

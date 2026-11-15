@@ -131,6 +131,18 @@ Todas las modificaciones notables de este proyecto están documentadas en este a
 - La interfaz web empaquetada (`praxeon/server/static`) ya no se versiona: `scripts/build_frontend.py` la compila desde
   `web/` antes de empaquetar. La que se versionaba era de mediados de octubre y no incluía los cambios posteriores.
 - Frontend: primer ejecutor de tests (Vitest, `npm test` en `web/`) y paso nuevo en el job de CI del frontend.
+- Imágenes adjuntas en el chat (FE-006, nota N-003): pegar una captura (Ctrl+V), arrastrar una foto o elegirla con el clip. Una foto de
+  móvil lleva la ubicación GPS, la fecha y el modelo del teléfono: antes de guardarla y de enviarla, la imagen se REconstruye desde sus
+  píxeles. Se valida por la firma de bytes (no por la extensión: PNG, JPEG, WebP o GIF; un `.jpg` que no lo es se rechaza), se aplica la
+  orientación, se reduce a 2048 px como máximo, y se recodifica sin EXIF, GPS, perfil de color ni comentarios; un GIF animado se queda con
+  su primer fotograma. El original con sus metadatos no llega al workspace, y una imagen dejada por otra vía en la carpeta de adjuntos
+  también se limpia al enviarla. El SVG no es una imagen (puede llevar scripts): es un archivo de texto normal. Cada proveedor la recibe con
+  su forma (OpenAI y compatibles `image_url`, Anthropic bloques `image`, Ollama `images`, Gemini `inline_data`); la CLI de Claude no admite
+  imágenes. **Un modelo sin visión no recibe la imagen en silencio**: la interfaz lo avisa y desactiva Enviar, y el servidor responde 400
+  si aun así se pide; con un proveedor remoto se avisa de que la imagen sale del equipo. El texto dentro de una imagen es un dato no
+  fiable (sin OCR) y no cambia la política; la imagen acompaña a cada turno del agente, cuenta en el presupuesto de tokens
+  (≈ píxeles/750) y no se guarda en los eventos. Requiere el extra opcional `praxeon[vision]` (Pillow); sin él las imágenes se desactivan
+  con un mensaje. Modelos con visión que el catálogo no conoce: `PRAXEON_VISION_MODELS`.
 - Archivos adjuntos en el chat (FE-005, nota N-003): botón con clip, arrastrar al cuadro del mensaje o pegar (Ctrl+V). Cada archivo se
   sube al instante a `.praxeon/attachments/<sesión>/` del workspace (nunca fuera de él) y aparece como ficha con su tamaño; se puede
   quitar antes de enviar (se borra del workspace). Límites configurables: `PRAXEON_ATTACH_MAX_MB` (100) y `PRAXEON_ATTACH_MAX_FILES` (50).

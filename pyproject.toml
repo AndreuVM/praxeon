@@ -35,12 +35,17 @@ dev = [
     "ruff==0.17.5",          # fijada: una versión nueva con reglas nuevas no debe romper CI sin aviso
     "mypy>=2.4",
     "typesafe-sdk>=0.7.0",
+    "pillow>=11.0",            # las pruebas de imágenes (FE-006) necesitan decodificar y recodificar de verdad
 ]
 # El servidor ya va en las dependencias obligatorias; el extra se conserva vacío para que `praxeon[server]` siga
 # instalándose sin aviso.
 server = []
 desktop = [
     "pywebview>=5.0",
+]
+# Imágenes adjuntas al chat (FE-006): validar, reducir y quitar EXIF/GPS antes de enviarlas al modelo. Sin él las imágenes se desactivan.
+vision = [
+    "pillow>=11.0",
 ]
 decision-laya = [
     "laya>=0.3.0",

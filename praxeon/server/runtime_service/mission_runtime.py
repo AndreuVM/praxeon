@@ -163,6 +163,7 @@ class MissionRuntimeMixin(RuntimeHost):
         metadata: dict[str, Any] | None = None,
         workflow_id: str | None = None,
         prompt_context: str | None = None,
+        image_paths: list[str] | None = None,
     ) -> dict[str, Any]:
         """Inicia una misión interactiva supervisada en tiempo real.
 
@@ -281,6 +282,7 @@ class MissionRuntimeMixin(RuntimeHost):
             "llm_failure_policy": llm_failure_policy,
             "chat_history": chat_history,
             "prompt_context": prompt_context,
+            "image_paths": list(image_paths or []),      # rutas de las imágenes adjuntas; los bytes se leen y limpian al enviarlos, no se guardan aquí
             "workflow_id": workflow_id,
             # Tiempo máximo (s) que la misión espera una aprobación humana antes de seguir sin vetar la acción
             "approval_timeout_seconds": (metadata or {}).get("approval_timeout_seconds"),

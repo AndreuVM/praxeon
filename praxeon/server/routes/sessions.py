@@ -5,7 +5,8 @@ from praxeon.server.services.auth_service import constant_time_equals
 from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from praxeon import attachments, workspace_files
+from praxeon import attachments, vision, workspace_files
+from praxeon.agent_llm import PROVIDER_PRESETS
 from praxeon.server.dependencies import RuntimeApplicationService, get_runtime_service
 from praxeon.server.runtime_service.mission_runtime import MissionLimitError
 from praxeon.server.schemas.action import ProposeActionRequest
@@ -44,21 +45,32 @@ def ensure_full_access_available(execution_mode: str | None, service: Any) -> No
         )
 
 
-def attachments_prompt_block(req: RunMissionRequest) -> str | None:
-    """Bloque de adjuntos del mensaje, validado en el servidor (400 si alguno no es válido o si la misión usa otro workspace)."""
+def attachments_prompt_block(req: RunMissionRequest) -> tuple[str | None, list[str]]:
+    """Bloque de adjuntos del mensaje y rutas de sus imágenes, validados en el servidor.
+
+    400 si algún adjunto no es válido, si la misión usa otro workspace o si hay imágenes y el modelo no las admite (nunca se envían a ciegas).
+    """
     if not req.attachments:
-        return None
+        return None, []
     if len(req.attachments) > attachments.limits()["max_files"]:
         raise HTTPException(status_code=400, detail=f"Demasiados adjuntos: el máximo es {attachments.limits()['max_files']} por mensaje.")
     try:
         active = workspace_files.workspace_root()
         if req.workspace_root and os.path.realpath(req.workspace_root) != os.path.realpath(active):
             raise workspace_files.WorkspacePathError("Los adjuntos se guardan en el workspace activo y esta misión usa otra carpeta.")
-        return attachments.build_prompt_block(req.attachments)
+        block = attachments.build_prompt_block(req.attachments)
+        images = attachments.image_paths(req.attachments)
     except workspace_files.WorkspaceTooLarge as exc:
         raise HTTPException(status_code=413, detail=str(exc)) from exc
     except workspace_files.WorkspacePathError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if images:
+        provider = (req.llm_provider or "simulator").lower()
+        model = req.llm_model or PROVIDER_PRESETS.get(provider, {}).get("default_model")
+        cap = vision.capability(provider, model, req.base_url)
+        if not cap["supported"]:
+            raise HTTPException(status_code=400, detail=cap["reason"] or "Este modelo no admite imágenes.")
+    return block, images
 
 
 @router.post("/run", response_model=APIResponse[SessionSummaryResponse], status_code=status.HTTP_201_CREATED)
@@ -69,7 +81,7 @@ def run_mission(
     """Inicia una nueva misión interactiva con ejecución y supervisión en tiempo real."""
     ensure_full_access_available(req.execution_mode, service)
     full_access_authorized = is_full_access_authorized(req.execution_mode, req.full_access_confirmed)
-    prompt_context = attachments_prompt_block(req)
+    prompt_context, image_paths = attachments_prompt_block(req)
     try:
         meta = service.start_mission(
             workflow_id=req.workflow_id,
@@ -91,6 +103,7 @@ def run_mission(
             llm_failure_policy=req.llm_failure_policy or "synthetic_fallback",
             chat_history=req.chat_history,
             prompt_context=prompt_context,
+            image_paths=image_paths,
             metadata={
                 "created_by": "api_client",
                 "full_access_authorized_by_operator": full_access_authorized,

@@ -19,12 +19,14 @@ export default function AttachmentTray({ items, onRemove, label = 'Archivos adju
               border: `1px solid ${failed ? 'var(--bad, #e5484d)' : 'var(--line)'}`, background: failed ? 'rgba(229,72,77,.10)' : 'var(--bg)',
             }}
           >
-            {failed ? <AlertTriangle size={12} /> : it.status === 'uploading' ? <LoaderCircle size={12} className="spin" /> : <FileText size={12} />}
+            {it.preview && !failed ? <img src={it.preview} alt="" width={22} height={22} style={{ objectFit: 'cover', borderRadius: 4 }} /> : failed ? <AlertTriangle size={12} /> : it.status === 'uploading' ? <LoaderCircle size={12} className="spin" /> : <FileText size={12} />}
             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 220 }}>{it.name}</span>
             {failed ? (
               <span style={{ color: 'var(--bad, #e5484d)' }}>{it.error}</span>
             ) : (
-              <span style={{ color: 'var(--muted)' }}>{it.status === 'uploading' ? 'Subiendo…' : formatSize(it.size)}</span>
+              <span style={{ color: 'var(--muted)' }} title={it.image?.stripped ? 'Se han eliminado los metadatos de la imagen (ubicación, fecha, dispositivo)' : undefined}>
+                {it.status === 'uploading' ? 'Subiendo…' : it.image ? `${it.image.width}×${it.image.height}${it.image.stripped ? ' · sin metadatos' : ''}` : formatSize(it.size)}
+              </span>
             )}
             {onRemove && (
               <button type="button" className="btn-icon" aria-label={`Quitar ${it.name}`} title="Quitar" onClick={() => onRemove(it.id)} style={{ padding: 0, width: 16, height: 16 }}>

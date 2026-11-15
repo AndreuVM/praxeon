@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 from typing import Any
 from collections.abc import Callable, Iterable
 
+from praxeon import attachments
 from praxeon.core.pipeline import Outcome, Step, run_steps
 from praxeon.domain.events import EventType
 from praxeon.runtime.sandbox import get_default_workspace_root
@@ -219,6 +220,8 @@ class LoopContext:
     trace: dict[str, Any] | None = None
     finish_check: Callable[[str], str | None] | None = None
     llm_fail_policy: str = "synthetic_fallback"
+    images: list[dict[str, Any]] | None = None     # imágenes adjuntas (FE-006), cargadas y limpiadas una vez al primer turno
+    images_loaded: bool = False
 
     # estado entre turnos
     step_idx: int = 0
@@ -350,10 +353,27 @@ class GenerateStep(Step[LoopContext]):
 
     name = "generate"
 
+    @staticmethod
+    def _load_images(ctx: LoopContext) -> None:
+        """Lee y limpia (EXIF, tamaño) las imágenes del mensaje una sola vez. Si una ya no está, el agente lo sabe en vez de ver nada."""
+        if ctx.images_loaded:
+            return
+        ctx.images_loaded = True
+        refs = ctx.mission.get("image_paths") or []
+        if not refs:
+            return
+        try:
+            ctx.images = attachments.load_images(refs)
+        except Exception as exc:  # noqa: BLE001 - un archivo borrado a mitad de misión no debe tumbar la misión
+            logger.warning("No se pudieron cargar las imágenes adjuntas de la misión %s: %s", ctx.mission.get("session_id"), exc)
+            ctx.goal += "\n\n(Las imágenes adjuntas ya no están disponibles: no puedes verlas.)"
+
     def run(self, ctx: LoopContext) -> Outcome:
         llm = ctx.agent_llm
+        self._load_images(ctx)
         # ContextManager como única autoridad de ensamblado de prompt y compresión semántica
         conversation = ctx.runtime.context_manager.assemble_mission_prompt(
+            images=ctx.images,
             goal=ctx.goal,
             system_prompt=ctx.system_prompt,
             steps_history=ctx.step_records,

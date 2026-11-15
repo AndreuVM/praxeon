@@ -8,7 +8,7 @@ from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from praxeon import attachments, workspace_files, workspace_store
+from praxeon import attachments, vision, workspace_files, workspace_store
 from praxeon.server.schemas.common import APIResponse
 
 router = APIRouter(prefix="/v1/workspace", tags=["Workspace"])
@@ -210,6 +210,15 @@ def delete_workspace_entry(path: str) -> APIResponse[dict[str, Any]]:
     return _manage(workspace_files.delete_entry, path)
 
 
+@router.get("/attachments/vision", response_model=APIResponse[dict[str, Any]])
+def attachment_vision(provider: str = "", model: str = "", base_url: str = "") -> APIResponse[dict[str, Any]]:
+    """¿Admite imágenes este proveedor/modelo? ¿Saldrían de la máquina? ¿Está Pillow? (para avisar en la interfaz antes de enviar)."""
+    from praxeon.agent_llm import PROVIDER_PRESETS
+
+    prov = provider.lower().strip()
+    return APIResponse(data=vision.capability(prov, model or PROVIDER_PRESETS.get(prov, {}).get("default_model"), base_url or None))
+
+
 @router.get("/attachments/limits", response_model=APIResponse[dict[str, Any]])
 def attachment_limits() -> APIResponse[dict[str, Any]]:
     """Límites de los adjuntos del chat (tamaño por archivo y archivos por mensaje)."""
@@ -230,7 +239,12 @@ async def upload_attachment(request: Request, session: str = "", name: str = "")
             if received > limit:
                 raise _http_error(workspace_files.WorkspaceTooLarge(f"El archivo supera el límite de {limit // (1024 * 1024)} MB."))
             chunks.append(chunk)
-        return _manage(attachments.save_attachment, session, name, chunks)
+        try:
+            return _manage(attachments.save_attachment, session, name, chunks)
+        except vision.VisionUnavailable as exc:
+            raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail=str(exc)) from exc
+        except vision.ImageError as exc:
+            raise HTTPException(status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail=str(exc)) from exc
 
 
 @router.post("/upload", response_model=APIResponse[dict[str, Any]], status_code=status.HTTP_201_CREATED)

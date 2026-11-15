@@ -10,7 +10,8 @@ import { PROVIDERS, saveChoice, savedChoice } from '../utils/modelCatalog';
 import { Maximize2, Minimize2, Play, Pause, Square, Settings, AlertTriangle, Copy, Check, ArrowDown, Paperclip } from 'lucide-react';
 import useAttachments from './attachments/useAttachments';
 import AttachmentTray from './attachments/AttachmentTray';
-import { filesFromTransfer, hasFiles } from '../utils/attachmentRules';
+import useVisionCapability from './attachments/useVisionCapability';
+import { filesFromTransfer, hasFiles, visionNotice } from '../utils/attachmentRules';
 
 /** Posición del último mensaje del asistente (-1 si no hay): los mensajes del operador pueden ir detrás. */
 function lastAssistantIndex(messages) {
@@ -76,6 +77,9 @@ export default function Conversation({
   const customModel = effectiveConfig.customModel;
   const apiKey = effectiveConfig.apiKey;
   const baseUrl = effectiveConfig.baseUrl;
+  // Imágenes adjuntas (FE-006): ¿admite el modelo elegido imágenes? ¿saldrían de este equipo?
+  const visionCap = useVisionCapability(attach.items.some((it) => it.kind === 'image' && it.status === 'ready'), llmProvider, (customModel || '').trim(), (baseUrl || '').trim());
+  const visionNote = visionNotice(attach.items, visionCap);
 
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [activeWorkflows, setActiveWorkflows] = useState([]);
@@ -294,7 +298,7 @@ export default function Conversation({
     if (executionMode === 'full_access' && !fullAccessConfirmed) {
       return; // el aviso de confirmación ya está visible bajo el campo de texto
     }
-    if (attach.uploading) return;                  // espera a que terminen de subirse los adjuntos
+    if (attach.uploading || visionNote?.blocked) return;   // espera a los adjuntos; una imagen no se manda a un modelo que no la admite
 
     const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
@@ -590,7 +594,7 @@ export default function Conversation({
   };
 
   const fullAccessBlocked = executionMode === 'full_access' && !fullAccessConfirmed;
-  const sendDisabled = !inputText.trim() || fullAccessBlocked || attach.uploading;
+  const sendDisabled = !inputText.trim() || fullAccessBlocked || attach.uploading || Boolean(visionNote?.blocked);
   const selectStyle = { background: 'transparent', border: 0, color: 'var(--muted)', padding: '3px 2px', fontSize: 'var(--fs-secondary)', maxWidth: '140px', minWidth: 0, textOverflow: 'ellipsis', cursor: isRunning ? 'not-allowed' : 'pointer' };
   const fieldLabel = { fontSize: 'var(--fs-secondary)', color: 'var(--muted)', display: 'block', marginBottom: '4px' };
 
@@ -787,6 +791,14 @@ export default function Conversation({
           ) : null}
 
           <AttachmentTray items={attach.items} onRemove={isRunning ? undefined : attach.remove} />
+          {visionNote && (
+            <div
+              role="status"
+              style={{ fontSize: 12, padding: '4px 8px', borderRadius: 6, color: visionNote.level === 'error' ? 'var(--bad, #e5484d)' : 'var(--muted)', background: visionNote.level === 'error' ? 'rgba(229,72,77,.10)' : 'transparent', border: visionNote.level === 'warn' ? '1px solid var(--line)' : '0' }}
+            >
+              {visionNote.message}
+            </div>
+          )}
 
           <textarea
             ref={inputRef}

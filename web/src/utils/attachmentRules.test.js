@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_LIMITS, checkNewFiles, filesFromTransfer, formatSize, hasFiles } from './attachmentRules.js';
+import { DEFAULT_LIMITS, checkNewFiles, filesFromTransfer, formatSize, hasFiles, visionNotice } from './attachmentRules.js';
 
 const file = (name, size) => ({ name, size });
 const MB = 1024 * 1024;
@@ -64,5 +64,33 @@ describe('arrastrar y pegar', () => {
     expect(hasFiles({ types: ['text/plain', 'Files'] })).toBe(true);
     expect(hasFiles({ types: ['text/plain'] })).toBe(false);
     expect(hasFiles(undefined)).toBe(false);
+  });
+});
+
+describe('visionNotice (FE-006)', () => {
+  const img = (extra = {}) => ({ id: 1, kind: 'image', status: 'ready', ...extra });
+  it('sin imágenes no hay aviso (los archivos normales no lo necesitan)', () => {
+    expect(visionNotice([], null)).toBeNull();
+    expect(visionNotice([{ kind: 'file', status: 'ready' }], { supported: false })).toBeNull();
+    expect(visionNotice([img({ status: 'error' })], { supported: false })).toBeNull();
+  });
+  it('mientras no se sabe, avisa sin bloquear', () => {
+    expect(visionNotice([img()], null)).toMatchObject({ blocked: false, level: 'info' });
+  });
+  it('un modelo sin visión bloquea el envío con el motivo del servidor', () => {
+    const n = visionNotice([img()], { supported: false, reason: 'El modelo «x» no admite imágenes.' });
+    expect(n).toEqual({ blocked: true, level: 'error', message: 'El modelo «x» no admite imágenes.' });
+    expect(visionNotice([img()], { supported: false }).message).toContain('no admite imágenes');
+  });
+  it('un proveedor remoto avisa de que la imagen sale del equipo, sin bloquear', () => {
+    const n = visionNotice([img()], { supported: true, remote: true, provider: 'openai' });
+    expect(n.blocked).toBe(false);
+    expect(n.level).toBe('warn');
+    expect(n.message).toContain('openai');
+    expect(n.message).toContain('sale de este equipo');
+    expect(visionNotice([img(), img({ id: 2 })], { supported: true, remote: true, provider: 'groq' }).message).toContain('Las imágenes se enviarán');
+  });
+  it('un modelo local con visión no avisa de nada', () => {
+    expect(visionNotice([img()], { supported: true, remote: false, provider: 'ollama' })).toBeNull();
   });
 });

@@ -487,7 +487,8 @@ class ContextManager:
         node_mode: bool = False,
         compress_batch: int = 1,
         compress: bool = True,
-    ) -> list[dict[str, str]]:
+        images: list[dict[str, Any]] | None = None,
+    ) -> list[dict[str, Any]]:
         """Ensambla el historial y prompt optimizado para el LLM actuando como autoridad única (CTX-01).
 
         Garantiza:
@@ -503,7 +504,7 @@ class ContextManager:
         """
         import json
 
-        messages: list[dict[str, str]] = []
+        messages: list[dict[str, Any]] = []
         steps = steps_history or []
 
         # 1. Chat history previo si existe
@@ -523,10 +524,15 @@ class ContextManager:
             root_content = "Comienza tu misión siguiendo el briefing y las reglas de tus instrucciones. Responde con Thought y Action."
         if environment_info:
             root_content += f"\n\nContexto del Entorno y Espacio de Trabajo:\n{environment_info}"
-        messages.append({"role": "user", "content": root_content})
+        root_message: dict[str, Any] = {"role": "user", "content": root_content}
+        if images:
+            root_message["images"] = images          # imágenes adjuntas (FE-006): cada cliente de modelo las pone con la forma de su proveedor
+        messages.append(root_message)
+        image_tokens = sum(int(im.get("tokens") or 0) for im in images or [])
 
         total_steps = len(steps)
         if total_steps == 0:
+            self._tokens_after += sum(len(m.get("content", "")) for m in messages) // 4 + image_tokens
             return messages
 
         # Particionar pasos: antiguos (comprimibles) y recientes (intactos)
@@ -588,7 +594,7 @@ class ContextManager:
 
         # Actualizar telemetría de estimación
         total_chars = sum(len(m.get("content", "")) for m in messages)
-        estimated_tokens = total_chars // 4
+        estimated_tokens = total_chars // 4 + image_tokens      # una imagen no son caracteres: se cuenta por sus píxeles (vision.estimate_tokens)
         self._tokens_after += estimated_tokens
 
         return messages
