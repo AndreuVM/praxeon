@@ -131,6 +131,12 @@ Todas las modificaciones notables de este proyecto están documentadas en este a
 - La interfaz web empaquetada (`praxeon/server/static`) ya no se versiona: `scripts/build_frontend.py` la compila desde
   `web/` antes de empaquetar. La que se versionaba era de mediados de octubre y no incluía los cambios posteriores.
 - Frontend: primer ejecutor de tests (Vitest, `npm test` en `web/`) y paso nuevo en el job de CI del frontend.
+- Interfaz (FE-007, base de los paneles de agentes): la sesión en vivo deja de estar atada a `App.jsx` (de 1 891 a unas 650 líneas).
+  La reducción de eventos pasa a una función pura (`sessionReducer.js`) fijada por pruebas diferenciales contra el código anterior,
+  con flujos de eventos reales del backend; cada sesión es un `AgentSession` con su estado, su WebSocket y sus acciones, y cada
+  panel tiene el suyo (cerrar un panel cierra su WebSocket). El historial de chat de todas las sesiones pasa a un único registro
+  compartido, para que varios paneles no se pisen al guardar. Con un solo panel la interfaz se comporta igual que antes (misma
+  pantalla, mismas llamadas a la API y mismos WebSockets, comprobado en Chrome con el mismo guion antes y después).
 - `openapi.json` (raíz y SDK) regenerado; un test falla si deja de coincidir con la API.
 - CI: los jobs de tipos y tests instalan con `uv sync --locked`, es decir, con las versiones de `uv.lock`, y fallan si
   el lockfile no corresponde a `pyproject.toml`.

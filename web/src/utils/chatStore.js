@@ -63,3 +63,25 @@ export function loadChatConfig() {
 export function persistChatConfig(config) {
   write(CONFIG_KEY, Object.fromEntries(CONFIG_FIELDS.filter((k) => config[k] !== undefined).map((k) => [k, config[k]])));
 }
+
+/**
+ * Registro de chats compartido por todas las sesiones abiertas (FE-007). Antes cada copia de la aplicación guardaba su propio mapa
+ * entero en `localStorage`; con varios paneles, cada uno habría pisado lo que escribió el otro. Aquí hay UN mapa en memoria y UNA
+ * escritura diferida. `chats[sid]` es la lista de mensajes de esa sesión; las más recientes son las últimas insertadas.
+ */
+export function createChatRegistry({ load = loadChats, persist = persistChats, delayMs = 400 } = {}) {
+  const registry = { chats: load(), timer: null };
+  registry.schedule = () => {
+    clearTimeout(registry.timer);
+    registry.timer = setTimeout(() => persist(registry.chats), delayMs);
+  };
+  registry.touch = (sid, messages) => {           // guarda y deja la sesión como la más reciente
+    delete registry.chats[sid];
+    registry.chats[sid] = messages;
+    registry.schedule();
+  };
+  return registry;
+}
+
+let shared = null;
+export const chatRegistry = () => (shared ||= createChatRegistry());
