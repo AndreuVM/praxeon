@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from praxeon import workspace_files, workspace_store
+from praxeon import attachments, workspace_files, workspace_store
 from praxeon.server.schemas.common import APIResponse
 
 router = APIRouter(prefix="/v1/workspace", tags=["Workspace"])
@@ -204,6 +204,28 @@ def rename_workspace_entry(req: RenameEntryRequest) -> APIResponse[dict[str, Any
 def delete_workspace_entry(path: str) -> APIResponse[dict[str, Any]]:
     """Elimina un archivo o una carpeta con todo su contenido. No se puede deshacer."""
     return _manage(workspace_files.delete_entry, path)
+
+
+@router.get("/attachments/limits", response_model=APIResponse[dict[str, Any]])
+def attachment_limits() -> APIResponse[dict[str, Any]]:
+    """Límites de los adjuntos del chat (tamaño por archivo y archivos por mensaje)."""
+    return APIResponse(data=attachments.limits())
+
+
+@router.post("/attachments", response_model=APIResponse[dict[str, Any]], status_code=status.HTTP_201_CREATED)
+async def upload_attachment(request: Request, session: str = "", name: str = "") -> APIResponse[dict[str, Any]]:
+    """Guarda un adjunto del chat (cuerpo = bytes en bruto) en `.praxeon/attachments/<sesión>/`. El nombre se sanea en el servidor."""
+    limit = attachments.limits()["max_file_bytes"]
+    declared = request.headers.get("content-length")
+    if declared and declared.isdigit() and int(declared) > limit:
+        raise _http_error(workspace_files.WorkspaceTooLarge(f"El archivo supera el límite de {limit // (1024 * 1024)} MB."))
+    chunks, received = [], 0
+    async for chunk in request.stream():
+        received += len(chunk)
+        if received > limit:
+            raise _http_error(workspace_files.WorkspaceTooLarge(f"El archivo supera el límite de {limit // (1024 * 1024)} MB."))
+        chunks.append(chunk)
+    return _manage(attachments.save_attachment, session, name, chunks)
 
 
 @router.post("/upload", response_model=APIResponse[dict[str, Any]], status_code=status.HTTP_201_CREATED)

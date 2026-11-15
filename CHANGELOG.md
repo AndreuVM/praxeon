@@ -131,6 +131,15 @@ Todas las modificaciones notables de este proyecto están documentadas en este a
 - La interfaz web empaquetada (`praxeon/server/static`) ya no se versiona: `scripts/build_frontend.py` la compila desde
   `web/` antes de empaquetar. La que se versionaba era de mediados de octubre y no incluía los cambios posteriores.
 - Frontend: primer ejecutor de tests (Vitest, `npm test` en `web/`) y paso nuevo en el job de CI del frontend.
+- Archivos adjuntos en el chat (FE-005, nota N-003): botón con clip, arrastrar al cuadro del mensaje o pegar (Ctrl+V). Cada archivo se
+  sube al instante a `.praxeon/attachments/<sesión>/` del workspace (nunca fuera de él) y aparece como ficha con su tamaño; se puede
+  quitar antes de enviar (se borra del workspace). Límites configurables: `PRAXEON_ATTACH_MAX_MB` (25) y `PRAXEON_ATTACH_MAX_FILES` (10).
+  El nombre se sanea en el servidor (sin rutas ni `..`, reservados de Windows como `CON`, caracteres de control o de dirección de
+  texto) y un nombre repetido no sobrescribe. La misión recibe en su prompt una referencia `[adjunto: ruta, tipo, tamaño]` por archivo
+  y lo lee con `read_file` (pasa por la política de siempre: no hay lectura automática); un texto de menos de 8 KB va además en línea,
+  envuelto como contenido NO fiable y sin poder cerrar su envoltorio. El objetivo registrado de la sesión no cambia. El servidor
+  revalida cada ruta (solo la carpeta de adjuntos, sin enlaces simbólicos) y recalcula tamaño y contenido desde el disco, y rechaza
+  adjuntos si la misión usa otro workspace que el activo. Las imágenes se adjuntan como archivos; su visión llega con FE-006.
 - Paneles de agentes (FE-008, nota N-001): varios agentes sobre el mismo workspace, cada uno en su panel (botón «Nuevo panel» o la
   paleta). Hasta 4 paneles a la vez (1, 2 en columnas o 2×2) y pestañas para el resto (máximo 8 abiertos); crear, cerrar, maximizar y
   enfocar. Cada panel tiene cabecera con agente, modelo, modo y estado (en curso, esperando aprobación, pausado, terminado). Las

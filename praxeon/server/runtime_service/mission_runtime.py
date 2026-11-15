@@ -55,6 +55,12 @@ DEFAULT_MAX_CONCURRENT_MISSIONS = 4
 _P = ParamSpec("_P")
 
 
+def prompt_goal(mission: dict[str, Any]) -> str:
+    """Objetivo tal como lo ve el agente: el de la misión más su contexto (adjuntos). El objetivo registrado no lleva el contexto."""
+    context = mission.get("prompt_context")
+    return f"{mission['goal']}\n\n{context}" if context else str(mission["goal"])
+
+
 class MissionLimitError(RuntimeError):
     """Hay ya tantas misiones en curso como permite `PRAXEON_MAX_CONCURRENT_MISSIONS` (FE-008)."""
 
@@ -156,8 +162,11 @@ class MissionRuntimeMixin(RuntimeHost):
         chat_history: list[dict[str, str]] | None = None,
         metadata: dict[str, Any] | None = None,
         workflow_id: str | None = None,
+        prompt_context: str | None = None,
     ) -> dict[str, Any]:
         """Inicia una misión interactiva supervisada en tiempo real.
+
+        `prompt_context` (p. ej. los adjuntos del mensaje) se añade al objetivo SOLO en el prompt del agente; el objetivo registrado no cambia.
 
         Con `workflow_id` (un workflow activo) el grafo gobierna la tarea: ver `WorkflowMissionDriver`.
         """
@@ -271,6 +280,7 @@ class MissionRuntimeMixin(RuntimeHost):
             "full_access_authorized_by_operator": full_access_auth,
             "llm_failure_policy": llm_failure_policy,
             "chat_history": chat_history,
+            "prompt_context": prompt_context,
             "workflow_id": workflow_id,
             # Tiempo máximo (s) que la misión espera una aprobación humana antes de seguir sin vetar la acción
             "approval_timeout_seconds": (metadata or {}).get("approval_timeout_seconds"),
@@ -528,7 +538,7 @@ class MissionRuntimeMixin(RuntimeHost):
         driver = WorkflowMissionDriver(
             workflow=workflow,
             mission=mission,
-            goal=mission["goal"],
+            goal=prompt_goal(mission),
             agent_registry=self.agent_registry,
             workflow_service=self.workflow_service,
             run_agent_loop=self._run_llm_loop,
@@ -672,7 +682,7 @@ class MissionRuntimeMixin(RuntimeHost):
                 loop_result = self._run_llm_loop(
                     mission,
                     agent_llm,
-                    goal=goal,
+                    goal=prompt_goal(mission),
                     max_steps=max_steps,
                     delay_sec=delay_sec,
                     provider_name=provider_name,

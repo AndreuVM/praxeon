@@ -85,4 +85,5 @@ class RunMissionRequest(BaseModel):
     autonomous: bool | None = Field(False, description="Activa ejecución autónoma desatendida")
     llm_failure_policy: str | None = Field("synthetic_fallback", description="Política ante fallos del LLM: 'fail_closed' o 'synthetic_fallback'")
     chat_history: list[dict[str, str]] | None = Field(None, description="Historial previo de conversación para memoria multi-turno")
+    attachments: list[str] | None = Field(None, max_length=50, description="Rutas (relativas al workspace) de los archivos adjuntos al mensaje, subidos antes con /v1/workspace/attachments. Se validan en el servidor")
 

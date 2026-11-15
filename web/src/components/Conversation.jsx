@@ -7,7 +7,10 @@ import Markdown from './Markdown';
 import { presentAnswer } from '../utils/answerText';
 import { deriveChatState } from '../utils/chatFromEvents';
 import { PROVIDERS, saveChoice, savedChoice } from '../utils/modelCatalog';
-import { Maximize2, Minimize2, Play, Pause, Square, Settings, AlertTriangle, Copy, Check, ArrowDown } from 'lucide-react';
+import { Maximize2, Minimize2, Play, Pause, Square, Settings, AlertTriangle, Copy, Check, ArrowDown, Paperclip } from 'lucide-react';
+import useAttachments from './attachments/useAttachments';
+import AttachmentTray from './attachments/AttachmentTray';
+import { filesFromTransfer, hasFiles } from '../utils/attachmentRules';
 
 /** Posición del último mensaje del asistente (-1 si no hay): los mensajes del operador pueden ir detrás. */
 function lastAssistantIndex(messages) {
@@ -39,6 +42,10 @@ export default function Conversation({
   onViewApproval,
 }) {
   const [inputText, setInputText] = useState('');
+  // Archivos adjuntos al mensaje (FE-005): se suben al workspace nada más añadirlos y la misión recibe solo sus rutas
+  const attach = useAttachments(session.sessionId);
+  const [dragOver, setDragOver] = useState(false);
+  const fileInputRef = useRef(null);
   const [inputExpanded, setInputExpanded] = useState(false);
   const inputRef = useRef(null);
 
@@ -287,6 +294,7 @@ export default function Conversation({
     if (executionMode === 'full_access' && !fullAccessConfirmed) {
       return; // el aviso de confirmación ya está visible bajo el campo de texto
     }
+    if (attach.uploading) return;                  // espera a que terminen de subirse los adjuntos
 
     const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
@@ -296,6 +304,7 @@ export default function Conversation({
       role: 'user',
       text: task,
       time: timeStr,
+      attachments: attach.ready.length > 0 ? attach.ready.map(({ name, size }) => ({ id: `${name}-${size}`, name, size, status: 'ready' })) : undefined,
       config: {
         llm_provider: llmProvider,
         supervisor: supervisor,
@@ -326,6 +335,8 @@ export default function Conversation({
     stickRef.current = true;
     setMessages((prev) => [...prev, userMsg, assistantMsg]);
     setInputText('');
+    const attachedPaths = attach.ready.map((a) => a.rel_path);
+    attach.clear();
 
     const isFullAccess = executionMode === 'full_access';
 
@@ -345,6 +356,7 @@ export default function Conversation({
       max_steps: Number(maxSteps),
       workflow_id: workflowId || undefined,
       chat_history: history.length > 0 ? history : undefined,
+      attachments: attachedPaths.length > 0 ? attachedPaths : undefined,
     });
   };
 
@@ -444,6 +456,7 @@ export default function Conversation({
           >
             {msg.text}
           </div>
+          {msg.attachments?.length > 0 && <AttachmentTray items={msg.attachments} label="Archivos adjuntos del mensaje" />}
           <div style={{ fontSize: 'var(--fs-label)', color: 'var(--muted)' }}>
             {msg.role === 'operator' ? 'Operador' : 'Tú'} · {msg.time}
             {msg.config && (
@@ -577,7 +590,7 @@ export default function Conversation({
   };
 
   const fullAccessBlocked = executionMode === 'full_access' && !fullAccessConfirmed;
-  const sendDisabled = !inputText.trim() || fullAccessBlocked;
+  const sendDisabled = !inputText.trim() || fullAccessBlocked || attach.uploading;
   const selectStyle = { background: 'transparent', border: 0, color: 'var(--muted)', padding: '3px 2px', fontSize: 'var(--fs-secondary)', maxWidth: '140px', minWidth: 0, textOverflow: 'ellipsis', cursor: isRunning ? 'not-allowed' : 'pointer' };
   const fieldLabel = { fontSize: 'var(--fs-secondary)', color: 'var(--muted)', display: 'block', marginBottom: '4px' };
 
@@ -631,11 +644,24 @@ export default function Conversation({
 
         <form
           onSubmit={handleSend}
+          onDragOver={(e) => {
+            if (isRunning || !hasFiles(e.dataTransfer)) return;
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'copy';
+            if (!dragOver) setDragOver(true);
+          }}
+          onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setDragOver(false); }}
+          onDrop={(e) => {
+            setDragOver(false);
+            if (isRunning || !hasFiles(e.dataTransfer)) return;
+            e.preventDefault();
+            attach.addFiles(filesFromTransfer(e.dataTransfer));
+          }}
           style={{
             width: 'min(720px, 100%)',
             margin: '0 auto',
             background: 'var(--surface)',
-            border: '1px solid var(--line)',
+            border: dragOver ? '1px dashed var(--accent, #6ea0ff)' : '1px solid var(--line)',
             borderRadius: 'var(--r-composer)',
             padding: '13px 13px 10px 18px',
             display: 'flex',
@@ -760,10 +786,18 @@ export default function Conversation({
             </div>
           ) : null}
 
+          <AttachmentTray items={attach.items} onRemove={isRunning ? undefined : attach.remove} />
+
           <textarea
             ref={inputRef}
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
+            onPaste={(e) => {
+              const files = isRunning ? [] : filesFromTransfer(e.clipboardData);
+              if (files.length === 0) return;                // texto normal: se pega como siempre
+              e.preventDefault();
+              attach.addFiles(files);
+            }}
             onKeyDown={(e) => {
               // Enter envía; Mayús+Enter inserta un salto de línea
               if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
@@ -850,6 +884,30 @@ export default function Conversation({
                 <option key={w.workflow_id} value={w.workflow_id}>{w.name}</option>
               ))}
             </select>
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="btn-icon"
+              style={{ width: '28px', height: '28px' }}
+              disabled={isRunning}
+              title="Adjuntar archivos (también puedes arrastrarlos al cuadro o pegarlos)"
+              aria-label="Adjuntar archivos"
+            >
+              <Paperclip size={14} strokeWidth={1.6} />
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              hidden
+              tabIndex={-1}
+              aria-hidden="true"
+              data-testid="attach-input"
+              onChange={(e) => {
+                attach.addFiles(e.target.files);
+                e.target.value = '';                  // permite elegir de nuevo el mismo archivo
+              }}
+            />
             <button
               type="button"
               onClick={() => setShowAdvanced(!showAdvanced)}
