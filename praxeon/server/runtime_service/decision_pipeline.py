@@ -726,6 +726,16 @@ class DecisionPipelineMixin(RuntimeHost):
                     )
                 self.state_store.save_state(current_state)
 
+            # FE-009: otra sesión cambió el archivo desde que el agente lo leyó; se avisa para que el panel afectado lo muestre
+            if observation.file_conflict is not None:
+                self.event_bus.emit(
+                    session_id=session_id,
+                    event_type=EventType.WORKSPACE_FILE_CONFLICT,
+                    node_id=record["action_id"],
+                    decision_id=decision_id,
+                    payload=dict(observation.file_conflict),
+                )
+
             # Emitir eventos de culminación
             self.event_bus.emit(
                 session_id=session_id,

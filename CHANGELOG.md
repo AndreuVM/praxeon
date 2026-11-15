@@ -131,6 +131,13 @@ Todas las modificaciones notables de este proyecto están documentadas en este a
 - La interfaz web empaquetada (`praxeon/server/static`) ya no se versiona: `scripts/build_frontend.py` la compila desde
   `web/` antes de empaquetar. La que se versionaba era de mediados de octubre y no incluía los cambios posteriores.
 - Frontend: primer ejecutor de tests (Vitest, `npm test` en `web/`) y paso nuevo en el job de CI del frontend.
+- Varias sesiones sobre un mismo workspace ya no se pisan los archivos sin aviso (FE-009): si una sesión leyó un archivo y otra lo
+  modificó después, la escritura de la primera (`edit_file`/`write_file`) se rechaza con un error claro («la sesión 'B' lo modificó a las
+  HH:MM después de que lo leyeras; vuelve a leerlo»), no se escribe nada y se emite el evento `workspace.file_conflict`. También se
+  rechaza sobrescribir a ciegas un archivo que otra sesión escribió y esta no ha leído. Sin bloqueos ni colas, sin interbloqueos;
+  crear archivos nuevos y editar archivos distintos no se ve afectado. Es un registro en memoria de un proceso del servidor: un cambio
+  hecho desde fuera (la interfaz, una CLI) también se detecta porque se compara el contenido en disco, pero un `run_command` que
+  modifique archivos no pasa por el registro.
 - Interfaz (FE-007, base de los paneles de agentes): la sesión en vivo deja de estar atada a `App.jsx` (de 1 891 a unas 650 líneas).
   La reducción de eventos pasa a una función pura (`sessionReducer.js`) fijada por pruebas diferenciales contra el código anterior,
   con flujos de eventos reales del backend; cada sesión es un `AgentSession` con su estado, su WebSocket y sus acciones, y cada

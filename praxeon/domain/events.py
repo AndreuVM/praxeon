@@ -59,6 +59,8 @@ class EventType(str, Enum):
     SESSION_COMPLETED = "session.completed"
     WORKFLOW_NODE_STARTED = "workflow.node_started"
     WORKFLOW_NODE_COMPLETED = "workflow.node_completed"
+    # FE-009: una escritura se rechazó porque otra sesión cambió el archivo desde que el agente lo leyó
+    WORKSPACE_FILE_CONFLICT = "workspace.file_conflict"
 
 
 class RuntimeEvent(BaseModel):

@@ -79,6 +79,15 @@ describe('piezas sueltas', () => {
     expect(s.maxSeq).toBe(7);
     expect(s.nodes).toBe(READY_NODES);
   });
+  it('un conflicto de escritura entre sesiones (FE-009) se registra como aviso, sin tocar el árbol', () => {
+    const ev = { type: 'workspace.file_conflict', node_id: 'a1', timestamp: '2026-11-15T12:30:00Z', sequence: 3, payload: { path: 'f.txt', conflicting_session: 'B', message: "Conflicto de escritura en 'f.txt': …" } };
+    const before = createSessionState();
+    const s = reduceEvent(before, ev, {});
+    expect(s.logs[0]).toMatchObject({ level: 'WARN', message: "[CONFLICTO] Conflicto de escritura en 'f.txt': …" });
+    expect(s.events[0]).toMatchObject({ type: 'workspace.file_conflict', seq: 3 });
+    expect(s.nodes).toBe(before.nodes);
+    expect(describeEvent({ type: 'workspace.file_conflict', payload: { path: 'x.txt' } }, undefined)).toBe("[CONFLICTO] Otra sesión modificó 'x.txt'");
+  });
   it('el rótulo de execution.started depende del modo', () => {
     expect(describeEvent({ type: 'execution.started', payload: { tool: 't' } }, 'full_access')).toContain('Full Access');
     expect(describeEvent({ type: 'execution.started', payload: { tool: 't' } }, 'local_restricted')).toContain('local sandbox');

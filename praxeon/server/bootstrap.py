@@ -39,6 +39,7 @@ from praxeon.runtime.child_env import full_access_enabled
 from praxeon.runtime.decision_store import SqliteDecisionRepository
 from praxeon.runtime.event_bus import EventBus, EventStore
 from praxeon.runtime.executor import SecureExecutor
+from praxeon.runtime.file_coordination import FileCoordinator
 from praxeon.runtime.keys import production_keys_problem, receipt_key
 from praxeon.runtime.nonce_store import NonceStore, SqliteNonceStore
 from praxeon.runtime.state_store import SqliteStateStore
@@ -184,6 +185,8 @@ def build_components(
         nonce_store=nonces,
         # Full Access solo si el proceso lo habilita: la app de escritorio sí; servidor y CLI no (PRAXEON_ALLOW_FULL_ACCESS)
         allow_full_access=full_access_enabled(),
+        # Varias sesiones sobre un mismo workspace no se pisan los archivos sin aviso (FE-009)
+        file_coordinator=FileCoordinator(),
     )
     # Herramientas de servidores MCP y acceso web de solo lectura: en el mismo ToolRegistry/Executor que las nativas
     mcp = McpManager(McpConfigStore(), tools, executor)

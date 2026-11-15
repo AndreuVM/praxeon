@@ -66,13 +66,14 @@ export function describeEvent(ev, executionMode) {
     case 'workflow.node_started': return `[FLUJO] Nodo «${p?.node_name || p?.node_id}»: ${p?.agent_name || 'agente'} toma el control`;
     case 'workflow.node_completed': return `[FLUJO] Nodo «${p?.node_name || p?.node_id}» completado por ${p?.agent_name || 'agente'}`;
     case 'session.completed': return `Misión completada: ${p?.summary || 'terminó correctamente'}`;
+    case 'workspace.file_conflict': return `[CONFLICTO] ${p?.message || `Otra sesión modificó '${p?.path}'`}`;
     default: return `[${evType}]`;
   }
 }
 
 function levelOf(evType, ev) {
   if (evType.includes('error') || evType.includes('pruned') || evType.includes('blocked')) return 'ERROR';
-  if (evType.includes('warn') || evType === 'approval.requested' || (evType === 'policy.decided' && ev.payload?.status === 'REVIEW')) return 'WARN';
+  if (evType.includes('warn') || evType === 'workspace.file_conflict' || evType === 'approval.requested' || (evType === 'policy.decided' && ev.payload?.status === 'REVIEW')) return 'WARN';
   return 'INFO';
 }
 

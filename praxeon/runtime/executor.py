@@ -26,6 +26,7 @@ from praxeon.domain.interfaces import Executor
 from praxeon.domain.models import ActionCandidate
 from praxeon.policy.registry import ToolRegistry
 from praxeon.policy.sanitizer import DataSanitizer
+from praxeon.runtime.file_coordination import FileCoordinator
 from praxeon.runtime.full_access import FullAccessExecutor
 from praxeon.runtime.fs_tools import content_from_args, list_directory
 from praxeon.runtime.nonce_store import InMemoryNonceStore, NonceStore
@@ -64,6 +65,7 @@ class ToolObservation(BaseModel):
     execution_time_ms: float = 0.0
     tool_name: str | None = None
     is_error: bool = False
+    file_conflict: dict[str, Any] | None = None  # FE-009: escritura rechazada porque otra sesión modificó el archivo
 
 
 class SecureExecutor(Executor):
@@ -81,6 +83,7 @@ class SecureExecutor(Executor):
         full_access_executor: FullAccessExecutor | None = None,
         allow_full_access: bool = False,
         insecure_skip_signature: bool = False,
+        file_coordinator: FileCoordinator | None = None,
     ):
         self.registry = registry or ToolRegistry(register_defaults=True)
         self.dry_run = dry_run
@@ -96,6 +99,8 @@ class SecureExecutor(Executor):
         self.nonce_store = nonce_store if nonce_store is not None else InMemoryNonceStore()
         self.full_access_executor = full_access_executor or FullAccessExecutor()
         self.allow_full_access = allow_full_access
+        # Con varias sesiones sobre un mismo workspace: una escritura no pisa lo que otra sesión cambió desde que el agente lo leyó (FE-009)
+        self.file_coordinator = file_coordinator
         self.container_sandbox: SandboxAdapter | None = None
         self._isolated_sandboxes: dict[str, SandboxAdapter] = {}
         self._custom_handlers: dict[str, Callable[[dict[str, Any]], str]] = {}
@@ -320,25 +325,40 @@ class SecureExecutor(Executor):
             else state.metadata.get("execution_mode", ExecutionMode.LOCAL_RESTRICTED.value)
         )
 
-        if resolved_mode == ExecutionMode.FULL_ACCESS.value:
-            effective_dir = (
-                state.metadata.get("workspace_root")
-                or state.metadata.get("working_directory")
-                or get_default_workspace_root()
-            )
-            fa_res = self.full_access_executor.execute_tool(
-                tool_name=tool_name,
-                arguments=tool_args,
-                context={
-                    "working_directory": effective_dir,
-                    "session_id": state.session_id,
-                },
-            )
-            raw_output, success, is_error = fa_res.output, fa_res.success, fa_res.is_error
-        elif resolved_mode == ExecutionMode.CONTAINER.value:
-            raw_output, success, is_error = self._execute_builtin_tool_in_container(tool_name, tool_args, state=state)
-        else:
-            raw_output, success, is_error = self._execute_builtin_tool_in_sandbox(tool_name, tool_args, state=state)
+        file_conflict: dict[str, Any] | None = None
+        effective_dir = (
+            state.metadata.get("workspace_root")
+            or state.metadata.get("working_directory")
+            or get_default_workspace_root()
+        )
+        guard = (
+            self.file_coordinator.begin(tool_name, tool_args, state.session_id, effective_dir)
+            if self.file_coordinator is not None and not self.dry_run
+            else None
+        )
+        try:
+            if guard is not None and guard.conflict is not None:
+                file_conflict = guard.conflict
+                raw_output, success, is_error = str(file_conflict["message"]), False, True
+            elif resolved_mode == ExecutionMode.FULL_ACCESS.value:
+                fa_res = self.full_access_executor.execute_tool(
+                    tool_name=tool_name,
+                    arguments=tool_args,
+                    context={
+                        "working_directory": effective_dir,
+                        "session_id": state.session_id,
+                    },
+                )
+                raw_output, success, is_error = fa_res.output, fa_res.success, fa_res.is_error
+            elif resolved_mode == ExecutionMode.CONTAINER.value:
+                raw_output, success, is_error = self._execute_builtin_tool_in_container(tool_name, tool_args, state=state)
+            else:
+                raw_output, success, is_error = self._execute_builtin_tool_in_sandbox(tool_name, tool_args, state=state)
+            if guard is not None:
+                guard.finish(success)
+        finally:
+            if guard is not None:
+                guard.release()
 
         elapsed = (time.perf_counter() - start_t) * 1000.0
 
@@ -352,6 +372,7 @@ class SecureExecutor(Executor):
             execution_time_ms=round(elapsed, 2),
             tool_name=tool_name,
             is_error=is_error,
+            file_conflict=file_conflict,
         )
 
     def _get_effective_sandbox(self, state: SessionState | None = None) -> SandboxAdapter:
