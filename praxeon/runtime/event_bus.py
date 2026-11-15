@@ -296,8 +296,8 @@ class EventBus:
         self.store = store or EventStore()
         self._subscribers: set[Callable[[RuntimeEvent], Any]] = set()
         self._session_subscribers: dict[str, set[Callable[[RuntimeEvent], Any]]] = {}
-        self._async_queues: set[asyncio.Queue] = set()
-        self._async_session_queues: dict[str, set[asyncio.Queue]] = {}
+        self._async_queues: set[asyncio.Queue[Any]] = set()
+        self._async_session_queues: dict[str, set[asyncio.Queue[Any]]] = {}
         self._lock = threading.Lock()
 
     @classmethod
@@ -327,7 +327,7 @@ class EventBus:
             else:
                 self._subscribers.add(callback)
 
-        def unsubscribe():
+        def unsubscribe() -> None:
             with self._lock:
                 if session_id and session_id in self._session_subscribers:
                     self._session_subscribers[session_id].discard(callback)
@@ -337,7 +337,7 @@ class EventBus:
 
     def register_async_queue(
         self,
-        queue: asyncio.Queue,
+        queue: asyncio.Queue[Any],
         session_id: str | None = None,
     ) -> Callable[[], None]:
         """Registra una asyncio.Queue para streaming WebSocket o SSE con aislamiento por sesión."""
@@ -349,7 +349,7 @@ class EventBus:
             else:
                 self._async_queues.add(queue)
 
-        def unregister():
+        def unregister() -> None:
             with self._lock:
                 if session_id and session_id in self._async_session_queues:
                     self._async_session_queues[session_id].discard(queue)

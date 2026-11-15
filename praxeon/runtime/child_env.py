@@ -16,7 +16,7 @@ import signal
 import subprocess
 import sys
 from typing import Any
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 
 # Variables que las herramientas comunes necesitan para arrancar (comparación sin distinguir mayúsculas)
 BASE_ALLOWED_ENV = frozenset({
@@ -53,7 +53,7 @@ def looks_secret(name: str) -> bool:
     return any(marker in upper for marker in SECRET_NAME_MARKERS)
 
 
-def _extra_patterns(source: Mapping[str, str]) -> list:
+def _extra_patterns(source: Mapping[str, str]) -> list[str]:
     raw = source.get(EXTRA_ALLOW_ENV_VAR, "")
     return [p.strip().upper() for p in raw.split(",") if p.strip()]
 
@@ -93,7 +93,7 @@ def process_group_kwargs() -> dict[str, Any]:
     return {"start_new_session": True}
 
 
-def kill_process_tree(proc: subprocess.Popen) -> None:
+def kill_process_tree(proc: subprocess.Popen[Any]) -> None:
     """Termina el proceso y todos sus descendientes (un `shell=True` deja vivos a los nietos si solo se mata al hijo)."""
     if proc.poll() is not None:
         return
@@ -115,7 +115,7 @@ def kill_process_tree(proc: subprocess.Popen) -> None:
                 pass
 
 
-def run_with_tree_timeout(args, *, timeout: float, **popen_kwargs) -> subprocess.CompletedProcess:
+def run_with_tree_timeout(args: str | Sequence[str], *, timeout: float, **popen_kwargs: Any) -> subprocess.CompletedProcess[Any]:
     """Como `subprocess.run(..., capture_output=True)`, pero al vencer el timeout mata todo el árbol de procesos.
 
     Lanza `subprocess.TimeoutExpired` igual que `subprocess.run`.

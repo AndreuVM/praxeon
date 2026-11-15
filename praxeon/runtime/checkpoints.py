@@ -14,7 +14,7 @@ from praxeon.runtime.state import SessionState
 class CheckpointManager:
     """Gestiona la creación, almacenamiento y restauración de checkpoints."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._checkpoints: dict[str, Checkpoint] = {}
         self.rollback_history: list[dict[str, Any]] = []
 

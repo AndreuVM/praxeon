@@ -90,7 +90,8 @@ class IsolatedSandbox(LocalProcessSandbox):
         if args and os.path.basename(args[0]).lower().startswith("powershell") and len(args) >= 2:
             args = args[:-1] + [_powershell_in(self.workspace_root, cwd) + args[-1]]
         try:
-            return self._appcontainer.run(args, cwd, env, timeout, max_bytes)
+            result: tuple[int, str, bool] = self._appcontainer.run(args, cwd, env, timeout, max_bytes)
+            return result
         except subprocess.TimeoutExpired:
             raise
         except OSError as exc:

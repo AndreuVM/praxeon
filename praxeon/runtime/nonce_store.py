@@ -47,7 +47,7 @@ class NonceStore(ABC):
 class InMemoryNonceStore(NonceStore):
     """Almacén concurrente y seguro en memoria para nonces con poda por TTL."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._lock = threading.Lock()
         # Clave: f"{decision_id}:{nonce}", Valor: Optional[datetime]
         self._store: dict[str, datetime | None] = {}

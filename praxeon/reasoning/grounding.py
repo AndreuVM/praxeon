@@ -16,7 +16,7 @@ from praxeon.domain.models import ActionCandidate, Claim, Evidence
 class EvidenceEngine(EvidenceProvider):
     """Almacena, indexa, verifica e invalida evidencia empírica para groundedness formal."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         # Mapeo de claim_key normalizado -> Evidence
         self._evidence_pool: dict[str, Evidence] = {}
         # Mapeo de claim_id o statement -> Claim

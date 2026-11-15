@@ -69,7 +69,7 @@ class DecisionRuntime:
         """Verifica disponibilidad operativa del proveedor."""
         fn = getattr(self.provider, "is_available", None)
         if callable(fn):
-            return fn()
+            return bool(fn())
         return bool(getattr(self.provider, "is_available", getattr(self.provider, "available", True)))
 
     def get_metadata(self) -> DecisionProviderMetadata:

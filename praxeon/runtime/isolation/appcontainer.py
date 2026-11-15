@@ -34,6 +34,7 @@ import os  # noqa: E402
 import subprocess  # noqa: E402  # nosec B404 - solo TimeoutExpired y list2cmdline; no se lanza ningún proceso con él
 import threading  # noqa: E402
 from collections.abc import Iterable  # noqa: E402
+from typing import Any  # noqa: E402
 
 from praxeon.runtime.isolation import container_name  # noqa: E402
 
@@ -379,13 +380,13 @@ def _decode(raw: bytes) -> str:
         return raw.decode("cp850", errors="replace")                  # consola de Windows en español
 
 
-def _close(*handles) -> None:
+def _close(*handles: Any) -> None:
     for h in handles:
         if h:
             _k32.CloseHandle(h)
 
 
-def _get_dacl(path: str):
+def _get_dacl(path: str) -> tuple[Any, Any]:
     dacl, sd = ctypes.c_void_p(), ctypes.c_void_p()
     err = _adv.GetNamedSecurityInfoW(path, 1, 4, None, None, ctypes.byref(dacl), None, ctypes.byref(sd))
     if err:
@@ -393,7 +394,7 @@ def _get_dacl(path: str):
     return dacl, sd
 
 
-def _has_allow_ace(dacl, sid, mask: int) -> bool:
+def _has_allow_ace(dacl: Any, sid: Any, mask: int) -> bool:
     if not dacl:
         return False
     acl = ctypes.cast(dacl, ctypes.POINTER(_ACL)).contents
@@ -409,7 +410,7 @@ def _has_allow_ace(dacl, sid, mask: int) -> bool:
     return False
 
 
-def _set_entries(dacl, sid, mask: int, *, grant: bool, inherit: bool):
+def _set_entries(dacl: Any, sid: Any, mask: int, *, grant: bool, inherit: bool) -> Any:
     trustee = _TRUSTEE(None, 0, 0, 0, ctypes.cast(sid, ctypes.c_void_p))   # TRUSTEE_IS_SID
     access = _EXPLICIT_ACCESS(mask, 1 if grant else 4, 3 if inherit else 0, trustee)  # GRANT / REVOKE; (OI)(CI)
     new_dacl = ctypes.c_void_p()
@@ -419,7 +420,7 @@ def _set_entries(dacl, sid, mask: int, *, grant: bool, inherit: bool):
     return new_dacl
 
 
-def _set_named_dacl(path: str, dacl) -> None:
+def _set_named_dacl(path: str, dacl: Any) -> None:
     err = _adv.SetNamedSecurityInfoW(ctypes.create_unicode_buffer(path), 1, 4, None, None, dacl, None)
     if err == 5:
         raise PermissionError(f"Sin permiso para cambiar los permisos de {path}.")
@@ -427,7 +428,7 @@ def _set_named_dacl(path: str, dacl) -> None:
         raise AppContainerError(f"No se pudieron cambiar los permisos de {path} (error {err}).")
 
 
-def _set_file_dacl(path: str, dacl, old_sd) -> None:
+def _set_file_dacl(path: str, dacl: Any, old_sd: Any) -> None:
     sd = (ctypes.c_byte * 64)()
     control, revision = wt.WORD(), wt.DWORD()
     _adv.GetSecurityDescriptorControl(old_sd, ctypes.byref(control), ctypes.byref(revision))
@@ -449,7 +450,7 @@ def _grants_file() -> str:
     return os.path.join(resolve_cache_dir(None), "appcontainer_grants.json")
 
 
-def _load_grants() -> dict[str, dict]:
+def _load_grants() -> dict[str, dict[str, Any]]:
     try:
         with open(_grants_file(), encoding="utf-8") as fh:
             data = json.load(fh)
@@ -458,7 +459,7 @@ def _load_grants() -> dict[str, dict]:
         return {}
 
 
-def _save_grants(state: dict[str, dict]) -> None:
+def _save_grants(state: dict[str, dict[str, Any]]) -> None:
     path = _grants_file()
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as fh:
@@ -474,6 +475,6 @@ def _record_grants(name: str, sid: str, paths: list[str], inheritable: list[str]
     _save_grants(state)
 
 
-def granted_containers() -> dict[str, dict]:
+def granted_containers() -> dict[str, dict[str, Any]]:
     """AppContainer de PRAXEON con permisos concedidos (``praxeon sandbox status``)."""
     return _load_grants()

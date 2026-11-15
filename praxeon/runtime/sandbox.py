@@ -23,7 +23,7 @@ import sys
 import threading
 import time
 import uuid
-from typing import Any
+from typing import IO, Any
 from pydantic import BaseModel, ConfigDict, Field
 from praxeon.policy.egress import EgressMode, EgressPolicy
 from praxeon.runtime.child_env import child_environment, kill_process_tree, process_group_kwargs
@@ -281,7 +281,7 @@ class LocalProcessSandbox(SandboxAdapter):
         total_bytes = [0]
         overflow = [False]
 
-        def read_stream(pipe, chunks):
+        def read_stream(pipe: IO[bytes], chunks: list[bytes]) -> None:
             try:
                 while True:
                     chunk = pipe.read(4096)

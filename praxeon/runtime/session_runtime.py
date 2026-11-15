@@ -27,7 +27,7 @@ class SessionRuntime:
     metadata: dict[str, Any] = field(default_factory=dict)
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         # Sincronizar decision_runtime y decision_provider
         if self.decision_runtime is not None and self.decision_provider is None:
             self.decision_provider = self.decision_runtime.provider

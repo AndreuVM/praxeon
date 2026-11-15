@@ -12,7 +12,7 @@ import builtins
 class InMemoryStateStore(StateStore, CheckpointStore):
     """Implementación en memoria de almacén de estados y checkpoints de sesión."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._states: dict[str, SessionState] = {}
         self._checkpoints: dict[str, Checkpoint] = {}
         self._session_checkpoints: dict[str, list[str]] = {}
@@ -477,7 +477,8 @@ class SqliteStateStore(SqliteStore, StateStore, CheckpointStore):
                 row = cur.fetchone()
                 if not row:
                     return None
-                return json.loads(row[0])
+                mission: dict[str, Any] = json.loads(row[0])
+                return mission
             finally:
                 self._close_conn(conn)
 

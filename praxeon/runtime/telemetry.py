@@ -115,7 +115,7 @@ class JsonlTelemetrySink:
 class EventBus:
     """Bus in-process para suscripción y publicación reactiva de eventos."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._subscribers: list[Callable[[TelemetryEvent], None]] = []
 
     def subscribe(self, callback: Callable[[TelemetryEvent], None]) -> None:

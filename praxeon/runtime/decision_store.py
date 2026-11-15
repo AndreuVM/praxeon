@@ -53,7 +53,7 @@ def _deserialize_decision_record(raw_json: str) -> dict[str, Any]:
     """Reconstruye un registro estructurado a partir del JSON persistido."""
     from praxeon.server.schemas.decision import PolicyDTO, ProviderEvaluationDTO, RiskDTO
 
-    d = json.loads(raw_json)
+    d: dict[str, Any] = json.loads(raw_json)
 
     # Reconstruir ActionCandidate si está presente
     if "action" in d and isinstance(d["action"], dict):
