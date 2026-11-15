@@ -33,6 +33,8 @@ ENV/
 # Testing & caches
 .pytest_cache/
 .coverage
+coverage.xml
+coverage.json
 htmlcov/
 .jev_cache/
 .praxeon_cache/

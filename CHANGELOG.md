@@ -46,6 +46,14 @@ Todas las modificaciones notables de este proyecto están documentadas en este a
   se dejaron anchos con `# noqa: BLE001 - motivo`: fronteras con proveedores, el host, el sandbox o la base de datos,
   limpiezas y rutas fail-closed (ahí cualquier fallo debe significar «denegado» o «error devuelto»). De paso se corrigieron
   los motivos genéricos que la etapa 1 copió en varios `noqa: S110`.
+- Calidad (auditoría AUD-23, etapa 2, Q-03): cobertura mínima por módulo. `scripts/check_module_coverage.py` compara
+  `coverage.json` con los mínimos de `[tool.praxeon-coverage]` en `pyproject.toml` (líneas + ramas, como `--cov-fail-under`;
+  una clave que termina en `/` es un paquete entero; falla si un módulo configurado ya no existe) y corre en CI tras los
+  tests. Mínimo 90 % en `runtime/executor.py` (79,6 → 99,7), `server/services/auth_service.py` (80,8 → 98,6) y `policy/`
+  (91,4 → 95,0), con mínimo propio para `policy/permissions.py` (62,8 → 98,2) y `policy/egress.py` (80,3 → 99,5). Los 129
+  tests nuevos fijan propiedades, no líneas: despacho del modo aislado (con un sandbox falso), tickets WebSocket de un solo
+  uso, rotación y revocación de tokens, caducidad y ligadura al hash de las aprobaciones humanas, y las reglas anti-SSRF.
+  Pendiente de subir a 90 %: `policy/failsafe.py`, `sanitizer.py`, `registry.py` y `reconciliation.py`.
 - Calidad (auditoría AUD-23, etapa 2): mypy también comprueba `praxeon/server` (168 errores a 0) y es parte de CI. Los mixins
   del servicio declaran lo que esperan del servicio en `runtime_service/host.py` (solo anotaciones, sin código en ejecución).
   Se quitaron `ExecutionService.get_sandbox` y `execute_action`: ningún código los llamaba y no podían funcionar (usaban

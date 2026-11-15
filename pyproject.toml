@@ -144,3 +144,14 @@ omit = ["praxeon/server/static/*"]
 [tool.coverage.report]
 skip_covered = true
 exclude_lines = ["pragma: no cover", "if TYPE_CHECKING:", "raise NotImplementedError", "if __name__ == .__main__.:"]
+
+[tool.praxeon-coverage]
+# Mínimo de cobertura por módulo (líneas + ramas, como --cov-fail-under) que comprueba scripts/check_module_coverage.py
+# en CI (auditoría Q-03). Una clave que termina en "/" es un paquete entero. El total sigue en --cov-fail-under=70.
+# policy/permissions.py y policy/egress.py llevan mínimo propio: eran los más bajos del paquete y no deben esconderse en
+# su media. Pendiente de subir a 90: policy/failsafe.py, sanitizer.py, registry.py y reconciliation.py.
+"praxeon/runtime/executor.py" = 90
+"praxeon/server/services/auth_service.py" = 90
+"praxeon/policy/" = 90
+"praxeon/policy/permissions.py" = 90
+"praxeon/policy/egress.py" = 90
