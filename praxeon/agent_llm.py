@@ -18,7 +18,7 @@ import sys
 import tempfile
 import threading
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any
 import urllib.error
 
 from praxeon import http_client
@@ -26,7 +26,7 @@ import urllib.parse
 import urllib.request
 
 
-PROVIDER_PRESETS: Dict[str, Dict[str, Any]] = {
+PROVIDER_PRESETS: dict[str, dict[str, Any]] = {
     "groq": {
         "base_url": "https://api.groq.com/openai/v1",
         "default_model": "llama-3.3-70b-versatile",
@@ -132,7 +132,7 @@ class SafeNoAuthForwardRedirectHandler(urllib.request.HTTPRedirectHandler):
         return new_req
 
 
-def _is_custom_endpoint(provider_name: str, base_url: Optional[str]) -> bool:
+def _is_custom_endpoint(provider_name: str, base_url: str | None) -> bool:
     """Verifica si base_url apunta a un destino distinto al origin oficial del proveedor (Finding 5)."""
     if not base_url:
         return False
@@ -157,9 +157,9 @@ class BaseAgentLLM(ABC):
     # True si el proveedor guarda la conversación en una sesión abierta: no hace falta comprimir el historial
     stateful_session = False
     # Tokens reales de la última llamada ({prompt_tokens, output_tokens, cached_tokens}); None si no se informaron
-    last_usage: Optional[Dict[str, int]] = None
+    last_usage: dict[str, int] | None = None
     # Coste en USD de la última llamada si el proveedor lo informa (p. ej. la CLI de Claude); None si no
-    last_cost_usd: Optional[float] = None
+    last_cost_usd: float | None = None
 
     def _record_usage(self, prompt: Any, output: Any, cached: Any = 0) -> None:
         def _n(value: Any) -> int:
@@ -190,7 +190,7 @@ class BaseAgentLLM(ABC):
         pass
 
     @abstractmethod
-    def generate(self, messages: List[Dict[str, str]], system_prompt: Optional[str] = None) -> str:
+    def generate(self, messages: list[dict[str, str]], system_prompt: str | None = None) -> str:
         """Genera una respuesta en formato texto para el turno del agente."""
         pass
 
@@ -206,7 +206,7 @@ class OpenAICompatibleLLM(BaseAgentLLM):
         self,
         base_url: str,
         model: str,
-        api_key: Optional[str] = None,
+        api_key: str | None = None,
         provider_name: str = "openai_compatible",
         timeout: float = 120.0,
         temperature: float = 0.2,
@@ -236,8 +236,8 @@ class OpenAICompatibleLLM(BaseAgentLLM):
     def endpoint(self) -> str:
         return self._endpoint
 
-    def generate(self, messages: List[Dict[str, str]], system_prompt: Optional[str] = None) -> str:
-        payload_messages: List[Dict[str, str]] = []
+    def generate(self, messages: list[dict[str, str]], system_prompt: str | None = None) -> str:
+        payload_messages: list[dict[str, str]] = []
         if system_prompt:
             payload_messages.append({"role": "system", "content": system_prompt})
 
@@ -337,7 +337,7 @@ class OllamaLLM(OpenAICompatibleLLM):
     la caché del prefijo, que Ollama reutiliza por sí mismo mientras el principio del prompt no cambia.
     """
 
-    def __init__(self, *args: Any, num_ctx: Optional[int] = None, keep_alive: str = "30m", **kwargs: Any) -> None:
+    def __init__(self, *args: Any, num_ctx: int | None = None, keep_alive: str = "30m", **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self._num_ctx = int(num_ctx or os.getenv("PRAXEON_OLLAMA_NUM_CTX", "8192"))
         self._keep_alive = keep_alive
@@ -349,10 +349,10 @@ class OllamaLLM(OpenAICompatibleLLM):
     def num_ctx(self) -> int:
         return self._num_ctx
 
-    def generate(self, messages: List[Dict[str, str]], system_prompt: Optional[str] = None) -> str:
+    def generate(self, messages: list[dict[str, str]], system_prompt: str | None = None) -> str:
         if not self._use_native:
             return super().generate(messages, system_prompt)
-        payload_messages: List[Dict[str, str]] = []
+        payload_messages: list[dict[str, str]] = []
         if system_prompt:
             payload_messages.append({"role": "system", "content": system_prompt})
         for m in messages:
@@ -403,10 +403,10 @@ class AnthropicLLM(BaseAgentLLM):
         base_url: str = "https://api.anthropic.com",
         timeout: float = 180.0,
         max_tokens: int = 8192,
-        temperature: Optional[float] = None,
+        temperature: float | None = None,
         max_retries: int = 2,
         retry_delay: float = 2.0,
-        prompt_cache: Optional[bool] = None,
+        prompt_cache: bool | None = None,
     ) -> None:
         self._api_key = api_key
         self._model = model
@@ -432,10 +432,10 @@ class AnthropicLLM(BaseAgentLLM):
         return self._endpoint
 
     @staticmethod
-    def _build_messages(messages: List[Dict[str, str]], system_prompt: Optional[str]):
+    def _build_messages(messages: list[dict[str, str]], system_prompt: str | None):
         """La API exige turnos que alternen user/assistant empezando por user y sin textos vacíos."""
         system_parts = [system_prompt] if system_prompt else []
-        turns: List[Dict[str, str]] = []
+        turns: list[dict[str, str]] = []
         for m in messages:
             text = str(m.get("content", "")).strip()
             if not text:
@@ -453,9 +453,9 @@ class AnthropicLLM(BaseAgentLLM):
             turns.insert(0, {"role": "user", "content": "Comienza."})
         return "\n\n".join(system_parts), turns
 
-    def generate(self, messages: List[Dict[str, str]], system_prompt: Optional[str] = None) -> str:
+    def generate(self, messages: list[dict[str, str]], system_prompt: str | None = None) -> str:
         system, turns = self._build_messages(messages, system_prompt)
-        payload: Dict[str, Any] = {"model": self._model, "max_tokens": self._max_tokens, "messages": turns}
+        payload: dict[str, Any] = {"model": self._model, "max_tokens": self._max_tokens, "messages": turns}
         if system:
             payload["system"] = system
         if self._prompt_cache:
@@ -521,12 +521,12 @@ class AnthropicLLM(BaseAgentLLM):
 class _CliSession:
     """Un proceso `claude -p` en modo stream-json que se mantiene abierto entre turnos."""
 
-    def __init__(self, cmd: List[str], env: Dict[str, str], workdir: str) -> None:
+    def __init__(self, cmd: list[str], env: dict[str, str], workdir: str) -> None:
         self.workdir = workdir
-        self.users: List[str] = []   # textos user ya entregados al proceso (para validar que la conversación continúa)
+        self.users: list[str] = []   # textos user ya entregados al proceso (para validar que la conversación continúa)
         self.n_turns = 0             # nº de mensajes de la conversación que el proceso ya conoce
         self.cost_total = 0.0        # coste acumulado (USD) que informa la CLI en este proceso
-        self._lines: "queue.Queue[Optional[str]]" = queue.Queue()
+        self._lines: queue.Queue[str | None] = queue.Queue()
         self.proc = subprocess.Popen(
             cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             text=True, encoding="utf-8", errors="replace", cwd=workdir, env=env,
@@ -544,14 +544,14 @@ class _CliSession:
     def alive(self) -> bool:
         return self.proc.poll() is None
 
-    def ask(self, text: str, timeout: float) -> Dict[str, Any]:
+    def ask(self, text: str, timeout: float) -> dict[str, Any]:
         """Envía un turno de usuario y espera el evento `result` de la CLI."""
         message = {"type": "user", "message": {"role": "user", "content": text}}
         assert self.proc.stdin is not None
         self.proc.stdin.write(json.dumps(message) + "\n")
         self.proc.stdin.flush()
         deadline = time.monotonic() + timeout
-        tail: List[str] = []
+        tail: list[str] = []
         while True:
             try:
                 line = self._lines.get(timeout=max(0.1, deadline - time.monotonic()))
@@ -595,11 +595,11 @@ class ClaudeCLILLM(BaseAgentLLM):
     MAX_SESSIONS = 4
     stateful_session = True   # la CLI guarda la conversación: el historial no se comprime
 
-    def __init__(self, model: str = "sonnet", executable: Optional[str] = None, timeout: float = 300.0) -> None:
+    def __init__(self, model: str = "sonnet", executable: str | None = None, timeout: float = 300.0) -> None:
         self._model = model
         self._executable = executable or shutil.which("claude")
         self._timeout = timeout
-        self._sessions: Dict[Any, _CliSession] = {}
+        self._sessions: dict[Any, _CliSession] = {}
         self._lock = threading.RLock()
         if not self._executable:
             raise ValueError(
@@ -616,7 +616,7 @@ class ClaudeCLILLM(BaseAgentLLM):
         return self._model
 
     @staticmethod
-    def _transcript(turns: List[Any]) -> str:
+    def _transcript(turns: list[Any]) -> str:
         lines = [f"[{'ASSISTANT' if role == 'assistant' else 'USER'}]: {text}" for role, text in turns]
         return "\n\n".join(lines) + "\n\n[ASSISTANT]:"
 
@@ -649,9 +649,9 @@ class ClaudeCLILLM(BaseAgentLLM):
             for key in list(self._sessions):
                 self._drop(key)
 
-    def generate(self, messages: List[Dict[str, str]], system_prompt: Optional[str] = None) -> str:
+    def generate(self, messages: list[dict[str, str]], system_prompt: str | None = None) -> str:
         system_parts = [system_prompt] if system_prompt else []
-        turns: List[Any] = []
+        turns: list[Any] = []
         for m in messages:
             text = str(m.get("content", "")).strip()
             if not text:
@@ -668,7 +668,7 @@ class ClaudeCLILLM(BaseAgentLLM):
         with self._lock:
             key = (system, turns[0])
             session = self._sessions.get(key)
-            outgoing: Optional[str] = None
+            outgoing: str | None = None
             if session is not None:
                 outgoing = self._continuation(session, turns) if session.alive() else None
                 if outgoing is None:
@@ -710,7 +710,7 @@ class ClaudeCLILLM(BaseAgentLLM):
             return str(data.get("result") or "").strip()
 
     @staticmethod
-    def _continuation(session: _CliSession, turns: List[Any]) -> Optional[str]:
+    def _continuation(session: _CliSession, turns: list[Any]) -> str | None:
         """Mensaje nuevo si `turns` continúa la conversación que el proceso ya conoce; None si hay que reiniciar."""
         known = session.n_turns
         if known == 0 or len(turns) <= known:
@@ -751,13 +751,13 @@ class GeminiLLM(BaseAgentLLM):
     def model_name(self) -> str:
         return self._model
 
-    def generate(self, messages: List[Dict[str, str]], system_prompt: Optional[str] = None) -> str:
+    def generate(self, messages: list[dict[str, str]], system_prompt: str | None = None) -> str:
         from google.genai import types
 
         is_antigravity = "antigravity" in self._model.lower()
         if is_antigravity:
             # La API de interacciones recibe texto plano
-            parts_txt: List[str] = []
+            parts_txt: list[str] = []
             if system_prompt:
                 parts_txt.append(f"[SYSTEM]: {system_prompt}")
             for m in messages:
@@ -771,7 +771,7 @@ class GeminiLLM(BaseAgentLLM):
 
         # Turnos con su rol real y el prompt de sistema como system_instruction: con una transcripción plana
         # («[USER]: ... [ASSISTANT]:») el modelo tiende a continuarla e inventar los turnos siguientes.
-        contents: List[Any] = []
+        contents: list[Any] = []
         last_role = None
         for m in messages:
             text = str(m.get("content", ""))
@@ -817,7 +817,7 @@ class SimulatedAgentLLM(BaseAgentLLM):
     def model_name(self) -> str:
         return self._model_name
 
-    def generate(self, messages: List[Dict[str, str]], system_prompt: Optional[str] = None) -> str:
+    def generate(self, messages: list[dict[str, str]], system_prompt: str | None = None) -> str:
         self._step_counter += 1
 
         if self._step_counter == 1:
@@ -854,7 +854,7 @@ def is_ollama_online(host: str = "http://127.0.0.1:11434") -> bool:
     return False
 
 
-def get_ollama_installed_models(host: str = "http://127.0.0.1:11434") -> List[str]:
+def get_ollama_installed_models(host: str = "http://127.0.0.1:11434") -> list[str]:
     """Obtiene la lista de nombres de modelos descargados e instalados en Ollama."""
     hosts = [host]
     if "127.0.0.1" in host:
@@ -909,10 +909,10 @@ def try_start_ollama_daemon() -> bool:
 
 
 def create_agent_llm(
-    provider: Optional[str] = None,
-    model: Optional[str] = None,
-    api_key: Optional[str] = None,
-    base_url: Optional[str] = None,
+    provider: str | None = None,
+    model: str | None = None,
+    api_key: str | None = None,
+    base_url: str | None = None,
     timeout: float = 120.0,
     max_tokens: int = 1024,
 ) -> BaseAgentLLM:

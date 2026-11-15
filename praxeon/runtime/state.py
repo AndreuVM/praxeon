@@ -3,8 +3,8 @@
 Mantiene el estado completo, auditable y serializable con hash determinista.
 """
 
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Set, Tuple
+from datetime import datetime, UTC
+from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 from praxeon.domain.decision import canonical_digest, state_snapshot_digest
 from praxeon.domain.models import (
@@ -24,11 +24,11 @@ class StepRecord(BaseModel):
     index: int
     action: ActionCandidate
     decision: PolicyDecision
-    observation: Optional[str] = None
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    observation: str | None = None
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
     synthetic_fallback: bool = False
-    model_source: Optional[str] = None
-    governance_mode: Optional[str] = None
+    model_source: str | None = None
+    governance_mode: str | None = None
 
 
 
@@ -37,22 +37,22 @@ class SessionState(BaseModel):
 
     session_id: str
     goal: Goal
-    steps: List[StepRecord] = Field(default_factory=list)
-    evidence: List[Evidence] = Field(default_factory=list)
-    forbidden_tools: Set[str] = Field(default_factory=set)
-    checkpoint_ids: List[str] = Field(default_factory=list)
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    steps: list[StepRecord] = Field(default_factory=list)
+    evidence: list[Evidence] = Field(default_factory=list)
+    forbidden_tools: set[str] = Field(default_factory=set)
+    checkpoint_ids: list[str] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
     # Hash de cada paso y evidencia ya resumidos: {id(objeto): (objeto, hash)}. Se guarda el objeto para que su id no
     # se reutilice. Los StepRecord son inmutables; la evidencia no se modifica tras añadirla.
-    _item_digests: Dict[int, Tuple[Any, str]] = PrivateAttr(default_factory=dict)
+    _item_digests: dict[int, tuple[Any, str]] = PrivateAttr(default_factory=dict)
 
-    def state_digest(self, checkpoint_ids: Optional[List[str]] = None) -> str:
+    def state_digest(self, checkpoint_ids: list[str] | None = None) -> str:
         """Hash del estado que firman los recibos: igual a ``compute_state_hash(self.to_snapshot())``, sin serializar
         de nuevo los pasos ya vistos (AUD-20, P-03: antes, coste proporcional a toda la trayectoria en cada paso).
 
         ``checkpoint_ids`` sustituye la lista de checkpoints (el ejecutor acepta también el estado previo al último).
         """
-        objects: Dict[str, List[Any]] = {"steps": list(self.steps), "evidence": list(self.evidence)}
+        objects: dict[str, list[Any]] = {"steps": list(self.steps), "evidence": list(self.evidence)}
 
         def item_digest(key: str, index: int, _item: Any) -> str:
             obj = objects[key][index]
@@ -63,7 +63,7 @@ class SessionState(BaseModel):
             self._item_digests[id(obj)] = (obj, digest)
             return digest
 
-        header: Dict[str, Any] = {
+        header: dict[str, Any] = {
             "session_id": self.session_id,
             "goal": self.goal.model_dump(),
             "steps": [None] * len(self.steps),
@@ -90,10 +90,10 @@ class SessionState(BaseModel):
         self,
         action: ActionCandidate,
         decision: PolicyDecision,
-        observation: Optional[str] = None,
-        synthetic_fallback: Optional[bool] = None,
-        model_source: Optional[str] = None,
-        governance_mode: Optional[str] = None,
+        observation: str | None = None,
+        synthetic_fallback: bool | None = None,
+        model_source: str | None = None,
+        governance_mode: str | None = None,
     ) -> StepRecord:
         """Registra un nuevo paso completado en la trayectoria."""
         is_synth = synthetic_fallback if synthetic_fallback is not None else action.synthetic_fallback
@@ -125,7 +125,7 @@ class SessionState(BaseModel):
         """Desbloquea una herramienta previamente prohibida."""
         self.forbidden_tools.discard(tool_name.strip())
 
-    def to_snapshot(self) -> Dict[str, Any]:
+    def to_snapshot(self) -> dict[str, Any]:
         """Genera un diccionario snapshot profundo del estado actual para restauración."""
         return {
             "session_id": self.session_id,
@@ -138,7 +138,7 @@ class SessionState(BaseModel):
         }
 
     @classmethod
-    def from_snapshot(cls, snapshot: Dict[str, Any]) -> "SessionState":
+    def from_snapshot(cls, snapshot: dict[str, Any]) -> "SessionState":
         """Reconstruye un SessionState idéntico a partir de un snapshot."""
         return cls(
             session_id=snapshot["session_id"],

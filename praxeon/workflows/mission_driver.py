@@ -19,7 +19,8 @@ import json
 import logging
 import re
 import time
-from typing import Any, Callable, Dict, List, Optional, Set
+from typing import Any
+from collections.abc import Callable
 
 from praxeon.agents.definition import tool_matches
 from praxeon.workflows.engine import WorkflowEngine
@@ -52,10 +53,10 @@ def node_mission(node: WorkflowNode) -> str:
     return node.name
 
 
-def _json_objects(text: str) -> List[Dict[str, Any]]:
+def _json_objects(text: str) -> list[dict[str, Any]]:
     """Todos los objetos JSON que aparecen en el texto, estén donde estén (entre comillas inversas, en prosa, en bloques)."""
     decoder = json.JSONDecoder()
-    found: List[Dict[str, Any]] = []
+    found: list[dict[str, Any]] = []
     i = 0
     while True:
         i = text.find("{", i)
@@ -74,7 +75,7 @@ def _json_objects(text: str) -> List[Dict[str, Any]]:
     return found
 
 
-def parse_structured_output(text: str, prefer_keys: Optional[Set[str]] = None) -> Dict[str, Any]:
+def parse_structured_output(text: str, prefer_keys: set[str] | None = None) -> dict[str, Any]:
     """Extrae el resultado estructurado de la respuesta final para que las condiciones del grafo lo lean.
 
     Acepta el JSON entero, en un bloque ```json```, entre comillas inversas o suelto dentro de un informe en prosa.
@@ -89,9 +90,9 @@ def parse_structured_output(text: str, prefer_keys: Optional[Set[str]] = None) -
         with_keys = [o for o in objects if wanted & set(o)]
         if with_keys:
             return with_keys[-1]
-        loose: Dict[str, Any] = {}
+        loose: dict[str, Any] = {}
         for key in wanted:
-            m = re.findall(r"""["'`*_]*%s["'`*_]*\s*[:=]\s*["'`*_]*(true|false)\b""" % re.escape(key), text, flags=re.IGNORECASE)
+            m = re.findall(rf"""["'`*_]*{re.escape(key)}["'`*_]*\s*[:=]\s*["'`*_]*(true|false)\b""", text, flags=re.IGNORECASE)
             if m:
                 loose[key] = m[-1].lower() == "true"
         if loose:
@@ -121,16 +122,16 @@ class WorkflowMissionDriver:
         self,
         *,
         workflow: WorkflowDefinition,
-        mission: Dict[str, Any],
+        mission: dict[str, Any],
         goal: str,
         agent_registry: Any,
         workflow_service: Any,
-        run_agent_loop: Callable[..., Dict[str, Any]],
+        run_agent_loop: Callable[..., dict[str, Any]],
         llm_for_agent: Callable[[Any], Any],
         supervised_runner: Any = None,
         poll_seconds: float = 0.3,
-        on_node_completed: Optional[Callable[[str, Dict[str, Any]], None]] = None,
-        on_node_started: Optional[Callable[[str, Dict[str, Any]], None]] = None,
+        on_node_completed: Callable[[str, dict[str, Any]], None] | None = None,
+        on_node_started: Callable[[str, dict[str, Any]], None] | None = None,
     ):
         self.workflow = workflow
         self.mission = mission
@@ -142,12 +143,12 @@ class WorkflowMissionDriver:
         self.poll_seconds = poll_seconds
         self.on_node_completed = on_node_completed
         self.on_node_started = on_node_started
-        self.runs: Dict[str, int] = {}
-        self._cursor: Optional[str] = None  # última acción del nodo anterior: de ahí cuelga el siguiente
-        self._prev_trace: Optional[Dict[str, Any]] = None
-        self.history: Dict[str, List[Dict[str, Any]]] = {}
-        self.failures: Dict[str, str] = {}      # último error de cada nodo que se reintenta
-        self.auto_retried: Dict[str, int] = {}  # reintentos automáticos ya gastados por nodo
+        self.runs: dict[str, int] = {}
+        self._cursor: str | None = None  # última acción del nodo anterior: de ahí cuelga el siguiente
+        self._prev_trace: dict[str, Any] | None = None
+        self.history: dict[str, list[dict[str, Any]]] = {}
+        self.failures: dict[str, str] = {}      # último error de cada nodo que se reintenta
+        self.auto_retried: dict[str, int] = {}  # reintentos automáticos ya gastados por nodo
         self.max_auto_retries = int(self.mission.get("auto_node_retries", DEFAULT_AUTO_NODE_RETRIES))
         self.total_runs = 0
         self.max_total_runs = int(workflow.metadata.get("max_total_node_runs") or DEFAULT_TOTAL_NODE_RUNS)
@@ -160,7 +161,7 @@ class WorkflowMissionDriver:
         )
 
     # ------------------------------------------------------------------ briefing
-    def _agent_for(self, node: WorkflowNode, inputs: Dict[str, Any]) -> Any:
+    def _agent_for(self, node: WorkflowNode, inputs: dict[str, Any]) -> Any:
         agent_id = inputs.get("_target_agent_id") or node.agent_id
         if not agent_id or self.agent_registry is None:
             return None
@@ -183,10 +184,10 @@ class WorkflowMissionDriver:
         who = f"agente {agent.name} ({agent.role})" if agent else (f"agente {node.agent_id}" if node.agent_id else "tarea")
         return f"«{node.name}» ({node.node_id}, {who})"
 
-    def effective_upstream(self, node_id: str) -> List[str]:
+    def effective_upstream(self, node_id: str) -> list[str]:
         """Nodos de trabajo (agente/tarea) de los que depende `node_id`, atravesando nodos de control."""
-        found: List[str] = []
-        seen: Set[str] = set()
+        found: list[str] = []
+        seen: set[str] = set()
 
         def walk(nid: str) -> None:
             for up in self.workflow.get_upstream_node_ids(nid):
@@ -211,13 +212,13 @@ class WorkflowMissionDriver:
             return str(cond.get("field") or "")
         return str(getattr(cond, "field", "") or "")
 
-    def required_output_keys(self, node_id: str) -> List[str]:
+    def required_output_keys(self, node_id: str) -> list[str]:
         """Campos del resultado de `node_id` de los que depende el grafo (bucles, decisiones, condiciones de aristas)."""
-        keys: List[str] = []
-        seen: Set[str] = set()
+        keys: list[str] = []
+        seen: set[str] = set()
         control = (NodeType.WHILE, NodeType.IF, NodeType.DECISION)
 
-        def key_of(cond: Any) -> Optional[str]:
+        def key_of(cond: Any) -> str | None:
             f = self._condition_field(cond)
             if f.startswith("output."):
                 return f[len("output."):]
@@ -248,9 +249,9 @@ class WorkflowMissionDriver:
         walk(node_id)
         return keys
 
-    def effective_downstream(self, node_id: str) -> List[str]:
-        found: List[str] = []
-        seen: Set[str] = set()
+    def effective_downstream(self, node_id: str) -> list[str]:
+        found: list[str] = []
+        seen: set[str] = set()
 
         def walk(nid: str) -> None:
             for down in self.workflow.get_downstream_node_ids(nid):
@@ -267,10 +268,10 @@ class WorkflowMissionDriver:
         walk(node_id)
         return found
 
-    def build_briefing(self, node: WorkflowNode, inputs: Dict[str, Any], iteration: int) -> str:
+    def build_briefing(self, node: WorkflowNode, inputs: dict[str, Any], iteration: int) -> str:
         agent = self._agent_for(node, inputs)
         outputs = self.engine.context.node_outputs
-        parts: List[str] = [
+        parts: list[str] = [
             "=== OBJETIVO GLOBAL DE LA TAREA DEL USUARIO ===",
             self.goal,
             "",
@@ -349,14 +350,14 @@ class WorkflowMissionDriver:
         return "\n".join(parts)
 
     # ------------------------------------------------------------------ ejecución de nodos
-    def _finish_check(self, node: WorkflowNode) -> Optional[Callable[[str], Optional[str]]]:
+    def _finish_check(self, node: WorkflowNode) -> Callable[[str], str | None] | None:
         """Rechaza el finish de un nodo si no trae los campos de los que depende el grafo (p. ej. `approved`)."""
         required = self.required_output_keys(node.node_id)
         if not required:
             return None
         wanted = set(required)
 
-        def check(summary: str) -> Optional[str]:
+        def check(summary: str) -> str | None:
             got = parse_structured_output(summary, prefer_keys=wanted)
             missing = [k for k in required if k not in got]
             if not missing:
@@ -371,7 +372,7 @@ class WorkflowMissionDriver:
 
         return check
 
-    def _tool_filter(self, agent: Any) -> Optional[Callable[[str], Optional[str]]]:
+    def _tool_filter(self, agent: Any) -> Callable[[str], str | None] | None:
         if agent is None:
             return None
         allowed = [t.lower() for t in (agent.allowed_tools or ["*"])]
@@ -379,7 +380,7 @@ class WorkflowMissionDriver:
         if "*" in allowed and not forbidden:
             return None
 
-        def check(tool: str) -> Optional[str]:
+        def check(tool: str) -> str | None:
             t = (tool or "").lower()
             if tool_matches(forbidden, t):
                 return f"❌ El agente «{agent.name}» tiene PROHIBIDA la herramienta '{tool}'. Usa otra de las permitidas o concluye con finish."
@@ -392,7 +393,7 @@ class WorkflowMissionDriver:
 
         return check
 
-    def _run_node(self, node: WorkflowNode, inputs: Dict[str, Any], engine: WorkflowEngine) -> Dict[str, Any]:
+    def _run_node(self, node: WorkflowNode, inputs: dict[str, Any], engine: WorkflowEngine) -> dict[str, Any]:
         if self.mission.get("stopped"):
             raise RuntimeError("Misión detenida por el operador")
         self.total_runs += 1
@@ -430,7 +431,7 @@ class WorkflowMissionDriver:
         briefing = self.build_briefing(node, inputs, iteration)
         llm = self.llm_for_agent(agent)
 
-        base: Dict[str, Any] = {
+        base: dict[str, Any] = {
             "agent_id": agent.agent_id if agent else node.agent_id,
             "agent_name": agent.name if agent else None,
             "agent_role": agent.role if agent else None,
@@ -597,7 +598,7 @@ class WorkflowMissionDriver:
         m = self.mission
         return bool((m.get("autonomous") or m.get("allow_unattended_execution")) and not m.get("require_step_confirmation"))
 
-    def _failed_node(self) -> Optional[str]:
+    def _failed_node(self) -> str | None:
         for nid, st in self.engine.context.node_states.items():
             if st == NodeStatus.FAILED:
                 return nid

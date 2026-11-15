@@ -5,10 +5,10 @@ Proposal -> Evidence -> Risk -> JEV Provider -> Policy -> Decision -> Execution 
 con soporte de checkpoints automáticos, chunking tipado y rollback determinista.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 import hashlib
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from praxeon.domain.interfaces import ReasoningProvider
 from praxeon.domain.models import (
@@ -49,15 +49,15 @@ class Navigator:
     def __init__(
         self,
         provider: ReasoningProvider,
-        policy_engine: Optional[PolicyEngine] = None,
-        executor: Optional[SecureExecutor] = None,
-        evidence_engine: Optional[EvidenceEngine] = None,
-        risk_engine: Optional[RiskEngine] = None,
-        checkpoint_manager: Optional[CheckpointManager] = None,
-        completion_verifier: Optional[CompletionVerifier] = None,
-        event_bus: Optional[EventBus] = None,
+        policy_engine: PolicyEngine | None = None,
+        executor: SecureExecutor | None = None,
+        evidence_engine: EvidenceEngine | None = None,
+        risk_engine: RiskEngine | None = None,
+        checkpoint_manager: CheckpointManager | None = None,
+        completion_verifier: CompletionVerifier | None = None,
+        event_bus: EventBus | None = None,
         shadow_mode: bool = False,
-        model_name: Optional[str] = None,
+        model_name: str | None = None,
     ):
         self.provider = provider
         self.policy_engine = policy_engine or PolicyEngine()
@@ -74,19 +74,19 @@ class Navigator:
         self.shadow_mode = shadow_mode
         self.model_name: str = str(model_name or getattr(self.provider, "model", None) or "deepseek-r1-7b")
 
-        self.state: Optional[SessionState] = None
-        self.audit_receipts: List[DecisionReceipt] = []
-        self.efficiency_records: List[StepEfficiencyRecord] = []
-        self._last_timing: Dict[str, float] = {"llm_latency_ms": 0.0, "praxeon_overhead_ms": 0.0}
+        self.state: SessionState | None = None
+        self.audit_receipts: list[DecisionReceipt] = []
+        self.efficiency_records: list[StepEfficiencyRecord] = []
+        self._last_timing: dict[str, float] = {"llm_latency_ms": 0.0, "praxeon_overhead_ms": 0.0}
 
     @property
-    def router_telemetry(self) -> Optional[Any]:
+    def router_telemetry(self) -> Any | None:
         """Devuelve la telemetría acumulada de enrutamiento si el proveedor es un ConfidenceAwareRouter."""
         if hasattr(self.provider, "get_telemetry"):
             return self.provider.get_telemetry()
         return None
 
-    def start_session(self, goal: Goal, session_id: Optional[str] = None) -> SessionState:
+    def start_session(self, goal: Goal, session_id: str | None = None) -> SessionState:
         """Inicializa una nueva sesión de supervisión formal con checkpoint génesis."""
         sid = session_id or f"sess_{len(self.audit_receipts)}"
         self.state = SessionState(session_id=sid, goal=goal)
@@ -122,10 +122,10 @@ class Navigator:
     def confirm_action(
         self,
         action_id: str,
-        action_hash: Optional[str] = None,
+        action_hash: str | None = None,
         approver_id: str = "operator",
-        ttl_seconds: Optional[float] = 300.0,
-        reason: Optional[str] = None,
+        ttl_seconds: float | None = 300.0,
+        reason: str | None = None,
     ) -> Any:
         """Marca una acción sensible como confirmada explícitamente emitiendo un ticket auditable."""
         return self.policy_engine.permission_manager.confirm_action(
@@ -136,14 +136,14 @@ class Navigator:
             reason=reason,
         )
 
-    def is_action_confirmed(self, action_id: str, action_hash: Optional[str] = None) -> bool:
+    def is_action_confirmed(self, action_id: str, action_hash: str | None = None) -> bool:
         """Verifica si una acción cuenta con confirmación del operador humano."""
         return self.policy_engine.permission_manager.is_action_confirmed(action_id, action_hash=action_hash)
 
-    def propose(self, actions: List[ActionCandidate]) -> List[ActionCandidate]:
+    def propose(self, actions: list[ActionCandidate]) -> list[ActionCandidate]:
         """Filtra y valida candidatos eliminando herramientas prohibidas en el estado actual."""
         state = self._ensure_session()
-        viable: List[ActionCandidate] = []
+        viable: list[ActionCandidate] = []
         for action in actions:
             tool_name = action.tool_call.tool_name if action.tool_call else None
             if tool_name and tool_name in state.forbidden_tools:
@@ -153,12 +153,12 @@ class Navigator:
 
     def evaluate(
         self,
-        actions: List[ActionCandidate],
-        batch_semantics: Optional[BatchSemantics] = None,
-    ) -> List[Tuple[ActionCandidate, ProviderAssessment, PolicyDecision, DecisionReceipt]]:
+        actions: list[ActionCandidate],
+        batch_semantics: BatchSemantics | None = None,
+    ) -> list[tuple[ActionCandidate, ProviderAssessment, PolicyDecision, DecisionReceipt]]:
         """Evalúa un lote de acciones candidatas produciendo juicios semánticos, decisiones y recibos."""
         state = self._ensure_session()
-        results: List[Tuple[ActionCandidate, ProviderAssessment, PolicyDecision, DecisionReceipt]] = []
+        results: list[tuple[ActionCandidate, ProviderAssessment, PolicyDecision, DecisionReceipt]] = []
 
         is_independent = batch_semantics.independent if batch_semantics else False
         has_diverged = False
@@ -166,7 +166,7 @@ class Navigator:
         # Para cada acción aplicamos el pipeline:
         for action in actions:
             # 1. Comprobar si es un intento de finalización
-            completion_assessment: Optional[CompletionAssessment] = None
+            completion_assessment: CompletionAssessment | None = None
             if self.completion_verifier.is_finish_action(action):
                 completion_assessment = self.completion_verifier.verify(state.goal, state, action)
 
@@ -218,13 +218,13 @@ class Navigator:
     def decide(
         self,
         action: ActionCandidate,
-        assessment: Optional[ProviderAssessment] = None,
-    ) -> Tuple[PolicyDecision, DecisionReceipt]:
+        assessment: ProviderAssessment | None = None,
+    ) -> tuple[PolicyDecision, DecisionReceipt]:
         """Toma la decisión operacional formal para una única acción."""
         state = self._ensure_session()
         t_decide_start = time.perf_counter()
 
-        completion_assessment: Optional[CompletionAssessment] = None
+        completion_assessment: CompletionAssessment | None = None
         if self.completion_verifier.is_finish_action(action):
             completion_assessment = self.completion_verifier.verify(state.goal, state, action)
 
@@ -289,7 +289,7 @@ class Navigator:
         self,
         action: ActionCandidate,
         auto_checkpoint: bool = True,
-    ) -> Tuple[PolicyDecision, Optional[ToolObservation]]:
+    ) -> tuple[PolicyDecision, ToolObservation | None]:
         """Ejecuta un paso normativo completo de supervisión y ejecución:
         
         Proposal -> Evidence -> Risk -> JEV -> Policy -> Decision -> Execution -> Observation.
@@ -426,7 +426,7 @@ class Navigator:
         receipt_dict = receipt.model_dump()
         receipt_dict["is_executed"] = True
         receipt_dict["observation_id"] = f"obs_{len(state.steps)}"
-        receipt_dict["execution_timestamp"] = datetime.now(timezone.utc)
+        receipt_dict["execution_timestamp"] = datetime.now(UTC)
         updated_receipt = DecisionReceipt(**receipt_dict)
 
         if self.audit_receipts:
@@ -499,7 +499,7 @@ class Navigator:
     def get_efficiency_summary(
         self,
         scale: str = "medium",
-        successful_completion: Optional[bool] = None,
+        successful_completion: bool | None = None,
     ) -> SessionEfficiencySummary:
         """Calcula y devuelve el resumen formal de telemetría de eficiencia de la sesión actual."""
         state = self._ensure_session()
@@ -519,8 +519,8 @@ class Navigator:
 
     def rollback(
         self,
-        checkpoint_id: Optional[str] = None,
-        culprit_tool: Optional[str] = None,
+        checkpoint_id: str | None = None,
+        culprit_tool: str | None = None,
         reason: str = "Rollback formal por degradación de trayectoria",
     ) -> SessionState:
         """Restaura el estado al checkpoint indicado o al más reciente, prohibiendo transiciones fallidas."""
@@ -541,6 +541,6 @@ class Navigator:
         self.state = restored_state
         return self.state
 
-    def get_receipts(self) -> List[DecisionReceipt]:
+    def get_receipts(self) -> list[DecisionReceipt]:
         """Devuelve todos los recibos de auditoría emitidos."""
         return list(self.audit_receipts)

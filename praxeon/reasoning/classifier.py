@@ -12,7 +12,7 @@ debe poder llevar a REVIEW. Las barreras deterministas tienen precedencia."
 import hashlib
 import os
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from praxeon.domain.assessment import (
     CommandCategory,
@@ -242,12 +242,12 @@ class CommandClassifier(SyntacticAnalysisMixin):
         re.IGNORECASE)
 
     @classmethod
-    def _delete_targets(cls, op: str) -> Optional[List[str]]:
+    def _delete_targets(cls, op: str) -> list[str] | None:
         """Objetivos de un borrado simple (sin encadenar nada más), o None si no es un borrado reconocible."""
         if not cls._DELETE_VERB.match(op) or cls._SHELL_CONTROL.search(op):
             return None
         rest = cls._DELETE_VERB.sub("", op, count=1)
-        targets: List[str] = []
+        targets: list[str] = []
         take_value = False
         take_skip = False
         for token in re.findall(r"\"[^\"]*\"|'[^']*'|\S+", rest):
@@ -302,13 +302,13 @@ class CommandClassifier(SyntacticAnalysisMixin):
         return quote is None
 
     @classmethod
-    def _overwritten_files(cls, op: str, context: Optional[Dict[str, Any]]) -> List[str]:
+    def _overwritten_files(cls, op: str, context: dict[str, Any] | None) -> list[str]:
         """Ficheros que YA existen y que una redirección `>` del comando vaciaría (auditoría §4.2).
 
         Las rutas relativas se resuelven contra `context["workspace_root"]`; sin él solo se comprueban las absolutas.
         """
         root = (context or {}).get("workspace_root")
-        found: List[str] = []
+        found: list[str] = []
         for match in cls._TRUNCATING_REDIRECT.finditer(op):
             if not cls._outside_quotes(op, match.start()):
                 continue                                                    # `echo "a > b"` no redirige nada
@@ -331,13 +331,13 @@ class CommandClassifier(SyntacticAnalysisMixin):
         targets = cls._delete_targets(op)
         return bool(targets) and all(cls._is_safe_delete_target(t) for t in targets or [])
 
-    def _split_compound_command(self, cmd: str) -> List[str]:
+    def _split_compound_command(self, cmd: str) -> list[str]:
         """Divide un comando compuesto en subcomandos respetando comillas y delimitadores shell."""
         if not any(sep in cmd for sep in ("&&", "||", ";", "\n", "|")):
             return [cmd]
 
-        parts: List[str] = []
-        current: List[str] = []
+        parts: list[str] = []
+        current: list[str] = []
         in_single = False
         in_double = False
         i = 0
@@ -381,10 +381,10 @@ class CommandClassifier(SyntacticAnalysisMixin):
 
     def _classify_compound(
         self,
-        sub_commands: List[str],
+        sub_commands: list[str],
         op_clean: str,
-        tool: Optional[str] = None,
-        context: Optional[Dict[str, Any]] = None,
+        tool: str | None = None,
+        context: dict[str, Any] | None = None,
     ) -> CommandRiskAssessment:
         """Agrega de forma segura y conservadora las evaluaciones de subcomandos encadenados."""
         sub_assessments = [
@@ -400,10 +400,10 @@ class CommandClassifier(SyntacticAnalysisMixin):
 
     def _aggregate(
         self,
-        sub_assessments: List[CommandRiskAssessment],
+        sub_assessments: list[CommandRiskAssessment],
         op_clean: str,
-        context: Optional[Dict[str, Any]],
-        extra_reasons: Optional[List[str]] = None,
+        context: dict[str, Any] | None,
+        extra_reasons: list[str] | None = None,
         classifier: str = "deterministic_compound",
         has_redirection: bool = False,
     ) -> CommandRiskAssessment:
@@ -447,7 +447,7 @@ class CommandClassifier(SyntacticAnalysisMixin):
         else:
             overall_cat = CommandCategory.UNKNOWN
 
-        combined_reasons: List[str] = [
+        combined_reasons: list[str] = [
             f"Comando encadenado/compuesto evaluado en {len(sub_assessments)} suboperaciones."
         ]
         for sub in sub_assessments:
@@ -457,7 +457,7 @@ class CommandClassifier(SyntacticAnalysisMixin):
         matched_rules = list(dict.fromkeys(r for sub in sub_assessments for r in sub.matched_rules))
         matched_rules.append("RULE_COMPOUND_COMMAND_EVALUATION")
 
-        ctx_hash = hashlib.sha256(f"{op_clean}|{str(context or {})}".encode("utf-8")).hexdigest()
+        ctx_hash = hashlib.sha256(f"{op_clean}|{str(context or {})}".encode()).hexdigest()
 
         return CommandRiskAssessment(
             operation=op_clean,
@@ -479,9 +479,9 @@ class CommandClassifier(SyntacticAnalysisMixin):
     def classify(
         self,
         operation: str = "",
-        context: Optional[Dict[str, Any]] = None,
-        tool: Optional[str] = None,
-        arguments: Optional[Dict[str, Any]] = None,
+        context: dict[str, Any] | None = None,
+        tool: str | None = None,
+        arguments: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> CommandRiskAssessment:
         """Clasifica contextualmente una operación y produce un CommandRiskAssessment completo."""
@@ -520,8 +520,8 @@ class CommandClassifier(SyntacticAnalysisMixin):
     def _classify_by_segments(
         self,
         op_clean: str,
-        tool: Optional[str],
-        context: Optional[Dict[str, Any]],
+        tool: str | None,
+        context: dict[str, Any] | None,
         atomic_res: CommandRiskAssessment,
     ) -> CommandRiskAssessment:
         """Ruta anterior al análisis sintáctico: divide por operadores (`;`, `&&`, `|`...) y clasifica cada trozo.
@@ -534,7 +534,7 @@ class CommandClassifier(SyntacticAnalysisMixin):
             return self._classify_compound(sub_commands, op_clean=op_clean, tool=tool, context=context)
         return atomic_res
 
-    def _sensitive_read(self, op_clean: str, op_lower: str, ctx_hash: str) -> Optional[CommandRiskAssessment]:
+    def _sensitive_read(self, op_clean: str, op_lower: str, ctx_hash: str) -> CommandRiskAssessment | None:
         """Regla 3b: leer un fichero con credenciales o secretos nunca se aprueba sola como «inspección»."""
         if not any(re.search(pat, op_lower) for pat in self.SENSITIVE_PATH_PATTERNS):
             return None
@@ -549,9 +549,9 @@ class CommandClassifier(SyntacticAnalysisMixin):
     def _classify_atomic(
         self,
         op_clean: str,
-        tool: Optional[str] = None,
-        arguments: Optional[Dict[str, Any]] = None,
-        context: Optional[Dict[str, Any]] = None,
+        tool: str | None = None,
+        arguments: dict[str, Any] | None = None,
+        context: dict[str, Any] | None = None,
     ) -> CommandRiskAssessment:
         """Clasifica un comando o subcomando individual."""
         op_lower = op_clean.lower()
@@ -559,7 +559,7 @@ class CommandClassifier(SyntacticAnalysisMixin):
         if words and words[0] in self.INERT_TEXT_VERBS and not self._SHELL_OPERATORS.search(op_lower):
             op_lower = self._QUOTED.sub('""', op_lower)
         context_str = str(context or {})
-        ctx_hash = hashlib.sha256(f"{op_clean}|{context_str}".encode("utf-8")).hexdigest()
+        ctx_hash = hashlib.sha256(f"{op_clean}|{context_str}".encode()).hexdigest()
 
         # Operación vacía o de ciclo de vida conocida (ej. finish)
         if not op_clean or op_lower.startswith("finish") or tool == "finish":

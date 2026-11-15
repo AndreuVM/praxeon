@@ -436,7 +436,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_Dict_str__Any__"
+                  "$ref": "#/components/schemas/APIResponse_dict_str__Any__"
                 }
               }
             }
@@ -527,7 +527,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_Dict_str__Any__"
+                  "$ref": "#/components/schemas/APIResponse_dict_str__Any__"
                 }
               }
             }
@@ -618,7 +618,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_Dict_str__Any__"
+                  "$ref": "#/components/schemas/APIResponse_dict_str__Any__"
                 }
               }
             }
@@ -727,7 +727,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_Dict_str__Any__"
+                  "$ref": "#/components/schemas/APIResponse_dict_str__Any__"
                 }
               }
             }
@@ -899,7 +899,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_List_SessionSummaryResponse__"
+                  "$ref": "#/components/schemas/APIResponse_list_SessionSummaryResponse__"
                 }
               }
             }
@@ -1005,7 +1005,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_Dict_str__Any__"
+                  "$ref": "#/components/schemas/APIResponse_dict_str__Any__"
                 }
               }
             }
@@ -1276,7 +1276,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_Dict_str__Any__"
+                  "$ref": "#/components/schemas/APIResponse_dict_str__Any__"
                 }
               }
             }
@@ -1468,7 +1468,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_List_Dict_str__Any___"
+                  "$ref": "#/components/schemas/APIResponse_list_dict_str__Any___"
                 }
               }
             }
@@ -1559,7 +1559,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_Dict_str__Any__"
+                  "$ref": "#/components/schemas/APIResponse_dict_str__Any__"
                 }
               }
             }
@@ -1650,7 +1650,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_Dict_str__Any__"
+                  "$ref": "#/components/schemas/APIResponse_dict_str__Any__"
                 }
               }
             }
@@ -1758,7 +1758,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_Dict_str__Any__"
+                  "$ref": "#/components/schemas/APIResponse_dict_str__Any__"
                 }
               }
             }
@@ -1866,7 +1866,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_Dict_str__Any__"
+                  "$ref": "#/components/schemas/APIResponse_dict_str__Any__"
                 }
               }
             }
@@ -1957,7 +1957,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_Dict_str__Any__"
+                  "$ref": "#/components/schemas/APIResponse_dict_str__Any__"
                 }
               }
             }
@@ -2129,7 +2129,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_List_Dict_str__Any___"
+                  "$ref": "#/components/schemas/APIResponse_list_dict_str__Any___"
                 }
               }
             }
@@ -2219,7 +2219,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_Dict_str__Any__"
+                  "$ref": "#/components/schemas/APIResponse_dict_str__Any__"
                 }
               }
             }
@@ -2310,7 +2310,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_Dict_str__Any__"
+                  "$ref": "#/components/schemas/APIResponse_dict_str__Any__"
                 }
               }
             }
@@ -2409,7 +2409,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_Dict_str__Any__"
+                  "$ref": "#/components/schemas/APIResponse_dict_str__Any__"
                 }
               }
             }
@@ -2510,7 +2510,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_Dict_str__Any__"
+                  "$ref": "#/components/schemas/APIResponse_dict_str__Any__"
                 }
               }
             }
@@ -2611,7 +2611,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_Dict_str__Any__"
+                  "$ref": "#/components/schemas/APIResponse_dict_str__Any__"
                 }
               }
             }
@@ -2700,7 +2700,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_List_Dict_str__Any___"
+                  "$ref": "#/components/schemas/APIResponse_list_dict_str__Any___"
                 }
               }
             }
@@ -2800,7 +2800,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_Dict_str__Any__"
+                  "$ref": "#/components/schemas/APIResponse_dict_str__Any__"
                 }
               }
             }
@@ -2908,7 +2908,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_List_Dict_str__Any___"
+                  "$ref": "#/components/schemas/APIResponse_list_dict_str__Any___"
                 }
               }
             }
@@ -3459,7 +3459,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_Dict_str__Any__"
+                  "$ref": "#/components/schemas/APIResponse_dict_str__Any__"
                 }
               }
             }
@@ -3547,7 +3547,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_Dict_str__Any__"
+                  "$ref": "#/components/schemas/APIResponse_dict_str__Any__"
                 }
               }
             }
@@ -3975,7 +3975,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_List_Dict_str__Any___"
+                  "$ref": "#/components/schemas/APIResponse_list_dict_str__Any___"
                 }
               }
             }
@@ -4065,7 +4065,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_Dict_str__Any__"
+                  "$ref": "#/components/schemas/APIResponse_dict_str__Any__"
                 }
               }
             }
@@ -4156,7 +4156,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_Dict_str__Any__"
+                  "$ref": "#/components/schemas/APIResponse_dict_str__Any__"
                 }
               }
             }
@@ -4247,7 +4247,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_Dict_str__Any__"
+                  "$ref": "#/components/schemas/APIResponse_dict_str__Any__"
                 }
               }
             }
@@ -4338,7 +4338,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_Dict_str__Any__"
+                  "$ref": "#/components/schemas/APIResponse_dict_str__Any__"
                 }
               }
             }
@@ -4439,7 +4439,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_Dict_str__Any__"
+                  "$ref": "#/components/schemas/APIResponse_dict_str__Any__"
                 }
               }
             }
@@ -4549,7 +4549,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_Dict_str__Any__"
+                  "$ref": "#/components/schemas/APIResponse_dict_str__Any__"
                 }
               }
             }
@@ -4659,7 +4659,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_Dict_str__Any__"
+                  "$ref": "#/components/schemas/APIResponse_dict_str__Any__"
                 }
               }
             }
@@ -4757,7 +4757,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_Dict_str__Any__"
+                  "$ref": "#/components/schemas/APIResponse_dict_str__Any__"
                 }
               }
             }
@@ -4858,7 +4858,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_Dict_str__Any__"
+                  "$ref": "#/components/schemas/APIResponse_dict_str__Any__"
                 }
               }
             }
@@ -4968,7 +4968,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_Dict_str__Any__"
+                  "$ref": "#/components/schemas/APIResponse_dict_str__Any__"
                 }
               }
             }
@@ -5066,7 +5066,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_Dict_str__Any__"
+                  "$ref": "#/components/schemas/APIResponse_dict_str__Any__"
                 }
               }
             }
@@ -5157,7 +5157,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_Dict_str__Any__"
+                  "$ref": "#/components/schemas/APIResponse_dict_str__Any__"
                 }
               }
             }
@@ -5260,7 +5260,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_Dict_str__Any__"
+                  "$ref": "#/components/schemas/APIResponse_dict_str__Any__"
                 }
               }
             }
@@ -5351,7 +5351,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_Dict_str__Any__"
+                  "$ref": "#/components/schemas/APIResponse_dict_str__Any__"
                 }
               }
             }
@@ -5452,7 +5452,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_Dict_str__Any__"
+                  "$ref": "#/components/schemas/APIResponse_dict_str__Any__"
                 }
               }
             }
@@ -5543,7 +5543,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_Dict_str__Any__"
+                  "$ref": "#/components/schemas/APIResponse_dict_str__Any__"
                 }
               }
             }
@@ -5653,7 +5653,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_Dict_str__Any__"
+                  "$ref": "#/components/schemas/APIResponse_dict_str__Any__"
                 }
               }
             }
@@ -5761,7 +5761,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_Dict_str__Any__"
+                  "$ref": "#/components/schemas/APIResponse_dict_str__Any__"
                 }
               }
             }
@@ -5852,7 +5852,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_Dict_str__Any__"
+                  "$ref": "#/components/schemas/APIResponse_dict_str__Any__"
                 }
               }
             }
@@ -5943,7 +5943,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_Dict_str__Any__"
+                  "$ref": "#/components/schemas/APIResponse_dict_str__Any__"
                 }
               }
             }
@@ -6053,7 +6053,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_Dict_str__Any__"
+                  "$ref": "#/components/schemas/APIResponse_dict_str__Any__"
                 }
               }
             }
@@ -6163,7 +6163,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_Dict_str__Any__"
+                  "$ref": "#/components/schemas/APIResponse_dict_str__Any__"
                 }
               }
             }
@@ -6245,7 +6245,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_List_Dict_str__Any___"
+                  "$ref": "#/components/schemas/APIResponse_list_dict_str__Any___"
                 }
               }
             }
@@ -6352,7 +6352,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_Dict_str__Any__"
+                  "$ref": "#/components/schemas/APIResponse_dict_str__Any__"
                 }
               }
             }
@@ -6433,7 +6433,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_List_Dict_str__Any___"
+                  "$ref": "#/components/schemas/APIResponse_list_dict_str__Any___"
                 }
               }
             }
@@ -6534,7 +6534,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_Dict_str__Any__"
+                  "$ref": "#/components/schemas/APIResponse_dict_str__Any__"
                 }
               }
             }
@@ -6622,7 +6622,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_Dict_str__Any__"
+                  "$ref": "#/components/schemas/APIResponse_dict_str__Any__"
                 }
               }
             }
@@ -6713,7 +6713,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_Dict_str__Any__"
+                  "$ref": "#/components/schemas/APIResponse_dict_str__Any__"
                 }
               }
             }
@@ -6803,7 +6803,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_Dict_str__Any__"
+                  "$ref": "#/components/schemas/APIResponse_dict_str__Any__"
                 }
               }
             }
@@ -6893,7 +6893,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_Dict_str__Any__"
+                  "$ref": "#/components/schemas/APIResponse_dict_str__Any__"
                 }
               }
             }
@@ -6994,7 +6994,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_Dict_str__Any__"
+                  "$ref": "#/components/schemas/APIResponse_dict_str__Any__"
                 }
               }
             }
@@ -7104,7 +7104,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_Dict_str__Any__"
+                  "$ref": "#/components/schemas/APIResponse_dict_str__Any__"
                 }
               }
             }
@@ -7186,7 +7186,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_List_Dict_str__Any___"
+                  "$ref": "#/components/schemas/APIResponse_list_dict_str__Any___"
                 }
               }
             }
@@ -7282,7 +7282,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_Dict_str__Any__"
+                  "$ref": "#/components/schemas/APIResponse_dict_str__Any__"
                 }
               }
             }
@@ -7373,7 +7373,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_Dict_str__Any__"
+                  "$ref": "#/components/schemas/APIResponse_dict_str__Any__"
                 }
               }
             }
@@ -7463,7 +7463,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_Dict_str__Any__"
+                  "$ref": "#/components/schemas/APIResponse_dict_str__Any__"
                 }
               }
             }
@@ -7553,7 +7553,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_Dict_str__Any__"
+                  "$ref": "#/components/schemas/APIResponse_dict_str__Any__"
                 }
               }
             }
@@ -7887,7 +7887,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_Dict_str__Any__"
+                  "$ref": "#/components/schemas/APIResponse_dict_str__Any__"
                 }
               }
             }
@@ -7977,7 +7977,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_Dict_str__Any__"
+                  "$ref": "#/components/schemas/APIResponse_dict_str__Any__"
                 }
               }
             }
@@ -8057,7 +8057,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_Dict_str__Any__"
+                  "$ref": "#/components/schemas/APIResponse_dict_str__Any__"
                 }
               }
             }
@@ -8149,7 +8149,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_Dict_str__Any__"
+                  "$ref": "#/components/schemas/APIResponse_dict_str__Any__"
                 }
               }
             }
@@ -8241,7 +8241,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_Dict_str__Any__"
+                  "$ref": "#/components/schemas/APIResponse_dict_str__Any__"
                 }
               }
             }
@@ -8333,7 +8333,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_Dict_str__Any__"
+                  "$ref": "#/components/schemas/APIResponse_dict_str__Any__"
                 }
               }
             }
@@ -8424,7 +8424,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_Dict_str__Any__"
+                  "$ref": "#/components/schemas/APIResponse_dict_str__Any__"
                 }
               }
             }
@@ -8532,7 +8532,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_Dict_str__Any__"
+                  "$ref": "#/components/schemas/APIResponse_dict_str__Any__"
                 }
               }
             }
@@ -8634,7 +8634,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_Dict_str__Any__"
+                  "$ref": "#/components/schemas/APIResponse_dict_str__Any__"
                 }
               }
             }
@@ -8725,7 +8725,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_Dict_str__Any__"
+                  "$ref": "#/components/schemas/APIResponse_dict_str__Any__"
                 }
               }
             }
@@ -8815,7 +8815,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_Dict_str__Any__"
+                  "$ref": "#/components/schemas/APIResponse_dict_str__Any__"
                 }
               }
             }
@@ -8996,7 +8996,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_Dict_str__Any__"
+                  "$ref": "#/components/schemas/APIResponse_dict_str__Any__"
                 }
               }
             }
@@ -9086,7 +9086,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_Dict_str__Any__"
+                  "$ref": "#/components/schemas/APIResponse_dict_str__Any__"
                 }
               }
             }
@@ -9175,7 +9175,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_Dict_str__Any__"
+                  "$ref": "#/components/schemas/APIResponse_dict_str__Any__"
                 }
               }
             }
@@ -9276,7 +9276,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse_Dict_str__Any__"
+                  "$ref": "#/components/schemas/APIResponse_dict_str__Any__"
                 }
               }
             }
@@ -9674,30 +9674,6 @@
         ],
         "title": "APIResponse[DecisionResponse]"
       },
-      "APIResponse_Dict_str__Any__": {
-        "properties": {
-          "success": {
-            "type": "boolean",
-            "title": "Success",
-            "default": true
-          },
-          "data": {
-            "additionalProperties": true,
-            "type": "object",
-            "title": "Data"
-          },
-          "timestamp": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Timestamp"
-          }
-        },
-        "type": "object",
-        "required": [
-          "data"
-        ],
-        "title": "APIResponse[Dict[str, Any]]"
-      },
       "APIResponse_EventsListResponse_": {
         "properties": {
           "success": {
@@ -9741,59 +9717,6 @@
           "data"
         ],
         "title": "APIResponse[ExecuteDecisionResponse]"
-      },
-      "APIResponse_List_Dict_str__Any___": {
-        "properties": {
-          "success": {
-            "type": "boolean",
-            "title": "Success",
-            "default": true
-          },
-          "data": {
-            "items": {
-              "additionalProperties": true,
-              "type": "object"
-            },
-            "type": "array",
-            "title": "Data"
-          },
-          "timestamp": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Timestamp"
-          }
-        },
-        "type": "object",
-        "required": [
-          "data"
-        ],
-        "title": "APIResponse[List[Dict[str, Any]]]"
-      },
-      "APIResponse_List_SessionSummaryResponse__": {
-        "properties": {
-          "success": {
-            "type": "boolean",
-            "title": "Success",
-            "default": true
-          },
-          "data": {
-            "items": {
-              "$ref": "#/components/schemas/SessionSummaryResponse"
-            },
-            "type": "array",
-            "title": "Data"
-          },
-          "timestamp": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Timestamp"
-          }
-        },
-        "type": "object",
-        "required": [
-          "data"
-        ],
-        "title": "APIResponse[List[SessionSummaryResponse]]"
       },
       "APIResponse_ProvidersCatalogResponse_": {
         "properties": {
@@ -9884,6 +9807,83 @@
           "data"
         ],
         "title": "APIResponse[dict]"
+      },
+      "APIResponse_dict_str__Any__": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success",
+            "default": true
+          },
+          "data": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Data"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Timestamp"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "APIResponse[dict[str, Any]]"
+      },
+      "APIResponse_list_SessionSummaryResponse__": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success",
+            "default": true
+          },
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/SessionSummaryResponse"
+            },
+            "type": "array",
+            "title": "Data"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Timestamp"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "APIResponse[list[SessionSummaryResponse]]"
+      },
+      "APIResponse_list_dict_str__Any___": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success",
+            "default": true
+          },
+          "data": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Data"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Timestamp"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "APIResponse[list[dict[str, Any]]]"
       },
       "AddNodeRequest": {
         "properties": {

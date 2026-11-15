@@ -16,7 +16,8 @@ from __future__ import annotations
 
 import time
 import uuid
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any
+from collections.abc import Callable
 from pydantic import BaseModel, ConfigDict, Field
 
 from praxeon.domain.action import ActionCandidate
@@ -35,7 +36,7 @@ class ThoughtNode(BaseModel):
     model_config = ConfigDict(frozen=False)
 
     thought_id: str
-    parent_id: Optional[str] = None
+    parent_id: str | None = None
     depth: int = 0
     action: ActionCandidate
     heuristic_score: float = 0.5
@@ -43,9 +44,9 @@ class ThoughtNode(BaseModel):
     grounded_score: float = 0.8
     loop_probability: float = 0.0
     status: BranchStatus = BranchStatus.EXPLORING
-    pruning_reason: Optional[str] = None
-    pruning_category: Optional[str] = None
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    pruning_reason: str | None = None
+    pruning_category: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class TreeOfThoughtsConfig(BaseModel):
@@ -72,9 +73,9 @@ class TreeOfThoughtsResult(BaseModel):
 
     success: bool
     root_thought_id: str
-    committed_node: Optional[ThoughtNode] = None
-    committed_path: List[ActionCandidate] = Field(default_factory=list)
-    all_nodes: List[ThoughtNode] = Field(default_factory=list)
+    committed_node: ThoughtNode | None = None
+    committed_path: list[ActionCandidate] = Field(default_factory=list)
+    all_nodes: list[ThoughtNode] = Field(default_factory=list)
     total_thoughts_evaluated: int = 0
     pruned_stagnant_count: int = 0
     pruned_loop_count: int = 0
@@ -91,10 +92,10 @@ class TreeOfThoughtsEngine:
 
     def __init__(
         self,
-        provider: Optional[ReasoningProvider] = None,
-        policy_engine: Optional[Any] = None,
-        pruner: Optional[BranchPruner] = None,
-        config: Optional[TreeOfThoughtsConfig] = None,
+        provider: ReasoningProvider | None = None,
+        policy_engine: Any | None = None,
+        pruner: BranchPruner | None = None,
+        config: TreeOfThoughtsConfig | None = None,
     ):
         if provider is None:
             from praxeon.providers.laya import LayaProvider
@@ -115,7 +116,7 @@ class TreeOfThoughtsEngine:
         self,
         assessment: ProviderAssessment,
         action: ActionCandidate,
-    ) -> Tuple[float, float, float, float]:
+    ) -> tuple[float, float, float, float]:
         """Calcula la puntuación heurística combinada de System-1 (progress, grounded, loop, composite)."""
         prog = float(assessment.progress_probability if assessment.progress_probability is not None else 0.5)
         ground = float(assessment.grounded_probability if assessment.grounded_probability is not None else 0.8)
@@ -147,9 +148,9 @@ class TreeOfThoughtsEngine:
     def evaluate_candidates_top_k(
         self,
         state: SessionState,
-        candidates: List[ActionCandidate],
-        k: Optional[int] = None,
-    ) -> List[Tuple[ActionCandidate, ProviderAssessment, float]]:
+        candidates: list[ActionCandidate],
+        k: int | None = None,
+    ) -> list[tuple[ActionCandidate, ProviderAssessment, float]]:
         """Evalúa un lote de candidatos con System-1 en una pasada y devuelve los Top-K ordenados."""
         if not candidates:
             return []
@@ -157,7 +158,7 @@ class TreeOfThoughtsEngine:
         limit_k = k or self.config.top_k
         # Evaluación en lote por System-1
         assessments = self.provider.evaluate(state, candidates)
-        scored: List[Tuple[ActionCandidate, ProviderAssessment, float]] = []
+        scored: list[tuple[ActionCandidate, ProviderAssessment, float]] = []
 
         for cand, assess in zip(candidates, assessments, strict=False):
             h_score, _, _, _ = self.compute_heuristic_score(assess, cand)
@@ -170,8 +171,8 @@ class TreeOfThoughtsEngine:
     def run_tree_search(
         self,
         initial_state: SessionState,
-        candidate_generator: Callable[[ThoughtNode, SessionState, int], List[ActionCandidate]],
-        goal_checker: Optional[Callable[[ThoughtNode, SessionState], bool]] = None,
+        candidate_generator: Callable[[ThoughtNode, SessionState, int], list[ActionCandidate]],
+        goal_checker: Callable[[ThoughtNode, SessionState], bool] | None = None,
     ) -> TreeOfThoughtsResult:
         """Ejecuta la búsqueda multirruta Tree of Thoughts con selección Top-K y poda de ramas estancadas."""
         t_start = time.perf_counter()
@@ -186,9 +187,9 @@ class TreeOfThoughtsEngine:
             status=BranchStatus.ACTIVE,
         )
 
-        all_nodes: List[ThoughtNode] = [root_node]
-        frontier: List[ThoughtNode] = [root_node]
-        committed_node: Optional[ThoughtNode] = None
+        all_nodes: list[ThoughtNode] = [root_node]
+        frontier: list[ThoughtNode] = [root_node]
+        committed_node: ThoughtNode | None = None
 
         pruned_stagnant = 0
         pruned_loop = 0
@@ -198,7 +199,7 @@ class TreeOfThoughtsEngine:
         depth = 0
         while frontier and depth < self.config.max_depth:
             depth += 1
-            next_frontier_candidates: List[ThoughtNode] = []
+            next_frontier_candidates: list[ThoughtNode] = []
 
             for current_node in frontier:
                 # Comprobar si el pensamiento actual ya cumple los criterios de éxito del objetivo
@@ -314,7 +315,7 @@ class TreeOfThoughtsEngine:
             committed_node.status = BranchStatus.COMMITTED
 
         # Reconstruir la ruta de pensamientos desde el nodo committed hacia la raíz
-        path: List[ActionCandidate] = []
+        path: list[ActionCandidate] = []
         curr = committed_node
         node_map = {n.thought_id: n for n in all_nodes}
         while curr and curr.parent_id:

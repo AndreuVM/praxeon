@@ -8,7 +8,7 @@ Sustituye heurísticas hardcodeadas de strings por inspección de descriptores:
 - Permisos de lectura exclusiva (read_only)
 """
 
-from typing import Any, Dict, Optional
+from typing import Any
 from pydantic import BaseModel
 from praxeon.domain.models import RiskAssessment, RiskLevel
 
@@ -24,9 +24,9 @@ class ToolSpec(BaseModel):
     external_side_effect: bool = False
     destructive: bool = False
     requires_confirmation: bool = False
-    description: Optional[str] = None
+    description: str | None = None
     # Origen externo (p. ej. «mcp:github»). Las herramientas externas con efectos no se auto-confirman en Full Access
-    source: Optional[str] = None
+    source: str | None = None
     auto_confirm: bool = True
 
 
@@ -44,7 +44,7 @@ class ToolRegistry:
     }
 
     def __init__(self, register_defaults: bool = True):
-        self._tools: Dict[str, ToolSpec] = {}
+        self._tools: dict[str, ToolSpec] = {}
         if register_defaults:
             self._register_default_tools()
 
@@ -93,7 +93,7 @@ class ToolRegistry:
         """Alias conveniente para register_tool."""
         self.register_tool(spec)
 
-    def get_tool(self, name: str) -> Optional[ToolSpec]:
+    def get_tool(self, name: str) -> ToolSpec | None:
         """Obtiene la especificación de una herramienta si está registrada o la clasifica dinámicamente."""
         if not name:
             return None
@@ -155,7 +155,7 @@ class ToolRegistry:
             return False
         return not any(a in self._DESTRUCTIVE_FLAGS for a in args)
 
-    def is_observational(self, name: str, tool_args: Optional[Dict[str, Any]] = None) -> bool:
+    def is_observational(self, name: str, tool_args: dict[str, Any] | None = None) -> bool:
         """Determina si la herramienta o comando es puramente observacional / de lectura."""
         if name in ("read_file", "view_file", "list_dir", "grep_search", "search_web", "web_search", "web_fetch", "read_url_content"):
             return True
@@ -168,7 +168,7 @@ class ToolRegistry:
             return False
         return spec.read_only and not spec.external_side_effect
 
-    def assess_risk(self, tool_name: Optional[str]) -> RiskAssessment:
+    def assess_risk(self, tool_name: str | None) -> RiskAssessment:
         """Calcula el RiskAssessment objetivo para una herramienta invocada."""
         if not tool_name:
             # Paso puramente cognitivo (pensamiento interno)

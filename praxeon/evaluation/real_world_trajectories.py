@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import time
 from enum import Enum
-from typing import List, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 from praxeon.domain.models import (
@@ -83,7 +82,7 @@ class RealWorldBenchmarkCatalog:
             ],
         )
 
-        steps: List[TrajectoryStepDefinition] = []
+        steps: list[TrajectoryStepDefinition] = []
 
         # Fase 1: Inspección y diagnóstico (Pasos 0 a 7)
         steps.append(TrajectoryStepDefinition(
@@ -472,7 +471,7 @@ class RealWorldBenchmarkCatalog:
             ],
         )
 
-        steps: List[TrajectoryStepDefinition] = []
+        steps: list[TrajectoryStepDefinition] = []
 
         # Paso 0 a 5: Descubrimiento de fuentes y lectura inicial
         steps.append(TrajectoryStepDefinition(
@@ -676,7 +675,7 @@ class RealWorldBenchmarkCatalog:
         )
 
     @classmethod
-    def get_all_real_world_scenarios(cls) -> List[RealWorldTrajectoryScenario]:
+    def get_all_real_world_scenarios(cls) -> list[RealWorldTrajectoryScenario]:
         """Devuelve el catálogo de escenarios de agentes del mundo real (>30 pasos cada uno)."""
         return [
             cls.get_swebench_django_scenario(),
@@ -692,7 +691,7 @@ class RealWorldTrajectoryRunner:
 
     def run_benchmark(
         self,
-        scenarios: Optional[List[RealWorldTrajectoryScenario]] = None,
+        scenarios: list[RealWorldTrajectoryScenario] | None = None,
         suite_name: str = "Real-World-Agent-Benchmark (SWE-bench / GAIA)",
     ) -> RealWorldTrajectoryReport:
         """Ejecuta la suite de trayectorias reales y calcula métricas de resiliencia y mitigación."""

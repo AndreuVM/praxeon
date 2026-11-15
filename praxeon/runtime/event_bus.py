@@ -9,11 +9,12 @@ Proporciona:
 """
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 import json
 
 import threading
-from typing import Any, Callable, Dict, List, Optional, Set
+from typing import Any, Optional
+from collections.abc import Callable
 
 from praxeon.domain.events import EventType, RuntimeEvent, make_event
 import logging
@@ -112,10 +113,10 @@ class EventStore(SqliteStore):
         self,
         session_id: str,
         type: EventType,
-        payload: Dict[str, Any],
-        parent_id: Optional[str] = None,
-        node_id: Optional[str] = None,
-        decision_id: Optional[str] = None,
+        payload: dict[str, Any],
+        parent_id: str | None = None,
+        node_id: str | None = None,
+        decision_id: str | None = None,
     ) -> RuntimeEvent:
         """Crea y persiste un nuevo evento asignando sequence estrictamente atómico en la transacción (Sección 4.3)."""
         ev = make_event(
@@ -134,7 +135,7 @@ class EventStore(SqliteStore):
         session_id: str,
         after_sequence: int = 0,
         limit: int = 500,
-    ) -> List[RuntimeEvent]:
+    ) -> list[RuntimeEvent]:
         """Recupera eventos ordenados por secuencia monótona estricta."""
         with self._lock:
             conn = self._get_connection()
@@ -152,7 +153,7 @@ class EventStore(SqliteStore):
                     (session_id, after_sequence, limit),
                 )
                 rows = cur.fetchall()
-                results: List[RuntimeEvent] = []
+                results: list[RuntimeEvent] = []
                 for row in rows:
                     (
                         eid, sid, seq, ev_type, ts_str,
@@ -169,7 +170,7 @@ class EventStore(SqliteStore):
                     try:
                         ts = datetime.fromisoformat(ts_str)
                     except Exception:
-                        ts = datetime.now(timezone.utc)
+                        ts = datetime.now(UTC)
 
                     results.append(
 
@@ -194,15 +195,15 @@ class EventStore(SqliteStore):
         session_id: str,
         after_sequence: int = 0,
         limit: int = 500,
-    ) -> List[RuntimeEvent]:
+    ) -> list[RuntimeEvent]:
         """Alias explícito para recuperación de eventos posteriores a una secuencia (gap recovery)."""
         return self.get_events(session_id, after_sequence=after_sequence, limit=limit)
 
-    def get_all_events(self, session_id: str) -> List[RuntimeEvent]:
+    def get_all_events(self, session_id: str) -> list[RuntimeEvent]:
         """Devuelve el stream completo de eventos para una sesión."""
         return self.get_events(session_id, after_sequence=0, limit=100_000)
 
-    def list_sessions(self) -> List[str]:
+    def list_sessions(self) -> list[str]:
         """Obtiene la lista de identificadores de sesiones registradas."""
         with self._lock:
             conn = self._get_connection()
@@ -250,7 +251,7 @@ class EventStore(SqliteStore):
         )
     """
 
-    def session_counters(self, session_id: str) -> Dict[str, Any]:
+    def session_counters(self, session_id: str) -> dict[str, Any]:
         """Contadores del resumen de una sesión: eventos, decisiones por estado, aprobaciones, nodos y último evento."""
         with self._lock:
             conn = self._get_connection()
@@ -263,7 +264,7 @@ class EventStore(SqliteStore):
             finally:
                 self._close_conn(conn)
         last_ts = last_row[0] if last_row else None
-        last: Optional[datetime] = None
+        last: datetime | None = None
         if last_ts:
             try:
                 last = datetime.fromisoformat(last_ts)
@@ -291,12 +292,12 @@ class EventBus:
     _instance: Optional["EventBus"] = None
     _singleton_lock = threading.Lock()
 
-    def __init__(self, store: Optional[EventStore] = None):
+    def __init__(self, store: EventStore | None = None):
         self.store = store or EventStore()
-        self._subscribers: Set[Callable[[RuntimeEvent], Any]] = set()
-        self._session_subscribers: Dict[str, Set[Callable[[RuntimeEvent], Any]]] = {}
-        self._async_queues: Set[asyncio.Queue] = set()
-        self._async_session_queues: Dict[str, Set[asyncio.Queue]] = {}
+        self._subscribers: set[Callable[[RuntimeEvent], Any]] = set()
+        self._session_subscribers: dict[str, set[Callable[[RuntimeEvent], Any]]] = {}
+        self._async_queues: set[asyncio.Queue] = set()
+        self._async_session_queues: dict[str, set[asyncio.Queue]] = {}
         self._lock = threading.Lock()
 
     @classmethod
@@ -315,7 +316,7 @@ class EventBus:
     def subscribe(
         self,
         callback: Callable[[RuntimeEvent], Any],
-        session_id: Optional[str] = None,
+        session_id: str | None = None,
     ) -> Callable[[], None]:
         """Registra un observador síncrono. Devuelve una función para cancelar la suscripción."""
         with self._lock:
@@ -337,7 +338,7 @@ class EventBus:
     def register_async_queue(
         self,
         queue: asyncio.Queue,
-        session_id: Optional[str] = None,
+        session_id: str | None = None,
     ) -> Callable[[], None]:
         """Registra una asyncio.Queue para streaming WebSocket o SSE con aislamiento por sesión."""
         with self._lock:
@@ -362,10 +363,10 @@ class EventBus:
         self,
         session_id: str,
         event_type: EventType,
-        node_id: Optional[str] = None,
-        parent_id: Optional[str] = None,
-        decision_id: Optional[str] = None,
-        payload: Optional[Dict[str, Any]] = None,
+        node_id: str | None = None,
+        parent_id: str | None = None,
+        decision_id: str | None = None,
+        payload: dict[str, Any] | None = None,
     ) -> RuntimeEvent:
         """Crea, numera atómicamente, persiste y distribuye un nuevo evento."""
         ev = make_event(
@@ -434,20 +435,20 @@ class EventBus:
 
         return persisted_event
 
-    def get_events(self, session_id: str, after_sequence: int = 0, limit: int = 500) -> List[RuntimeEvent]:
+    def get_events(self, session_id: str, after_sequence: int = 0, limit: int = 500) -> list[RuntimeEvent]:
         return self.store.get_events(session_id, after_sequence=after_sequence, limit=limit)
 
-    def get_events_after(self, session_id: str, after_sequence: int = 0, limit: int = 500) -> List[RuntimeEvent]:
+    def get_events_after(self, session_id: str, after_sequence: int = 0, limit: int = 500) -> list[RuntimeEvent]:
         """Recupera eventos para gap recovery tras reconexión."""
         return self.store.get_events_after(session_id, after_sequence=after_sequence, limit=limit)
 
-    def get_all_events(self, session_id: str) -> List[RuntimeEvent]:
+    def get_all_events(self, session_id: str) -> list[RuntimeEvent]:
         return self.store.get_all_events(session_id)
 
-    def list_sessions(self) -> List[str]:
+    def list_sessions(self) -> list[str]:
         return self.store.list_sessions()
 
-    def session_counters(self, session_id: str) -> Dict[str, Any]:
+    def session_counters(self, session_id: str) -> dict[str, Any]:
         """Contadores del resumen de una sesión, calculados por el almacén (``EventStore.session_counters``)."""
         return self.store.session_counters(session_id)
 

@@ -23,7 +23,7 @@ import sys
 import threading
 import time
 import uuid
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 from praxeon.policy.egress import EgressMode, EgressPolicy
 from praxeon.runtime.child_env import child_environment, kill_process_tree, process_group_kwargs
@@ -54,7 +54,7 @@ class SandboxExecutionResult(BaseModel):
     sandboxed: bool = True
     tier: SandboxTier = SandboxTier.LOCAL_PROCESS
     fallback_occurred: bool = False
-    container_runtime: Optional[str] = None
+    container_runtime: str | None = None
 
 
 class SandboxAdapter(ABC):
@@ -64,8 +64,8 @@ class SandboxAdapter(ABC):
     def execute_command(
         self,
         command: str,
-        cwd: Optional[str] = None,
-        env: Optional[Dict[str, str]] = None,
+        cwd: str | None = None,
+        env: dict[str, str] | None = None,
         timeout: float = 15.0,
     ) -> SandboxExecutionResult:
         """Ejecuta un comando en un proceso aislado y devuelve el resultado estructurado."""
@@ -100,7 +100,7 @@ class LocalProcessSandbox(SandboxAdapter):
     el modo aislado (`praxeon.runtime.isolation.sandbox.IsolatedSandbox`).
     """
 
-    BLOCKED_ENV_VARS: Set[str] = {
+    BLOCKED_ENV_VARS: set[str] = {
         "TYPESAFE_API_KEY",
         "GEMINI_API_KEY",
         "OPENAI_API_KEY",
@@ -119,7 +119,7 @@ class LocalProcessSandbox(SandboxAdapter):
         "SSH_AUTH_SOCK",
     }
 
-    BLOCKED_NETWORK_COMMANDS: Set[str] = {
+    BLOCKED_NETWORK_COMMANDS: set[str] = {
         "curl",
         "wget",
         "nc",
@@ -147,11 +147,11 @@ class LocalProcessSandbox(SandboxAdapter):
 
     def __init__(
         self,
-        workspace_root: Optional[str] = None,
+        workspace_root: str | None = None,
         allow_external_cwd: bool = False,
         allow_network: bool = False,
-        extra_blocked_vars: Optional[Set[str]] = None,
-        egress_policy: Optional[EgressPolicy] = None,
+        extra_blocked_vars: set[str] | None = None,
+        egress_policy: EgressPolicy | None = None,
     ):
         self.workspace_root = os.path.realpath(workspace_root or os.getcwd())
         self.allow_external_cwd = allow_external_cwd
@@ -162,7 +162,7 @@ class LocalProcessSandbox(SandboxAdapter):
         self.extra_blocked_vars = set(extra_blocked_vars or set())
         self.blocked_vars = self.BLOCKED_ENV_VARS.union(self.extra_blocked_vars)
 
-    def _sanitize_environment(self, custom_env: Optional[Dict[str, str]] = None) -> Dict[str, str]:
+    def _sanitize_environment(self, custom_env: dict[str, str] | None = None) -> dict[str, str]:
         """Limpia las variables de entorno para que el proceso hijo no tenga acceso a claves privadas ni tokens."""
         # Lista blanca: el hijo no hereda el entorno completo del servidor (S-09); después, la lista de bloqueo propia
         clean_env = child_environment(blocked_markers=self.blocked_vars)
@@ -260,12 +260,12 @@ class LocalProcessSandbox(SandboxAdapter):
 
     def _run_bounded_subprocess(
         self,
-        args: List[str],
+        args: list[str],
         cwd: str,
-        env: Dict[str, str],
+        env: dict[str, str],
         timeout: float,
         max_bytes: int = 524288,
-    ) -> Tuple[int, str, bool]:
+    ) -> tuple[int, str, bool]:
         """Ejecuta un proceso hijo con captura de stream acotada para prevenir agotamiento de memoria (DoS)."""
         proc = subprocess.Popen(
             args,
@@ -276,8 +276,8 @@ class LocalProcessSandbox(SandboxAdapter):
             shell=False,
             **process_group_kwargs(),
         )
-        stdout_chunks: List[bytes] = []
-        stderr_chunks: List[bytes] = []
+        stdout_chunks: list[bytes] = []
+        stderr_chunks: list[bytes] = []
         total_bytes = [0]
         overflow = [False]
 
@@ -330,8 +330,8 @@ class LocalProcessSandbox(SandboxAdapter):
     def execute_command(
         self,
         command: str,
-        cwd: Optional[str] = None,
-        env: Optional[Dict[str, str]] = None,
+        cwd: str | None = None,
+        env: dict[str, str] | None = None,
         timeout: float = 15.0,
     ) -> SandboxExecutionResult:
         """Ejecuta un comando en un proceso hijo sanitizado y con timeout forzado."""
@@ -438,7 +438,7 @@ class LocalProcessSandbox(SandboxAdapter):
                 if not self.allow_external_cwd and os.path.commonpath([canon_workspace, post_real]) != canon_workspace:
                     raise SandboxViolation(f"Condición de carrera TOCTOU detectada al leer '{path}'.")
 
-                with open(fd, "r", encoding="utf-8", errors="replace", closefd=False) as f:
+                with open(fd, encoding="utf-8", errors="replace", closefd=False) as f:
                     content = f.read(max_bytes)
                     if len(content) >= max_bytes:
                         content += f"\n\n[... Truncado a {max_bytes} bytes por política de sandbox ...]"
@@ -541,8 +541,8 @@ class DryRunSandbox(SandboxAdapter):
     def execute_command(
         self,
         command: str,
-        cwd: Optional[str] = None,
-        env: Optional[Dict[str, str]] = None,
+        cwd: str | None = None,
+        env: dict[str, str] | None = None,
         timeout: float = 15.0,
     ) -> SandboxExecutionResult:
         return SandboxExecutionResult(
@@ -608,10 +608,10 @@ class ContainerSandboxAdapter(SandboxAdapter):
 
     def __init__(
         self,
-        config: Optional[ContainerSandboxConfig] = None,
-        workspace_root: Optional[str] = None,
+        config: ContainerSandboxConfig | None = None,
+        workspace_root: str | None = None,
         allow_network: bool = False,
-        egress_policy: Optional[EgressPolicy] = None,
+        egress_policy: EgressPolicy | None = None,
     ):
         self.config = config or ContainerSandboxConfig()
         self.workspace_root = os.path.realpath(workspace_root or os.getcwd())
@@ -627,10 +627,10 @@ class ContainerSandboxAdapter(SandboxAdapter):
         self.runtime_binary = self._detect_runtime()
 
     # Resultado de `<runtime> version` por binario y momento: no se repite en cada comando (tarda cientos de ms)
-    _availability: Dict[str, Tuple[bool, float]] = {}
+    _availability: dict[str, tuple[bool, float]] = {}
     AVAILABILITY_TTL = 60.0
 
-    def _detect_runtime(self) -> Optional[str]:
+    def _detect_runtime(self) -> str | None:
         if self.config.runtime_binary and self.config.runtime_binary != "auto":
             return self.config.runtime_binary if shutil.which(self.config.runtime_binary) else None
         for candidate in ("docker", "podman"):
@@ -663,8 +663,8 @@ class ContainerSandboxAdapter(SandboxAdapter):
     def execute_command(
         self,
         command: str,
-        cwd: Optional[str] = None,
-        env: Optional[Dict[str, str]] = None,
+        cwd: str | None = None,
+        env: dict[str, str] | None = None,
         timeout: float = 15.0,
     ) -> SandboxExecutionResult:
         cmd_str = (command or "").strip()
@@ -816,9 +816,9 @@ class WasmSandboxConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     memory_limit_bytes: int = 64 * 1024 * 1024  # 64 MB
-    fuel_limit: Optional[int] = 100_000_000
+    fuel_limit: int | None = 100_000_000
     timeout: float = 10.0
-    workspace_root: Optional[str] = None
+    workspace_root: str | None = None
     allow_wasi_fs: bool = True
     allow_network: bool = False
     emulation_mode: str = "auto"  # "auto", "native_only", "emulated_only"
@@ -835,8 +835,8 @@ class WasmSandbox(SandboxAdapter):
 
     def __init__(
         self,
-        config: Optional[WasmSandboxConfig] = None,
-        workspace_root: Optional[str] = None,
+        config: WasmSandboxConfig | None = None,
+        workspace_root: str | None = None,
     ) -> None:
         self.config = config or WasmSandboxConfig()
         self.workspace_root = os.path.abspath(workspace_root or self.config.workspace_root or get_default_workspace_root())
@@ -859,9 +859,9 @@ class WasmSandbox(SandboxAdapter):
     def execute_wasm(
         self,
         module_bytes_or_path: Any,
-        args: Optional[List[str]] = None,
+        args: list[str] | None = None,
         stdin_content: str = "",
-        timeout: Optional[float] = None,
+        timeout: float | None = None,
     ) -> SandboxExecutionResult:
         """Ejecuta un módulo WebAssembly con WASI confinado."""
         start_t = time.perf_counter()
@@ -944,8 +944,8 @@ class WasmSandbox(SandboxAdapter):
     def execute_command(
         self,
         command: str,
-        cwd: Optional[str] = None,
-        env: Optional[Dict[str, str]] = None,
+        cwd: str | None = None,
+        env: dict[str, str] | None = None,
         timeout: float = 10.0,
     ) -> SandboxExecutionResult:
         """Ejecuta un comando en el sandbox WASI o confinado en el entorno ligero."""

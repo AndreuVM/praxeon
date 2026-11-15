@@ -13,7 +13,7 @@ import re
 import threading
 import time
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 import logging
 
 logger = logging.getLogger(__name__)
@@ -35,7 +35,7 @@ _SECRET_PATTERNS = (
 )
 
 
-def trace_path() -> Optional[Path]:
+def trace_path() -> Path | None:
     value = (os.getenv(TRACE_ENV) or "").strip()
     if not value or value.lower() in ("0", "false", "no", "off"):
         return None
@@ -60,14 +60,14 @@ def redact(text: str) -> str:
 
 
 def record_supervisor_step(*, state: str, questions: Any, primitives: Any, ctx: Any, provider: str, backend: str,
-                           extra: Optional[Dict[str, Any]] = None) -> None:
+                           extra: dict[str, Any] | None = None) -> None:
     """Añade una fila al volcado si está activado. Nunca falla: el volcado no puede romper una decisión."""
     path = trace_path()
     if path is None:
         return
     try:
         cand = getattr(ctx, "candidate_action", None) or {}
-        row: Dict[str, Any] = {
+        row: dict[str, Any] = {
             "ts": round(time.time(), 3),
             "label": os.getenv(RUN_LABEL_ENV, ""),
             "provider": provider,

@@ -11,7 +11,7 @@ exigidas por la hoja de ruta técnica (Fase 3 / v0.4) y el paper:
 - Datos para Diagramas de Fiabilidad (Reliability Diagrams)
 """
 
-from typing import Any, Dict, List
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -37,9 +37,9 @@ class CalibrationMetrics(BaseModel):
     ece: float  # Expected Calibration Error (0.0..1.0)
     mce: float  # Maximum Calibration Error (0.0..1.0)
     brier_score: float  # Brier Score (0.0..1.0)
-    bins: List[CalibrationBin] = Field(default_factory=list)
+    bins: list[CalibrationBin] = Field(default_factory=list)
 
-    def to_summary_dict(self) -> Dict[str, Any]:
+    def to_summary_dict(self) -> dict[str, Any]:
         """Resumen formateado para reportes y tablas de benchmark."""
         return {
             "Total Muestras": self.total_samples,
@@ -65,12 +65,12 @@ class SelectiveRiskCurve(BaseModel):
     """Curva completa de Cobertura frente a Riesgo Selectivo con AURC."""
     model_config = ConfigDict(frozen=True)
 
-    points: List[SelectiveRiskPoint] = Field(default_factory=list)
+    points: list[SelectiveRiskPoint] = Field(default_factory=list)
     aurc: float  # Area Under the Risk-Coverage Curve
     full_coverage_risk: float  # Riesgo cuando la cobertura es 100% (sin abstención)
     min_risk: float  # Menor riesgo alcanzable aumentando el umbral
 
-    def to_summary_dict(self) -> Dict[str, Any]:
+    def to_summary_dict(self) -> dict[str, Any]:
         return {
             "AURC (Area Under Risk-Coverage)": f"{self.aurc:.4f}",
             "Riesgo Cobertura Total (100%)": f"{self.full_coverage_risk * 100:.1f}%",
@@ -83,7 +83,7 @@ class CalibrationCalculator:
     """Calculador matemático de métricas de calibración y análisis de incertidumbre."""
 
     @classmethod
-    def compute_brier_score(cls, probabilities: List[float], labels: List[bool]) -> float:
+    def compute_brier_score(cls, probabilities: list[float], labels: list[bool]) -> float:
         """Calcula el Brier Score medio sobre las predicciones probabilísticas.
         
         Brier = (1/N) * sum((p_i - y_i)^2)
@@ -104,8 +104,8 @@ class CalibrationCalculator:
     @classmethod
     def compute_ece(
         cls,
-        confidences: List[float],
-        labels: List[bool],
+        confidences: list[float],
+        labels: list[bool],
         n_bins: int = 10,
     ) -> CalibrationMetrics:
         """Calcula el Expected Calibration Error (ECE) y Maximum Calibration Error (MCE).
@@ -126,7 +126,7 @@ class CalibrationCalculator:
         brier = cls.compute_brier_score(confidences[:total], labels[:total])
 
         bin_size = 1.0 / n_bins
-        bins: List[CalibrationBin] = []
+        bins: list[CalibrationBin] = []
 
         ece = 0.0
         mce = 0.0
@@ -184,8 +184,8 @@ class CalibrationCalculator:
     @classmethod
     def compute_selective_risk_curve(
         cls,
-        confidences: List[float],
-        labels: List[bool],
+        confidences: list[float],
+        labels: list[bool],
         num_thresholds: int = 21,
     ) -> SelectiveRiskCurve:
         """Genera la curva de Riesgo Selectivo vs Cobertura para clasificación con opción de abstención.
@@ -204,7 +204,7 @@ class CalibrationCalculator:
             )
 
         thresholds = [i / (num_thresholds - 1) for i in range(num_thresholds)]
-        points: List[SelectiveRiskPoint] = []
+        points: list[SelectiveRiskPoint] = []
 
         full_coverage_risk = 0.0
         min_risk = 1.0

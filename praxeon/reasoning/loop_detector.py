@@ -11,7 +11,6 @@ bucle de la acción que propone un agente en vivo, común a todos los supervisor
 """
 
 import json
-from typing import List, Optional, Set
 from praxeon.domain.models import ActionCandidate
 from praxeon.models.schema import (
     ConvergenceAnomaly,
@@ -31,9 +30,9 @@ class LoopDetector:
 
     def analyze_trajectory(
         self,
-        steps: List[Step],
-        candidate: Optional[ActionCandidate] = None,
-        available_evidence_claims: Optional[Set[str]] = None,
+        steps: list[Step],
+        candidate: ActionCandidate | None = None,
+        available_evidence_claims: set[str] | None = None,
     ) -> LoopReport:
         """Diagnostica de forma integral la trayectoria segregando las dimensiones analíticas."""
         if not steps and not candidate:
@@ -43,10 +42,10 @@ class LoopDetector:
         convergence = ConvergenceAnomaly.NONE
         grounding = GroundingAnomaly.NONE
         instrumental = InstrumentalRiskAnomaly.NONE
-        cycle_nodes: List[str] = []
+        cycle_nodes: list[str] = []
         severity = 0
-        explanation_parts: List[str] = []
-        culprit_tool: Optional[str] = None
+        explanation_parts: list[str] = []
+        culprit_tool: str | None = None
 
         # 1. Dimensión de Convergencia: Detección de repetición unihop y ciclos
         recent_steps = steps[-self.history_window:] if len(steps) > self.history_window else steps

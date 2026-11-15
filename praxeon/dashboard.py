@@ -6,7 +6,7 @@ import json
 import os
 import sys
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 # UTF-8 en terminales Windows
 if sys.platform == "win32":
@@ -61,7 +61,7 @@ def render_noul_bar(prob: float, width: int = 16) -> str:
 class PraxeonDashboard:
     """Gestor del visualizador CLI de supervisión cognitiva basado en TypeSafe AI y LAYA (REF-01)."""
 
-    def __init__(self, goal: str, model_name: str = "Gemini / Antigravity", config: Optional[PraxeonConfig] = None):
+    def __init__(self, goal: str, model_name: str = "Gemini / Antigravity", config: PraxeonConfig | None = None):
 
         self.goal = goal
         self.model_name = model_name
@@ -96,11 +96,11 @@ class PraxeonDashboard:
         self.progress_score = "SIGNIFICANT_PROGRESS"
         self.diagnostic_type = "NONE"
         self.explanation = "Sistema en espera de candidatos..."
-        self.directive_text: Optional[str] = None
-        self.directive_level: Optional[str] = None
+        self.directive_text: str | None = None
+        self.directive_level: str | None = None
 
         # Historial de nodos para el DAG/Tree
-        self.step_history: List[Dict[str, Any]] = []
+        self.step_history: list[dict[str, Any]] = []
 
     def make_header(self) -> Panel:
         """Renderiza el banner superior de la consola."""
@@ -448,7 +448,7 @@ def _execute_single_demo_task(goal: str) -> PraxeonDashboard:
     return dash
 
 
-def run_visual_demo(task: Optional[str] = None, once: bool = False):
+def run_visual_demo(task: str | None = None, once: bool = False):
     """Ejecuta una demostración visual interactiva continua del trabajo conjunto Agente ⇄ TypeSafe AI."""
     console.print(Panel(
         "[bold cyan]🚀 JEV Reasoning Navigator ⇄ TypeSafe AI (System One)[/]\n"
@@ -505,7 +505,7 @@ class _DashboardMission(TerminalMission):
     def __init__(self, dash: "PraxeonDashboard"):
         super().__init__(on_event=self._on_event, approver=self._ask)
         self.dash = dash
-        self.live: Optional[Live] = None
+        self.live: Live | None = None
 
     def run(self, goal: str, **kwargs: Any) -> LiveTaskResult:
         with Live(self.dash.generate_layout(), console=console, refresh_per_second=4, screen=False) as live:
@@ -570,14 +570,14 @@ class _DashboardMission(TerminalMission):
 def _execute_single_live_task(
     goal: str,
     max_steps: int = 25,
-    model_name: Optional[str] = None,
-    config: Optional[PraxeonConfig] = None,
-    session_context: Optional[SessionContextManager] = None,
-    middleware: Optional[Any] = None,
-    provider: Optional[str] = None,
-    base_url: Optional[str] = None,
-    api_key: Optional[str] = None,
-) -> Tuple[bool, Optional[str], JEVDashboard, int, SessionContextManager, Optional[Any]]:
+    model_name: str | None = None,
+    config: PraxeonConfig | None = None,
+    session_context: SessionContextManager | None = None,
+    middleware: Any | None = None,
+    provider: str | None = None,
+    base_url: str | None = None,
+    api_key: str | None = None,
+) -> tuple[bool, str | None, JEVDashboard, int, SessionContextManager, Any | None]:
     """Ejecuta una tarea en vivo como misión del runtime (bucle canónico) y la pinta en el dashboard.
 
     ``middleware`` se acepta por compatibilidad y ya no interviene: la supervisión es la del runtime.
@@ -608,7 +608,7 @@ def _execute_single_live_task(
 def _display_task_results(
     goal: str,
     task_finished: bool,
-    final_summary: Optional[str],
+    final_summary: str | None,
     dash: JEVDashboard,
     max_steps: int,
     turn: int,
@@ -663,14 +663,14 @@ def _display_task_results(
 
 
 def run_visual_live(
-    task: Optional[str] = None,
+    task: str | None = None,
     max_steps: int = 25,
-    model_name: Optional[str] = None,
-    config: Optional[PraxeonConfig] = None,
+    model_name: str | None = None,
+    config: PraxeonConfig | None = None,
     once: bool = False,
-    provider: Optional[str] = None,
-    base_url: Optional[str] = None,
-    api_key: Optional[str] = None,
+    provider: str | None = None,
+    base_url: str | None = None,
+    api_key: str | None = None,
 ):
     """Ejecuta una sesión interactiva continua con el agente LLM y el supervisor TypeSafe AI / PRAXEON."""
     console.print(Panel(

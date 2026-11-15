@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 
 
 import logging
 import os
 import threading
 import time
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
+from collections.abc import Callable
 import uuid
 
 logger = logging.getLogger("praxeon.server.dependencies")
@@ -55,14 +56,14 @@ class MissionRuntimeMixin:
     # EJECUCIÓN INTERACTIVA EN TIEMPO REAL (Live Mission Runner)
     # =========================================================================
 
-    def _await_human_decision(self, decision_id: str, mission: Dict[str, Any]) -> Optional[str]:
+    def _await_human_decision(self, decision_id: str, mission: dict[str, Any]) -> str | None:
         """Espera la resolución humana de una decisión en REVIEW (hasta `approval_timeout_seconds`, 10 min por defecto).
 
         Devuelve "ALLOW", "BLOCKED" o None si sigue pendiente (tiempo agotado o misión detenida).
         """
         timeout = float(mission.get("approval_timeout_seconds") or 600.0)
         deadline = time.time() + timeout
-        status: Optional[str] = None
+        status: str | None = None
         while time.time() < deadline and not mission.get("stopped"):
             with self._lock:
                 record = self._decisions.get(decision_id)
@@ -78,25 +79,25 @@ class MissionRuntimeMixin:
     def start_mission(
         self,
         goal: str,
-        session_id: Optional[str] = None,
+        session_id: str | None = None,
         agent_name: str = "CodingAgent",
-        execution_mode: Optional[str] = None,
-        workspace_root: Optional[str] = None,
+        execution_mode: str | None = None,
+        workspace_root: str | None = None,
         llm_provider: str = "simulator",
-        llm_model: Optional[str] = None,
-        api_key: Optional[str] = None,
-        base_url: Optional[str] = None,
+        llm_model: str | None = None,
+        api_key: str | None = None,
+        base_url: str | None = None,
         supervisor: str = "laya",
-        decision_model: Optional[Any] = None,
+        decision_model: Any | None = None,
         max_steps: int = 25,
         step_delay_ms: int = 900,
         autonomous: bool = False,
         allow_unattended_execution: bool = False,
         llm_failure_policy: str = "synthetic_fallback",
-        chat_history: Optional[List[Dict[str, str]]] = None,
-        metadata: Optional[Dict[str, Any]] = None,
-        workflow_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        chat_history: list[dict[str, str]] | None = None,
+        metadata: dict[str, Any] | None = None,
+        workflow_id: str | None = None,
+    ) -> dict[str, Any]:
         """Inicia una misión interactiva supervisada en tiempo real.
 
         Con `workflow_id` (un workflow activo) el grafo gobierna la tarea: ver `WorkflowMissionDriver`.
@@ -127,7 +128,7 @@ class MissionRuntimeMixin:
             )
 
         # Resolver DecisionModelConfig y DecisionRuntime aislado para esta misión
-        cfg: Optional[DecisionModelConfig] = None
+        cfg: DecisionModelConfig | None = None
         if isinstance(decision_model, DecisionModelConfig):
             cfg = decision_model
         elif isinstance(decision_model, dict):
@@ -138,7 +139,7 @@ class MissionRuntimeMixin:
         if not cfg:
             cfg = DecisionModelConfig(provider=supervisor, model_id=supervisor)
 
-        dec_runtime: Optional[DecisionRuntime] = None
+        dec_runtime: DecisionRuntime | None = None
         try:
             dec_runtime = DecisionRuntime.from_config(cfg, registry=default_registry)
             sess_provider = dec_runtime.provider
@@ -265,17 +266,17 @@ class MissionRuntimeMixin:
                 return True
         return False
 
-    def create_checkpoint(self, session_id: str, label: Optional[str] = None) -> Dict[str, Any]:
+    def create_checkpoint(self, session_id: str, label: str | None = None) -> dict[str, Any]:
         """Crea un checkpoint atómico persistente del estado actual de la sesión (delegado en CheckpointCoordinator)."""
         return self.checkpoint_coordinator.create_checkpoint(session_id=session_id, label=label)
 
     def rollback_session(
         self,
         session_id: str,
-        checkpoint_id: Optional[str] = None,
-        culprit_tool: Optional[str] = None,
+        checkpoint_id: str | None = None,
+        culprit_tool: str | None = None,
         reason: str = "Rollback formal por degradación de trayectoria",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Revierte físicamente el estado de una sesión al checkpoint especificado o al más reciente (delegado en CheckpointCoordinator)."""
         return self.checkpoint_coordinator.rollback_session(
             session_id=session_id,
@@ -287,10 +288,10 @@ class MissionRuntimeMixin:
     def _rollback_session_impl(
         self,
         session_id: str,
-        checkpoint_id: Optional[str] = None,
-        culprit_tool: Optional[str] = None,
+        checkpoint_id: str | None = None,
+        culprit_tool: str | None = None,
         reason: str = "Rollback formal por degradación de trayectoria",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Implementación interna de reversión de sesión."""
         state = self.state_store.load_state(session_id)
         if not state:
@@ -334,7 +335,7 @@ class MissionRuntimeMixin:
             for d_id in to_remove:
                 self._decisions.pop(d_id, None)
 
-        now_iso = datetime.now(timezone.utc).isoformat()
+        now_iso = datetime.now(UTC).isoformat()
         self.event_bus.emit(
             session_id=session_id,
             event_type=EventType.INTERVENTION_APPLIED,
@@ -371,13 +372,13 @@ class MissionRuntimeMixin:
         }
 
 
-    def _run_mission_worker(self, mission: Dict[str, Any]) -> None:
+    def _run_mission_worker(self, mission: dict[str, Any]) -> None:
         """Worker asíncrono delegado en SessionLifecycleCoordinator."""
         return self.session_coordinator.run_mission_worker(mission)
 
     def _run_llm_loop(
         self,
-        mission: Dict[str, Any],
+        mission: dict[str, Any],
         agent_llm: Any,
         *,
         goal: str,
@@ -385,16 +386,16 @@ class MissionRuntimeMixin:
         delay_sec: float,
         provider_name: str,
         session_mode: str,
-        system_prompt: Optional[str] = None,
+        system_prompt: str | None = None,
         id_prefix: str = "",
-        root_id: Optional[str] = None,
+        root_id: str | None = None,
         owns_session: bool = True,
         role_preamble: str = "",
-        tool_filter: Optional[Callable[[str], Optional[str]]] = None,
-        trace: Optional[Dict[str, Any]] = None,
-        start_parent_id: Optional[str] = None,
-        finish_check: Optional[Callable[[str], Optional[str]]] = None,
-    ) -> Dict[str, Any]:
+        tool_filter: Callable[[str], str | None] | None = None,
+        trace: dict[str, Any] | None = None,
+        start_parent_id: str | None = None,
+        finish_check: Callable[[str], str | None] | None = None,
+    ) -> dict[str, Any]:
         """Bucle ReAct supervisado de un agente (Thought/Action -> política -> ejecución -> observación).
 
         Lo usa la misión completa (`owns_session=True`, comportamiento histórico) y cada nodo de un workflow
@@ -430,7 +431,7 @@ class MissionRuntimeMixin:
         )
         return AgentLoop(ctx).run()
 
-    def _run_workflow_mission(self, mission: Dict[str, Any], base_llm: Any, session_mode: str) -> bool:
+    def _run_workflow_mission(self, mission: dict[str, Any], base_llm: Any, session_mode: str) -> bool:
         """Ejecuta la tarea siguiendo el workflow: el grafo manda y cada agente trabaja dentro de su nodo."""
         from praxeon import agent_llm as llm_mod
         from praxeon.agents.definition import ModelConfig
@@ -442,7 +443,7 @@ class MissionRuntimeMixin:
             self._report_workflow_failure(sid, f"Workflow '{mission['workflow_id']}' no encontrado.")
             return False
 
-        own_llms: Dict[Any, Any] = {}
+        own_llms: dict[Any, Any] = {}
 
         def llm_for_agent(agent: Any) -> Any:
             """El agente usa su propio proveedor/modelo si lo personalizó; si no, el que eligió el usuario al lanzar."""
@@ -509,7 +510,7 @@ class MissionRuntimeMixin:
             payload={"intervention": "WORKFLOW_FAILED", "message": message, "fatal": True},
         )
 
-    def _run_mission_worker_impl(self, mission: Dict[str, Any]) -> None:
+    def _run_mission_worker_impl(self, mission: dict[str, Any]) -> None:
         """Implementación del worker asíncrono de misiones interactivas."""
         from praxeon.agent_llm import BaseAgentLLM, SimulatedAgentLLM, create_agent_llm
 
@@ -536,7 +537,7 @@ class MissionRuntimeMixin:
         time.sleep(0.4)
 
         # 1. Intentar inicializar cliente LLM real si se solicitó un proveedor online/local
-        agent_llm: Optional[BaseAgentLLM] = None
+        agent_llm: BaseAgentLLM | None = None
         use_real_llm = False
 
         if provider_name not in SIMULATOR_PROVIDERS:

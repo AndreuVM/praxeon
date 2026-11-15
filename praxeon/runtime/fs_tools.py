@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 MAX_LIST_ENTRIES = 200
 SKIP_DIRS = {".git", "node_modules", "__pycache__", ".venv", "venv", ".idea", ".vscode", ".praxeon_cache", ".jev_cache"}
@@ -14,14 +14,14 @@ WRITE_ALIASES = {"write_file", "write_to_file", "create_file", "save_file", "edi
 CONTENT_KEYS = ("content", "contents", "text", "body", "file_text", "file_content", "code", "diff")
 
 
-def list_directory(path: str, label: str, depth: int = 3, limit: int = MAX_LIST_ENTRIES) -> Tuple[str, bool]:
+def list_directory(path: str, label: str, depth: int = 3, limit: int = MAX_LIST_ENTRIES) -> tuple[str, bool]:
     """Árbol de una carpeta hasta `depth` niveles. Devuelve (texto, éxito)."""
     if not os.path.exists(path):
         return f"La ruta '{label}' NO EXISTE. Comprueba el nombre con list_dir sobre la carpeta superior.", False
     if not os.path.isdir(path):
         return f"'{label}' es un archivo, no una carpeta. Usa read_file para leerlo.", False
 
-    lines: List[str] = []
+    lines: list[str] = []
     truncated = False
 
     def walk(current: str, level: int) -> None:
@@ -47,7 +47,7 @@ def list_directory(path: str, label: str, depth: int = 3, limit: int = MAX_LIST_
     return f"Contenido de '{label}' (hasta {depth} niveles):\n" + "\n".join(lines) + tail, True
 
 
-def content_from_args(args: Dict[str, Any]) -> Optional[str]:
+def content_from_args(args: dict[str, Any]) -> str | None:
     """Texto a escribir en un archivo: acepta `content` y los nombres equivalentes que usan los modelos."""
     for key in CONTENT_KEYS:
         value = args.get(key)

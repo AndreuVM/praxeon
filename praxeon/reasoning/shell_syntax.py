@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import List, Optional
 
 POSIX = "posix"
 POWERSHELL = "powershell"
@@ -90,16 +89,16 @@ class Redirect:
 class SimpleCommand:
     """Un comando simple: asignaciones previas, palabras (la primera es el programa) y redirecciones."""
 
-    words: List[Word] = field(default_factory=list)
-    redirects: List[Redirect] = field(default_factory=list)
-    assignments: List[Word] = field(default_factory=list)
+    words: list[Word] = field(default_factory=list)
+    redirects: list[Redirect] = field(default_factory=list)
+    assignments: list[Word] = field(default_factory=list)
     raw: str = ""
     nested: bool = False           # dentro de una sustitución, subshell o bloque
     piped_input: bool = False      # recibe la salida de otro comando por `|`
     call: bool = False             # PowerShell `& 'programa' args`: la primera palabra es un programa, no un valor
 
     @property
-    def argv(self) -> List[str]:
+    def argv(self) -> list[str]:
         return [w.value for w in self.words]
 
 
@@ -107,11 +106,11 @@ class SimpleCommand:
 class Script:
     """Resultado del análisis: todos los comandos simples, en orden de aparición, incluidos los anidados."""
 
-    commands: List[SimpleCommand]
+    commands: list[SimpleCommand]
     dialect: str
 
 
-def parse(text: str, dialect: Optional[str] = None) -> Script:
+def parse(text: str, dialect: str | None = None) -> Script:
     """Analiza ``text``; ``dialect`` por defecto se deduce del propio texto (``detect_dialect``)."""
     d = dialect or detect_dialect(text)
     return Script(commands=_Parser(text, d, 0).run(), dialect=d)
@@ -120,9 +119,9 @@ def parse(text: str, dialect: Optional[str] = None) -> Script:
 class _Builder:
     def __init__(self, start: int):
         self.start = start
-        self.words: List[Word] = []
-        self.redirects: List[Redirect] = []
-        self.assignments: List[Word] = []
+        self.words: list[Word] = []
+        self.redirects: list[Redirect] = []
+        self.assignments: list[Word] = []
         self.piped_input = False
         self.group = False             # hubo un subshell/bloque `( ... )` o `{ ...; }` en posición de comando
         self.call = False
@@ -135,7 +134,7 @@ class _Builder:
 class _WordBuf:
     def __init__(self, start: int):
         self.start = start
-        self.chars: List[str] = []
+        self.chars: list[str] = []
         self.quoted = False
         self.dynamic = False
 
@@ -153,7 +152,7 @@ class _Parser:
         self.ps = dialect == POWERSHELL
         self.dialect = dialect
         self.depth = depth
-        self.out: List[SimpleCommand] = []
+        self.out: list[SimpleCommand] = []
 
     # ------------------------------------------------------------------------------------------------ utilidades
 
@@ -291,11 +290,11 @@ class _Parser:
 
     # ------------------------------------------------------------------------------------------------ análisis
 
-    def run(self) -> List[SimpleCommand]:
+    def run(self) -> list[SimpleCommand]:
         t, n = self.text, self.n
         cmd = _Builder(0)
-        word: Optional[_WordBuf] = None
-        pending: Optional[tuple] = None          # (op, fd) de una redirección que espera su destino
+        word: _WordBuf | None = None
+        pending: tuple | None = None          # (op, fd) de una redirección que espera su destino
         i = 0
 
         def flush(end: int) -> None:

@@ -11,12 +11,13 @@ Implementa la jerarquía de prioridades de 8 niveles estipulada en la especifica
 8) Historial secundario y archivos (FILE, observaciones antiguas)
 """
 
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any
+from collections.abc import Callable
 from praxeon.context.fragments import ContextFragment, FragmentType, estimate_tokens
 
 
 # Mapeo de categorías a nivel de prioridad (1 es máxima prioridad, 8 es menor)
-DEFAULT_PRIORITY_MAP: Dict[FragmentType, int] = {
+DEFAULT_PRIORITY_MAP: dict[FragmentType, int] = {
     FragmentType.GOAL: 1,
     FragmentType.ENVIRONMENT: 2,
     FragmentType.CONSTRAINT: 3,
@@ -35,10 +36,10 @@ class TokenBudget:
     def __init__(
         self,
         default_max_tokens: int = 2048,
-        priority_map: Optional[Dict[FragmentType, int]] = None,
-        tokenizer: Optional[Callable[[str], int]] = None,
+        priority_map: dict[FragmentType, int] | None = None,
+        tokenizer: Callable[[str], int] | None = None,
         auto_summarize: bool = False,
-        compressor: Optional[Any] = None,
+        compressor: Any | None = None,
     ):
         self.default_max_tokens = default_max_tokens
         self.priority_map = priority_map or dict(DEFAULT_PRIORITY_MAP)
@@ -46,7 +47,7 @@ class TokenBudget:
         self.auto_summarize = auto_summarize
         self.compressor = compressor
 
-    def get_fragment_priority(self, fragment: ContextFragment, index_in_source: int = 0) -> Tuple[int, int]:
+    def get_fragment_priority(self, fragment: ContextFragment, index_in_source: int = 0) -> tuple[int, int]:
         """Calcula una tupla de ordenación (prioridad_categoria, orden_secundario).
         
         Para observaciones (prioridad 6), se premia la recencia (mayor index = menor orden_secundario).
@@ -58,9 +59,9 @@ class TokenBudget:
 
     def allocate(
         self,
-        fragments: List[ContextFragment],
-        max_tokens: Optional[int] = None,
-    ) -> Tuple[List[ContextFragment], bool, int]:
+        fragments: list[ContextFragment],
+        max_tokens: int | None = None,
+    ) -> tuple[list[ContextFragment], bool, int]:
         """Selecciona los fragmentos de mayor valor informativo dentro del presupuesto de tokens.
         
         Si auto_summarize está activo y se produce truncamiento en observaciones o evidencias,
@@ -108,7 +109,7 @@ class TokenBudget:
                     excluded_observations.append(item["fragment"])
 
         # 4. Condensación semántica de fragmentos excluidos si auto_summarize está activo (F2-05)
-        summary_frag: Optional[ContextFragment] = None
+        summary_frag: ContextFragment | None = None
         if (self.auto_summarize or self.compressor) and excluded_observations:
             from praxeon.context.compressor import SemanticContextCompressor
             comp = self.compressor or SemanticContextCompressor()

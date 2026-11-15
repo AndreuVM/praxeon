@@ -1,7 +1,6 @@
 """Módulo de recuperación de errores de cuota/modelo y selección interactiva de LLM."""
 
 import os
-from typing import Optional, Tuple
 from rich.console import Console
 from rich.panel import Panel
 from rich.prompt import Prompt
@@ -23,8 +22,8 @@ AVAILABLE_MODELS = [
 def prompt_model_recovery_menu(
     error_message: str,
     current_model: str,
-    console: Optional[Console] = None,
-) -> Tuple[str, Optional[str]]:
+    console: Console | None = None,
+) -> tuple[str, str | None]:
     """Muestra un menú interactivo cuando la cuota de un proveedor se ha excedido o hay error en el modelo.
 
     Retorna:
@@ -147,7 +146,7 @@ def _persist_api_key_to_env(new_key: str, key_name: str = "GEMINI_API_KEY", env_
         return
 
     try:
-        with open(env_path, "r", encoding="utf-8") as f:
+        with open(env_path, encoding="utf-8") as f:
             lines = f.readlines()
 
         prefix = f"{key_name}="

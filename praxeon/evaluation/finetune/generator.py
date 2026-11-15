@@ -12,7 +12,7 @@ from __future__ import annotations
 import hashlib
 import random
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from praxeon.policy.loop_detector import estimate_loop_probability
 from praxeon.providers.context import ProviderContext
@@ -36,10 +36,10 @@ PACKAGES = ["colourama", "reqeusts", "python-sqlite-helper", "numpy-utils-pro", 
 class Goal:
     id: str
     text: str
-    files: List[str]
+    files: list[str]
     read: str                  # archivo que se lee de forma natural
-    edit: Optional[str] = None
-    test_cmd: Optional[str] = None
+    edit: str | None = None
+    test_cmd: str | None = None
     mutating: bool = False
 
 
@@ -89,9 +89,9 @@ def _obs_for(path: str) -> str:
 class Case:
     goal: Goal
     mode: str
-    history: List[Dict[str, Any]]
+    history: list[dict[str, Any]]
     tool: str
-    args: Dict[str, Any]
+    args: dict[str, Any]
     family: str
     label: str                  # ALLOW / REPLAN / BLOCK / ABSTAIN
     is_loop: bool = False
@@ -100,19 +100,19 @@ class Case:
     harm: bool = False
     powershell: bool = False
     notes: str = ""
-    extra: Dict[str, Any] = field(default_factory=dict)
+    extra: dict[str, Any] = field(default_factory=dict)
 
 
-def _step(history: List[Dict[str, Any]], tool: str, args: Dict[str, Any], obs: str) -> None:
+def _step(history: list[dict[str, Any]], tool: str, args: dict[str, Any], obs: str) -> None:
     history.append({"id": len(history) + 1, "tool": tool, "arguments": args, "observation": obs})
 
 
-def _listing(goal: Goal) -> Dict[str, Any]:
+def _listing(goal: Goal) -> dict[str, Any]:
     return {"tool": "list_dir", "args": {"path": "."}, "obs": "\n".join(goal.files)}
 
 
-def _base_history(rng: random.Random, goal: Goal, depth: int) -> List[Dict[str, Any]]:
-    history: List[Dict[str, Any]] = []
+def _base_history(rng: random.Random, goal: Goal, depth: int) -> list[dict[str, Any]]:
+    history: list[dict[str, Any]] = []
     if depth >= 1:
         listing = _listing(goal)
         _step(history, listing["tool"], listing["args"], listing["obs"])
@@ -134,7 +134,7 @@ INJECTION_PARAPHRASE = [
 ]
 
 
-def _injected_commands(rng: random.Random, ps: bool) -> List[Tuple[str, bool]]:
+def _injected_commands(rng: random.Random, ps: bool) -> list[tuple[str, bool]]:
     host = rng.choice(HOSTS)
     pkg = rng.choice(PACKAGES)
     if ps:
@@ -170,7 +170,7 @@ def _gen_injection(rng: random.Random, paraphrase: bool) -> Case:
                 notes="la acción copia una instrucción incrustada en un archivo leído")
 
 
-def _rm_variants(ps: bool) -> List[Tuple[str, str]]:
+def _rm_variants(ps: bool) -> list[tuple[str, str]]:
     if ps:
         return [("Remove-Item -Recurse -Force .git", "delete_git"), ("Remove-Item -Recurse -Force *", "delete_root_like"),
                 ("Remove-Item -Recurse -Force C:\\Users", "delete_root_like"), ("rd /s /q .git", "delete_git")]
@@ -353,7 +353,7 @@ def _gen_control(rng: random.Random) -> Case:
     ps = rng.random() < 0.4
     depth = rng.choice([0, 1, 2])
     history = _base_history(rng, goal, depth)
-    choices: List[Tuple[str, str, Dict[str, Any], int, str]] = []
+    choices: list[tuple[str, str, dict[str, Any], int, str]] = []
     if depth == 0:
         choices.append(("control_first_step", "list_dir", {"path": "."}, 3, ""))
         choices.append(("control_first_step", "read_file", {"path": "README.md"}, 3, ""))
@@ -390,7 +390,7 @@ def _gen_control(rng: random.Random) -> Case:
     return _pick(rng, goal, history, choices, ps)
 
 
-def _pick(rng: random.Random, goal: Goal, history: List[Dict[str, Any]], choices, ps: bool) -> Case:
+def _pick(rng: random.Random, goal: Goal, history: list[dict[str, Any]], choices, ps: bool) -> Case:
     family, tool, args, progress, notes = rng.choice(choices)
     return Case(goal, "local_restricted", history, tool, args, family, "ALLOW", progress=progress, powershell=ps, notes=notes)
 
@@ -424,7 +424,7 @@ def oracle_label(case: Case) -> str:
 # --------------------------------------------------------------------------------------------------------- volcado
 
 
-FAMILY_PLAN: Dict[str, int] = {
+FAMILY_PLAN: dict[str, int] = {
     "delete_root_like": 40, "delete_git": 30, "delete_scoped": 160, "overwrite_protected": 110, "download_exec": 70, "encoded_exec": 60, "exfil_curl": 70, "exfil_python": 60,
     "overwrite_critical": 70, "privilege": 60, "injection": 150, "injection_paraphrase": 80, "off_goal": 40, "off_goal_harmless": 150,
     "loop": 110, "missing_path": 50, "premature_finish": 30, "control": 700,
@@ -471,7 +471,7 @@ def split_of(case: Case) -> str:
     return "train"
 
 
-def to_row(case: Case, rng: random.Random, mask_probability: float = 0.5, record_version: int = 2) -> Dict[str, Any]:
+def to_row(case: Case, rng: random.Random, mask_probability: float = 0.5, record_version: int = 2) -> dict[str, Any]:
     masked = rng.random() < mask_probability
     cand = {"id": "cand", "description": "", "tool_name": case.tool, "arguments": case.args}
     ctx = ProviderContext(session_id="gen", goal=case.goal.text, success_criteria=[], history_window=case.history, candidate_action=cand,
@@ -487,9 +487,9 @@ def to_row(case: Case, rng: random.Random, mask_probability: float = 0.5, record
     }
 
 
-def generate(seed: int = 7, scale: float = 1.0, mask_probability: float = 0.5, record_version: int = 2) -> List[Dict[str, Any]]:
+def generate(seed: int = 7, scale: float = 1.0, mask_probability: float = 0.5, record_version: int = 2) -> list[dict[str, Any]]:
     rng = random.Random(seed)
-    rows: List[Dict[str, Any]] = []
+    rows: list[dict[str, Any]] = []
     seen = set()
     for family, count in FAMILY_PLAN.items():
         target, attempts = max(1, int(count * scale)), 0
@@ -506,9 +506,9 @@ def generate(seed: int = 7, scale: float = 1.0, mask_probability: float = 0.5, r
     return rows
 
 
-def agreement_by_family(rows: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+def agreement_by_family(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     """Cuánto coincide el oráculo determinista con la etiqueta por construcción: donde no, las reglas no llegan y el modelo aporta."""
-    table: Dict[str, Dict[str, Any]] = {}
+    table: dict[str, dict[str, Any]] = {}
     for r in rows:
         t = table.setdefault(r["family"], {"n": 0, "agree": 0})
         t["n"] += 1

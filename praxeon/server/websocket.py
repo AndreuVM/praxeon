@@ -8,11 +8,11 @@ Canal en tiempo real /v1/sessions/{session_id}/stream con:
 """
 
 import asyncio
-from datetime import date, datetime, timezone
+from datetime import date, datetime, UTC
 from enum import Enum
 import json
 import logging
-from typing import Any, Dict, Optional, Set, Tuple
+from typing import Any
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 
@@ -60,7 +60,7 @@ class WebSocketConnectionManager:
     """Administrador concurrente de conexiones WebSocket agrupadas por sesión."""
 
     def __init__(self):
-        self._active_connections: Dict[str, Set[WebSocket]] = {}
+        self._active_connections: dict[str, set[WebSocket]] = {}
         self._lock = asyncio.Lock()
 
     async def connect(self, session_id: str, websocket: WebSocket) -> None:
@@ -77,7 +77,7 @@ class WebSocketConnectionManager:
                 if not self._active_connections[session_id]:
                     del self._active_connections[session_id]
 
-    async def send_to_session(self, session_id: str, message: Dict[str, Any]) -> None:
+    async def send_to_session(self, session_id: str, message: dict[str, Any]) -> None:
         async with self._lock:
             conns = list(self._active_connections.get(session_id, []))
 
@@ -128,16 +128,16 @@ def _is_origin_allowed(websocket: WebSocket) -> bool:
 
 
 # Almacenamiento concurrente de tickets efímeros de streaming (ticket -> (session_id, expires_at_timestamp))
-_ws_tickets: Dict[str, Tuple[str, float]] = {}
+_ws_tickets: dict[str, tuple[str, float]] = {}
 _ws_ticket_lock = asyncio.Lock()
 
 
 async def issue_ws_ticket(session_id: str, ttl_seconds: float = 60.0) -> str:
     """Emite un ticket efímero criptográficamente seguro de un solo uso para WebSocket."""
     ticket = f"wst_{secrets.token_urlsafe(32)}"
-    expires_at = datetime.now(timezone.utc).timestamp() + ttl_seconds
+    expires_at = datetime.now(UTC).timestamp() + ttl_seconds
     async with _ws_ticket_lock:
-        now = datetime.now(timezone.utc).timestamp()
+        now = datetime.now(UTC).timestamp()
         expired = [t for t, (_, exp) in _ws_tickets.items() if exp < now]
         for t in expired:
             _ws_tickets.pop(t, None)
@@ -154,20 +154,20 @@ async def consume_ws_ticket(ticket: str, session_id: str) -> bool:
         ticket_session, expires_at = data
         if ticket_session != session_id:
             return False
-        now = datetime.now(timezone.utc).timestamp()
+        now = datetime.now(UTC).timestamp()
         return now <= expires_at
 
 
-def is_remote_client(client_host: Optional[str]) -> bool:
+def is_remote_client(client_host: str | None) -> bool:
     return bool(client_host) and client_host.lower() not in ("127.0.0.1", "localhost", "::1", "testclient")
 
 
 @ws_router.post("/v1/sessions/{session_id}/ws-ticket")
 @ws_router.post("/v1/auth/ws-ticket")
 async def create_ws_ticket(
-    session_id: Optional[str] = None,
-    payload: Optional[Dict[str, Any]] = None,
-    api_key: Optional[str] = Depends(verify_api_key),
+    session_id: str | None = None,
+    payload: dict[str, Any] | None = None,
+    api_key: str | None = Depends(verify_api_key),
 ):
     """Genera un ticket efímero de un solo uso para conectarse al canal WebSocket de una sesión."""
     target_session = session_id or (payload.get("session_id") if payload else None)
@@ -186,9 +186,9 @@ async def create_ws_ticket(
 async def websocket_session_stream(
     websocket: WebSocket,
     session_id: str,
-    after_sequence: Optional[int] = None,
-    token: Optional[str] = None,
-    ticket: Optional[str] = None,
+    after_sequence: int | None = None,
+    token: str | None = None,
+    ticket: str | None = None,
 ):
     """Endpoint WebSocket para recibir en tiempo real los eventos de la sesión con gap recovery."""
     # 0. Finding 20: Prevención de CSWSH (Cross-Site WebSocket Hijacking)
@@ -256,11 +256,11 @@ async def websocket_session_stream(
 
     queue: asyncio.Queue = asyncio.Queue(maxsize=1000)
     unregister = service.event_bus.register_async_queue(queue, session_id=session_id)
-    sent_event_ids: Set[str] = set()
+    sent_event_ids: set[str] = set()
 
     try:
         # 1. Determinar after_sequence inicial
-        after_seq_val: Optional[int] = after_sequence
+        after_seq_val: int | None = after_sequence
         if after_seq_val is None and "after_sequence" in websocket.query_params:
             try:
                 after_seq_val = int(websocket.query_params["after_sequence"])

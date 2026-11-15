@@ -8,7 +8,7 @@ evitando el antipatrón de finalización prematura sin pruebas estructuradas de 
 from enum import Enum
 import os
 import re
-from typing import Any, List, Optional, Set, TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 from pydantic import BaseModel, ConfigDict, Field
 from praxeon.domain.goal import CriterionType, Goal, SuccessCriterion
 from praxeon.domain.models import ActionCandidate
@@ -54,7 +54,7 @@ class CriterionEvaluation(BaseModel):
     description: str
     criterion_type: CriterionType
     status: CriterionStatus
-    evidence_ids: List[str] = Field(default_factory=list)
+    evidence_ids: list[str] = Field(default_factory=list)
     rationale: str = ""
 
 
@@ -63,10 +63,10 @@ class CompletionAssessment(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     is_complete: bool
-    satisfied_criteria: List[str] = Field(default_factory=list)
-    missing_criteria: List[str] = Field(default_factory=list)
-    unverified_claims: List[str] = Field(default_factory=list)
-    evaluations: List[CriterionEvaluation] = Field(default_factory=list)
+    satisfied_criteria: list[str] = Field(default_factory=list)
+    missing_criteria: list[str] = Field(default_factory=list)
+    unverified_claims: list[str] = Field(default_factory=list)
+    evaluations: list[CriterionEvaluation] = Field(default_factory=list)
     confidence: float = 1.0
     rationale: str = ""
 
@@ -74,7 +74,7 @@ class CompletionAssessment(BaseModel):
 class CompletionVerifier:
     """Verifica si una acción candidata de tipo finish cumple formalmente las condiciones de éxito."""
 
-    def __init__(self, stop_words: Optional[Set[str]] = None, workspace_root: Optional[str] = None):
+    def __init__(self, stop_words: set[str] | None = None, workspace_root: str | None = None):
         self.stop_words = stop_words or {
             "el", "la", "los", "las", "un", "una", "de", "en", "para", "por", "con", "que", "y", "o", "a",
             "the", "an", "in", "on", "for", "with", "that", "and", "or", "to", "of", "is"
@@ -96,7 +96,7 @@ class CompletionVerifier:
         )
         return any(kw in desc for kw in finish_keywords)
 
-    def _extract_keywords(self, text: str) -> Set[str]:
+    def _extract_keywords(self, text: str) -> set[str]:
         """Extrae términos significativos de un texto para emparejamiento."""
         words = text.lower().replace(",", " ").replace(".", " ").replace(":", " ").split()
         return {w for w in words if len(w) > 2 and w not in self.stop_words}
@@ -105,7 +105,7 @@ class CompletionVerifier:
         self,
         crit: SuccessCriterion,
         state: Any,
-        evidence_claims: List[str],
+        evidence_claims: list[str],
         corpus: str,
     ) -> CriterionEvaluation:
         """Aplica el verificador específico correspondiente al tipo formal de criterio."""
@@ -283,9 +283,9 @@ class CompletionVerifier:
 
         # 4. Evaluar cada criterio tipado
         all_criteria = goal.get_all_criteria()
-        evaluations: List[CriterionEvaluation] = []
-        satisfied: List[str] = []
-        missing: List[str] = []
+        evaluations: list[CriterionEvaluation] = []
+        satisfied: list[str] = []
+        missing: list[str] = []
 
         for crit in all_criteria:
             eval_res = self._evaluate_criterion(crit, state, evidence_claims, corpus)
@@ -297,7 +297,7 @@ class CompletionVerifier:
                 missing.append(crit.description)
 
         # 5. Comprobar que no se hayan producido resultados prohibidos (forbidden_outcomes)
-        forbidden_violations: List[str] = []
+        forbidden_violations: list[str] = []
         for forbidden in goal.forbidden_outcomes:
             forbidden_lower = forbidden.lower()
             forbidden_keywords = self._extract_keywords(forbidden_lower)

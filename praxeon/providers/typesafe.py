@@ -8,7 +8,7 @@ Garantiza el comportamiento fail-safe ante caídas, timeouts y errores de autent
 import logging
 import os
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any
 from praxeon.domain.models import ActionCandidate, ProviderAssessment
 from praxeon.providers.base import BaseReasoningProvider
 from praxeon.providers.resilience import (
@@ -45,7 +45,7 @@ except ImportError:
 TRANSIENT_ERROR_MARKERS = ("timeout", "connection", "502", "503", "504", "reset", "429", "rate", "retry")
 
 
-def create_sdk_client(api_key: Optional[str]) -> Any:
+def create_sdk_client(api_key: str | None) -> Any:
     """Cliente de typesafe-sdk, o None si no hay clave, falta el SDK o no se puede crear (único punto de acceso al SDK)."""
     if not api_key:
         return None
@@ -61,14 +61,14 @@ def create_sdk_client(api_key: Optional[str]) -> Any:
 
 def invoke_system_one(
     client: Any,
-    state: Dict[str, Any],
-    questions: Dict[str, Any],
+    state: dict[str, Any],
+    questions: dict[str, Any],
     model: str,
     max_retries: int = 2,
-    circuit_breaker: Optional[CircuitBreaker] = None,
+    circuit_breaker: CircuitBreaker | None = None,
 ) -> Any:
     """Llama a ``system_one`` reintentando los fallos transitorios con espera exponencial con jitter (y Retry-After)."""
-    last_error: Optional[Exception] = None
+    last_error: Exception | None = None
     for attempt in range(max_retries + 1):
         try:
             res = client.system_one(state=state, questions=questions, model=model)
@@ -94,11 +94,11 @@ class TypeSafeAdapter(BaseReasoningProvider):
 
     def __init__(
         self,
-        api_key: Optional[str] = None,
+        api_key: str | None = None,
         model_name: str = "jev-v1",
         max_retries: int = 2,
         timeout: float = 10.0,
-        circuit_breaker: Optional[CircuitBreaker] = None,
+        circuit_breaker: CircuitBreaker | None = None,
     ):
         self.api_key = api_key or os.getenv("TYPESAFE_API_KEY")
         self.model_name = model_name
@@ -121,8 +121,8 @@ class TypeSafeAdapter(BaseReasoningProvider):
     def evaluate(
         self,
         state: Any,
-        actions: List[ActionCandidate],
-    ) -> List[ProviderAssessment]:
+        actions: list[ActionCandidate],
+    ) -> list[ProviderAssessment]:
         """Evalúa semánticamente una lista de acciones candidatas mediante TypeSafe System One."""
         if not actions:
             return []
@@ -219,7 +219,7 @@ class TypeSafeAdapter(BaseReasoningProvider):
                 progress_prob = 0.20
             is_flagged = bool(flagged_choice != "none" or raw_prob > 0.60)
 
-            assessments: List[ProviderAssessment] = []
+            assessments: list[ProviderAssessment] = []
             for idx, _act in enumerate(actions):
                 is_this_step_flagged = (flagged_choice == f"step_{idx}") or (is_flagged and len(actions) == 1)
                 loop_p = raw_prob if is_this_step_flagged else min(raw_prob, 0.10)
@@ -271,7 +271,7 @@ class TypeSafeAdapter(BaseReasoningProvider):
                 for _ in actions
             ]
 
-    def _invoke_with_retry(self, state: Dict[str, Any], questions: Dict[str, Any]) -> Any:
+    def _invoke_with_retry(self, state: dict[str, Any], questions: dict[str, Any]) -> Any:
         """Ejecuta system_one con reintentos para fallos transitorios y control de CircuitBreaker."""
         return invoke_system_one(self._client, state, questions, self.model_name, self.max_retries, self.circuit_breaker)
 

@@ -16,7 +16,7 @@ _warnings.warn(
 )
 
 import os
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 from rich.table import Table
 
 
@@ -67,7 +67,7 @@ class TrajectoryController:
         self.governance_mode = governance_mode
         self.is_unlimited = (max_steps <= 0)
         self.executed_steps: int = 0
-        self.executed_step_records: List[Dict[str, Any]] = []
+        self.executed_step_records: list[dict[str, Any]] = []
         self.consecutive_blocks: int = 0
         self.interventions_count: int = 0
         self.llm_calls_count: int = 0
@@ -88,7 +88,7 @@ class TrajectoryController:
     def record_step(
         self,
         tool_name: str,
-        tool_args: Dict[str, Any],
+        tool_args: dict[str, Any],
         observation: str,
         thought_text: str = "",
         synthetic_fallback: bool = False,
@@ -115,8 +115,8 @@ class TrajectoryController:
     def register_block_interception(
         self,
         explanation: str,
-        directive_injection: Optional[str] = None,
-    ) -> Tuple[bool, str, Optional[str]]:
+        directive_injection: str | None = None,
+    ) -> tuple[bool, str, str | None]:
         """Registra una intercepción de bloque y evalúa el disparador de Circuit Breaker.
 
         Returns:
@@ -155,7 +155,7 @@ class TrajectoryController:
 
         return (False, directive_text, None)
 
-    def validate_finish_action(self, summary: str, task: str) -> Tuple[bool, str, str]:
+    def validate_finish_action(self, summary: str, task: str) -> tuple[bool, str, str]:
         """Evalúa si la llamada a 'finish' es válida o evasiva/con fuga de meta-diagnóstico.
 
         Returns:
@@ -203,7 +203,7 @@ class TrajectoryController:
         )
         return table
 
-    def get_metrics_summary(self) -> Dict[str, Any]:
+    def get_metrics_summary(self) -> dict[str, Any]:
         """Retorna un diccionario estructurado de métricas de ejecución."""
         return {
             "executed_steps": self.executed_steps,

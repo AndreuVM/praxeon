@@ -3,7 +3,7 @@
 Permite simular respuestas semánticas precisas sin costo de API ni dependencia de red.
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 from praxeon.domain.models import ActionCandidate, ProviderAssessment
 from praxeon.providers.base import BaseReasoningProvider
 
@@ -11,7 +11,7 @@ from praxeon.providers.base import BaseReasoningProvider
 class ReplayProvider(BaseReasoningProvider):
     """Proveedor determinista con escenarios pregrabados y control de disponibilidad."""
 
-    DEFAULT_SCENARIOS: Dict[str, Dict[str, Any]] = {
+    DEFAULT_SCENARIOS: dict[str, dict[str, Any]] = {
         "safe_read": {
             "available": True,
             "confidence": 0.90,
@@ -61,7 +61,7 @@ class ReplayProvider(BaseReasoningProvider):
         default_scenario: str = "safe_read",
         provider_name: str = "replay",
         model_name: str = "replay-mock-v1",
-        trace_path: Optional[str] = None,
+        trace_path: str | None = None,
     ):
         self.provider_name = provider_name
         self.name = provider_name
@@ -70,9 +70,9 @@ class ReplayProvider(BaseReasoningProvider):
         self.trace_path = trace_path
         self.is_available = True
         self.available = True
-        self.action_overrides: Dict[str, ProviderAssessment] = {}
-        self.scenario_queue: List[str] = []
-        self.evaluation_history: List[Dict[str, Any]] = []
+        self.action_overrides: dict[str, ProviderAssessment] = {}
+        self.scenario_queue: list[str] = []
+        self.evaluation_history: list[dict[str, Any]] = []
 
     def set_available(self, available: bool) -> None:
         """Modifica dinámicamente la disponibilidad del proveedor."""
@@ -90,10 +90,10 @@ class ReplayProvider(BaseReasoningProvider):
     def evaluate(
         self,
         state: Any,
-        actions: List[ActionCandidate],
-    ) -> List[ProviderAssessment]:
+        actions: list[ActionCandidate],
+    ) -> list[ProviderAssessment]:
         """Devuelve evaluaciones deterministas para las acciones provistas."""
-        results: List[ProviderAssessment] = []
+        results: list[ProviderAssessment] = []
 
         for action in actions:
             self.evaluation_history.append({

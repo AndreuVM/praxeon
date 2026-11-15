@@ -17,13 +17,13 @@ import functools
 import os
 import shutil
 import subprocess  # nosec B404 - lanza bwrap con argumentos en lista, sin shell
-from typing import Dict, Iterable, List, Optional
+from collections.abc import Iterable
 
 # Se sustituyen por carpetas vacías en memoria dentro del aislamiento: no se usan ficheros temporales del host
 _HIDDEN = ("/home", "/root", "/run", "/tmp", "/var/tmp")  # nosec B108
 
 
-def binary() -> Optional[str]:
+def binary() -> str | None:
     return shutil.which("bwrap")
 
 
@@ -43,8 +43,8 @@ def usable() -> bool:
         return False
 
 
-def wrap(args: List[str], *, workspace_root: str, cwd: str, env: Dict[str, str], allow_network: bool = False,
-         read_paths: Iterable[str] = ()) -> List[str]:
+def wrap(args: list[str], *, workspace_root: str, cwd: str, env: dict[str, str], allow_network: bool = False,
+         read_paths: Iterable[str] = ()) -> list[str]:
     """``args`` envueltos en bwrap con el workspace escribible y el resto del sistema de solo lectura."""
     path = binary()
     if not path:

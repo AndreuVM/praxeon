@@ -7,7 +7,7 @@ SHA-256(session_id + goal_hash + relevant_node_ids + relevant_fragment_hashes +
 """
 
 import hashlib
-from typing import Any, List, Optional
+from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -18,8 +18,8 @@ class ContextFingerprint(BaseModel):
     value: str
     session_id: str
     goal_hash: str
-    relevant_node_ids: List[str] = Field(default_factory=list)
-    fragment_hashes: List[str] = Field(default_factory=list)
+    relevant_node_ids: list[str] = Field(default_factory=list)
+    fragment_hashes: list[str] = Field(default_factory=list)
     policy_context_version: str = "v1.0"
     context_strategy_version: str = "dag_priority_v1"
     model_context_profile: str = "default"
@@ -29,8 +29,8 @@ class ContextFingerprint(BaseModel):
         cls,
         session_id: str,
         goal_hash: str,
-        relevant_node_ids: Optional[List[str]] = None,
-        fragment_hashes: Optional[List[str]] = None,
+        relevant_node_ids: list[str] | None = None,
+        fragment_hashes: list[str] | None = None,
         policy_context_version: str = "v1.0",
         context_strategy_version: str = "dag_priority_v1",
         model_context_profile: str = "default",

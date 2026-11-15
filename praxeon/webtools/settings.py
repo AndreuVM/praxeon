@@ -6,7 +6,7 @@ import json
 import os
 import threading
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 KEY_ENV = "BRAVE_API_KEY"
 PROVIDERS = ("auto", "brave", "duckduckgo")
@@ -24,7 +24,7 @@ class WebSettingsStore:
     """Por defecto el acceso está activado. En Full Access es abierto (cualquier dominio público); en los demás modos solo
     se leen los dominios de la lista. La búsqueda necesita la clave de Brave (guardada aquí o en BRAVE_API_KEY)."""
 
-    def __init__(self, cache_dir: Optional[str] = None) -> None:
+    def __init__(self, cache_dir: str | None = None) -> None:
         self._cache_dir = cache_dir
         self._lock = threading.RLock()
 
@@ -34,7 +34,7 @@ class WebSettingsStore:
 
         return Path(self._cache_dir or resolve_cache_dir()) / "web.json"
 
-    def _load(self) -> Dict[str, Any]:
+    def _load(self) -> dict[str, Any]:
         try:
             raw = json.loads(self.path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
@@ -44,7 +44,7 @@ class WebSettingsStore:
     def enabled(self) -> bool:
         return bool(self._load().get("enabled", True))
 
-    def allowed_domains(self) -> List[str]:
+    def allowed_domains(self) -> list[str]:
         return [d for d in (_clean_domain(x) for x in self._load().get("allowed_domains", [])) if d]
 
     def search_provider(self) -> str:
@@ -55,7 +55,7 @@ class WebSettingsStore:
     def api_key(self) -> str:
         return str(self._load().get("brave_api_key") or os.environ.get(KEY_ENV) or "").strip()
 
-    def public(self) -> Dict[str, Any]:
+    def public(self) -> dict[str, Any]:
         """Estado para la interfaz: nunca incluye la clave."""
         data = self._load()
         own = bool(str(data.get("brave_api_key") or "").strip())
@@ -69,11 +69,11 @@ class WebSettingsStore:
 
     def update(
         self,
-        enabled: Optional[bool] = None,
-        allowed_domains: Optional[List[str]] = None,
-        brave_api_key: Optional[str] = None,
-        search_provider: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        enabled: bool | None = None,
+        allowed_domains: list[str] | None = None,
+        brave_api_key: str | None = None,
+        search_provider: str | None = None,
+    ) -> dict[str, Any]:
         """`brave_api_key`: None conserva la guardada, cadena vacía la borra."""
         if search_provider is not None and search_provider not in PROVIDERS:
             raise ValueError(f"Proveedor de búsqueda desconocido: {search_provider!r} (válidos: {', '.join(PROVIDERS)}).")

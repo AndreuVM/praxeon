@@ -5,7 +5,6 @@ Desacopla formalmente dos capas:
 2. InterventionPlanner: Formula las directivas discursivas, inyecciones de contexto XML y sugerencias de rescate.
 """
 
-from typing import Optional
 from praxeon.config import PraxeonConfig, default_config
 from praxeon.core.state_graph import StateGraph
 from praxeon.domain.models import DecisionStatus, PolicyDecision
@@ -24,13 +23,13 @@ class InterventionPlanner:
 
     @staticmethod
     def plan_intervention(
-        decision: Optional[PolicyDecision],
-        loop_report: Optional[LoopReport],
-        current_step: Optional[Step],
-        target_step_id: Optional[str] = None,
+        decision: PolicyDecision | None,
+        loop_report: LoopReport | None,
+        current_step: Step | None,
+        target_step_id: str | None = None,
         target_desc: str = "Estado previo validado",
-        goal: Optional[str] = None,
-    ) -> Optional[InterventionDirective]:
+        goal: str | None = None,
+    ) -> InterventionDirective | None:
         """Sintetiza la directiva discursiva formal a partir de la decisión y diagnóstico."""
         # Si no hay loop ni rechazo/replanificación, no se requiere directiva
         if (
@@ -127,17 +126,17 @@ class InterventionPlanner:
 class InterventionPolicy:
     """Coordinador de intervención que articula evaluación de políticas y síntesis discursiva."""
 
-    def __init__(self, state_graph: StateGraph, config: Optional[PraxeonConfig] = None):
+    def __init__(self, state_graph: StateGraph, config: PraxeonConfig | None = None):
         self.graph = state_graph
         self.config = config or state_graph.config or default_config
         self.planner = InterventionPlanner()
 
     def evaluate_and_intervene(
         self,
-        current_step: Optional[Step] = None,
-        jev_score: Optional[JEVScore] = None,
-        loop_report: Optional[LoopReport] = None,
-    ) -> Optional[InterventionDirective]:
+        current_step: Step | None = None,
+        jev_score: JEVScore | None = None,
+        loop_report: LoopReport | None = None,
+    ) -> InterventionDirective | None:
         """Evalúa las condiciones y formula directiva discursiva delegando en InterventionPlanner."""
         if loop_report is None or not loop_report.loop_detected:
             # Si no hay loop pero el JEV es crítico (< 0.0)

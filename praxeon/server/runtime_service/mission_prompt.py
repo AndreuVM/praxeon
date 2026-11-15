@@ -14,10 +14,9 @@ from __future__ import annotations
 import os
 import platform
 import sys
-from typing import Optional
 
 
-def describe_system(ws_root: Optional[str]) -> str:
+def describe_system(ws_root: str | None) -> str:
     """Dónde se ejecuta el agente: sistema operativo, shell, directorio de trabajo y separador de rutas."""
     shell = "PowerShell" if sys.platform == "win32" else "bash"
     arch = platform.machine() or ""
@@ -42,6 +41,6 @@ RESPONSE_FORMAT = (
 )
 
 
-def build_mission_system_prompt(ws_root: Optional[str]) -> str:
+def build_mission_system_prompt(ws_root: str | None) -> str:
     """Prompt de sistema de una misión: entorno + formato de respuesta y herramientas. Nada más."""
     return f"Eres un agente de software autónomo.\n{describe_system(ws_root)}\n\n{RESPONSE_FORMAT}"

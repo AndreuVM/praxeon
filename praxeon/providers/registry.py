@@ -11,7 +11,8 @@ from __future__ import annotations
 
 import importlib.util
 import logging
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
+from collections.abc import Callable
 
 from praxeon.domain.decision_provider import (
     DecisionModelConfig,
@@ -33,8 +34,8 @@ class ProviderFactoryEntry:
         self,
         provider_id: str,
         factory: ProviderFactory,
-        required_extra: Optional[str] = None,
-        required_module: Optional[str] = None,
+        required_extra: str | None = None,
+        required_module: str | None = None,
         description: str = "",
         default_backend: str = "local",
     ):
@@ -56,14 +57,14 @@ class DecisionProviderRegistry:
     """Registro unificado y extensible de proveedores de juicio semántico System-1."""
 
     def __init__(self):
-        self._entries: Dict[str, ProviderFactoryEntry] = {}
+        self._entries: dict[str, ProviderFactoryEntry] = {}
 
     def register(
         self,
         provider_id: str,
         factory: ProviderFactory,
-        required_extra: Optional[str] = None,
-        required_module: Optional[str] = None,
+        required_extra: str | None = None,
+        required_module: str | None = None,
         description: str = "",
         default_backend: str = "local",
     ) -> None:
@@ -96,7 +97,7 @@ class DecisionProviderRegistry:
             return False
         return entry.is_module_installed()
 
-    def list_providers(self) -> List[Dict[str, Any]]:
+    def list_providers(self) -> list[dict[str, Any]]:
         """Lista todos los proveedores registrados y su disponibilidad efectiva."""
         results = []
         for pid, entry in sorted(self._entries.items()):
@@ -279,7 +280,7 @@ class UnavailableProvider:
     def is_available(self) -> bool:
         return False
 
-    def evaluate(self, state: Any, actions: List[Any]) -> List[Any]:
+    def evaluate(self, state: Any, actions: list[Any]) -> list[Any]:
         from praxeon.domain.assessment import ProviderAssessment
 
         return [
@@ -303,7 +304,7 @@ class UnavailableProvider:
         )
 
 
-def _cascade_level_config(level: str, raw: Any, default: Dict[str, Any]) -> DecisionModelConfig:
+def _cascade_level_config(level: str, raw: Any, default: dict[str, Any]) -> DecisionModelConfig:
     """Convierte la definición de un nivel (dict o nombre de proveedor) en un DecisionModelConfig."""
     if isinstance(raw, DecisionModelConfig):
         return raw
@@ -316,7 +317,7 @@ def _cascade_level_config(level: str, raw: Any, default: Dict[str, Any]) -> Deci
     return DecisionModelConfig(**data)
 
 
-def _build_cascade_level(reg: "DecisionProviderRegistry", level: str, raw: Any, default: Dict[str, Any]) -> Any:
+def _build_cascade_level(reg: DecisionProviderRegistry, level: str, raw: Any, default: dict[str, Any]) -> Any:
     try:
         cfg = _cascade_level_config(level, raw, default)
     except DecisionProviderError:
@@ -332,7 +333,7 @@ def _build_cascade_level(reg: "DecisionProviderRegistry", level: str, raw: Any, 
         return UnavailableProvider(cfg.provider, str(exc))
 
 
-def _create_cascade_provider(config: DecisionModelConfig, reg: "DecisionProviderRegistry") -> DecisionProvider:
+def _create_cascade_provider(config: DecisionModelConfig, reg: DecisionProviderRegistry) -> DecisionProvider:
     """Cascada en dos niveles: el primero responde si su confianza supera el umbral; si no, escala al segundo."""
     from praxeon.providers.hardware import declare_kev_in_use
     from praxeon.providers.router import ConfidenceAwareRouter, RoutingStrategy

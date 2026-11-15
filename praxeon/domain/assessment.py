@@ -1,7 +1,7 @@
 """Entidades de evaluación semántica de proveedores y análisis de riesgo operacional."""
 
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -10,27 +10,27 @@ class ProviderAssessment(BaseModel):
     model_config = ConfigDict(frozen=True, populate_by_name=True)
 
     provider: str
-    provider_id: Optional[str] = None
-    model: Optional[str] = None
-    model_name: Optional[str] = None
-    model_version: Optional[str] = None
-    backend: Optional[str] = None
+    provider_id: str | None = None
+    model: str | None = None
+    model_name: str | None = None
+    model_version: str | None = None
+    backend: str | None = None
     latency_ms: float = 0.0
-    tokens_evaluated: Optional[int] = None
+    tokens_evaluated: int | None = None
     is_fallback: bool = False
-    degradation_reason: Optional[str] = None
-    calibration_profile: Optional[str] = None
+    degradation_reason: str | None = None
+    calibration_profile: str | None = None
 
     available: bool = True
     confidence: float = 0.0
-    loop_probability: Optional[float] = None
-    grounded_probability: Optional[float] = None
-    progress_probability: Optional[float] = None
-    novelty_probability: Optional[float] = None
-    analytical_jev: Optional[float] = None
-    failure_reason: Optional[str] = None
-    reason_codes: List[str] = Field(default_factory=list)
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    loop_probability: float | None = None
+    grounded_probability: float | None = None
+    progress_probability: float | None = None
+    novelty_probability: float | None = None
+    analytical_jev: float | None = None
+    failure_reason: str | None = None
+    reason_codes: list[str] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     def __init__(self, **data: Any):
         # Sincronización automática de alias canónicos
@@ -72,7 +72,7 @@ class RiskAssessment(BaseModel):
     requires_confirmation: bool = False
     executable: bool = True
     destructive_potential: bool = False
-    reasons: List[str] = Field(default_factory=list)
+    reasons: list[str] = Field(default_factory=list)
 
 
 class CommandCategory(str, Enum):
@@ -103,8 +103,8 @@ class CommandRiskAssessment(BaseModel):
     network_access: bool = False
     privilege_escalation: bool = False
     confidence: float = 1.0
-    reasons: List[str] = Field(default_factory=list)
-    matched_rules: List[str] = Field(default_factory=list)
+    reasons: list[str] = Field(default_factory=list)
+    matched_rules: list[str] = Field(default_factory=list)
     classifier: str = "deterministic"  # deterministic / laya / typesafe
     context_hash: str = ""
 

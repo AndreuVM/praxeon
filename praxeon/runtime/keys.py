@@ -14,7 +14,6 @@ from __future__ import annotations
 import hashlib
 import hmac
 import os
-from typing import Optional
 
 MIN_LENGTH = 32
 INSECURE_DEFAULTS = {"", "praxeon_secret_hmac_key_v1", "default", "secret", "change_me"}
@@ -32,12 +31,12 @@ def derive_key(master: str, purpose: str, length: int = 32) -> str:
     return okm[:length].hex()
 
 
-def _env(name: str) -> Optional[str]:
+def _env(name: str) -> str | None:
     value = (os.environ.get(name) or "").strip()
     return value or None
 
 
-def _sub_key(explicit_var: str, purpose: str) -> Optional[str]:
+def _sub_key(explicit_var: str, purpose: str) -> str | None:
     explicit = _env(explicit_var)
     if explicit:
         return explicit
@@ -45,21 +44,21 @@ def _sub_key(explicit_var: str, purpose: str) -> Optional[str]:
     return derive_key(master, purpose) if master else None
 
 
-def receipt_key() -> Optional[str]:
+def receipt_key() -> str | None:
     """Clave de los recibos: la explícita, la derivada del secreto maestro o None (el llamante genera una aleatoria)."""
     return _sub_key("PRAXEON_RECEIPT_KEY", "receipt")
 
 
-def jwt_secret() -> Optional[str]:
+def jwt_secret() -> str | None:
     """Secreto de los JWT: el explícito, el derivado del secreto maestro o None (el llamante genera uno aleatorio)."""
     return _sub_key("PRAXEON_JWT_SECRET", "jwt")
 
 
-def _strong(value: Optional[str]) -> bool:
+def _strong(value: str | None) -> bool:
     return value is not None and value not in INSECURE_DEFAULTS and len(value) >= MIN_LENGTH
 
 
-def production_keys_problem() -> Optional[str]:
+def production_keys_problem() -> str | None:
     """None si el perfil `production` tiene claves de firma válidas: un secreto maestro, o las dos subclaves explícitas."""
     if _strong(_env("PRAXEON_SECRET_KEY")):
         return None

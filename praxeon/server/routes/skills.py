@@ -6,7 +6,7 @@ Habilitar una skill hace que sus instrucciones lleguen al prompt de los agentes,
 import os
 import subprocess
 import sys
-from typing import Any, Dict, List, Literal
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
@@ -27,7 +27,7 @@ def _workspace() -> str:
     return workspace_store.describe_workspace().get("path") or ""
 
 
-@router.get("", response_model=APIResponse[List[Dict[str, Any]]])
+@router.get("", response_model=APIResponse[list[dict[str, Any]]])
 def list_skills(skills=Depends(_skills)):
     """Skills de la carpeta de usuario y del workspace activo, con su estado (enabled / disabled / changed / invalid)."""
     return APIResponse(data=skills.list(_workspace()))
@@ -43,7 +43,7 @@ def open_in_file_manager(path: str) -> None:
         subprocess.Popen(["xdg-open", path])
 
 
-@router.post("/open-folder", response_model=APIResponse[Dict[str, Any]])
+@router.post("/open-folder", response_model=APIResponse[dict[str, Any]])
 def open_skills_folder(request: Request, scope: Literal["user", "project"] = "user", skills=Depends(_skills)):
     """Abre la carpeta de skills en el explorador del sistema, para dejar ahí las nuevas (se crea si no existe).
 
@@ -61,7 +61,7 @@ def open_skills_folder(request: Request, scope: Literal["user", "project"] = "us
     return APIResponse(data={"path": str(folder), "scope": scope})
 
 
-@router.get("/{name}", response_model=APIResponse[Dict[str, Any]])
+@router.get("/{name}", response_model=APIResponse[dict[str, Any]])
 def get_skill(name: str, skills=Depends(_skills)):
     """Instrucciones completas de una skill, para revisarlas antes de habilitarla."""
     info = skills.get(name, _workspace())
@@ -70,7 +70,7 @@ def get_skill(name: str, skills=Depends(_skills)):
     return APIResponse(data={k: info[k] for k in ("name", "description", "body", "source", "path", "sha256", "size")})
 
 
-@router.post("/{name}/enable", response_model=APIResponse[Dict[str, Any]])
+@router.post("/{name}/enable", response_model=APIResponse[dict[str, Any]])
 def enable_skill(name: str, skills=Depends(_skills)):
     try:
         return APIResponse(data=skills.set_enabled(name, True, _workspace()))
@@ -78,6 +78,6 @@ def enable_skill(name: str, skills=Depends(_skills)):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Skill '{name}' no encontrada o inválida.") from None
 
 
-@router.post("/{name}/disable", response_model=APIResponse[Dict[str, Any]])
+@router.post("/{name}/disable", response_model=APIResponse[dict[str, Any]])
 def disable_skill(name: str, skills=Depends(_skills)):
     return APIResponse(data=skills.set_enabled(name, False, _workspace()))

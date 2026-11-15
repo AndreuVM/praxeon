@@ -1,5 +1,5 @@
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import datetime, UTC
+from typing import Any
 
 from praxeon.agents.bus import AgentMessageBus
 from praxeon.agents.definition import AgentDefinition, AgentStatus
@@ -16,9 +16,9 @@ class AgentService:
 
     def __init__(
         self,
-        registry: Optional[AgentRegistry] = None,
-        router: Optional[AgentRouter] = None,
-        bus: Optional[AgentMessageBus] = None,
+        registry: AgentRegistry | None = None,
+        router: AgentRouter | None = None,
+        bus: AgentMessageBus | None = None,
     ):
         self.registry = registry or AgentRegistry()
         self.bus = bus or AgentMessageBus()
@@ -44,27 +44,27 @@ class AgentService:
     def register_agent(self, agent: AgentDefinition) -> AgentDefinition:
         return self.registry.register(agent)
 
-    def get_agent(self, agent_id: str) -> Optional[AgentDefinition]:
+    def get_agent(self, agent_id: str) -> AgentDefinition | None:
         return self.registry.get(agent_id)
 
     def list_agents(
         self,
-        status: Optional[AgentStatus] = None,
-        role: Optional[str] = None,
-    ) -> List[AgentDefinition]:
+        status: AgentStatus | None = None,
+        role: str | None = None,
+    ) -> list[AgentDefinition]:
         return self.registry.list_all(status=status, role=role)
 
-    def update_agent(self, agent_id: str, updates: Dict[str, Any]) -> AgentDefinition:
+    def update_agent(self, agent_id: str, updates: dict[str, Any]) -> AgentDefinition:
         return self.registry.update(agent_id, updates)
 
     def delete_agent(self, agent_id: str, hard_delete: bool = False) -> bool:
         return self.registry.delete(agent_id, hard_delete=hard_delete)
 
-    def get_agent_history(self, agent_id: str) -> List[Dict[str, Any]]:
+    def get_agent_history(self, agent_id: str) -> list[dict[str, Any]]:
         """Recupera el historial inmutable de versiones del agente."""
         return self.registry.get_agent_history(agent_id)
 
-    def get_agent_version(self, agent_id: str, version: int) -> Optional[AgentDefinition]:
+    def get_agent_version(self, agent_id: str, version: int) -> AgentDefinition | None:
         """Obtiene una versión histórica inmutable específica de un agente."""
         return self.registry.get_agent_version(agent_id, version)
 
@@ -72,16 +72,16 @@ class AgentService:
         self,
         agent_id: str,
         feedback: str,
-        new_capabilities: Optional[List[str]] = None,
-        refined_prompt: Optional[str] = None,
-        performance_score: Optional[float] = None,
+        new_capabilities: list[str] | None = None,
+        refined_prompt: str | None = None,
+        performance_score: float | None = None,
     ) -> AgentDefinition:
         """Evoluciona un agente aplicando refinamiento de prompts, capacidades y métricas históricas."""
         current = self.get_agent(agent_id)
         if not current:
             raise KeyError(f"Agente con ID '{agent_id}' no encontrado.")
 
-        updates: Dict[str, Any] = {}
+        updates: dict[str, Any] = {}
         if refined_prompt:
             updates["system_prompt"] = refined_prompt.strip()
 
@@ -93,7 +93,7 @@ class AgentService:
         meta = dict(current.metadata or {})
         history = list(meta.get("evolution_history", []))
         history.append({
-            "evolved_at": datetime.now(timezone.utc).isoformat(),
+            "evolved_at": datetime.now(UTC).isoformat(),
             "feedback": feedback,
             "performance_score": performance_score,
             "previous_version": current.version,

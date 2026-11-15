@@ -13,7 +13,6 @@ import random
 import re
 import threading
 import time
-from typing import Optional
 
 logger = logging.getLogger("praxeon.providers.resilience")
 
@@ -83,7 +82,7 @@ class CircuitBreaker:
             self._consecutive_failures = 0
             self._half_open_trials = 0
 
-    def record_failure(self, error: Optional[Exception] = None) -> None:
+    def record_failure(self, error: Exception | None = None) -> None:
         """Registra un fallo del proveedor y transiciona a OPEN si supera el umbral (thread-safe)."""
         with self._lock:
             self._last_failure_time = time.time()
@@ -102,7 +101,7 @@ class CircuitBreaker:
                 self._state = CircuitState.OPEN
 
 
-def parse_retry_after(error_message_or_header: str) -> Optional[float]:
+def parse_retry_after(error_message_or_header: str) -> float | None:
     """Extrae el tiempo en segundos sugerido por un error 429 o cabecera Retry-After."""
     if not error_message_or_header:
         return None
@@ -121,7 +120,7 @@ def calculate_jittered_backoff(
     attempt: int,
     base_backoff: float = 0.5,
     max_backoff: float = 10.0,
-    retry_after: Optional[float] = None,
+    retry_after: float | None = None,
 ) -> float:
     """Calcula el tiempo de espera con Exponential Backoff y Full Jitter aleatorio."""
     if retry_after is not None and retry_after > 0:

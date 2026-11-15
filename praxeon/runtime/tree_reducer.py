@@ -7,7 +7,8 @@ Soporta tanto actualización continua en tiempo real (Live) como reproducción
 histórica exacta (Replay).
 """
 
-from typing import Any, Iterable, Optional
+from typing import Any
+from collections.abc import Iterable
 
 from praxeon.domain.events import EventType, RuntimeEvent
 from praxeon.domain.tree import (
@@ -18,7 +19,7 @@ from praxeon.domain.tree import (
 )
 
 
-def _map_policy_status(status_str: Optional[Any]) -> NodeStatus:
+def _map_policy_status(status_str: Any | None) -> NodeStatus:
     if not status_str:
         return NodeStatus.PENDING
     s = str(status_str).upper()                       # un evento con un estado no textual no debe tumbar el árbol
@@ -38,10 +39,10 @@ def _map_policy_status(status_str: Optional[Any]) -> NodeStatus:
 class TreeReducer:
     """Reducer reactivo y reproducible para construir el DecisionTree."""
 
-    def __init__(self, session_id: str, initial_tree: Optional[DecisionTree] = None):
+    def __init__(self, session_id: str, initial_tree: DecisionTree | None = None):
         self.session_id = session_id
         self.tree = initial_tree or DecisionTree(session_id=session_id)
-        self._last_step_node_id: Optional[str] = None
+        self._last_step_node_id: str | None = None
         self._root_created: bool = False
 
     def get_tree(self) -> DecisionTree:
@@ -309,8 +310,8 @@ class TreeReducer:
 
 def reduce_events_to_tree(
     events: Iterable[RuntimeEvent],
-    session_id: Optional[str] = None,
-    initial_tree: Optional[DecisionTree] = None,
+    session_id: str | None = None,
+    initial_tree: DecisionTree | None = None,
 ) -> DecisionTree:
     """Función pura para reducir una colección iterable de eventos a un DecisionTree."""
     ev_list = list(events)

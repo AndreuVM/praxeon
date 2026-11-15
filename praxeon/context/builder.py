@@ -4,7 +4,7 @@ Ensambla los fragmentos seleccionados y presupuestados en una representación te
 canónica y estructurada (`ContextSnapshot`) lista para ser consumida por proveedores o el agente LLM.
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 from praxeon.context.cache import ContextSnapshot
 from praxeon.context.fragments import ContextFragment, FragmentType, estimate_tokens
 from praxeon.domain.action import ActionCandidate
@@ -20,17 +20,17 @@ class ContextSnapshotBuilder:
         self,
         fingerprint: str,
         session_id: str,
-        fragments: List[ContextFragment],
-        candidate_action: Optional[ActionCandidate] = None,
+        fragments: list[ContextFragment],
+        candidate_action: ActionCandidate | None = None,
         truncated: bool = False,
-        extra_metadata: Optional[Dict[str, Any]] = None,
+        extra_metadata: dict[str, Any] | None = None,
     ) -> ContextSnapshot:
         """Ensambla el prompt canónico a partir de los fragmentos provistos."""
-        sections: Dict[FragmentType, List[str]] = {}
+        sections: dict[FragmentType, list[str]] = {}
         for frag in fragments:
             sections.setdefault(frag.fragment_type, []).append(frag.content)
 
-        prompt_lines: List[str] = []
+        prompt_lines: list[str] = []
 
         # 1. Meta y requisitos
         if FragmentType.GOAL in sections:

@@ -9,7 +9,8 @@ Implementa la asignación determinista y semántica de tareas hacia agentes espe
 """
 
 import logging
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any
+from collections.abc import Callable
 import uuid
 
 logger = logging.getLogger("praxeon.routing.router")
@@ -44,7 +45,7 @@ class IneligibleAgentRoutingError(ValueError):
         agent_id: str,
         task_id: str,
         reason: str,
-        details: Optional[Dict[str, Any]] = None,
+        details: dict[str, Any] | None = None,
     ):
         self.agent_id = agent_id
         self.task_id = task_id
@@ -58,14 +59,14 @@ class AgentRouter:
 
     def __init__(
         self,
-        registry: Optional[AgentRegistry] = None,
+        registry: AgentRegistry | None = None,
         default_strategy: RoutingStrategyType = RoutingStrategyType.RULE_BASED,
         allow_experimental_branching: bool = False,
         enforce_deterministic_baseline: bool = False,
-        config: Optional[PraxeonConfig] = None,
-        message_bus: Optional[AgentMessageBus] = None,
-        llm_provider: Optional[BaseReasoningProvider] = None,
-        event_bus: Optional[Any] = None,
+        config: PraxeonConfig | None = None,
+        message_bus: AgentMessageBus | None = None,
+        llm_provider: BaseReasoningProvider | None = None,
+        event_bus: Any | None = None,
     ):
         self.registry = registry or AgentRegistry()
         self.default_strategy = default_strategy
@@ -81,11 +82,11 @@ class AgentRouter:
             if config.adaptive.fallback_to_deterministic:
                 self.enforce_deterministic_baseline = True
 
-        self._strategy_handlers: Dict[
+        self._strategy_handlers: dict[
             RoutingStrategyType,
-            Callable[[TaskRequirement, List[AgentDefinition]], RoutingDecision],
+            Callable[[TaskRequirement, list[AgentDefinition]], RoutingDecision],
         ] = {}
-        self._decision_history: List[RoutingDecision] = []
+        self._decision_history: list[RoutingDecision] = []
 
         # Instanciar y registrar estrategias canónicas por defecto
         self.cost_strategy = CostAwareRoutingStrategy()
@@ -101,15 +102,15 @@ class AgentRouter:
     def register_strategy(
         self,
         strategy_type: RoutingStrategyType,
-        handler: Callable[[TaskRequirement, List[AgentDefinition]], RoutingDecision],
+        handler: Callable[[TaskRequirement, list[AgentDefinition]], RoutingDecision],
     ) -> None:
         """Registra un ejecutor de estrategia de enrutamiento personalizada."""
         self._strategy_handlers[strategy_type] = handler
 
-    def filter_eligible_agents(self, task: TaskRequirement) -> List[AgentDefinition]:
+    def filter_eligible_agents(self, task: TaskRequirement) -> list[AgentDefinition]:
         """Filtra y retorna únicamente los agentes activos que satisfacen las restricciones de la tarea."""
         all_agents = self.registry.list_all(status=AgentStatus.ACTIVE)
-        eligible: List[AgentDefinition] = []
+        eligible: list[AgentDefinition] = []
 
         risk_weights = {
             RiskLevel.LOW: 1,
@@ -138,7 +139,7 @@ class AgentRouter:
 
         return eligible
 
-    def _route_static(self, task: TaskRequirement, eligible: List[AgentDefinition]) -> RoutingDecision:
+    def _route_static(self, task: TaskRequirement, eligible: list[AgentDefinition]) -> RoutingDecision:
         """Estrategia estática: selecciona el primer agente disponible por orden alfabético/ID."""
         if not eligible:
             raise ValueError(f"No hay agentes elegibles para la tarea '{task.task_id}'.")
@@ -162,12 +163,12 @@ class AgentRouter:
             },
         )
 
-    def _route_rule_based(self, task: TaskRequirement, eligible: List[AgentDefinition]) -> RoutingDecision:
+    def _route_rule_based(self, task: TaskRequirement, eligible: list[AgentDefinition]) -> RoutingDecision:
         """Estrategia basada en reglas: puntúa agentes según correspondencia de rol, capabilities y skills."""
         if not eligible:
             raise ValueError(f"No hay agentes elegibles que cumplan las restricciones para '{task.task_id}'.")
 
-        scored_agents: List[Tuple[float, AgentDefinition]] = []
+        scored_agents: list[tuple[float, AgentDefinition]] = []
         prompt_lower = task.prompt.lower()
 
         for ag in eligible:
@@ -233,8 +234,8 @@ class AgentRouter:
     def route(
         self,
         task: TaskRequirement,
-        strategy: Optional[RoutingStrategyType] = None,
-        manual_agent_id: Optional[str] = None,
+        strategy: RoutingStrategyType | None = None,
+        manual_agent_id: str | None = None,
     ) -> RoutingDecision:
         """Determina el agente óptimo para la tarea según la estrategia elegida."""
         active_strat = strategy or self.default_strategy
@@ -264,7 +265,7 @@ class AgentRouter:
             eligible_ids = {a.agent_id for a in eligible}
             if agent.agent_id not in eligible_ids:
                 reasons = []
-                details: Dict[str, Any] = {}
+                details: dict[str, Any] = {}
                 prohibited = [t for t in task.required_tools if not agent.is_tool_allowed(t)]
                 if prohibited:
                     reasons.append(f"Herramientas prohibidas requeridas por la tarea: {prohibited}")
@@ -376,7 +377,7 @@ class AgentRouter:
     def _route_llm_fallback(
         self,
         task: TaskRequirement,
-        eligible: List[AgentDefinition],
+        eligible: list[AgentDefinition],
         previous_decision: RoutingDecision,
     ) -> RoutingDecision:
         """Invoca al LLM / razonador semántico para resolver ambigüedad cuando la heurística tiene baja confianza."""
@@ -384,7 +385,7 @@ class AgentRouter:
             return previous_decision
 
         try:
-            candidates: List[ActionCandidate] = []
+            candidates: list[ActionCandidate] = []
             for ag in eligible:
                 candidates.append(
                     ActionCandidate(
@@ -486,9 +487,9 @@ class AgentRouter:
         task: TaskRequirement,
         bus: AgentMessageBus,
         session_id: str = "default_session",
-        strategy: Optional[RoutingStrategyType] = None,
-        manual_agent_id: Optional[str] = None,
-    ) -> Tuple[RoutingDecision, AgentMessage]:
+        strategy: RoutingStrategyType | None = None,
+        manual_agent_id: str | None = None,
+    ) -> tuple[RoutingDecision, AgentMessage]:
         """Toma la decisión de enrutamiento y despacha el mensaje formal al buzón del agente."""
         decision = self.route(task=task, strategy=strategy, manual_agent_id=manual_agent_id)
 
@@ -512,6 +513,6 @@ class AgentRouter:
         bus.send(msg)
         return decision, msg
 
-    def get_history(self) -> List[RoutingDecision]:
+    def get_history(self) -> list[RoutingDecision]:
         """Consulta el log acumulado de decisiones de enrutamiento."""
         return list(self._decision_history)

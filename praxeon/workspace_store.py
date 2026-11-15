@@ -22,7 +22,7 @@ import string
 import threading
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from praxeon.config import resolve_cache_dir
 
@@ -44,7 +44,7 @@ def _store_path() -> Path:
     return Path(resolve_cache_dir()) / STORE_FILENAME
 
 
-def _load() -> Dict[str, Any]:
+def _load() -> dict[str, Any]:
     try:
         data = json.loads(_store_path().read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -57,7 +57,7 @@ def _load() -> Dict[str, Any]:
     return {"current": current, "previous": previous, "recent": recent}
 
 
-def _save(data: Dict[str, Any]) -> None:
+def _save(data: dict[str, Any]) -> None:
     path = _store_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".tmp")
@@ -69,7 +69,7 @@ def _norm(path: str) -> str:
     return os.path.abspath(os.path.expanduser(path.strip()))
 
 
-def validate_directory(path: str) -> Tuple[str, Optional[str]]:
+def validate_directory(path: str) -> tuple[str, str | None]:
     """Devuelve (ruta normalizada, motivo del rechazo o None si es una carpeta válida)."""
     if not path or not path.strip():
         return "", "Indica una ruta."
@@ -83,7 +83,7 @@ def validate_directory(path: str) -> Tuple[str, Optional[str]]:
     return norm, None
 
 
-def project_hints(path: str) -> List[str]:
+def project_hints(path: str) -> list[str]:
     """Marcadores de proyecto presentes en la carpeta (para reconocerla de un vistazo)."""
     try:
         return [m for m in PROJECT_MARKERS if os.path.exists(os.path.join(path, m))]
@@ -91,7 +91,7 @@ def project_hints(path: str) -> List[str]:
         return []
 
 
-def get_selected_workspace() -> Optional[str]:
+def get_selected_workspace() -> str | None:
     """Workspace elegido por el operador, si sigue existiendo."""
     with _lock:
         current = _load()["current"]
@@ -112,7 +112,7 @@ def _auto_root() -> str:
     return os.path.abspath(os.getcwd())
 
 
-def resolve_default_workspace() -> Tuple[str, str]:
+def resolve_default_workspace() -> tuple[str, str]:
     """(ruta, origen) del workspace por defecto: elegido, variable de entorno o autodetectado."""
     selected = get_selected_workspace()
     if selected:
@@ -127,12 +127,12 @@ def _key(path: str) -> str:
     return os.path.normcase(path)
 
 
-def _find(recent: List[Dict[str, Any]], path: str) -> Optional[Dict[str, Any]]:
+def _find(recent: list[dict[str, Any]], path: str) -> dict[str, Any] | None:
     key = _key(path)
     return next((r for r in recent if _key(r["path"]) == key), None)
 
 
-def _trim_recent(recent: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _trim_recent(recent: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Conserva todos los favoritos y solo los MAX_RECENT recientes más usados."""
     pinned = [r for r in recent if r.get("pinned")]
     others = sorted((r for r in recent if not r.get("pinned")), key=lambda r: r.get("last_used") or 0, reverse=True)[:MAX_RECENT]
@@ -230,11 +230,11 @@ def forget_recent(path: str) -> None:
         _save(data)
 
 
-def _display_name(entry: Dict[str, Any]) -> str:
+def _display_name(entry: dict[str, Any]) -> str:
     return entry.get("alias") or os.path.basename(entry["path"].rstrip("\\/")) or entry["path"]
 
 
-def list_recent() -> List[Dict[str, Any]]:
+def list_recent() -> list[dict[str, Any]]:
     """Workspaces conocidos: primero los favoritos (orden fijo, con su `slot` 1…9) y luego los recientes por último uso."""
     with _lock:
         recent = _load()["recent"]
@@ -256,14 +256,14 @@ def list_recent() -> List[Dict[str, Any]]:
     return out
 
 
-def get_previous_workspace() -> Optional[str]:
+def get_previous_workspace() -> str | None:
     """Workspace anterior (para alternar entre dos), si sigue existiendo."""
     with _lock:
         previous = _load().get("previous")
     return previous if previous and os.path.isdir(previous) else None
 
 
-def describe_workspace() -> Dict[str, Any]:
+def describe_workspace() -> dict[str, Any]:
     path, source = resolve_default_workspace()
     with _lock:
         entry = _find(_load()["recent"], path)
@@ -278,8 +278,8 @@ def describe_workspace() -> Dict[str, Any]:
     }
 
 
-def _roots() -> List[Dict[str, str]]:
-    roots: List[Dict[str, str]] = []
+def _roots() -> list[dict[str, str]]:
+    roots: list[dict[str, str]] = []
     home = str(Path.home())
     roots.append({"path": home, "name": "Carpeta personal"})
     if os.name == "nt":
@@ -292,12 +292,12 @@ def _roots() -> List[Dict[str, str]]:
     return roots
 
 
-def browse_directory(path: Optional[str] = None, show_hidden: bool = False) -> Dict[str, Any]:
+def browse_directory(path: str | None = None, show_hidden: bool = False) -> dict[str, Any]:
     """Subcarpetas de `path` (o de la carpeta personal si no se indica). ValueError si no se puede listar."""
     target = _norm(path) if path and path.strip() else str(Path.home())
     if not os.path.isdir(target):
         raise ValueError("La carpeta no existe.")
-    entries: List[Dict[str, Any]] = []
+    entries: list[dict[str, Any]] = []
     truncated = False
     try:
         with os.scandir(target) as it:

@@ -8,7 +8,7 @@ del stream de eventos del runtime.
 
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 
@@ -52,18 +52,18 @@ class TreeNode(BaseModel):
 
     node_id: str
     session_id: str
-    parent_id: Optional[str] = None
+    parent_id: str | None = None
     kind: NodeKind
     status: NodeStatus = NodeStatus.PENDING
     label: str
     actor: str = "LLM"
-    provider: Optional[str] = None
-    decision_id: Optional[str] = None
-    started_at: Optional[datetime] = None
-    ended_at: Optional[datetime] = None
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    provider: str | None = None
+    decision_id: str | None = None
+    started_at: datetime | None = None
+    ended_at: datetime | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Serialización estructurada para API y frontend."""
         return {
             "node_id": self.node_id,
@@ -87,10 +87,10 @@ class TreeEdge(BaseModel):
 
     source_id: str
     target_id: str
-    label: Optional[str] = None
+    label: str | None = None
     edge_type: str = "sequence"  # "sequence", "branch", "policy", "execution"
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "source_id": self.source_id,
             "target_id": self.target_id,
@@ -102,9 +102,9 @@ class TreeEdge(BaseModel):
 class DecisionTree(BaseModel):
     """Estructura completa de árbol para una sesión de supervisión."""
     session_id: str
-    root_id: Optional[str] = None
-    nodes: Dict[str, TreeNode] = Field(default_factory=dict)
-    edges: List[TreeEdge] = Field(default_factory=list)
+    root_id: str | None = None
+    nodes: dict[str, TreeNode] = Field(default_factory=dict)
+    edges: list[TreeEdge] = Field(default_factory=list)
 
     @computed_field  # type: ignore[prop-decorator]  # patrón documentado de pydantic
     @property
@@ -122,7 +122,7 @@ class DecisionTree(BaseModel):
         if self.root_id is None and node.parent_id is None:
             self.root_id = node.node_id
 
-    def update_node(self, node_id: str, **updates: Any) -> Optional[TreeNode]:
+    def update_node(self, node_id: str, **updates: Any) -> TreeNode | None:
         """Actualiza campos específicos de un nodo existente conservando inmutabilidad interna."""
         if node_id not in self.nodes:
             return None
@@ -142,7 +142,7 @@ class DecisionTree(BaseModel):
         self,
         source_id: str,
         target_id: str,
-        label: Optional[str] = None,
+        label: str | None = None,
         edge_type: str = "sequence",
     ) -> None:
         """Añade una arista si no existe ya entre esos nodos."""
@@ -151,13 +151,13 @@ class DecisionTree(BaseModel):
                 return
         self.edges.append(TreeEdge(source_id=source_id, target_id=target_id, label=label, edge_type=edge_type))
 
-    def get_node(self, node_id: str) -> Optional[TreeNode]:
+    def get_node(self, node_id: str) -> TreeNode | None:
         return self.nodes.get(node_id)
 
-    def get_children(self, node_id: str) -> List[TreeNode]:
+    def get_children(self, node_id: str) -> list[TreeNode]:
         return [node for node in self.nodes.values() if node.parent_id == node_id]
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Estructura completa formateada para el canvas de React Flow o Cytoscape."""
         return {
             "session_id": self.session_id,

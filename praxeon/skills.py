@@ -20,9 +20,10 @@ import os
 import re
 import threading
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import yaml
+import builtins
 
 SKILL_FILE = "SKILL.md"
 MAX_SKILL_BYTES = 64_000
@@ -36,7 +37,7 @@ class SkillError(ValueError):
     """SKILL.md ausente, demasiado grande o con formato inválido."""
 
 
-def parse_skill_md(text: str) -> Tuple[Dict[str, Any], str]:
+def parse_skill_md(text: str) -> tuple[dict[str, Any], str]:
     """Separa el frontmatter YAML (`---` … `---` al principio) del cuerpo. Exige `name` y `description`."""
     text = text.lstrip("﻿")
     lines = text.splitlines()
@@ -69,7 +70,7 @@ def _digest(data: bytes) -> str:
 class SkillStore:
     """Descubre skills y guarda cuáles están habilitadas (con la huella revisada) en `<caché>/skills.json`."""
 
-    def __init__(self, cache_dir: Optional[str] = None) -> None:
+    def __init__(self, cache_dir: str | None = None) -> None:
         self._cache_dir = cache_dir
         self._lock = threading.RLock()
 
@@ -86,7 +87,7 @@ class SkillStore:
         path.mkdir(parents=True, exist_ok=True)
         return path
 
-    def project_dir(self, workspace_root: Optional[str]) -> Optional[Path]:
+    def project_dir(self, workspace_root: str | None) -> Path | None:
         """Carpeta `.praxeon/skills` del workspace activo (se crea si no existe); None si no hay workspace."""
         if not workspace_root or not Path(workspace_root).is_dir():
             return None
@@ -95,17 +96,17 @@ class SkillStore:
         return path
 
     # ------------------------------------------------------------------ descubrimiento
-    def roots(self, workspace_root: Optional[str] = None) -> List[Tuple[str, Path]]:
-        roots: List[Tuple[str, Path]] = [("user", self.cache_dir / "skills")]
+    def roots(self, workspace_root: str | None = None) -> builtins.list[tuple[str, Path]]:
+        roots: list[tuple[str, Path]] = [("user", self.cache_dir / "skills")]
         if workspace_root:
             ws = Path(workspace_root)
             roots += [("project", ws / ".praxeon" / "skills"), ("project", ws / ".claude" / "skills")]
         return roots
 
     @staticmethod
-    def _read(skill_dir: Path, root: Path) -> Dict[str, Any]:
+    def _read(skill_dir: Path, root: Path) -> dict[str, Any]:
         """Lee y valida una carpeta de skill; devuelve el registro (con `error` si no es válida)."""
-        info: Dict[str, Any] = {"folder": skill_dir.stem if skill_dir.is_file() else skill_dir.name, "valid": False, "error": None}
+        info: dict[str, Any] = {"folder": skill_dir.stem if skill_dir.is_file() else skill_dir.name, "valid": False, "error": None}
         path = skill_dir if skill_dir.is_file() else skill_dir / SKILL_FILE      # también vale un `.md` suelto en la carpeta
         try:
             resolved = path.resolve()
@@ -127,10 +128,10 @@ class SkillStore:
         info.update(valid=True, name=meta["name"], description=meta["description"], body=body, sha256=_digest(data), size=len(data))
         return info
 
-    def discover(self, workspace_root: Optional[str] = None) -> List[Dict[str, Any]]:
+    def discover(self, workspace_root: str | None = None) -> builtins.list[dict[str, Any]]:
         """Skills encontradas, sin repetir nombres (gana la primera carpeta). Las inválidas se listan con su error."""
-        found: Dict[str, Dict[str, Any]] = {}
-        invalid: List[Dict[str, Any]] = []
+        found: dict[str, dict[str, Any]] = {}
+        invalid: list[dict[str, Any]] = []
         for source, root in self.roots(workspace_root):
             try:
                 children = sorted(p for p in root.iterdir() if p.is_dir() or (p.is_file() and p.suffix.lower() == ".md")) if root.is_dir() else []
@@ -150,20 +151,20 @@ class SkillStore:
     def _state_path(self) -> Path:
         return self.cache_dir / "skills.json"
 
-    def _enabled(self) -> Dict[str, str]:
+    def _enabled(self) -> dict[str, str]:
         try:
             raw = json.loads(self._state_path.read_text(encoding="utf-8"))
             return {str(k): str(v) for k, v in (raw.get("enabled") or {}).items()}
         except (OSError, ValueError, AttributeError):
             return {}
 
-    def _save(self, enabled: Dict[str, str]) -> None:
+    def _save(self, enabled: dict[str, str]) -> None:
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         tmp = self._state_path.with_suffix(".tmp")
         tmp.write_text(json.dumps({"enabled": enabled}, indent=1, sort_keys=True), encoding="utf-8")
         os.replace(tmp, self._state_path)
 
-    def list(self, workspace_root: Optional[str] = None) -> List[Dict[str, Any]]:
+    def list(self, workspace_root: str | None = None) -> builtins.list[dict[str, Any]]:
         """Skills con su estado: `enabled` (se aplica), `disabled`, `changed` (cambió desde que se habilitó) o `invalid`."""
         with self._lock:
             enabled = self._enabled()
@@ -178,10 +179,10 @@ class SkillStore:
                 out.append(row)
             return out
 
-    def get(self, name: str, workspace_root: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    def get(self, name: str, workspace_root: str | None = None) -> dict[str, Any] | None:
         return next((i for i in self.discover(workspace_root) if i.get("valid") and i["name"] == name), None)
 
-    def set_enabled(self, name: str, enabled: bool, workspace_root: Optional[str] = None) -> Dict[str, Any]:
+    def set_enabled(self, name: str, enabled: bool, workspace_root: str | None = None) -> dict[str, Any]:
         with self._lock:
             state = self._enabled()
             if not enabled:
@@ -196,7 +197,7 @@ class SkillStore:
             return {"name": name, "status": "enabled", "sha256": info["sha256"]}
 
     # ------------------------------------------------------------------ prompt del agente
-    def prompt_section(self, workspace_root: Optional[str] = None, names: Optional[List[str]] = None) -> str:
+    def prompt_section(self, workspace_root: str | None = None, names: builtins.list[str] | None = None) -> str:
         """Instrucciones de las skills habilitadas y sin cambios, acotadas en tamaño. `names` filtra por nombre (opcional)."""
         with self._lock:
             enabled = self._enabled()

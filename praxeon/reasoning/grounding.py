@@ -6,7 +6,7 @@ verifica la solidez fáctica e invalida evidencias obsoletas cuando ocurren muta
 
 import hashlib
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 import uuid
 
 from praxeon.domain.interfaces import EvidenceProvider
@@ -18,16 +18,16 @@ class EvidenceEngine(EvidenceProvider):
 
     def __init__(self):
         # Mapeo de claim_key normalizado -> Evidence
-        self._evidence_pool: Dict[str, Evidence] = {}
+        self._evidence_pool: dict[str, Evidence] = {}
         # Mapeo de claim_id o statement -> Claim
-        self._claims_pool: Dict[str, Claim] = {}
+        self._claims_pool: dict[str, Claim] = {}
         # Historial de evidencias invalidadas por mutaciones de estado
-        self.invalidation_history: List[Dict[str, Any]] = []
+        self.invalidation_history: list[dict[str, Any]] = []
 
     def register_claim(
         self,
         statement: str,
-        evidence_ids: Optional[List[str]] = None,
+        evidence_ids: list[str] | None = None,
         confidence: float = 1.0,
     ) -> Claim:
         """Registra explícitamente un aserto o Claim respaldado por evidencias."""
@@ -43,11 +43,11 @@ class EvidenceEngine(EvidenceProvider):
         self._claims_pool[clean_statement.lower()] = claim
         return claim
 
-    def get_claim(self, identifier_or_statement: str) -> Optional[Claim]:
+    def get_claim(self, identifier_or_statement: str) -> Claim | None:
         """Obtiene un Claim por su ID o por su texto normalizado."""
         return self._claims_pool.get(identifier_or_statement.strip().lower())
 
-    def get_all_claims(self) -> List[Claim]:
+    def get_all_claims(self) -> list[Claim]:
         """Devuelve todos los asertos únicos registrados."""
         seen = set()
         unique = []
@@ -61,7 +61,7 @@ class EvidenceEngine(EvidenceProvider):
         self,
         claim: str,
         source_type: str = "tool_observation",
-        source_step_id: Optional[str] = None,
+        source_step_id: str | None = None,
         confidence: float = 1.0,
         content: str = "",
     ) -> Evidence:
@@ -97,12 +97,12 @@ class EvidenceEngine(EvidenceProvider):
     def ingest_from_observation(
         self,
         tool_name: str,
-        tool_args: Dict[str, Any],
+        tool_args: dict[str, Any],
         observation: str,
-        step_id: Optional[str] = None,
-    ) -> List[Evidence]:
+        step_id: str | None = None,
+    ) -> list[Evidence]:
         """Extrae e ingesta evidencias automáticas a partir de la ejecución de una herramienta."""
-        added: List[Evidence] = []
+        added: list[Evidence] = []
         obs_lower = observation.lower()
         is_error = "error" in obs_lower or "no encontrado" in obs_lower or "no existe" in obs_lower
 
@@ -151,11 +151,11 @@ class EvidenceEngine(EvidenceProvider):
         """Verifica si existe evidencia activa para un claim específico."""
         return claim.strip().lower() in self._evidence_pool
 
-    def get_evidence(self, claim: str) -> Optional[Evidence]:
+    def get_evidence(self, claim: str) -> Evidence | None:
         """Obtiene la evidencia para un claim si existe."""
         return self._evidence_pool.get(claim.strip().lower())
 
-    def check_requirements(self, required_claims: List[str]) -> Tuple[bool, List[str]]:
+    def check_requirements(self, required_claims: list[str]) -> tuple[bool, list[str]]:
         """Verifica si se cumplen todas las precondiciones requeridas por una acción."""
         missing = [
             req for req in required_claims
@@ -167,16 +167,16 @@ class EvidenceEngine(EvidenceProvider):
         self,
         state: Any,
         action: ActionCandidate,
-    ) -> List[Evidence]:
+    ) -> list[Evidence]:
         """Implementación de EvidenceProvider protocol: recupera evidencias asociadas a la acción."""
-        matches: List[Evidence] = []
+        matches: list[Evidence] = []
         for req in action.requires_evidence:
             ev = self._evidence_pool.get(req.strip().lower())
             if ev:
                 matches.append(ev)
         return matches
 
-    def invalidate_resource(self, resource_path: str, reason: str = "Recurso mutado") -> List[str]:
+    def invalidate_resource(self, resource_path: str, reason: str = "Recurso mutado") -> list[str]:
         """Invalida evidencias previas asociadas a un recurso cuando este es modificado o eliminado."""
         norm_path = resource_path.strip().lower()
         keys_to_remove = [
@@ -184,7 +184,7 @@ class EvidenceEngine(EvidenceProvider):
             if norm_path in k
         ]
 
-        invalidated_ids: List[str] = []
+        invalidated_ids: list[str] = []
         for k in keys_to_remove:
             ev = self._evidence_pool.pop(k)
             invalidated_ids.append(ev.id)
@@ -197,7 +197,7 @@ class EvidenceEngine(EvidenceProvider):
 
         return invalidated_ids
 
-    def get_all_active_evidence(self) -> List[Evidence]:
+    def get_all_active_evidence(self) -> list[Evidence]:
         """Devuelve la lista de todas las evidencias activas en el pool."""
         return list(self._evidence_pool.values())
 

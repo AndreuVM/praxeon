@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import sys
-from typing import List
 
 from praxeon.runtime import isolation
 
 
-def status_lines() -> List[str]:
+def status_lines() -> list[str]:
     st = isolation.refresh()
     lines = [
         f"Aislamiento pedido: {st.requested} (PRAXEON_ISOLATION)",
@@ -25,7 +24,7 @@ def status_lines() -> List[str]:
     return lines
 
 
-def revoke_lines() -> List[str]:
+def revoke_lines() -> list[str]:
     if sys.platform == "win32":
         from praxeon.runtime.isolation.appcontainer import revoke_all
 

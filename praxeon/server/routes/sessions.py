@@ -2,7 +2,7 @@
 
 import os
 from praxeon.server.services.auth_service import constant_time_equals
-from typing import Any, Dict, List, Optional
+from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from praxeon.server.dependencies import RuntimeApplicationService, get_runtime_service
@@ -20,7 +20,7 @@ router = APIRouter(prefix="/v1/sessions", tags=["Sessions"])
 
 
 
-def is_full_access_authorized(execution_mode: Optional[str], full_access_confirmed: bool) -> bool:
+def is_full_access_authorized(execution_mode: str | None, full_access_confirmed: bool) -> bool:
     """Full Access queda autorizado solo con la doble confirmación explícita del operador.
 
     La petición ya llega autenticada y con permiso de ejecución (RBAC del router); la segunda confirmación
@@ -29,7 +29,7 @@ def is_full_access_authorized(execution_mode: Optional[str], full_access_confirm
     return (execution_mode or "").lower() == "full_access" and bool(full_access_confirmed)
 
 
-def ensure_full_access_available(execution_mode: Optional[str], service: Any) -> None:
+def ensure_full_access_available(execution_mode: str | None, service: Any) -> None:
     """Rechaza al crear la sesión (y no a mitad de misión) un Full Access que este proceso no tiene habilitado."""
     if (execution_mode or "").lower() != "full_access":
         return
@@ -84,7 +84,7 @@ def run_mission(
     return APIResponse(data=SessionSummaryResponse(**summary))
 
 
-@router.post("/{session_id}/pause", response_model=APIResponse[Dict[str, Any]])
+@router.post("/{session_id}/pause", response_model=APIResponse[dict[str, Any]])
 def pause_mission(
     session_id: str,
     service: RuntimeApplicationService = Depends(get_runtime_service),
@@ -96,7 +96,7 @@ def pause_mission(
     return APIResponse(data={"session_id": session_id, "status": "Paused"})
 
 
-@router.post("/{session_id}/resume", response_model=APIResponse[Dict[str, Any]])
+@router.post("/{session_id}/resume", response_model=APIResponse[dict[str, Any]])
 def resume_mission(
     session_id: str,
     service: RuntimeApplicationService = Depends(get_runtime_service),
@@ -108,7 +108,7 @@ def resume_mission(
     return APIResponse(data={"session_id": session_id, "status": "Resumed"})
 
 
-@router.post("/{session_id}/stop", response_model=APIResponse[Dict[str, Any]])
+@router.post("/{session_id}/stop", response_model=APIResponse[dict[str, Any]])
 def stop_mission(
     session_id: str,
     service: RuntimeApplicationService = Depends(get_runtime_service),
@@ -120,10 +120,10 @@ def stop_mission(
     return APIResponse(data={"session_id": session_id, "status": "Stopped"})
 
 
-@router.post("/{session_id}/rollback", response_model=APIResponse[Dict[str, Any]])
+@router.post("/{session_id}/rollback", response_model=APIResponse[dict[str, Any]])
 def rollback_session(
     session_id: str,
-    req: Optional[Dict[str, Any]] = None,
+    req: dict[str, Any] | None = None,
     service: RuntimeApplicationService = Depends(get_runtime_service),
 ):
     """Revierte la sesión a un checkpoint de estado seguro."""
@@ -195,7 +195,7 @@ def create_session(
     return APIResponse(data=SessionSummaryResponse(**summary))
 
 
-@router.get("", response_model=APIResponse[List[SessionSummaryResponse]])
+@router.get("", response_model=APIResponse[list[SessionSummaryResponse]])
 def list_sessions(
     service: RuntimeApplicationService = Depends(get_runtime_service),
 ):
@@ -234,7 +234,7 @@ def propose_action(
         ) from e
 
 
-@router.get("/{session_id}/decisions", response_model=APIResponse[List[Dict[str, Any]]])
+@router.get("/{session_id}/decisions", response_model=APIResponse[list[dict[str, Any]]])
 def list_session_decisions(
     session_id: str,
     service: RuntimeApplicationService = Depends(get_runtime_service),
@@ -244,9 +244,9 @@ def list_session_decisions(
     return APIResponse(data=decisions)
 
 
-@router.delete("/{session_id}", response_model=APIResponse[Dict[str, Any]])
-@router.delete("/{session_id}/", response_model=APIResponse[Dict[str, Any]])
-@router.post("/{session_id}/delete", response_model=APIResponse[Dict[str, Any]])
+@router.delete("/{session_id}", response_model=APIResponse[dict[str, Any]])
+@router.delete("/{session_id}/", response_model=APIResponse[dict[str, Any]])
+@router.post("/{session_id}/delete", response_model=APIResponse[dict[str, Any]])
 def delete_session(
     session_id: str,
     service: RuntimeApplicationService = Depends(get_runtime_service),
@@ -261,12 +261,12 @@ def delete_session(
     return APIResponse(data={"session_id": session_id, "deleted": True})
 
 
-@router.delete("", response_model=APIResponse[Dict[str, Any]])
-@router.delete("/", response_model=APIResponse[Dict[str, Any]])
-@router.post("/clear", response_model=APIResponse[Dict[str, Any]])
+@router.delete("", response_model=APIResponse[dict[str, Any]])
+@router.delete("/", response_model=APIResponse[dict[str, Any]])
+@router.post("/clear", response_model=APIResponse[dict[str, Any]])
 def clear_old_sessions(
     only_completed: bool = True,
-    exclude_session_id: Optional[str] = None,
+    exclude_session_id: str | None = None,
     service: RuntimeApplicationService = Depends(get_runtime_service),
 ):
     """Purga sesiones antiguas para liberar espacio acumulado."""
@@ -277,7 +277,7 @@ def clear_old_sessions(
     return APIResponse(data={"deleted_count": deleted_count})
 
 
-@router.get("/{session_id}/context-stats", response_model=APIResponse[Dict[str, Any]])
+@router.get("/{session_id}/context-stats", response_model=APIResponse[dict[str, Any]])
 def get_session_context_stats(
     session_id: str,
     service: RuntimeApplicationService = Depends(get_runtime_service),

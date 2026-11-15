@@ -10,7 +10,7 @@ optimizar la representación de entrada suministrada al razonador.
 """
 
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from praxeon.context.budget import TokenBudget
 from praxeon.context.builder import ContextSnapshotBuilder
@@ -39,11 +39,11 @@ class ContextManager:
 
     def __init__(
         self,
-        cache: Optional[ContextCache] = None,
-        fragment_cache: Optional[InMemoryFragmentCache] = None,
-        selector: Optional[DAGContextSelector] = None,
-        budget: Optional[TokenBudget] = None,
-        builder: Optional[ContextSnapshotBuilder] = None,
+        cache: ContextCache | None = None,
+        fragment_cache: InMemoryFragmentCache | None = None,
+        selector: DAGContextSelector | None = None,
+        budget: TokenBudget | None = None,
+        builder: ContextSnapshotBuilder | None = None,
         enabled: bool = True,
         strategy_version: str = "dag_priority_v1",
         policy_version: str = "v1.0",
@@ -58,9 +58,9 @@ class ContextManager:
         self.policy_version = policy_version
 
         # Registro formal de entidades de contexto (Fase 2)
-        self._items: Dict[str, ContextItem] = {}
-        self._dependencies: List[ContextDependency] = []
-        self._references: Dict[str, ContextReference] = {}
+        self._items: dict[str, ContextItem] = {}
+        self._dependencies: list[ContextDependency] = []
+        self._references: dict[str, ContextReference] = {}
 
         # Telemetría y observabilidad según Sección 13 del PDF y Change Request CHG-11
         self._builds_total = 0
@@ -77,7 +77,7 @@ class ContextManager:
         self._actual_output_tokens = 0
         self._cache_hit_status = "none"
         self._fragments_reused = 0
-        self._latencies_ms: List[float] = []
+        self._latencies_ms: list[float] = []
 
     @property
     def _tokens_before(self) -> int:
@@ -119,7 +119,7 @@ class ContextManager:
 
     def compute_delta(
         self,
-        base_snapshot: Optional[ContextSnapshot],
+        base_snapshot: ContextSnapshot | None,
         target_snapshot: ContextSnapshot,
     ) -> ContextDelta:
         """Calcula el delta incremental entre dos instantáneas de contexto."""
@@ -128,15 +128,15 @@ class ContextManager:
     def build_with_delta(
         self,
         state: Any,
-        candidate_action: Optional[ActionCandidate] = None,
-        previous_snapshot: Optional[ContextSnapshot] = None,
-        session_context: Optional[Any] = None,
-        max_tokens: Optional[int] = None,
+        candidate_action: ActionCandidate | None = None,
+        previous_snapshot: ContextSnapshot | None = None,
+        session_context: Any | None = None,
+        max_tokens: int | None = None,
         force_refresh: bool = False,
         model_profile: str = "default",
-        active_node_id: Optional[str] = None,
-        dependency_graph: Optional[Any] = None,
-    ) -> Tuple[ContextSnapshot, bool, ContextDelta]:
+        active_node_id: str | None = None,
+        dependency_graph: Any | None = None,
+    ) -> tuple[ContextSnapshot, bool, ContextDelta]:
         """Construye un ContextSnapshot y calcula el ContextDelta respecto al snapshot previo."""
         snapshot, is_hit = self.build(
             state=state,
@@ -154,14 +154,14 @@ class ContextManager:
     def build(
         self,
         state: Any,
-        candidate_action: Optional[ActionCandidate] = None,
-        session_context: Optional[Any] = None,
-        max_tokens: Optional[int] = None,
+        candidate_action: ActionCandidate | None = None,
+        session_context: Any | None = None,
+        max_tokens: int | None = None,
         force_refresh: bool = False,
         model_profile: str = "default",
-        active_node_id: Optional[str] = None,
-        dependency_graph: Optional[Any] = None,
-    ) -> Tuple[ContextSnapshot, bool]:
+        active_node_id: str | None = None,
+        dependency_graph: Any | None = None,
+    ) -> tuple[ContextSnapshot, bool]:
         """Obtiene o construye de forma incremental un ContextSnapshot para el estado dado.
         
         Retorna:
@@ -370,11 +370,11 @@ class ContextManager:
         for ref in item.references:
             self.register_reference(ref)
 
-    def get_item(self, item_id: str) -> Optional[ContextItem]:
+    def get_item(self, item_id: str) -> ContextItem | None:
         """Recupera un ContextItem registrado por su ID."""
         return self._items.get(item_id)
 
-    def get_items(self) -> List[ContextItem]:
+    def get_items(self) -> list[ContextItem]:
         """Devuelve todos los ContextItem registrados en el gestor."""
         return list(self._items.values())
 
@@ -390,8 +390,8 @@ class ContextManager:
     def get_dependencies(
         self,
         item_id: str,
-        dependency_type: Optional[ContextDependencyType] = None,
-    ) -> List[ContextDependency]:
+        dependency_type: ContextDependencyType | None = None,
+    ) -> list[ContextDependency]:
         """Obtiene las dependencias asociadas a un elemento."""
         deps = [d for d in self._dependencies if d.source_id == item_id]
         if dependency_type is not None:
@@ -406,7 +406,7 @@ class ContextManager:
         self._dependencies.clear()
         self._references.clear()
 
-    def get_metrics(self) -> Dict[str, Any]:
+    def get_metrics(self) -> dict[str, Any]:
         """Genera el reporte cuantitativo estandarizado de observabilidad de contexto (CHG-11)."""
         cache_stats = self.cache.stats()
         frag_stats = self.fragment_cache.stats()
@@ -479,15 +479,15 @@ class ContextManager:
         self,
         goal: str,
         system_prompt: str = "",
-        steps_history: Optional[List[Dict[str, Any]]] = None,
+        steps_history: list[dict[str, Any]] | None = None,
         environment_info: str = "",
         max_context_tokens: int = 8192,
         preserve_recent_steps: int = 4,
-        chat_history: Optional[List[Dict[str, Any]]] = None,
+        chat_history: list[dict[str, Any]] | None = None,
         node_mode: bool = False,
         compress_batch: int = 1,
         compress: bool = True,
-    ) -> List[Dict[str, str]]:
+    ) -> list[dict[str, str]]:
         """Ensambla el historial y prompt optimizado para el LLM actuando como autoridad única (CTX-01).
 
         Garantiza:
@@ -503,7 +503,7 @@ class ContextManager:
         """
         import json
 
-        messages: List[Dict[str, str]] = []
+        messages: list[dict[str, str]] = []
         steps = steps_history or []
 
         # 1. Chat history previo si existe

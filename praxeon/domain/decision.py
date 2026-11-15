@@ -1,12 +1,12 @@
 """Decisiones formales de política y recibos inmutables de auditoría (Cuadro 1)."""
 
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from enum import Enum
 import hashlib
 import hmac
 import json
 import logging
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Optional
 import uuid
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -20,7 +20,7 @@ RECEIPT_SIGNATURE_VERSION = 2
 
 def utc_now() -> datetime:
     """Retorna el timestamp actual en UTC con timezone-awareness (Python 3.11+)."""
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 
@@ -44,15 +44,15 @@ class PolicyDecision(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     status: DecisionStatus
-    reason_codes: List[str] = Field(default_factory=list)
+    reason_codes: list[str] = Field(default_factory=list)
     confidence: float = 1.0
-    target_checkpoint: Optional[str] = None
-    forbidden_tools: List[str] = Field(default_factory=list)
+    target_checkpoint: str | None = None
+    forbidden_tools: list[str] = Field(default_factory=list)
     requires_confirmation: bool = False
-    provider: Optional[ProviderAssessment] = None
-    grounding: Optional[float] = None
-    risk: Optional[RiskAssessment] = None
-    operation_assessment: Optional[CommandRiskAssessment] = None
+    provider: ProviderAssessment | None = None
+    grounding: float | None = None
+    risk: RiskAssessment | None = None
+    operation_assessment: CommandRiskAssessment | None = None
 
 
 class DecisionReceipt(BaseModel):
@@ -66,37 +66,37 @@ class DecisionReceipt(BaseModel):
     state_hash: str
     action_hash: str
     execution_mode: str = ExecutionMode.LOCAL_RESTRICTED.value
-    actor: Optional[str] = None
+    actor: str | None = None
     nonce: str = Field(default_factory=lambda: uuid.uuid4().hex)
-    signature: Optional[str] = None
-    expires_at: Optional[datetime] = None
+    signature: str | None = None
+    expires_at: datetime | None = None
 
     # 2. Proveedor
     provider_available: bool = True
-    model_identifier: Optional[str] = None
+    model_identifier: str | None = None
     latency_ms: float = 0.0
 
     # 3. Razonamiento
-    progress_score: Optional[float] = None
-    grounded_score: Optional[float] = None
-    loop_type: Optional[str] = None
-    novelty_score: Optional[float] = None
+    progress_score: float | None = None
+    grounded_score: float | None = None
+    loop_type: str | None = None
+    novelty_score: float | None = None
 
     # 4. Riesgo
-    risk_level: Optional[str] = None
-    risk_reasons: List[str] = Field(default_factory=list)
+    risk_level: str | None = None
+    risk_reasons: list[str] = Field(default_factory=list)
     destructive_potential: bool = False
-    operation_category: Optional[str] = None
-    operation_assessment: Optional[Dict[str, Any]] = None
+    operation_category: str | None = None
+    operation_assessment: dict[str, Any] | None = None
 
     # 5. Política
     decision_status: DecisionStatus = DecisionStatus.ALLOW
-    reason_codes: List[str] = Field(default_factory=list)
+    reason_codes: list[str] = Field(default_factory=list)
 
     # 6. Ejecución
     is_executed: bool = False
-    observation_id: Optional[str] = None
-    execution_timestamp: Optional[datetime] = None
+    observation_id: str | None = None
+    execution_timestamp: datetime | None = None
     timestamp: datetime = Field(default_factory=utc_now)
 
     def __init__(self, **data: Any):
@@ -112,19 +112,19 @@ class DecisionReceipt(BaseModel):
         """Alias para compatibilidad hacia atrás con v0.2 temprana."""
         return self.decision_status
 
-    def is_expired(self, now: Optional[datetime] = None) -> bool:
+    def is_expired(self, now: datetime | None = None) -> bool:
         """Determina si el capability receipt ha superado su ventana temporal de validez."""
         if self.expires_at is None:
             return False
         current_time = now or utc_now()
         exp = self.expires_at
         if exp.tzinfo is None and current_time.tzinfo is not None:
-            exp = exp.replace(tzinfo=timezone.utc)
+            exp = exp.replace(tzinfo=UTC)
         elif exp.tzinfo is not None and current_time.tzinfo is None:
-            current_time = current_time.replace(tzinfo=timezone.utc)
+            current_time = current_time.replace(tzinfo=UTC)
         return current_time > exp
 
-    def to_capability_payload(self, allowed_tools: Optional[List[str]] = None) -> Optional["CapabilityPayload"]:
+    def to_capability_payload(self, allowed_tools: list[str] | None = None) -> Optional["CapabilityPayload"]:
         """Convierte el recibo en un CapabilityPayload formal si el estatus es ALLOW; devuelve None si fue denegado/bloqueado."""
         if self.decision_status != DecisionStatus.ALLOW:
             return None
@@ -159,22 +159,22 @@ class CapabilityPayload(BaseModel):
     execution_mode: str = ExecutionMode.LOCAL_RESTRICTED.value
     nonce: str
     decision_status: DecisionStatus
-    allowed_tools: List[str] = Field(default_factory=list)
-    expires_at: Optional[datetime] = None
-    signature: Optional[str] = None
+    allowed_tools: list[str] = Field(default_factory=list)
+    expires_at: datetime | None = None
+    signature: str | None = None
     issued_at: datetime = Field(default_factory=utc_now)
-    actor: Optional[str] = None
+    actor: str | None = None
 
-    def is_expired(self, now: Optional[datetime] = None) -> bool:
+    def is_expired(self, now: datetime | None = None) -> bool:
         """Determina si el capability ha superado su ventana temporal de validez."""
         if self.expires_at is None:
             return False
         current_time = now or utc_now()
         exp = self.expires_at
         if exp.tzinfo is None and current_time.tzinfo is not None:
-            exp = exp.replace(tzinfo=timezone.utc)
+            exp = exp.replace(tzinfo=UTC)
         elif exp.tzinfo is not None and current_time.tzinfo is None:
-            current_time = current_time.replace(tzinfo=timezone.utc)
+            current_time = current_time.replace(tzinfo=UTC)
         return current_time > exp
 
 
@@ -187,7 +187,7 @@ def compute_receipt_signature(
     state_hash: str,
     nonce: str,
     decision_status: DecisionStatus,
-    expires_at: Optional[datetime] = None,
+    expires_at: datetime | None = None,
     execution_mode: str = ExecutionMode.LOCAL_RESTRICTED.value,
 ) -> str:
     """HMAC-SHA256 del capability sobre JSON canónico (auditoría S-11).
@@ -222,7 +222,7 @@ def _legacy_receipt_signature(
     state_hash: str,
     nonce: str,
     decision_status: Any,
-    expires_at: Optional[datetime] = None,
+    expires_at: datetime | None = None,
     execution_mode: Any = ExecutionMode.LOCAL_RESTRICTED.value,
 ) -> str:
     """Formato de firma anterior (campos unidos con `:`). Solo se acepta al verificar, durante una versión menor."""
@@ -285,7 +285,7 @@ def verify_receipt_signature(secret_key: str, receipt: DecisionReceipt) -> bool:
     )
 
 
-def verify_capability_signature(secret_key: str, capability: Union[CapabilityPayload, Dict[str, Any]]) -> bool:
+def verify_capability_signature(secret_key: str, capability: CapabilityPayload | dict[str, Any]) -> bool:
     """Verifica de forma inmune a ataques de temporización la autenticidad del capability token emitido."""
     if isinstance(capability, dict):
         try:
@@ -323,7 +323,7 @@ def is_state_snapshot(value: Any) -> bool:
     return isinstance(value, dict) and "session_id" in value and isinstance(value.get("steps"), list)
 
 
-def state_snapshot_digest(snapshot: Dict[str, Any], item_digest: Any = None) -> str:
+def state_snapshot_digest(snapshot: dict[str, Any], item_digest: Any = None) -> str:
     """Hash de un snapshot de estado (``SessionState.to_snapshot()``): cada paso y cada evidencia por separado.
 
     ``item_digest(obj_dict, original)`` permite reutilizar hashes ya calculados; por defecto, ``canonical_digest``.

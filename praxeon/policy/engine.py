@@ -7,11 +7,11 @@ Las reglas que deciden sobre cada acción viven en ``praxeon.policy.rules`` como
 explícito; este módulo prepara su contexto (clasificación y reconciliación del riesgo) y firma el recibo resultante.
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, UTC
 import secrets
 import time
 
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any
 import uuid
 
 from praxeon.domain.models import (
@@ -43,22 +43,22 @@ class PolicyEngine:
     """Combina señales semánticas, evidencia empírica, riesgo y fail-safe para emitir decisiones operacionales."""
 
     # Cadena de reglas que decide cada acción, en orden de prioridad (ver praxeon.policy.rules)
-    rules: Tuple[Rule, ...] = POLICY_CHAIN
+    rules: tuple[Rule, ...] = POLICY_CHAIN
 
     def __init__(
         self,
-        registry: Optional[ToolRegistry] = None,
-        failsafe: Optional[FailSafePolicy] = None,
-        permission_manager: Optional[PermissionManager] = None,
+        registry: ToolRegistry | None = None,
+        failsafe: FailSafePolicy | None = None,
+        permission_manager: PermissionManager | None = None,
         loop_threshold: float = 0.65,
         min_grounded_threshold: float = 0.35,
         min_confidence_threshold: float = 0.30,
         veto_min_confidence: float = 0.50,
         advisory_review_min_probability: float = 0.40,
-        secret_key: Optional[str] = None,
+        secret_key: str | None = None,
         receipt_ttl_seconds: float = 60.0,
-        classifier: Optional[CommandClassifier] = None,
-        reconciler: Optional[RiskReconciler] = None,
+        classifier: CommandClassifier | None = None,
+        reconciler: RiskReconciler | None = None,
     ):
         self.registry = registry or ToolRegistry(register_defaults=True)
         self.failsafe = failsafe or FailSafePolicy()
@@ -76,7 +76,7 @@ class PolicyEngine:
     # ------------------------------------------------------------------ preparación del contexto y recibo
 
     @staticmethod
-    def _resolve_execution_mode(state: Any, execution_mode: Optional[str]) -> str:
+    def _resolve_execution_mode(state: Any, execution_mode: str | None) -> str:
         if execution_mode is not None:
             return execution_mode
         if isinstance(state, dict):
@@ -102,7 +102,7 @@ class PolicyEngine:
         return self.classifier.classify(op_text, context=state if isinstance(state, dict) else None)
 
     @staticmethod
-    def _is_read_only(operation_assessment: Optional[CommandRiskAssessment], spec: Any, tool_name: Optional[str]) -> bool:
+    def _is_read_only(operation_assessment: CommandRiskAssessment | None, spec: Any, tool_name: str | None) -> bool:
         return bool(
             (operation_assessment.read_only if operation_assessment else False)
             or (spec.read_only if spec else False)
@@ -114,20 +114,20 @@ class PolicyEngine:
         action: ActionCandidate,
         action_hash: str,
         state_hash: str,
-        decision_id: Optional[str],
+        decision_id: str | None,
         session_id: str,
         resolved_mode: str,
         status: DecisionStatus,
-        reason_codes: List[str],
+        reason_codes: list[str],
         risk: RiskAssessment,
-        operation_assessment: Optional[CommandRiskAssessment],
-        provider_assessment: Optional[ProviderAssessment],
+        operation_assessment: CommandRiskAssessment | None,
+        provider_assessment: ProviderAssessment | None,
         latency_ms: float,
     ) -> DecisionReceipt:
         """Construye y firma el capability receipt de la decisión."""
         decision_id = decision_id or f"dec_{uuid.uuid4().hex[:12]}"
         nonce = uuid.uuid4().hex
-        expires_at = datetime.now(timezone.utc) + timedelta(seconds=self.receipt_ttl_seconds)
+        expires_at = datetime.now(UTC) + timedelta(seconds=self.receipt_ttl_seconds)
 
         signature = compute_receipt_signature(
             secret_key=self.secret_key,
@@ -187,17 +187,17 @@ class PolicyEngine:
     def evaluate_action(
         self,
         action: ActionCandidate,
-        state: Dict[str, Any],
-        provider_assessment: Optional[ProviderAssessment] = None,
-        available_evidence: Optional[List[Evidence]] = None,
-        forbidden_tools: Optional[Set[str]] = None,
-        completion_assessment: Optional[Any] = None,
-        risk_assessment: Optional[RiskAssessment] = None,
-        operation_assessment: Optional[CommandRiskAssessment] = None,
+        state: dict[str, Any],
+        provider_assessment: ProviderAssessment | None = None,
+        available_evidence: list[Evidence] | None = None,
+        forbidden_tools: set[str] | None = None,
+        completion_assessment: Any | None = None,
+        risk_assessment: RiskAssessment | None = None,
+        operation_assessment: CommandRiskAssessment | None = None,
         session_id: str = "default_session",
-        execution_mode: Optional[str] = None,
-        decision_id: Optional[str] = None,
-    ) -> Tuple[PolicyDecision, DecisionReceipt]:
+        execution_mode: str | None = None,
+        decision_id: str | None = None,
+    ) -> tuple[PolicyDecision, DecisionReceipt]:
         """Evalúa una acción candidata emitiendo una decisión formal y su recibo auditable."""
         start_time = time.perf_counter()
         forbidden_tools = forbidden_tools or set()

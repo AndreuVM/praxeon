@@ -8,7 +8,7 @@ Expone:
 """
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any
 from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
 
@@ -28,7 +28,7 @@ OPERATOR_ROLE = Role.ADMIN
 
 
 class LoginRequest(BaseModel):
-    api_key: Optional[str] = Field(default=None, description="Clave API de acceso")
+    api_key: str | None = Field(default=None, description="Clave API de acceso")
     tenant_id: str = Field(default="default_tenant", description="Etiqueta informativa (instalación de un único usuario; no aísla datos)")
     user_id: str = Field(default="admin", description="Identificador del usuario")
     # Sin campo `role` (auditoría S-04/S-10): PRAXEON es de un solo usuario y el rol no lo elige quien inicia sesión.
@@ -36,7 +36,7 @@ class LoginRequest(BaseModel):
 
 
 class RefreshRequest(BaseModel):
-    refresh_token: Optional[str] = Field(default=None, description="Refresh token para rotación si no se usa cookie")
+    refresh_token: str | None = Field(default=None, description="Refresh token para rotación si no se usa cookie")
 
 
 def _is_secure_request(request: Request) -> bool:
@@ -73,13 +73,13 @@ def _clear_auth_cookies(response: Response) -> None:
     response.delete_cookie(key=AuthService.COOKIE_REFRESH_NAME, path="/")
 
 
-@auth_router.post("/login", response_model=Dict[str, Any])
+@auth_router.post("/login", response_model=dict[str, Any])
 def login(
     req: LoginRequest,
     request: Request,
     response: Response,
     auth_service: AuthService = Depends(get_auth_service),
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Inicia sesión emitiendo un par de tokens JWT (HS256) y cookies HttpOnly."""
     # La credencial es obligatoria siempre que haya una clave configurada (nunca se omite la verificación).
     if auth_service.get_configured_api_key():
@@ -117,14 +117,14 @@ def login(
     }
 
 
-@auth_router.post("/refresh", response_model=Dict[str, Any])
+@auth_router.post("/refresh", response_model=dict[str, Any])
 def refresh_token(
     request: Request,
     response: Response,
-    req: Optional[RefreshRequest] = None,
-    praxeon_refresh_token: Optional[str] = Cookie(None, alias=AuthService.COOKIE_REFRESH_NAME),
+    req: RefreshRequest | None = None,
+    praxeon_refresh_token: str | None = Cookie(None, alias=AuthService.COOKIE_REFRESH_NAME),
     auth_service: AuthService = Depends(get_auth_service),
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Rota el refresh token y emite un nuevo par de tokens."""
     cookie_token = praxeon_refresh_token if isinstance(praxeon_refresh_token, str) else None
     token = (req.refresh_token if req and req.refresh_token else None) or cookie_token
@@ -157,13 +157,13 @@ def refresh_token(
     }
 
 
-@auth_router.post("/logout", response_model=Dict[str, Any])
+@auth_router.post("/logout", response_model=dict[str, Any])
 def logout(
     response: Response,
-    praxeon_access_token: Optional[str] = Cookie(None, alias=AuthService.COOKIE_ACCESS_NAME),
-    authorization: Optional[str] = Header(None, alias="Authorization"),
+    praxeon_access_token: str | None = Cookie(None, alias=AuthService.COOKIE_ACCESS_NAME),
+    authorization: str | None = Header(None, alias="Authorization"),
     auth_service: AuthService = Depends(get_auth_service),
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Revoca el token actual y limpia las cookies HttpOnly."""
     token = praxeon_access_token if isinstance(praxeon_access_token, str) else None
     if not token and isinstance(authorization, str) and authorization.startswith("Bearer "):
@@ -180,10 +180,10 @@ def logout(
     }
 
 
-@auth_router.get("/me", response_model=Dict[str, Any])
+@auth_router.get("/me", response_model=dict[str, Any])
 def get_me(
     tenant: TenantContext = Depends(get_current_tenant),
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Devuelve la información de identidad del tenant actual y sus permisos RBAC."""
     return {
         "status": "success",

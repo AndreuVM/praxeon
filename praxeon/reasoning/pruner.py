@@ -13,7 +13,7 @@ asegurando que el selector de contexto (Fase 2) las excluya de la memoria activa
 """
 
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any
 from pydantic import BaseModel, ConfigDict, Field
 
 from praxeon.domain.action import ActionCandidate
@@ -43,10 +43,10 @@ class PruningDecision(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     should_prune: bool = False
-    category: Optional[PruningCategory] = None
-    reason: Optional[str] = None
+    category: PruningCategory | None = None
+    reason: str | None = None
     severity: int = Field(default=0, ge=0, le=5)
-    details: Dict[str, Any] = Field(default_factory=dict)
+    details: dict[str, Any] = Field(default_factory=dict)
 
 
 class BranchPruner:
@@ -54,9 +54,9 @@ class BranchPruner:
 
     def __init__(
         self,
-        policy_engine: Optional[Any] = None,
-        risk_engine: Optional[RiskEngine] = None,
-        loop_detector: Optional[LoopDetector] = None,
+        policy_engine: Any | None = None,
+        risk_engine: RiskEngine | None = None,
+        loop_detector: LoopDetector | None = None,
         min_composite_score: float = 0.15,
         max_relative_gap: float = 0.55,
         max_branch_depth: int = 20,
@@ -77,8 +77,8 @@ class BranchPruner:
         self,
         branch: BranchPath,
         state: "SessionState",
-        candidate_action: Optional[ActionCandidate] = None,
-        current_best_score: Optional[float] = None,
+        candidate_action: ActionCandidate | None = None,
+        current_best_score: float | None = None,
     ) -> PruningDecision:
         """Evalúa si una rama debe ser podada de acuerdo a las 6 dimensiones."""
 
@@ -136,7 +136,7 @@ class BranchPruner:
                 )
 
         # 4. Dimensión: Bucles y Ciclos de Ejecución (LoopDetector)
-        schema_steps: List[Step] = []
+        schema_steps: list[Step] = []
         for s in branch.steps:
             tool_name = s.action.tool_call.tool_name if s.action.tool_call else None
             tool_args = s.action.tool_call.arguments if s.action.tool_call else None

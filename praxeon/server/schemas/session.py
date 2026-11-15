@@ -1,26 +1,26 @@
 """Esquemas de petición y respuesta para sesiones de supervisión (praxeon/server/schemas/session.py)."""
 
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 
 class CreateSessionRequest(BaseModel):
     """Petición para crear una nueva sesión de supervisión."""
     goal: str = Field(..., description="Objetivo o tarea que el agente debe resolver")
-    session_id: Optional[str] = Field(None, description="Identificador único opcional; se genera si no se suministra")
-    agent_name: Optional[str] = Field("CodingAgent", description="Nombre del agente autónomo")
-    execution_mode: Optional[str] = Field(None, description="Modo de ejecución ('auto' o vacío: aislado si el sistema lo permite; 'container', 'local_restricted', 'full_access')")
+    session_id: str | None = Field(None, description="Identificador único opcional; se genera si no se suministra")
+    agent_name: str | None = Field("CodingAgent", description="Nombre del agente autónomo")
+    execution_mode: str | None = Field(None, description="Modo de ejecución ('auto' o vacío: aislado si el sistema lo permite; 'container', 'local_restricted', 'full_access')")
     confirmation_required_for_full_access: bool = Field(True, description="Exige confirmación explícita para activar full_access")
     full_access_confirmed: bool = Field(False, description="El operador confirmó explícitamente (doble confirmación) la activación de Full Access")
     require_step_confirmation: bool = Field(False, description="Opt-in: exigir confirmación humana por paso incluso en Full Access autorizado")
-    allow_unattended_execution: Optional[bool] = Field(False, description="Permite omitir confirmación humana interactiva en full_access (Modo Autónomo)")
-    autonomous: Optional[bool] = Field(False, description="Activa ejecución autónoma desatendida")
-    workspace_root: Optional[str] = Field(None, description="Ruta raíz del espacio de trabajo")
-    network_policy: Optional[str] = Field("isolated", description="Política de red ('isolated', 'restricted', 'host')")
-    decision_model: Optional[Any] = Field(None, description="Configuración tipada del modelo System-1 (DecisionModelConfig)")
-    llm_config: Optional[Dict[str, Any]] = Field(None, description="Configuración explícita del LLM que razona")
-    metadata: Dict[str, Any] = Field(default_factory=dict, description="Metadatos contextuales adicionales")
+    allow_unattended_execution: bool | None = Field(False, description="Permite omitir confirmación humana interactiva en full_access (Modo Autónomo)")
+    autonomous: bool | None = Field(False, description="Activa ejecución autónoma desatendida")
+    workspace_root: str | None = Field(None, description="Ruta raíz del espacio de trabajo")
+    network_policy: str | None = Field("isolated", description="Política de red ('isolated', 'restricted', 'host')")
+    decision_model: Any | None = Field(None, description="Configuración tipada del modelo System-1 (DecisionModelConfig)")
+    llm_config: dict[str, Any] | None = Field(None, description="Configuración explícita del LLM que razona")
+    metadata: dict[str, Any] = Field(default_factory=dict, description="Metadatos contextuales adicionales")
 
 
 class SessionSummaryResponse(BaseModel):
@@ -32,10 +32,10 @@ class SessionSummaryResponse(BaseModel):
     status: str = "Active"  # "Active", "Completed", "Paused"
     agent_name: str = "CodingAgent"
     execution_mode: str = "local_restricted"
-    isolation_backend: Optional[str] = None      # appcontainer / bubblewrap / container, en modo aislado
-    isolation_warning: Optional[str] = None      # por qué la sesión no está aislada (o no puede ejecutar)
-    workspace_root: Optional[str] = None
-    operator_approval_status: Optional[str] = "Normal"
+    isolation_backend: str | None = None      # appcontainer / bubblewrap / container, en modo aislado
+    isolation_warning: str | None = None      # por qué la sesión no está aislada (o no puede ejecutar)
+    workspace_root: str | None = None
+    operator_approval_status: str | None = "Normal"
     created_at: datetime
     updated_at: datetime
     total_decisions: int = 0
@@ -45,7 +45,7 @@ class SessionSummaryResponse(BaseModel):
     waiting_count: int = 0
     event_count: int = 0
     node_count: int = 0
-    decision_model_effective: Optional[Dict[str, Any]] = None
+    decision_model_effective: dict[str, Any] | None = None
 
 
 class SessionSnapshotResponse(BaseModel):
@@ -58,31 +58,31 @@ class SessionSnapshotResponse(BaseModel):
     agent_name: str
     execution_mode: str = "local_restricted"
     created_at: datetime
-    tree: Dict[str, Any]
+    tree: dict[str, Any]
     summary: SessionSummaryResponse
 
 
 class RunMissionRequest(BaseModel):
     """Petición para iniciar interactivamente una misión supervisada en tiempo real."""
     goal: str = Field(..., description="Prompt u objetivo inicial de la misión")
-    workflow_id: Optional[str] = Field(None, description="Workflow ACTIVO que gobierna la tarea (los agentes del grafo ejecutan sus nodos)")
-    session_id: Optional[str] = Field(None, description="Identificador de sesión opcional")
-    agent_name: Optional[str] = Field("CodingAgent", description="Nombre del agente autónomo")
-    execution_mode: Optional[str] = Field(None, description="Modo de ejecución física ('auto' o vacío: aislado si el sistema lo permite; 'container', 'local_restricted', 'full_access')")
-    workspace_root: Optional[str] = Field(None, description="Ruta raíz del workspace para la misión")
-    network_policy: Optional[str] = Field("isolated", description="Política de red ('isolated', 'restricted', 'host')")
-    llm_provider: Optional[str] = Field("simulator", description="Proveedor del LLM ('simulator', 'groq', 'ollama', 'gemini', 'openai', 'anthropic', 'claude_cli', 'openrouter')")
-    llm_model: Optional[str] = Field(None, description="Modelo específico de LLM")
-    api_key: Optional[str] = Field(None, description="Clave de API opcional para el proveedor LLM")
-    base_url: Optional[str] = Field(None, description="URL base opcional para endpoints locales o personalizados")
-    supervisor: Optional[str] = Field("laya", description="Motor de supervisión ('laya', 'typesafe', 'cascade')")
-    decision_model: Optional[Any] = Field(None, description="Configuración tipada del modelo System-1 (DecisionModelConfig)")
-    max_steps: Optional[int] = Field(25, ge=0, le=100000, description="Límite máximo de pasos para la misión (por defecto 25). 0 = sin límite: la misión solo termina al concluir, por un fallo irrecuperable o cuando el operador la detiene")
-    step_delay_ms: Optional[int] = Field(900, description="Retardo en ms entre pasos para visualización en tiempo real")
+    workflow_id: str | None = Field(None, description="Workflow ACTIVO que gobierna la tarea (los agentes del grafo ejecutan sus nodos)")
+    session_id: str | None = Field(None, description="Identificador de sesión opcional")
+    agent_name: str | None = Field("CodingAgent", description="Nombre del agente autónomo")
+    execution_mode: str | None = Field(None, description="Modo de ejecución física ('auto' o vacío: aislado si el sistema lo permite; 'container', 'local_restricted', 'full_access')")
+    workspace_root: str | None = Field(None, description="Ruta raíz del workspace para la misión")
+    network_policy: str | None = Field("isolated", description="Política de red ('isolated', 'restricted', 'host')")
+    llm_provider: str | None = Field("simulator", description="Proveedor del LLM ('simulator', 'groq', 'ollama', 'gemini', 'openai', 'anthropic', 'claude_cli', 'openrouter')")
+    llm_model: str | None = Field(None, description="Modelo específico de LLM")
+    api_key: str | None = Field(None, description="Clave de API opcional para el proveedor LLM")
+    base_url: str | None = Field(None, description="URL base opcional para endpoints locales o personalizados")
+    supervisor: str | None = Field("laya", description="Motor de supervisión ('laya', 'typesafe', 'cascade')")
+    decision_model: Any | None = Field(None, description="Configuración tipada del modelo System-1 (DecisionModelConfig)")
+    max_steps: int | None = Field(25, ge=0, le=100000, description="Límite máximo de pasos para la misión (por defecto 25). 0 = sin límite: la misión solo termina al concluir, por un fallo irrecuperable o cuando el operador la detiene")
+    step_delay_ms: int | None = Field(900, description="Retardo en ms entre pasos para visualización en tiempo real")
     full_access_confirmed: bool = Field(False, description="El operador confirmó explícitamente (doble confirmación) la activación de Full Access")
     require_step_confirmation: bool = Field(False, description="Opt-in: exigir confirmación humana por paso incluso en Full Access autorizado")
-    allow_unattended_execution: Optional[bool] = Field(False, description="Permite omitir confirmación humana interactiva en full_access (Modo Autónomo)")
-    autonomous: Optional[bool] = Field(False, description="Activa ejecución autónoma desatendida")
-    llm_failure_policy: Optional[str] = Field("synthetic_fallback", description="Política ante fallos del LLM: 'fail_closed' o 'synthetic_fallback'")
-    chat_history: Optional[List[Dict[str, str]]] = Field(None, description="Historial previo de conversación para memoria multi-turno")
+    allow_unattended_execution: bool | None = Field(False, description="Permite omitir confirmación humana interactiva en full_access (Modo Autónomo)")
+    autonomous: bool | None = Field(False, description="Activa ejecución autónoma desatendida")
+    llm_failure_policy: str | None = Field("synthetic_fallback", description="Política ante fallos del LLM: 'fail_closed' o 'synthetic_fallback'")
+    chat_history: list[dict[str, str]] | None = Field(None, description="Historial previo de conversación para memoria multi-turno")
 

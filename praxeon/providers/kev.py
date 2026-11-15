@@ -22,7 +22,7 @@ import time
 import urllib.error
 
 from praxeon import http_client
-from typing import Any, Dict, Optional
+from typing import Any
 
 from praxeon.providers.context import ProviderContext, ProviderContextBuilder
 from praxeon.providers.kev_server import DEFAULT_PORT, KevServerManager, server_is_up
@@ -46,13 +46,13 @@ class KevProvider(LayaProvider):
         self,
         backend: str = "local",
         model_name: str = "kev-latest",
-        endpoint_url: Optional[str] = None,
-        api_key: Optional[str] = None,
-        context_builder: Optional[ProviderContextBuilder] = None,
+        endpoint_url: str | None = None,
+        api_key: str | None = None,
+        context_builder: ProviderContextBuilder | None = None,
         max_context_tokens: int = 4096,
         timeout: float = 15.0,
-        device: Optional[str] = None,
-        server: Optional[KevServerManager] = None,
+        device: str | None = None,
+        server: KevServerManager | None = None,
     ):
         self.name = self.PROVIDER_ID
         self.model_name = model_name
@@ -62,7 +62,7 @@ class KevProvider(LayaProvider):
         self.context_builder = context_builder or ProviderContextBuilder(default_max_tokens=max_context_tokens)
         self._is_warmed_up = False
         self.circuit_breaker = CircuitBreaker()
-        self._health: Optional[tuple] = None
+        self._health: tuple | None = None
 
         requested = (backend or "local").lower()
         trusted_url = os.getenv("KEV_ENDPOINT_URL") or None
@@ -110,7 +110,7 @@ class KevProvider(LayaProvider):
             return False
 
     # ------------------------------------------------------------------ inferencia
-    def _call(self, body: Dict[str, Any]) -> Dict[str, Any]:
+    def _call(self, body: dict[str, Any]) -> dict[str, Any]:
         if not self.endpoint_url:
             raise ValueError("KEV hosted sin endpoint: define KEV_ENDPOINT_URL o el endpoint del nivel.")
         if self.server is not None and self.endpoint_url == self.server.base_url and not self.server.ensure_ready():

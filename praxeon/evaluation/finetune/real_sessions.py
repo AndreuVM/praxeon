@@ -11,7 +11,8 @@ import json
 import sqlite3
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterable, Iterator, List, Optional
+from typing import Any
+from collections.abc import Callable, Iterable, Iterator
 
 from praxeon.providers.context import ProviderContext
 from praxeon.providers.laya import _STATE_FITS, build_laya_state
@@ -29,7 +30,7 @@ def is_real_llm(source: Any, include_simulator: bool = False) -> bool:
     return text.startswith("LLM (") and any(m in text for m in REAL_MARKERS)
 
 
-def _payload(raw: str) -> Dict[str, Any]:
+def _payload(raw: str) -> dict[str, Any]:
     try:
         value = json.loads(raw)
         return value if isinstance(value, dict) else {}
@@ -43,18 +44,18 @@ def _text(value: Any, limit: int = 2000) -> str:
     return json.dumps(value, ensure_ascii=False, default=str)[:limit]
 
 
-def _command_of(tool: str, args: Dict[str, Any]) -> str:
+def _command_of(tool: str, args: dict[str, Any]) -> str:
     return str(args.get("command") or args.get("cmd") or args.get("raw") or "") if tool in ("run_command", "run_script", "git") else ""
 
 
-def extract_session(session_id: str, events: List[sqlite3.Row], *, only_real: bool = True, include_simulator: bool = False,
-                    db_label: str = "", renderer: Optional[Callable[[ProviderContext], str]] = None) -> Iterator[Dict[str, Any]]:
+def extract_session(session_id: str, events: list[sqlite3.Row], *, only_real: bool = True, include_simulator: bool = False,
+                    db_label: str = "", renderer: Callable[[ProviderContext], str] | None = None) -> Iterator[dict[str, Any]]:
     goal = ""
     in_workflow = False
     mode = "local_restricted"
-    by_action: Dict[str, Dict[str, Any]] = defaultdict(dict)
-    approvals: Dict[str, Dict[str, Any]] = {}
-    order: List[str] = []
+    by_action: dict[str, dict[str, Any]] = defaultdict(dict)
+    approvals: dict[str, dict[str, Any]] = {}
+    order: list[str] = []
     for e in events:
         p, t, node = _payload(e["payload"]), e["type"], e["node_id"]
         if t == "goal.created" and not goal:
@@ -79,7 +80,7 @@ def extract_session(session_id: str, events: List[sqlite3.Row], *, only_real: bo
         elif t == "approval.completed" and e["decision_id"]:
             approvals[e["decision_id"]] = p
 
-    history: List[Dict[str, Any]] = []
+    history: list[dict[str, Any]] = []
     for node in order:
         info = by_action[node]
         proposed = info.get("proposed", {})
@@ -122,7 +123,7 @@ def extract_session(session_id: str, events: List[sqlite3.Row], *, only_real: bo
                             "observation": _text((info.get("observation") or {}).get("output"), 600)})
 
 
-def extract_db(path: Path, **kwargs: Any) -> Iterator[Dict[str, Any]]:
+def extract_db(path: Path, **kwargs: Any) -> Iterator[dict[str, Any]]:
     label = kwargs.pop("db_label", None) or path.stem
     conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
     conn.row_factory = sqlite3.Row
@@ -135,8 +136,8 @@ def extract_db(path: Path, **kwargs: Any) -> Iterator[Dict[str, Any]]:
         conn.close()
 
 
-def extract_all(paths: Iterable[Path], **kwargs: Any) -> List[Dict[str, Any]]:
-    rows: List[Dict[str, Any]] = []
+def extract_all(paths: Iterable[Path], **kwargs: Any) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
     for p in paths:
         rows.extend(extract_db(p, db_label=str(p.parent.parent.name + "/" + p.parent.name), **kwargs))
     return rows

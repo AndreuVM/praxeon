@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 from praxeon.domain.models import ActionCandidate, ProviderAssessment
 from praxeon.providers.base import BaseReasoningProvider
 
@@ -17,9 +17,9 @@ class MockProvider(BaseReasoningProvider):
         default_confidence: float = 0.90,
         default_grounded_probability: float = 0.95,
         default_loop_probability: float = 0.05,
-        default_progress_probability: Optional[float] = None,
+        default_progress_probability: float | None = None,
         default_novelty_probability: float = 0.85,
-        default_reason_codes: Optional[List[str]] = None,
+        default_reason_codes: list[str] | None = None,
         available: bool = True,
     ):
         self.name = name
@@ -36,11 +36,11 @@ class MockProvider(BaseReasoningProvider):
         self.default_reason_codes = default_reason_codes or ["DETERMINISTIC_PROGRESS"]
         self.available = available
 
-        self._action_overrides: Dict[str, ProviderAssessment] = {}
-        self._tool_overrides: Dict[str, ProviderAssessment] = {}
-        self._queued_assessments: List[ProviderAssessment] = []
-        self._simulated_failure: Optional[str] = None
-        self.calls_received: List[Dict[str, Any]] = []
+        self._action_overrides: dict[str, ProviderAssessment] = {}
+        self._tool_overrides: dict[str, ProviderAssessment] = {}
+        self._queued_assessments: list[ProviderAssessment] = []
+        self._simulated_failure: str | None = None
+        self.calls_received: list[dict[str, Any]] = []
 
     @property
     def call_count(self) -> int:
@@ -51,7 +51,7 @@ class MockProvider(BaseReasoningProvider):
         """Comprueba disponibilidad técnica simulada."""
         return self.available and (self._simulated_failure is None)
 
-    def simulate_failure(self, failure_reason: Optional[str] = "Simulated outage") -> None:
+    def simulate_failure(self, failure_reason: str | None = "Simulated outage") -> None:
         """Simula una caída de servicio del proveedor."""
         self._simulated_failure = failure_reason
 
@@ -84,15 +84,15 @@ class MockProvider(BaseReasoningProvider):
     def evaluate(
         self,
         state: Any,
-        actions: List[ActionCandidate],
-    ) -> List[ProviderAssessment]:
+        actions: list[ActionCandidate],
+    ) -> list[ProviderAssessment]:
         """Evalúa las acciones candidatas de forma determinista respetando overrides o colas."""
         self.calls_received.append({
             "state": state,
             "actions": actions,
         })
 
-        results: List[ProviderAssessment] = []
+        results: list[ProviderAssessment] = []
 
         if not self.is_available():
             reason = self._simulated_failure or "Provider unavailable"

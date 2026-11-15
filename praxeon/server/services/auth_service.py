@@ -12,7 +12,7 @@ Centraliza:
 from __future__ import annotations
 
 import base64
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, UTC
 from enum import Enum
 import hmac
 import hashlib
@@ -22,7 +22,7 @@ import secrets
 import sqlite3
 import threading
 import time
-from typing import Any, Dict, Optional, Set
+from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 from praxeon.env import env_setting
@@ -54,7 +54,7 @@ class Permission(str, Enum):
     METRICS_READ = "metrics:read"
 
 
-ROLE_PERMISSIONS: Dict[Role, Set[Permission]] = {
+ROLE_PERMISSIONS: dict[Role, set[Permission]] = {
     Role.ADMIN: {
         Permission.SESSION_CREATE,
         Permission.SESSION_READ,
@@ -101,8 +101,8 @@ class TenantContext(BaseModel):
     tenant_id: str = "default_tenant"
     user_id: str = "system_user"
     role: Role = Role.ADMIN
-    permissions: Set[Permission] = Field(default_factory=set)
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    permissions: set[Permission] = Field(default_factory=set)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     def has_permission(self, permission: Permission) -> bool:
         """Verifica si el contexto posee el permiso requerido."""
@@ -139,7 +139,7 @@ def _b64url_decode(data: str) -> bytes:
     return base64.urlsafe_b64decode(data.encode("utf-8"))
 
 
-def encode_jwt_hs256(payload: Dict[str, Any], secret_key: str) -> str:
+def encode_jwt_hs256(payload: dict[str, Any], secret_key: str) -> str:
     """Codifica y firma un token JWT mediante HMAC-SHA256 (HS256)."""
     header = {"alg": "HS256", "typ": "JWT"}
     header_json = json.dumps(header, separators=(",", ":"), sort_keys=True).encode("utf-8")
@@ -147,7 +147,7 @@ def encode_jwt_hs256(payload: Dict[str, Any], secret_key: str) -> str:
 
     segment1 = _b64url_encode(header_json)
     segment2 = _b64url_encode(payload_json)
-    signing_input = f"{segment1}.{segment2}".encode("utf-8")
+    signing_input = f"{segment1}.{segment2}".encode()
 
     signature = hmac.new(secret_key.encode("utf-8"), signing_input, hashlib.sha256).digest()
     segment3 = _b64url_encode(signature)
@@ -155,14 +155,14 @@ def encode_jwt_hs256(payload: Dict[str, Any], secret_key: str) -> str:
     return f"{segment1}.{segment2}.{segment3}"
 
 
-def decode_jwt_hs256(token: str, secret_key: str) -> Dict[str, Any]:
+def decode_jwt_hs256(token: str, secret_key: str) -> dict[str, Any]:
     """Decodifica, valida la firma y verifica la expiración de un token JWT HS256."""
     parts = token.strip().split(".")
     if len(parts) != 3:
         raise ValueError("Token JWT malformado: debe contener exactamente 3 segmentos.")
 
     segment1, segment2, segment3 = parts
-    signing_input = f"{segment1}.{segment2}".encode("utf-8")
+    signing_input = f"{segment1}.{segment2}".encode()
     expected_sig = hmac.new(secret_key.encode("utf-8"), signing_input, hashlib.sha256).digest()
     provided_sig = _b64url_decode(segment3)
 
@@ -193,7 +193,7 @@ class RevocationStore(SqliteStore):
         ("CREATE TABLE IF NOT EXISTS revoked_jtis (jti TEXT PRIMARY KEY, exp REAL NOT NULL)",),   # versión 1
     )
 
-    def load_valid(self, now: float) -> Dict[str, float]:
+    def load_valid(self, now: float) -> dict[str, float]:
         """Descarta las revocaciones caducadas (el token habría expirado igualmente) y devuelve las vigentes."""
         conn = self._get_connection()
         try:
@@ -221,22 +221,22 @@ class AuthService:
 
     def __init__(
         self,
-        api_key: Optional[str] = None,
-        secret_key: Optional[str] = None,
+        api_key: str | None = None,
+        secret_key: str | None = None,
         ticket_ttl_seconds: int = 60,
-        revocation_db_path: Optional[str] = None,
+        revocation_db_path: str | None = None,
     ):
         self._lock = threading.Lock()
         self._revocation_db_path = revocation_db_path
-        self._revoked_exp: Dict[str, float] = {}
-        self._tickets: Dict[str, Dict[str, Any]] = {}
-        self._revoked_jtis: Set[str] = set()
+        self._revoked_exp: dict[str, float] = {}
+        self._tickets: dict[str, dict[str, Any]] = {}
+        self._revoked_jtis: set[str] = set()
         self.ticket_ttl_seconds = ticket_ttl_seconds
         self._configured_api_key = api_key or env_setting("API_KEY", "") or None
         # Sin secreto configurado se genera uno aleatorio por proceso (nunca un valor público por defecto);
         # los tokens dejan de ser válidos al reiniciar, lo que es seguro en desarrollo.
         self._secret_key = secret_key or jwt_secret() or secrets.token_urlsafe(48)
-        self._revocations: Optional[RevocationStore] = None
+        self._revocations: RevocationStore | None = None
         self._load_revocations()
 
     # ------------------------------------------------------------------ revocaciones persistentes
@@ -252,7 +252,7 @@ class AuthService:
         except sqlite3.Error as exc:
             logger.error("No se pudieron cargar las revocaciones de tokens (%s): los tokens revocados podrían volver a ser válidos.", exc)
 
-    def _remember_revocation(self, jti: str, exp: Optional[float]) -> None:
+    def _remember_revocation(self, jti: str, exp: float | None) -> None:
         """Marca un jti como revocado (memoria + disco). Debe llamarse con el bloqueo tomado."""
         expiry = float(exp) if exp else time.time() + 604800.0
         self._revoked_jtis.add(jti)
@@ -269,11 +269,11 @@ class AuthService:
             except sqlite3.Error as exc:
                 logger.error("No se pudo guardar la revocación del token %s (%s): dejará de estar revocado al reiniciar.", jti, exc)
 
-    def get_configured_api_key(self) -> Optional[str]:
+    def get_configured_api_key(self) -> str | None:
         """Retorna la clave API configurada en entorno o instancia."""
         return self._configured_api_key
 
-    def verify_api_key(self, provided_key: Optional[str]) -> bool:
+    def verify_api_key(self, provided_key: str | None) -> bool:
         """Verifica una clave API en tiempo constante."""
         configured = self.get_configured_api_key()
         if not configured:
@@ -398,13 +398,13 @@ class AuthService:
     def create_ws_ticket(
         self,
         session_id: str,
-        client_id: Optional[str] = None,
-        ttl_seconds: Optional[int] = None,
+        client_id: str | None = None,
+        ttl_seconds: int | None = None,
     ) -> str:
         """Genera un ticket criptográfico de un solo uso para streaming WebSocket con TTL estricto."""
         ttl = ttl_seconds or self.ticket_ttl_seconds
         ticket_id = f"wst_{secrets.token_urlsafe(32)}"
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         expires_at = now + timedelta(seconds=ttl)
 
         with self._lock:
@@ -423,13 +423,13 @@ class AuthService:
     def verify_and_consume_ws_ticket(
         self,
         ticket_id: str,
-        expected_session_id: Optional[str] = None,
+        expected_session_id: str | None = None,
     ) -> bool:
         """Valida y consume atómicamente un ticket WebSocket, garantizando un solo uso."""
         if not ticket_id:
             return False
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         with self._lock:
             record = self._tickets.get(ticket_id)
             if not record or record["consumed"]:

@@ -20,7 +20,6 @@ import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional
 from urllib.parse import quote
 
 import uvicorn
@@ -38,7 +37,7 @@ class LocalServer:
     host: str
     port: int
     token: str
-    saved_env: Dict[str, Optional[str]] = field(default_factory=dict)
+    saved_env: dict[str, str | None] = field(default_factory=dict)
     # Distinto en cada arranque: una caché de la ventana de una versión anterior no puede servir el HTML viejo
     build: str = field(default_factory=lambda: str(int(time.time())))
 
@@ -79,7 +78,7 @@ def _port_is_free(port: int, host: str = LOOPBACK) -> bool:
     return True
 
 
-def stable_port(cache_dir: Optional[str] = None) -> int:
+def stable_port(cache_dir: str | None = None) -> int:
     """Puerto local que se conserva entre arranques.
 
     La interfaz guarda sus preferencias (modelos, configuración, chats) en el almacenamiento del navegador, que es
@@ -113,7 +112,7 @@ def webview_storage_dir() -> str:
     return str(path)
 
 
-def start_local_server(port: Optional[int] = None, startup_timeout: float = 20.0) -> LocalServer:
+def start_local_server(port: int | None = None, startup_timeout: float = 20.0) -> LocalServer:
     """Arranca el servidor local autenticado con un token efímero y espera a que esté listo."""
     token = secrets.token_urlsafe(32)
     chosen = port or stable_port()
@@ -221,7 +220,7 @@ def run_window(local: LocalServer, debug: bool = False, notifications: bool = Tr
     class DesktopApi:
         """Funciones nativas que la interfaz puede invocar (window.pywebview.api)."""
 
-        def pick_folder(self, start: str = "") -> Optional[str]:
+        def pick_folder(self, start: str = "") -> str | None:
             """Abre el selector de carpetas del sistema. Devuelve la ruta o None si se cancela."""
             dialog_type = getattr(getattr(webview, "FileDialog", None), "FOLDER", None)
             if dialog_type is None:
@@ -272,7 +271,7 @@ def run_browser(local: LocalServer, notifications: bool = True) -> None:
             approval_notifier.detach()
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="PRAXEON — aplicación de escritorio")
     parser.add_argument("--browser", action="store_true", help="Usar el navegador por defecto en lugar de la ventana nativa")
     parser.add_argument("--port", type=int, default=None, help="Puerto local fijo (por defecto, uno libre)")

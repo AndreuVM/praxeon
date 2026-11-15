@@ -1,9 +1,9 @@
 """Ruta de comprobación de salud del Web Server (praxeon/server/routes/health.py)."""
 
 from praxeon import __version__
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 import time
-from typing import Any, Dict, Optional
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
@@ -19,7 +19,7 @@ import os
 import platform
 from praxeon.core.session_context import SessionContextManager, get_default_workspace_root
 
-@router.get("/health", response_model=APIResponse[Dict[str, Any]])
+@router.get("/health", response_model=APIResponse[dict[str, Any]])
 def healthcheck(
     service: RuntimeApplicationService = Depends(get_runtime_service),
 ):
@@ -34,15 +34,15 @@ def healthcheck(
         "active_provider": service.config.provider.name,
         "default_workspace": get_default_workspace_root(),
         "environment": "local_development",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
     }
 
     return APIResponse(data=data)
 
 
-@router.get("/context", response_model=APIResponse[Dict[str, Any]])
+@router.get("/context", response_model=APIResponse[dict[str, Any]])
 def get_system_context(
-    workspace_root: Optional[str] = None,
+    workspace_root: str | None = None,
     _auth: None = Depends(verify_api_key),
 ):
     """Obtiene información contextual del entorno, sistema operativo y archivos del workspace garantizando contención."""

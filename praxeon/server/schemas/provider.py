@@ -1,6 +1,5 @@
 """Esquemas para el catálogo y telemetría de providers (praxeon/server/schemas/provider.py)."""
 
-from typing import List, Optional
 from pydantic import BaseModel, Field
 
 
@@ -9,16 +8,16 @@ class DecisionProviderInfo(BaseModel):
     provider_id: str
     name: str
     model_id: str
-    version: Optional[str] = None
+    version: str | None = None
     backend: str = "local"
-    supported_backends: List[str] = Field(default_factory=list)
+    supported_backends: list[str] = Field(default_factory=list)
     description: str = ""
     available: bool = True
     installed: bool = True
-    required_extra: Optional[str] = None
-    average_latency_ms: Optional[float] = None
+    required_extra: str | None = None
+    average_latency_ms: float | None = None
     average_latency_display: str = "N/A"
-    fallbacks: List[str] = Field(default_factory=list)
+    fallbacks: list[str] = Field(default_factory=list)
     category: str = "decision_provider"
 
 
@@ -32,5 +31,5 @@ class LLMProviderInfo(BaseModel):
 
 class ProvidersCatalogResponse(BaseModel):
     """Respuesta completa del catálogo dinámico de providers."""
-    decision_providers: List[DecisionProviderInfo]
-    llm_providers: List[LLMProviderInfo]
+    decision_providers: list[DecisionProviderInfo]
+    llm_providers: list[LLMProviderInfo]

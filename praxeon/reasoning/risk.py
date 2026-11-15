@@ -5,7 +5,6 @@ sino analizando sus argumentos, rutas de destino y patrones de comandos.
 """
 
 import re
-from typing import Optional
 from praxeon.domain.models import ActionCandidate, RiskAssessment, RiskLevel
 from praxeon.policy.registry import ToolRegistry
 
@@ -45,13 +44,13 @@ class RiskEngine:
         "python --version", "pytest", "pytest -v", "uv --version", "npm --version", "node --version",
     }
 
-    def __init__(self, registry: Optional[ToolRegistry] = None):
+    def __init__(self, registry: ToolRegistry | None = None):
         self.registry = registry or ToolRegistry(register_defaults=True)
 
     def assess_action_risk(
         self,
         action: ActionCandidate,
-        execution_mode: Optional[str] = None,
+        execution_mode: str | None = None,
     ) -> RiskAssessment:
         """Calcula el riesgo contextual completo analizando herramienta, argumentos y modo de ejecución."""
         if not action.tool_call or not action.tool_call.tool_name:

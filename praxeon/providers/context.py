@@ -6,7 +6,7 @@ detección de truncado y extracción de evidencias para evitar desbordar modelos
 o incurrir en costos excesivos en APIs de inferencia.
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 from praxeon.domain.action import ActionCandidate
 
@@ -17,21 +17,21 @@ class ProviderContext(BaseModel):
 
     session_id: str
     goal: str
-    success_criteria: List[str] = Field(default_factory=list)
-    history_window: List[Dict[str, Any]] = Field(default_factory=list)
-    active_evidence: List[str] = Field(default_factory=list)
-    candidate_action: Dict[str, Any] = Field(default_factory=dict)
+    success_criteria: list[str] = Field(default_factory=list)
+    history_window: list[dict[str, Any]] = Field(default_factory=list)
+    active_evidence: list[str] = Field(default_factory=list)
+    candidate_action: dict[str, Any] = Field(default_factory=dict)
     token_estimate: int = 0
     truncated: bool = False
     max_context_tokens: int = 2048
     formatted_prompt: str = ""
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Serializa el contexto a un diccionario canónico."""
         return self.model_dump()
 
-    def to_laya_payload(self) -> Dict[str, Any]:
+    def to_laya_payload(self) -> dict[str, Any]:
         """Genera el payload estructurado optimizado para el motor de inferencia LAYA."""
         return {
             "session_id": self.session_id,
@@ -45,7 +45,7 @@ class ProviderContext(BaseModel):
             "truncated": self.truncated,
         }
 
-    def to_typesafe_payload(self) -> Dict[str, Any]:
+    def to_typesafe_payload(self) -> dict[str, Any]:
         """Genera el payload estructurado compatible con TypeSafe System One."""
         return {
             "session_id": self.session_id,
@@ -81,7 +81,7 @@ class ProviderContextBuilder:
         max_history_steps: int = 10,
         max_obs_chars: int = 300,
         enable_caching: bool = True,
-        context_manager: Optional[ContextManager] = None,
+        context_manager: ContextManager | None = None,
     ):
         self.default_max_tokens = default_max_tokens
         self.max_history_steps = max_history_steps
@@ -108,7 +108,7 @@ class ProviderContextBuilder:
         self,
         state: Any,
         action: ActionCandidate,
-        max_tokens: Optional[int] = None,
+        max_tokens: int | None = None,
     ) -> ProviderContext:
         """Construye un ProviderContext acotado y normalizado a partir de SessionState y ActionCandidate."""
         budget_tokens = max_tokens or self.default_max_tokens
@@ -127,9 +127,9 @@ class ProviderContextBuilder:
 
             # Extraer campos estructurados directamente de los fragmentos compilados
             goal_text = "Objetivo no especificado"
-            criteria: List[str] = []
-            evidence_claims: List[str] = []
-            history_steps: List[Dict[str, Any]] = []
+            criteria: list[str] = []
+            evidence_claims: list[str] = []
+            history_steps: list[dict[str, Any]] = []
 
             for frag in snapshot.fragments:
                 if frag.fragment_type == FragmentType.GOAL:
@@ -187,7 +187,7 @@ class ProviderContextBuilder:
         goal_obj = getattr(state, "goal", None)
         if goal_obj is None:
             goal_text = "Objetivo no especificado"
-            criteria: List[str] = []
+            criteria: list[str] = []
         elif isinstance(goal_obj, str):
             goal_text = goal_obj
             criteria = []
@@ -209,13 +209,13 @@ class ProviderContextBuilder:
 
         # 3. Extraer evidencias activas
         raw_evidence = getattr(state, "evidence", [])
-        evidence_claims: List[str] = [
+        evidence_claims: list[str] = [
             getattr(ev, "claim", str(ev)) for ev in raw_evidence
         ]
 
         # 4. Ventana de historial (últimos N pasos preservados)
         raw_steps = getattr(state, "steps", [])
-        history_steps: List[Dict[str, Any]] = []
+        history_steps: list[dict[str, Any]] = []
 
         # Tomamos los últimos N pasos para no desbordar el contexto
         window_steps = raw_steps[-self.max_history_steps:] if len(raw_steps) > self.max_history_steps else raw_steps

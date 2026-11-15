@@ -8,7 +8,7 @@ reutilizar el vocabulario interno del supervisor.
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 _RULES = (
     (("DESTRUCTIVE", "CRITICAL_OPERATIONAL_RISK", "PRIVILEGE", "ADVERSARIAL"),
@@ -31,12 +31,12 @@ _RULES = (
 )
 
 
-def _short_action(tool: str, args: Optional[Dict[str, Any]], limit: int = 160) -> str:
+def _short_action(tool: str, args: dict[str, Any] | None, limit: int = 160) -> str:
     text = json.dumps(args or {}, ensure_ascii=False)
     return f"{tool}({text[:limit]}{'…' if len(text) > limit else ''})"
 
 
-def explain_veto(status: str, reason_codes: Optional[List[str]], tool: str, args: Optional[Dict[str, Any]] = None) -> str:
+def explain_veto(status: str, reason_codes: list[str] | None, tool: str, args: dict[str, Any] | None = None) -> str:
     """Mensaje para el agente tras un BLOCK o un REPLAN."""
     codes = " ".join(str(c).upper() for c in (reason_codes or []))
     why, what = None, None

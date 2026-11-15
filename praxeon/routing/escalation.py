@@ -9,7 +9,7 @@ Implementa la supervisión y escalado adaptativo de misiones de agentes:
 """
 
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 import uuid
 
 from praxeon.agents.bus import AgentMessageBus
@@ -42,8 +42,8 @@ class EscalationContext:
         trigger_type: EscalationTriggerType,
         failure_reason: str,
         attempt_count: int = 1,
-        logs_or_trace: Optional[List[Dict[str, Any]]] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        logs_or_trace: list[dict[str, Any]] | None = None,
+        metadata: dict[str, Any] | None = None,
     ):
         self.task = task
         self.current_decision = current_decision
@@ -63,9 +63,9 @@ class EscalationResult:
         escalation_level: int,
         escalation_type: str,
         rationale: str,
-        new_decision: Optional[RoutingDecision] = None,
+        new_decision: RoutingDecision | None = None,
         requires_human: bool = False,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ):
         self.escalated = escalated
         self.escalation_level = escalation_level
@@ -184,7 +184,7 @@ class DynamicEscalationEngine:
         context: EscalationContext,
         bus: AgentMessageBus,
         session_id: str = "escalated_session",
-    ) -> Tuple[EscalationResult, Optional[AgentMessage]]:
+    ) -> tuple[EscalationResult, AgentMessage | None]:
         """Evalúa el escalado y despacha automáticamente la tarea al buzón del nuevo agente si procede."""
         result = self.evaluate_escalation(context)
 

@@ -15,7 +15,7 @@ _warnings.warn(
     stacklevel=2,
 )
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 from praxeon.config import PraxeonConfig, default_config
 from praxeon.interceptor.proxy_middleware import JEVProxyMiddleware
 
@@ -25,8 +25,8 @@ class LiveAgentRuntimeClient:
 
     def __init__(
         self,
-        middleware: Optional[JEVProxyMiddleware] = None,
-        config: Optional[PraxeonConfig] = None,
+        middleware: JEVProxyMiddleware | None = None,
+        config: PraxeonConfig | None = None,
     ):
         self.config = config or default_config
         self.middleware = middleware
@@ -39,7 +39,7 @@ class LiveAgentRuntimeClient:
             self.middleware.start_subtask(task)
         return self.middleware
 
-    def intercept_step_chunk(self, proposed_steps: List[Dict[str, Any]]) -> Any:
+    def intercept_step_chunk(self, proposed_steps: list[dict[str, Any]]) -> Any:
         """Envía un bloque de pasos candidatos al middleware de supervisión en una sola llamada."""
         if self.middleware is None:
             raise RuntimeError("LiveAgentRuntimeClient: middleware no inicializado antes de interceptar pasos.")
@@ -48,7 +48,7 @@ class LiveAgentRuntimeClient:
     def execute_tool(
         self,
         tool_name: str,
-        tool_args: Dict[str, Any],
+        tool_args: dict[str, Any],
         thought_text: str = "",
     ) -> Any:
         """Ejecuta una herramienta a través del middleware de supervisión con contención de sandbox."""

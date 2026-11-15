@@ -4,7 +4,7 @@ from enum import Enum
 import hashlib
 import json
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any
 from pydantic import BaseModel, Field
 
 
@@ -23,12 +23,12 @@ class Step(BaseModel):
     id: str = Field(description="Identificador único del paso (ej. step_0, step_1)")
     step_type: StepType = Field(description="Tipo de paso cognitivo")
     content: str = Field(default="", description="Contenido textual del pensamiento, respuesta o resultado")
-    tool_name: Optional[str] = Field(default=None, description="Nombre de la herramienta invocada si aplica")
-    tool_args: Optional[Dict[str, Any]] = Field(default=None, description="Argumentos de la herramienta invocada")
-    parent_id: Optional[str] = Field(default=None, description="ID del paso padre en el árbol de razonamiento")
+    tool_name: str | None = Field(default=None, description="Nombre de la herramienta invocada si aplica")
+    tool_args: dict[str, Any] | None = Field(default=None, description="Argumentos de la herramienta invocada")
+    parent_id: str | None = Field(default=None, description="ID del paso padre en el árbol de razonamiento")
     timestamp: float = Field(default_factory=time.time, description="Marca de tiempo en segundos")
-    semantic_hash: Optional[str] = Field(default=None, description="Hash semántico normalizado del paso")
-    metadata: Dict[str, Any] = Field(default_factory=dict, description="Metadatos auxiliares del paso")
+    semantic_hash: str | None = Field(default=None, description="Hash semántico normalizado del paso")
+    metadata: dict[str, Any] = Field(default_factory=dict, description="Metadatos auxiliares del paso")
 
     def model_post_init(self, __context: Any) -> None:
         """Genera el hash semántico automáticamente si no está definido."""
@@ -67,10 +67,10 @@ class ActionCandidate(BaseModel):
     """Acción o siguiente paso candidato evaluado por el motor JEV."""
     id: str = Field(description="Identificador único del candidato")
     description: str = Field(description="Descripción del razonamiento o acción propuesta")
-    tool_name: Optional[str] = Field(default=None, description="Herramienta propuesta a ejecutar")
-    tool_args: Optional[Dict[str, Any]] = Field(default=None, description="Parámetros propuestos")
-    rationale: Optional[str] = Field(default=None, description="Motivo o hipótesis asociada")
-    estimated_cost: Optional[float] = Field(default=None, description="Coste estimado de computación o llamadas")
+    tool_name: str | None = Field(default=None, description="Herramienta propuesta a ejecutar")
+    tool_args: dict[str, Any] | None = Field(default=None, description="Parámetros propuestos")
+    rationale: str | None = Field(default=None, description="Motivo o hipótesis asociada")
+    estimated_cost: float | None = Field(default=None, description="Coste estimado de computación o llamadas")
 
     @property
     def full_text_representation(self) -> str:
@@ -88,8 +88,8 @@ class Trajectory(BaseModel):
     """Trayectoria completa o sesión de razonamiento del agente."""
     session_id: str = Field(description="Identificador de la sesión")
     goal: str = Field(description="Objetivo principal del usuario hacia el cual debe converger el razonamiento")
-    steps: List[Step] = Field(default_factory=list, description="Lista cronológica de pasos cognitivos")
-    metadata: Dict[str, Any] = Field(default_factory=dict, description="Metadatos globales de la sesión")
+    steps: list[Step] = Field(default_factory=list, description="Lista cronológica de pasos cognitivos")
+    metadata: dict[str, Any] = Field(default_factory=dict, description="Metadatos globales de la sesión")
 
     def add_step(self, step: Step) -> None:
         """Agrega un paso y enlaza su padre por defecto si no lo tenía."""
@@ -105,7 +105,7 @@ class DecisionScore(BaseModel):
     delta_u: float = Field(description="Ganancia de información / reducción de incertidumbre [0, 1]")
     loop_penalty: float = Field(description="Penalización por bucles o redundancia en historial [0, 1]")
     total_jev: float = Field(description="Puntuación combinada normalizada [-1.0, 1.0]")
-    details: Dict[str, Any] = Field(default_factory=dict, description="Desglose interno de similitudes y pesos")
+    details: dict[str, Any] = Field(default_factory=dict, description="Desglose interno de similitudes y pesos")
 
     @property
     def total_score(self) -> float:
@@ -174,10 +174,10 @@ class LoopReport(BaseModel):
     grounding: GroundingAnomaly = Field(default=GroundingAnomaly.NONE, description="Dimensión de solidez empírica")
     instrumental_risk: InstrumentalRiskAnomaly = Field(default=InstrumentalRiskAnomaly.NONE, description="Dimensión de riesgo instrumental")
     severity: int = Field(default=0, ge=0, le=5, description="Severidad del bucle (0=ninguno, 1=leve, 5=crítico)")
-    cycle_nodes: List[str] = Field(default_factory=list, description="Lista de IDs de pasos involucrados en el ciclo")
+    cycle_nodes: list[str] = Field(default_factory=list, description="Lista de IDs de pasos involucrados en el ciclo")
     confidence: float = Field(default=0.0, ge=0.0, le=1.0, description="Nivel de confianza en la detección")
     explanation: str = Field(default="", description="Explicación legible de la causa del bucle")
-    culprit_tool: Optional[str] = Field(default=None, description="Nombre de la herramienta causante si aplica")
+    culprit_tool: str | None = Field(default=None, description="Nombre de la herramienta causante si aplica")
 
 
 class InterventionLevel(int, Enum):
@@ -191,10 +191,10 @@ class InterventionLevel(int, Enum):
 class InterventionDirective(BaseModel):
     """Directiva inyectable para redirigir el razonamiento del modelo."""
     level: InterventionLevel = Field(description="Nivel de severidad de la intervención")
-    target_step_id: Optional[str] = Field(default=None, description="Nodo al que se debe retroceder si aplica")
+    target_step_id: str | None = Field(default=None, description="Nodo al que se debe retroceder si aplica")
     message: str = Field(description="Directiva legible y formal para inyectar en el contexto")
-    forbidden_actions: List[str] = Field(default_factory=list, description="Herramientas o enfoques expresamente prohibidos")
-    suggested_action: Optional[str] = Field(default=None, description="Acción de rescate o exploración recomendada")
+    forbidden_actions: list[str] = Field(default_factory=list, description="Herramientas o enfoques expresamente prohibidos")
+    suggested_action: str | None = Field(default=None, description="Acción de rescate o exploración recomendada")
     context_injection: str = Field(description="Texto formateado listo para inyección en el prompt")
 
 
@@ -207,10 +207,10 @@ class ChunkEvaluationResult(BaseModel):
     """Resultado consolidado de la evaluación de un bloque (chunk) de pasos cognitivos."""
     all_safe: bool = Field(default=True, description="Indica si todos los pasos del bloque son seguros y convergentes")
     valid_step_count: int = Field(default=0, description="Cantidad de pasos válidos antes del punto de divergencia/bloqueo")
-    flagged_step_index: Optional[int] = Field(default=None, description="Índice relativo del primer paso con fallo o alucinación")
-    step_scores: List[JEVScore] = Field(default_factory=list, description="Puntuaciones JEV calculadas para cada paso del bloque")
-    directive: Optional[InterventionDirective] = Field(default=None, description="Directiva de intervención si el bloque requiere rectificación")
-    loop_report: Optional[LoopReport] = Field(default=None, description="Informe de detección de bucles o anomalías")
+    flagged_step_index: int | None = Field(default=None, description="Índice relativo del primer paso con fallo o alucinación")
+    step_scores: list[JEVScore] = Field(default_factory=list, description="Puntuaciones JEV calculadas para cada paso del bloque")
+    directive: InterventionDirective | None = Field(default=None, description="Directiva de intervención si el bloque requiere rectificación")
+    loop_report: LoopReport | None = Field(default=None, description="Informe de detección de bucles o anomalías")
     hallucination_detected: bool = Field(default=False, description="Indica si se identificó una alucinación en el bloque")
-    hallucination_type: Optional[str] = Field(default=None, description="Tipo o clasificación de la alucinación detectada")
+    hallucination_type: str | None = Field(default=None, description="Tipo o clasificación de la alucinación detectada")
     explanation: str = Field(default="", description="Detalle explicativo del diagnóstico del bloque")

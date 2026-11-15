@@ -10,7 +10,8 @@ Garantiza la trazabilidad unificada y la gobernanza física paso a paso de los w
 """
 
 import json
-from typing import Any, Callable, Dict, List, Optional, Set
+from typing import Any
+from collections.abc import Callable
 import uuid
 
 from praxeon.domain.action import ActionCandidate, ToolCall
@@ -44,9 +45,9 @@ class WorkflowDecisionBridge:
     def __init__(
         self,
         engine: WorkflowEngine,
-        event_bus: Optional[EventBus] = None,
-        policy_evaluator: Optional[Callable[[ActionCandidate, WorkflowNode], PolicyDecision]] = None,
-        session_id: Optional[str] = None,
+        event_bus: EventBus | None = None,
+        policy_evaluator: Callable[[ActionCandidate, WorkflowNode], PolicyDecision] | None = None,
+        session_id: str | None = None,
     ):
         self.engine = engine
         self.event_bus = event_bus or EventBus()
@@ -61,15 +62,15 @@ class WorkflowDecisionBridge:
             status=BranchStatus.ACTIVE,
             score=BranchScore(confidence=1.0, goal_alignment=1.0),
         )
-        self.decision_history: List[PolicyDecision] = []
+        self.decision_history: list[PolicyDecision] = []
         self._sequence_counter: int = 0
-        self._approved_nodes: Set[str] = set()
+        self._approved_nodes: set[str] = set()
 
     def _next_sequence(self) -> int:
         self._sequence_counter += 1
         return self._sequence_counter
 
-    def _publish_event(self, event_type: EventType, payload: Dict[str, Any]) -> None:
+    def _publish_event(self, event_type: EventType, payload: dict[str, Any]) -> None:
         """Publica un evento estructurado en el EventBus durable."""
         evt = make_event(
             event_type=event_type,
@@ -181,7 +182,7 @@ class WorkflowDecisionBridge:
         self.decision_history.append(decision)
         return decision
 
-    def step(self) -> Optional[str]:
+    def step(self) -> str | None:
         """Avanza la ejecución del workflow supervisado por gobernanza física."""
         if self.engine.context.status == WorkflowStatus.IDLE:
             self.engine.start()

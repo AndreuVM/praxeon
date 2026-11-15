@@ -8,7 +8,7 @@ Resuelve los hallazgos críticos de la auditoría:
 """
 
 import json
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from praxeon.config import PraxeonConfig, default_config
 from praxeon.core.intervention_policy import InterventionPolicy
@@ -46,12 +46,12 @@ class JEVProxyMiddleware:
     def __init__(
         self,
         goal: str,
-        config: Optional[PraxeonConfig] = None,
-        tool_registry: Optional[ToolRegistry] = None,
-        executor: Optional[SecureExecutor] = None,
-        policy_engine: Optional[PolicyEngine] = None,
-        event_bus: Optional[Any] = None,
-        session_id: Optional[str] = None,
+        config: PraxeonConfig | None = None,
+        tool_registry: ToolRegistry | None = None,
+        executor: SecureExecutor | None = None,
+        policy_engine: PolicyEngine | None = None,
+        event_bus: Any | None = None,
+        session_id: str | None = None,
     ):
         self.config = config or default_config
         self.goal = goal
@@ -91,15 +91,15 @@ class JEVProxyMiddleware:
 
     def intercept_step_chunk(
         self,
-        proposed_steps: List[Dict[str, Any]],
-        batch_semantics: Optional[BatchSemantics] = None,
+        proposed_steps: list[dict[str, Any]],
+        batch_semantics: BatchSemantics | None = None,
     ) -> ChunkEvaluationResult:
         """Supervisa y valida un bloque agrupado de pasos candidatos respetando BatchSemantics."""
         if not proposed_steps:
             return ChunkEvaluationResult(all_safe=True, valid_step_count=0, explanation="Bloque vacío")
 
         start_idx = len(self.graph.get_chronological_nodes())
-        candidate_steps: List[Step] = []
+        candidate_steps: list[Step] = []
 
         for offset, p in enumerate(proposed_steps):
             step_id = f"step_{start_idx + offset}"
@@ -370,9 +370,9 @@ class JEVProxyMiddleware:
     def intercept_tool_call(
         self,
         tool_name: str,
-        tool_args: Optional[Dict[str, Any]] = None,
+        tool_args: dict[str, Any] | None = None,
         thought_rationale: str = "",
-    ) -> Tuple[bool, Optional[str]]:
+    ) -> tuple[bool, str | None]:
         """Intercepta una llamada a herramienta individual antes de su ejecución."""
         step_id = f"step_{len(self.graph.get_chronological_nodes())}"
         candidate_step = Step(
@@ -480,7 +480,7 @@ class JEVProxyMiddleware:
     def execute_tool(
         self,
         tool_name: str,
-        tool_args: Optional[Dict[str, Any]] = None,
+        tool_args: dict[str, Any] | None = None,
         thought_rationale: str = "",
     ) -> ToolObservation:
         """Ejecuta una herramienta de forma encapsulada tras la barrera de seguridad (Hallazgo 3.8 y Auditoría v1.0.0)."""
@@ -598,7 +598,7 @@ class JEVProxyMiddleware:
         )
         self.graph.add_step(obs_step)
 
-    def record_thought(self, thought_text: str) -> Tuple[bool, Optional[str]]:
+    def record_thought(self, thought_text: str) -> tuple[bool, str | None]:
         """Registra un pensamiento reflexivo y evalúa convergencia mediante TypeSafe AI."""
         step_id = f"th_{len(self.graph.get_chronological_nodes())}"
         th_step = Step(

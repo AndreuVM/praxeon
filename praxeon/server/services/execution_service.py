@@ -6,7 +6,6 @@ Centraliza:
 - Generación y verificación de diffs y parches unificados.
 """
 
-from typing import Optional
 
 from praxeon.domain.models import ActionCandidate
 from praxeon.runtime.sandbox import (
@@ -20,13 +19,13 @@ from praxeon.runtime.sandbox import (
 class ExecutionService:
     """Gestiona el entorno de ejecución en sandbox y la aplicación de herramientas."""
 
-    def __init__(self, default_workspace: Optional[str] = None):
+    def __init__(self, default_workspace: str | None = None):
         self.default_workspace = default_workspace or get_default_workspace_root()
 
     def get_sandbox(
         self,
         execution_mode: str = "local_restricted",
-        workspace_root: Optional[str] = None,
+        workspace_root: str | None = None,
     ) -> LocalProcessSandbox:
         """Instancia un sandbox configurado según el perfil de aislamiento solicitado."""
         tier = SandboxTier.RESTRICTED_SUBPROCESS
@@ -45,7 +44,7 @@ class ExecutionService:
         self,
         action: ActionCandidate,
         execution_mode: str = "local_restricted",
-        workspace_root: Optional[str] = None,
+        workspace_root: str | None = None,
     ) -> SandboxExecutionResult:
         """Ejecuta una acción aprobada dentro del sandbox correspondiente."""
         sandbox = self.get_sandbox(execution_mode=execution_mode, workspace_root=workspace_root)

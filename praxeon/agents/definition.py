@@ -8,11 +8,11 @@ Define el esquema canónico e inmutable para agentes dinámicos en PRAXEON:
 - AgentDefinition: Definición formal completa con fingerprint SHA-256 inmutable.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from enum import Enum
 import hashlib
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 from praxeon.domain.decision_provider import DecisionModelConfig
@@ -49,7 +49,7 @@ class ModelConfig(BaseModel):
     model_name: str = Field(default="gemini-1.5-pro", description="Identificador del modelo en el proveedor")
     temperature: float = Field(default=0.2, ge=0.0, le=2.0)
     max_output_tokens: int = Field(default=4096, ge=1)
-    top_p: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    top_p: float | None = Field(default=None, ge=0.0, le=1.0)
     timeout_seconds: int = Field(default=60, ge=1)
 
 
@@ -84,19 +84,19 @@ class AgentDefinition(BaseModel):
     version: int = Field(default=1, ge=1)
     status: AgentStatus = Field(default=AgentStatus.ACTIVE)
     model: ModelConfig = Field(default_factory=ModelConfig)
-    allowed_tools: List[str] = Field(default_factory=lambda: ["*"], description="Lista blanca de herramientas ('*' para todas)")
-    forbidden_tools: List[str] = Field(default_factory=list, description="Lista negra explícita de herramientas prohibidas")
-    capabilities: List[str] = Field(default_factory=list, description="Capacidades operativas autorizadas")
-    skills: List[str] = Field(default_factory=list, description="Catálogo de habilidades especializadas")
+    allowed_tools: list[str] = Field(default_factory=lambda: ["*"], description="Lista blanca de herramientas ('*' para todas)")
+    forbidden_tools: list[str] = Field(default_factory=list, description="Lista negra explícita de herramientas prohibidas")
+    capabilities: list[str] = Field(default_factory=list, description="Capacidades operativas autorizadas")
+    skills: list[str] = Field(default_factory=list, description="Catálogo de habilidades especializadas")
     risk_profile: RiskProfile = Field(default_factory=RiskProfile)
     context_policy: AgentContextPolicy = Field(default_factory=AgentContextPolicy)
-    decision_model: Optional[DecisionModelConfig] = Field(
+    decision_model: DecisionModelConfig | None = Field(
         default=None,
         description="Configuración tipada del modelo System-1 preferido para supervisar este agente",
     )
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     @computed_field
     @property
@@ -140,16 +140,16 @@ class AgentDefinition(BaseModel):
     def clone(
         self,
         new_agent_id: str,
-        new_name: Optional[str] = None,
-        overrides: Optional[Dict[str, Any]] = None,
+        new_name: str | None = None,
+        overrides: dict[str, Any] | None = None,
     ) -> "AgentDefinition":
         """Genera una copia derivada con un nuevo identificador y ajustes opcionales."""
         data = self.model_dump()
         data["agent_id"] = new_agent_id
         data["name"] = new_name or f"{self.name} (Copy)"
         data["version"] = 1
-        data["created_at"] = datetime.now(timezone.utc)
-        data["updated_at"] = datetime.now(timezone.utc)
+        data["created_at"] = datetime.now(UTC)
+        data["updated_at"] = datetime.now(UTC)
 
         if overrides:
             for k, v in overrides.items():
@@ -157,14 +157,14 @@ class AgentDefinition(BaseModel):
 
         return AgentDefinition(**data)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Serialización estructurada completa para persistencia y API."""
         dump = self.model_dump(mode="json")
         dump["definition_hash"] = self.definition_hash
         return dump
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "AgentDefinition":
+    def from_dict(cls, data: dict[str, Any]) -> "AgentDefinition":
         """Instancia una definición a partir de un diccionario serializado."""
         clean_data = dict(data)
         clean_data.pop("definition_hash", None)

@@ -11,7 +11,7 @@ import argparse
 import json
 import os
 import sys
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from rich.console import Console
 from rich.panel import Panel
@@ -67,9 +67,9 @@ def ask_approval(event: RuntimeEvent) -> bool:
         return False
 
 
-def _chat_history(session: SessionContextManager) -> List[Dict[str, str]]:
+def _chat_history(session: SessionContextManager) -> list[dict[str, str]]:
     """Memoria entre tareas encadenadas: objetivo y respuesta de cada tarea previa de la sesión."""
-    history: List[Dict[str, str]] = []
+    history: list[dict[str, str]] = []
     for record in session.task_records:
         history.append({"role": "user", "content": record.goal})
         history.append({"role": "assistant", "content": record.final_answer or record.summary})
@@ -79,17 +79,17 @@ def _chat_history(session: SessionContextManager) -> List[Dict[str, str]]:
 def run_live_agent(
     task: str,
     max_steps: int = 15,
-    config: Optional[PraxeonConfig] = None,
-    gemini_api_key: Optional[str] = None,
-    model_name: Optional[str] = None,
-    session_context: Optional[SessionContextManager] = None,
-    middleware: Optional[Any] = None,
-    provider: Optional[str] = None,
-    base_url: Optional[str] = None,
-    context_manager: Optional[Any] = None,
-    fallback_mode: Optional[str | FallbackMode] = None,
-    mission: Optional[TerminalMission] = None,
-) -> Tuple[bool, str, SessionContextManager, Optional[Any]]:
+    config: PraxeonConfig | None = None,
+    gemini_api_key: str | None = None,
+    model_name: str | None = None,
+    session_context: SessionContextManager | None = None,
+    middleware: Any | None = None,
+    provider: str | None = None,
+    base_url: str | None = None,
+    context_manager: Any | None = None,
+    fallback_mode: str | FallbackMode | None = None,
+    mission: TerminalMission | None = None,
+) -> tuple[bool, str, SessionContextManager, Any | None]:
     """Ejecuta una tarea del agente en la terminal como misión supervisada del runtime.
 
     Devuelve ``(terminada, respuesta, sesión, middleware)``. ``middleware`` y ``context_manager`` se aceptan por
@@ -157,10 +157,10 @@ def _run_with_recovery(
     runner: TerminalMission,
     task: str,
     mode: FallbackMode,
-    provider: Optional[str],
-    model_name: Optional[str],
-    api_key: Optional[str],
-    base_url: Optional[str],
+    provider: str | None,
+    model_name: str | None,
+    api_key: str | None,
+    base_url: str | None,
     max_steps: int,
     supervisor: str,
     session: SessionContextManager,
@@ -212,15 +212,15 @@ def run_live_gemini_agent(*args, **kwargs):
 
 
 def run_live_session(
-    initial_task: Optional[str] = None,
+    initial_task: str | None = None,
     max_steps: int = 15,
-    config: Optional[PraxeonConfig] = None,
-    api_key: Optional[str] = None,
-    model_name: Optional[str] = None,
+    config: PraxeonConfig | None = None,
+    api_key: str | None = None,
+    model_name: str | None = None,
     once: bool = False,
-    provider: Optional[str] = None,
-    base_url: Optional[str] = None,
-    fallback_mode: Optional[str | FallbackMode] = None,
+    provider: str | None = None,
+    base_url: str | None = None,
+    fallback_mode: str | FallbackMode | None = None,
 ) -> None:
     """Ejecuta una sesión interactiva continua con el agente LLM y el supervisor PRAXEON."""
     cfg = config or default_config
@@ -238,7 +238,7 @@ def run_live_session(
     middleware = None
 
     while True:
-        current_task: Optional[str] = None
+        current_task: str | None = None
 
         if is_first_iteration and initial_task and initial_task.strip():
             current_task = initial_task.strip()

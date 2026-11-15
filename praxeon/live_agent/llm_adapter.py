@@ -11,7 +11,7 @@ import io
 import json
 import re
 import sys
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 # Asegurar codificación UTF-8 en Windows para evitar errores con charmap cp1252
 if sys.platform == "win32":
@@ -55,10 +55,10 @@ def prune_observation_output(output: str, max_chars: int = 2000) -> str:
 
 
 def compact_conversation_history(
-    conversation_history: List[Dict[str, str]],
-    context_manager: Optional[Any] = None,
+    conversation_history: list[dict[str, str]],
+    context_manager: Any | None = None,
     max_recent_turns: int = 4,
-) -> List[Dict[str, str]]:
+) -> list[dict[str, str]]:
     """Compacta el historial conversacional utilizando ContextManager o heurística interna.
 
     Mantiene el prompt de sistema y objetivo inicial, compacta los pasos
@@ -100,7 +100,7 @@ def compact_conversation_history(
     return header + [summary_msg] + recent
 
 
-def build_optimized_prompt(conversation_history: List[Dict[str, str]], max_recent_turns: int = 8) -> str:
+def build_optimized_prompt(conversation_history: list[dict[str, str]], max_recent_turns: int = 8) -> str:
     """Construye el prompt optimizado para el LLM aplicando compresión a turnos antiguos si la conversación es larga."""
     compacted = compact_conversation_history(conversation_history, max_recent_turns=max_recent_turns)
     return "\n\n".join(f"[{m['role'].upper()}]: {m['content']}" for m in compacted) + "\n\n[ASSISTANT]:\n"
@@ -148,14 +148,14 @@ def _call_is_complete(text: str) -> bool:
     return depth <= 0
 
 
-def _merge_multiline_actions(lines: List[str]) -> List[str]:
+def _merge_multiline_actions(lines: list[str]) -> list[str]:
     """Une en una sola entrada la línea `Action:` y sus continuaciones mientras la llamada siga abierta.
 
     Un finish(summary=<comillas triples>...) con el texto en varias líneas llega partido; sin unirlo,
     la herramienta se leería como el nombre `finish(summary=` seguido de basura. Una llamada ya cerrada no
     absorbe las líneas siguientes (así no se cuela texto inventado tras ella).
     """
-    merged: List[str] = []
+    merged: list[str] = []
     i = 0
     while i < len(lines):
         line = lines[i]
@@ -180,14 +180,14 @@ _POSITIONAL_NAMES = {
 }
 
 
-def _parse_python_call_args(raw_arg: str, tool: Optional[str] = None) -> Optional[Dict[str, Any]]:
+def _parse_python_call_args(raw_arg: str, tool: str | None = None) -> dict[str, Any] | None:
     """Argumentos estilo Python: `clave="valor"` (comillas simples, dobles o triples, con escapes) o posicionales
     `edit_file("a.py", "contenido")`, que se asignan por orden a los parámetros de la herramienta."""
     try:
         call = ast.parse(f"_f({raw_arg})", mode="eval").body
         if not isinstance(call, ast.Call):
             return None
-        out: Dict[str, Any] = {}
+        out: dict[str, Any] = {}
         names = _POSITIONAL_NAMES.get((tool or "").lower(), ())
         if len(call.args) > 1 and len(call.args) <= len(names):   # un solo posicional ya lo resuelve el flujo habitual
             out.update({names[i]: ast.literal_eval(a) for i, a in enumerate(call.args)})
@@ -201,7 +201,7 @@ def _parse_python_call_args(raw_arg: str, tool: Optional[str] = None) -> Optiona
 _FINISH_LOOSE = re.compile(r"""^\s*(?:(?:summary|final_answer)\s*=\s*)?("{3}|'{3}|"|')(?P<body>.*)\1\s*$""", re.DOTALL)
 
 
-def _parse_finish_loose(raw_arg: str) -> Optional[Dict[str, Any]]:
+def _parse_finish_loose(raw_arg: str) -> dict[str, Any] | None:
     """finish con un texto que contiene sus propias comillas (p. ej. código con docstrings): se toma todo el
     texto entre la primera comilla de apertura y la última de cierre en lugar de descartar el resultado."""
     m = _FINISH_LOOSE.match(raw_arg)
@@ -211,7 +211,7 @@ def _parse_finish_loose(raw_arg: str) -> Optional[Dict[str, Any]]:
     return {"summary": body} if body else None
 
 
-def normalize_tool_call(tool: str, args: Dict[str, Any]) -> tuple[str, Dict[str, Any]]:
+def normalize_tool_call(tool: str, args: dict[str, Any]) -> tuple[str, dict[str, Any]]:
     """Unifica los nombres y argumentos con que los modelos piden listar o escribir archivos.
 
     list_directory/ls/dir -> list_dir(path); write_file/create_file/write_to_file -> edit_file(path, content),
@@ -229,7 +229,7 @@ def normalize_tool_call(tool: str, args: Dict[str, Any]) -> tuple[str, Dict[str,
         return "list_dir", {"path": path}
     if name in WRITE_ALIASES:
         path = args.get("path") or args.get("file_path") or args.get("filename") or args.get("file") or ""
-        out: Dict[str, Any] = {"path": str(path).strip()}
+        out: dict[str, Any] = {"path": str(path).strip()}
         content = content_from_args(args)
         if content is not None:
             out["content"] = content
@@ -245,9 +245,9 @@ _STRUCTURED_TOOLS = frozenset({
 _SHELL_OPERATORS = re.compile(r"\||;|&&|>|<|`|\$\(")
 
 
-def parse_llm_steps(llm_output: str) -> List[Dict[str, Any]]:
+def parse_llm_steps(llm_output: str) -> list[dict[str, Any]]:
     """Extrae uno o múltiples pasos (Thought + Action) de la salida del LLM."""
-    steps: List[Dict[str, Any]] = []
+    steps: list[dict[str, Any]] = []
     llm_output = _strip_role_leak(llm_output)
 
     # 1. Normalizar etiquetas markdown (**Thought:**, **Action:**, etc.)
@@ -260,7 +260,7 @@ def parse_llm_steps(llm_output: str) -> List[Dict[str, Any]]:
 
     current_thought = ""
     current_tool = None
-    current_args: Dict[str, Any] = {}
+    current_args: dict[str, Any] = {}
 
     lines = _merge_multiline_actions(text.strip().splitlines())
     for line in lines:

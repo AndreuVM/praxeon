@@ -1,7 +1,7 @@
 """Entidades inmutables de observación y resultados empíricos del entorno."""
 
 import hashlib
-from typing import Any, Dict, Optional
+from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -10,10 +10,10 @@ class Observation(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     id: str
-    source_step_id: Optional[str] = None
+    source_step_id: str | None = None
     content: str
     content_hash: str = ""
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     def model_post_init(self, __context: Any) -> None:
         if not self.content_hash:
@@ -28,5 +28,5 @@ class ToolObservation(BaseModel):
     output: str
     success: bool = True
     execution_time_ms: float = 0.0
-    tool_name: Optional[str] = None
+    tool_name: str | None = None
     is_error: bool = False

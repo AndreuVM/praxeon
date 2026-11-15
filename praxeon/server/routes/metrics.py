@@ -1,7 +1,7 @@
 """Ruta de telemetría agregada y métricas operacionales (praxeon/server/routes/metrics.py)."""
 
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any
 from fastapi import APIRouter, Depends, Header, Query, Response
 
 from praxeon.server.dependencies import RuntimeApplicationService, get_runtime_service
@@ -19,8 +19,8 @@ router = APIRouter(tags=["Metrics"])
 @router.get("/v1/metrics", response_model=None)
 def get_metrics(
     service: RuntimeApplicationService = Depends(get_runtime_service),
-    format: Optional[str] = Query(None, description="Formato opcional ('prometheus' o 'json')"),
-    accept: Optional[str] = Header(None),
+    format: str | None = Query(None, description="Formato opcional ('prometheus' o 'json')"),
+    accept: str | None = Header(None),
 ) -> Any:
     """Telemetría del servidor en formato JSON o Prometheus según Content-Negotiation."""
     wants_prometheus = (
@@ -50,8 +50,8 @@ def get_metrics(
             isolation_counts["local_restricted"] += 1
 
     # Recolectar latencias reales y categorías de operaciones de las decisiones registradas
-    latencies: List[float] = []
-    categories_dist: Dict[str, int] = {}
+    latencies: list[float] = []
+    categories_dist: dict[str, int] = {}
 
     try:
         conn = service.decision_repository._get_connection()

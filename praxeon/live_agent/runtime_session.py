@@ -13,7 +13,8 @@ import queue
 import threading
 import uuid
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
+from collections.abc import Callable
 
 from praxeon.domain.events import EventType, RuntimeEvent
 
@@ -36,9 +37,9 @@ class LiveTaskResult:
     session_id: str
     finished: bool
     final_answer: str
-    steps: List[Dict[str, Any]] = field(default_factory=list)
-    fatal_error: Optional[str] = None
-    llm_error: Optional[str] = None   # el modelo del agente falló repetidamente (cortacircuitos técnico)
+    steps: list[dict[str, Any]] = field(default_factory=list)
+    fatal_error: str | None = None
+    llm_error: str | None = None   # el modelo del agente falló repetidamente (cortacircuitos técnico)
     degraded: bool = False
     agent_finished: bool = False
 
@@ -54,9 +55,9 @@ class TerminalMission:
         self,
         service: Any = None,
         *,
-        db_dir: Optional[str] = None,
-        on_event: Optional[EventHandler] = None,
-        approver: Optional[Approver] = None,
+        db_dir: str | None = None,
+        on_event: EventHandler | None = None,
+        approver: Approver | None = None,
         poll_seconds: float = 0.1,
     ):
         self._service = service
@@ -77,21 +78,21 @@ class TerminalMission:
         self,
         goal: str,
         *,
-        provider: Optional[str] = None,
-        model: Optional[str] = None,
-        api_key: Optional[str] = None,
-        base_url: Optional[str] = None,
+        provider: str | None = None,
+        model: str | None = None,
+        api_key: str | None = None,
+        base_url: str | None = None,
         max_steps: int = 15,
         supervisor: str = "laya",
         llm_failure_policy: str = "synthetic_fallback",
-        chat_history: Optional[List[Dict[str, str]]] = None,
-        workspace_root: Optional[str] = None,
-        execution_mode: Optional[str] = None,
+        chat_history: list[dict[str, str]] | None = None,
+        workspace_root: str | None = None,
+        execution_mode: str | None = None,
     ) -> LiveTaskResult:
         """Lanza la misión y atiende sus eventos hasta que el worker termina."""
         svc = self.service
         sid = f"live-{uuid.uuid4().hex[:8]}"
-        events: "queue.Queue[RuntimeEvent]" = queue.Queue()
+        events: queue.Queue[RuntimeEvent] = queue.Queue()
         unsubscribe = svc.event_bus.subscribe(events.put, session_id=sid)
         result = LiveTaskResult(session_id=sid, finished=False, final_answer="")
         try:
@@ -135,7 +136,7 @@ class TerminalMission:
         return result
 
     @staticmethod
-    def _worker(sid: str) -> Optional[threading.Thread]:
+    def _worker(sid: str) -> threading.Thread | None:
         name = f"mission-worker-{sid}"
         return next((t for t in threading.enumerate() if t.name == name), None)
 

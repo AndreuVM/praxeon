@@ -5,7 +5,6 @@ en fragmentos de resumen estructurados (SummaryFragment) cuando el volumen de to
 supera el presupuesto disponible, preservando la continuidad cognitiva del agente.
 """
 
-from typing import List, Optional
 from praxeon.context.fragments import (
     ContextFragment,
     SummaryFragment,
@@ -20,17 +19,17 @@ class SemanticContextCompressor:
 
     def condense_observations(
         self,
-        observations: List[ContextFragment],
+        observations: list[ContextFragment],
         summary_id: str = "summary_obs_history",
         max_tokens: int = 150,
-    ) -> Optional[ContextFragment]:
+    ) -> ContextFragment | None:
         """Condensa una secuencia de observaciones detalladas en un SummaryFragment compacto."""
         if not observations:
             return None
 
-        tools_used: List[str] = []
-        outcomes: List[str] = []
-        files_touched: List[str] = []
+        tools_used: list[str] = []
+        outcomes: list[str] = []
+        files_touched: list[str] = []
 
         for obs in observations:
             meta = obs.metadata or {}
@@ -79,10 +78,10 @@ class SemanticContextCompressor:
 
     def condense_evidences(
         self,
-        evidences: List[ContextFragment],
+        evidences: list[ContextFragment],
         summary_id: str = "summary_evidence_cluster",
         max_tokens: int = 120,
-    ) -> Optional[ContextFragment]:
+    ) -> ContextFragment | None:
         """Condensa un conjunto de evidencias atómicas en un resumen consolidado de hechos probados."""
         if not evidences:
             return None

@@ -4,7 +4,7 @@ import hmac
 import json
 import os
 import sys
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from praxeon import __version__
 from praxeon.config import PraxeonConfig, default_config
@@ -24,8 +24,8 @@ class MCPBridge:
 
     def __init__(
         self,
-        config: Optional[PraxeonConfig] = None,
-        navigator: Optional[Navigator] = None,
+        config: PraxeonConfig | None = None,
+        navigator: Navigator | None = None,
     ):
         self.config = config or default_config
         if navigator is not None:
@@ -37,9 +37,9 @@ class MCPBridge:
     def evaluate_next_step(
         self,
         goal: str,
-        history: List[Dict[str, Any]],
-        proposed_step: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        history: list[dict[str, Any]],
+        proposed_step: dict[str, Any],
+    ) -> dict[str, Any]:
         """Evalúa un siguiente paso propuesto frente al historial y meta del agente mediante TypeSafe AI."""
         trajectory = Trajectory(
             session_id="mcp_session",
@@ -107,7 +107,7 @@ class MCPBridge:
             "directive": directive.model_dump() if directive else None,
         }
 
-    def diagnose_trace(self, trace_data: Dict[str, Any]) -> Dict[str, Any]:
+    def diagnose_trace(self, trace_data: dict[str, Any]) -> dict[str, Any]:
         """Diagnostica una traza completa usando TypeSafe AI y retorna el informe global."""
         trajectory = TraceParser.from_dict(trace_data)
         graph = StateGraph(self.config)
@@ -146,9 +146,9 @@ class MCPBridge:
     def evaluate_step_chunk(
         self,
         goal: str,
-        history: List[Dict[str, Any]],
-        proposed_steps: List[Dict[str, Any]],
-    ) -> Dict[str, Any]:
+        history: list[dict[str, Any]],
+        proposed_steps: list[dict[str, Any]],
+    ) -> dict[str, Any]:
         """Evalúa un bloque agrupado de pasos candidatos para supervisión eficiente y ahorro de RPM/RPD."""
         from praxeon.interceptor.proxy_middleware import JEVProxyMiddleware
 
@@ -189,7 +189,7 @@ class MCPBridge:
             return Goal(**goal_input)
         return Goal(objective=str(goal_input))
 
-    def _parse_action(self, action_dict: Dict[str, Any]) -> ActionCandidate:
+    def _parse_action(self, action_dict: dict[str, Any]) -> ActionCandidate:
         tc_data = action_dict.get("tool_call")
         tool_call = None
         if isinstance(tc_data, dict):
@@ -207,7 +207,7 @@ class MCPBridge:
             requires_evidence=action_dict.get("requires_evidence", []),
         )
 
-    def v2_start_session(self, goal: Any, session_id: Optional[str] = None) -> Dict[str, Any]:
+    def v2_start_session(self, goal: Any, session_id: str | None = None) -> dict[str, Any]:
         """Inicia una sesión de supervisión formal v0.2."""
         g = self._parse_goal(goal)
         state = self.navigator.start_session(g, session_id=session_id)
@@ -220,10 +220,10 @@ class MCPBridge:
 
     def v2_evaluate_action(
         self,
-        action: Dict[str, Any],
-        goal: Optional[Any] = None,
-        session_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        action: dict[str, Any],
+        goal: Any | None = None,
+        session_id: str | None = None,
+    ) -> dict[str, Any]:
         """Evalúa formalmente una acción candidata emitiendo decisión operacional y recibo."""
         if self.navigator.state is None:
             g = self._parse_goal(goal or "Supervisión de agente MCP")
@@ -239,10 +239,10 @@ class MCPBridge:
 
     def v2_step_and_execute(
         self,
-        action: Dict[str, Any],
-        goal: Optional[Any] = None,
+        action: dict[str, Any],
+        goal: Any | None = None,
         auto_checkpoint: bool = True,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Evalúa y ejecuta físicamente una acción autorizada con protección estricta."""
         if self.navigator.state is None:
             g = self._parse_goal(goal or "Supervisión de agente MCP")
@@ -258,10 +258,10 @@ class MCPBridge:
 
     def v2_rollback(
         self,
-        checkpoint_id: Optional[str] = None,
-        culprit_tool: Optional[str] = None,
+        checkpoint_id: str | None = None,
+        culprit_tool: str | None = None,
         reason: str = "Rollback solicitado via MCP",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Restaura el estado al checkpoint indicado e invalida descendientes."""
         if self.navigator.state is None:
             raise RuntimeError("No hay sesión activa para rollback.")
@@ -272,7 +272,7 @@ class MCPBridge:
             "state_hash": restored.compute_hash(),
         }
 
-    def v2_get_session_state(self) -> Dict[str, Any]:
+    def v2_get_session_state(self) -> dict[str, Any]:
         """Devuelve el snapshot completo del estado actual de la sesión."""
         if self.navigator.state is None:
             return {"active": False, "state": None}
@@ -285,10 +285,10 @@ class MCPBridge:
     def v2_confirm_action(
         self,
         action_id: str,
-        action_hash: Optional[str] = None,
-        operator_token: Optional[str] = None,
-        reason: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        action_hash: str | None = None,
+        operator_token: str | None = None,
+        reason: str | None = None,
+    ) -> dict[str, Any]:
         """Marca una acción sensible como confirmada formalmente por el operador humano (Finding 7)."""
         if self.navigator.state is None:
             raise RuntimeError("No hay sesión activa para confirmar acción.")
@@ -333,7 +333,7 @@ class MCPBridge:
             "message": f"Acción '{action_id}' (hash: {action_hash[:8]}...) confirmada formalmente para PolicyEngine.",
         }
 
-    def _handle_request(self, req: Dict[str, Any]) -> None:
+    def _handle_request(self, req: dict[str, Any]) -> None:
         """Procesa una solicitud JSON-RPC individual y escribe la respuesta en stdout."""
         try:
             req_id = req.get("id")
@@ -682,7 +682,7 @@ class MCPBridge:
                 pass
 
         buffer = ""
-        content_length: Optional[int] = None
+        content_length: int | None = None
 
         while True:
             # Framing estilo Content-Length (LSP / MCP HTTP/stdio header)

@@ -1,6 +1,6 @@
 """Rutas REST para la Gestión del Catálogo de Agentes (/v1/agents) (F4-04)."""
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
@@ -17,13 +17,13 @@ from praxeon.server.services.agent_service import AgentService
 router = APIRouter(prefix="/v1/agents", tags=["Agents"])
 
 
-@router.get("", response_model=APIResponse[List[Dict[str, Any]]])
+@router.get("", response_model=APIResponse[list[dict[str, Any]]])
 def list_agents(
-    status_filter: Optional[AgentStatus] = Query(None, alias="status", description="Filtrar por estado"),
-    role: Optional[str] = Query(None, description="Filtrar por rol funcional"),
-    capability: Optional[str] = Query(None, description="Filtrar por capacidad"),
-    skill: Optional[str] = Query(None, description="Filtrar por habilidad"),
-    tag: Optional[str] = Query(None, description="Filtrar por tag, capacidad o habilidad"),
+    status_filter: AgentStatus | None = Query(None, alias="status", description="Filtrar por estado"),
+    role: str | None = Query(None, description="Filtrar por rol funcional"),
+    capability: str | None = Query(None, description="Filtrar por capacidad"),
+    skill: str | None = Query(None, description="Filtrar por habilidad"),
+    tag: str | None = Query(None, description="Filtrar por tag, capacidad o habilidad"),
     service: AgentService = Depends(get_agent_service),
 ):
     """Lista todos los agentes registrados aplicando filtros opcionales."""
@@ -55,7 +55,7 @@ def list_agents(
     return APIResponse(data=[a.to_dict() for a in agents])
 
 
-@router.post("", response_model=APIResponse[Dict[str, Any]], status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=APIResponse[dict[str, Any]], status_code=status.HTTP_201_CREATED)
 def create_agent(
     payload: CreateAgentRequest,
     service: AgentService = Depends(get_agent_service),
@@ -88,7 +88,7 @@ def create_agent(
         ) from exc
 
 
-@router.get("/{agent_id}", response_model=APIResponse[Dict[str, Any]])
+@router.get("/{agent_id}", response_model=APIResponse[dict[str, Any]])
 def get_agent_detail(
     agent_id: str,
     service: AgentService = Depends(get_agent_service),
@@ -103,7 +103,7 @@ def get_agent_detail(
     return APIResponse(data=agent.to_dict())
 
 
-@router.patch("/{agent_id}", response_model=APIResponse[Dict[str, Any]])
+@router.patch("/{agent_id}", response_model=APIResponse[dict[str, Any]])
 def update_agent(
     agent_id: str,
     payload: UpdateAgentRequest,
@@ -131,7 +131,7 @@ def update_agent(
         ) from exc
 
 
-@router.delete("/{agent_id}", response_model=APIResponse[Dict[str, Any]])
+@router.delete("/{agent_id}", response_model=APIResponse[dict[str, Any]])
 def delete_agent(
     agent_id: str,
     hard_delete: bool = Query(False, description="Si es True, elimina físicamente del almacén"),
@@ -162,7 +162,7 @@ def delete_agent(
     )
 
 
-@router.post("/{agent_id}/versions", response_model=APIResponse[Dict[str, Any]], status_code=status.HTTP_201_CREATED)
+@router.post("/{agent_id}/versions", response_model=APIResponse[dict[str, Any]], status_code=status.HTTP_201_CREATED)
 def create_agent_version(
     agent_id: str,
     payload: CreateAgentVersionRequest,
@@ -187,7 +187,7 @@ def create_agent_version(
         ) from exc
 
 
-@router.get("/{agent_id}/versions", response_model=APIResponse[List[Dict[str, Any]]])
+@router.get("/{agent_id}/versions", response_model=APIResponse[list[dict[str, Any]]])
 def list_agent_versions(
     agent_id: str,
     service: AgentService = Depends(get_agent_service),
@@ -205,7 +205,7 @@ def list_agent_versions(
     return APIResponse(data=history)
 
 
-@router.get("/{agent_id}/versions/{version}", response_model=APIResponse[Dict[str, Any]])
+@router.get("/{agent_id}/versions/{version}", response_model=APIResponse[dict[str, Any]])
 def get_agent_historical_version(
     agent_id: str,
     version: int,

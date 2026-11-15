@@ -1,6 +1,6 @@
 """Rutas REST para inspección, confirmación y ejecución de decisiones (praxeon/server/routes/decisions.py)."""
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from praxeon.runtime.executor import PolicyViolation
@@ -22,7 +22,7 @@ router = APIRouter(prefix="/v1/decisions", tags=["Decisions"])
 OPERATOR_ROLE = "operator"
 
 
-def _operator_token(body_token: Optional[str], request: Optional[Request]) -> Optional[str]:
+def _operator_token(body_token: str | None, request: Request | None) -> str | None:
     """Token de operador: el del cuerpo, `X-Operator-Token` o, si no, la propia credencial con la que se autenticó la petición.
 
     La UI ya envía la clave maestra (`X-API-Key` / `Bearer`); el servidor la compara después con el secreto esperado
@@ -37,9 +37,9 @@ def _operator_token(body_token: Optional[str], request: Optional[Request]) -> Op
     return headers.get("x-operator-token") or headers.get("x-api-key") or bearer or None
 
 
-@router.get("", response_model=APIResponse[List[Dict[str, Any]]])
+@router.get("", response_model=APIResponse[list[dict[str, Any]]])
 def list_decisions(
-    session_id: Optional[str] = None,
+    session_id: str | None = None,
     limit: int = 150,
     service: RuntimeApplicationService = Depends(get_runtime_service),
 ):
@@ -159,7 +159,7 @@ def reject_decision(
 @router.post("/{decision_id}/execute", response_model=APIResponse[ExecuteDecisionResponse])
 def execute_decision(
     decision_id: str,
-    req: Optional[ExecuteDecisionRequest] = None,
+    req: ExecuteDecisionRequest | None = None,
     service: RuntimeApplicationService = Depends(get_runtime_service),
 ):
     """Solicita la ejecución física de la acción autorizada dentro del sandbox."""

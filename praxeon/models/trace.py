@@ -3,7 +3,7 @@
 import json
 import re
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import Any
 from .schema import Step, StepType, Trajectory
 
 
@@ -11,13 +11,13 @@ class TraceParser:
     """Parser multiformato para transformar logs y secuencias CoT en Trajectory."""
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> Trajectory:
+    def from_dict(cls, data: dict[str, Any]) -> Trajectory:
         """Crea una trayectoria a partir de un diccionario estructurado."""
         session_id = data.get("session_id", f"session_{uuid.uuid4().hex[:8]}")
         goal = data.get("goal", "Resolver la tarea solicitada")
         raw_steps = data.get("steps", [])
 
-        steps: List[Step] = []
+        steps: list[Step] = []
         for idx, item in enumerate(raw_steps):
             if isinstance(item, Step):
                 steps.append(item)
@@ -96,9 +96,9 @@ class TraceParser:
         # 2. Parsear formato ReAct tradicional: Thought: ... \n Action: ... \n Action Input: ... \n Observation: ...
         lines = text.splitlines()
         current_type = StepType.THOUGHT
-        current_content: List[str] = []
-        current_tool: Optional[str] = None
-        current_args: Optional[Dict[str, Any]] = None
+        current_content: list[str] = []
+        current_tool: str | None = None
+        current_args: dict[str, Any] | None = None
 
         def flush_step():
             nonlocal current_content, current_tool, current_args, current_type
@@ -156,9 +156,9 @@ class TraceParser:
         return trajectory
 
     @classmethod
-    def from_openai_messages(cls, messages: List[Dict[str, Any]], goal: Optional[str] = None) -> Trajectory:
+    def from_openai_messages(cls, messages: list[dict[str, Any]], goal: str | None = None) -> Trajectory:
         """Parsea un array de mensajes con formato de la API de OpenAI."""
-        steps: List[Step] = []
+        steps: list[Step] = []
         detected_goal = goal or ""
 
         for idx, msg in enumerate(messages):
@@ -224,9 +224,9 @@ class TraceParser:
         )
 
     @classmethod
-    def from_anthropic_messages(cls, messages: List[Dict[str, Any]], goal: Optional[str] = None) -> Trajectory:
+    def from_anthropic_messages(cls, messages: list[dict[str, Any]], goal: str | None = None) -> Trajectory:
         """Parsea un array de mensajes con formato de la API de Anthropic (Claude)."""
-        steps: List[Step] = []
+        steps: list[Step] = []
         detected_goal = goal or ""
 
         for msg in messages:

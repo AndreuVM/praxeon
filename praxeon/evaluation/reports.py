@@ -1,6 +1,6 @@
 """Generador de informes técnicos y comparativas empíricas de benchmarks (evaluation/reports.py)."""
 
-from typing import Any, Dict
+from typing import Any
 from praxeon.evaluation.metrics import EvaluationMetrics
 
 
@@ -61,7 +61,7 @@ class ReportGenerator:
 
     @staticmethod
     def generate_comparison_v1_v2(
-        v1_metrics: Dict[str, Any],
+        v1_metrics: dict[str, Any],
         v2_metrics: EvaluationMetrics,
     ) -> str:
         """Genera un reporte comparativo formal de regresión entre v0.1 y v0.2."""

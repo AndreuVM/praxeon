@@ -11,8 +11,8 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from datetime import datetime, timedelta, UTC
+from typing import Any
 import uuid
 
 from praxeon.core.pipeline import Outcome, Step, run_steps
@@ -60,15 +60,15 @@ class ProposalContext:
     state: Any = None
     action_id: str = ""
     decision_id: str = ""
-    now: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    now: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     # procedencia y acción
-    provenance: Dict[str, Any] = field(default_factory=dict)
+    provenance: dict[str, Any] = field(default_factory=dict)
     is_synthetic: bool = False
     model_source: str = ""
-    action: Optional[ActionCandidate] = None
+    action: ActionCandidate | None = None
     session_mode: str = "local_restricted"
-    session_metadata: Dict[str, Any] = field(default_factory=dict)   # metadata de la sesión al clasificar
+    session_metadata: dict[str, Any] = field(default_factory=dict)   # metadata de la sesión al clasificar
     base_dir: str = ""
 
     # análisis
@@ -78,12 +78,12 @@ class ProposalContext:
     missing_resource_name: str = ""
     is_premature_finish: bool = False
     eval_state: Any = None
-    evidences: List[Any] = field(default_factory=list)
+    evidences: list[Any] = field(default_factory=list)
     grounding_score: float = 0.0
     risk_assessment: Any = None
-    risk_dto: Optional[RiskDTO] = None
+    risk_dto: RiskDTO | None = None
     assessment: Any = None
-    provider_dtos: List[ProviderEvaluationDTO] = field(default_factory=list)
+    provider_dtos: list[ProviderEvaluationDTO] = field(default_factory=list)
 
     # decisión
     decision: Any = None
@@ -91,20 +91,20 @@ class ProposalContext:
     status: str = ""
     policy_decision: str = ""
     requires_confirmation: bool = False
-    preauthorized_reason: Optional[str] = None
-    policy_dto: Optional[PolicyDTO] = None
-    capability_data: Optional[Dict[str, Any]] = None
-    expires_at: Optional[datetime] = None
+    preauthorized_reason: str | None = None
+    policy_dto: PolicyDTO | None = None
+    capability_data: dict[str, Any] | None = None
+    expires_at: datetime | None = None
 
     @property
     def tool(self) -> str:
         return self.proposal.tool
 
     @property
-    def arguments(self) -> Dict[str, Any]:
+    def arguments(self) -> dict[str, Any]:
         return self.proposal.arguments
 
-    def emit(self, event_type: EventType, payload: Dict[str, Any], node_id: Optional[str] = None, **kw: Any) -> None:
+    def emit(self, event_type: EventType, payload: dict[str, Any], node_id: str | None = None, **kw: Any) -> None:
         self.runtime.event_bus.emit(
             session_id=self.session_id, event_type=event_type, node_id=node_id or self.action_id, payload=payload, **kw
         )
@@ -141,7 +141,7 @@ class LoadSessionStep(Step[ProposalContext]):
             ctx.state = runtime.state_store.load_state(ctx.session_id)
         ctx.action_id = proposal.action_id or f"act_{len(ctx.state.steps) + 1}"
         ctx.decision_id = f"d_{uuid.uuid4().hex[:6]}"
-        ctx.now = datetime.now(timezone.utc)
+        ctx.now = datetime.now(UTC)
         return Outcome.CONTINUE
 
 
@@ -468,7 +468,7 @@ class EvaluateSupervisorStep(Step[ProposalContext]):
         })
 
     @staticmethod
-    def _score(assessment: Any, available: bool) -> Optional[float]:
+    def _score(assessment: Any, available: bool) -> float | None:
         if not available:
             return None
         raw = getattr(assessment, "progress_probability", None)
@@ -525,7 +525,7 @@ class ResolveStatusStep(Step[ProposalContext]):
 
     def run(self, ctx: ProposalContext) -> Outcome:
         runtime, decision = ctx.runtime, ctx.decision
-        session_meta: Dict[str, Any] = {}
+        session_meta: dict[str, Any] = {}
         with runtime._lock:
             if ctx.session_id in runtime._sessions_meta:
                 session_meta = runtime._sessions_meta[ctx.session_id].get("metadata") or {}
@@ -564,7 +564,7 @@ class ResolveStatusStep(Step[ProposalContext]):
         return Outcome.CONTINUE
 
     @staticmethod
-    def _confirmation(ctx: ProposalContext, session_meta: Dict[str, Any]) -> None:
+    def _confirmation(ctx: ProposalContext, session_meta: dict[str, Any]) -> None:
         mode = ctx.session_mode
         mode_val = str(mode.value if hasattr(mode, "value") else mode or "").lower()
         full_access_authorized = bool(session_meta.get("full_access_authorized_by_operator") or session_meta.get("operator_authorized"))

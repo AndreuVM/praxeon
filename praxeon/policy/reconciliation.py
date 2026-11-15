@@ -10,7 +10,6 @@ en operaciones de inspección o build/test, ni permita relajar barreras crítica
 """
 
 import re
-from typing import List, Optional, Set
 
 from praxeon.domain.assessment import (
     CommandCategory,
@@ -41,19 +40,19 @@ class RiskReconciler:
         r"/etc/",
     ]
 
-    def __init__(self, registry: Optional[ToolRegistry] = None):
+    def __init__(self, registry: ToolRegistry | None = None):
         self.registry = registry or ToolRegistry(register_defaults=True)
 
     def reconcile(
         self,
         base_risk: RiskAssessment,
-        operation_assessment: Optional[CommandRiskAssessment],
-        tool_name: Optional[str] = None,
-        tool_spec: Optional[ToolSpec] = None,
-        action: Optional[ActionCandidate] = None,
-        available_evidence: Optional[List[Evidence]] = None,
-        execution_mode: Optional[str] = None,
-        forbidden_tools: Optional[Set[str]] = None,
+        operation_assessment: CommandRiskAssessment | None,
+        tool_name: str | None = None,
+        tool_spec: ToolSpec | None = None,
+        action: ActionCandidate | None = None,
+        available_evidence: list[Evidence] | None = None,
+        execution_mode: str | None = None,
+        forbidden_tools: set[str] | None = None,
     ) -> RiskAssessment:
         """Reconcilia de forma determinista el riesgo base con la semántica concreta y el entorno.
         

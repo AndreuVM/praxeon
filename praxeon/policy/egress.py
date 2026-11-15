@@ -10,7 +10,6 @@ Garantiza la prevención de:
 from enum import Enum
 import ipaddress
 import re
-from typing import Optional, Set, Tuple
 from urllib.parse import urlparse
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -33,14 +32,14 @@ class EgressPolicy(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     mode: EgressMode = EgressMode.BLOCK_ALL
-    allowed_hosts: Set[str] = Field(default_factory=set)
-    allowed_ports: Set[int] = Field(default_factory=lambda: {80, 443})
+    allowed_hosts: set[str] = Field(default_factory=set)
+    allowed_ports: set[int] = Field(default_factory=lambda: {80, 443})
     block_cloud_metadata: bool = True
     block_localhost: bool = True
     block_private_ips: bool = True
 
     # Endpoints de metadatos cloud conocidos (AWS, GCP, Azure, DigitalOcean)
-    CLOUD_METADATA_IPS: Set[str] = {"169.254.169.254", "metadata.google.internal"}
+    CLOUD_METADATA_IPS: set[str] = {"169.254.169.254", "metadata.google.internal"}
 
     # Patrones para extraer hosts o URLs de cadenas de comandos
     URL_PATTERN: re.Pattern = re.compile(
@@ -75,7 +74,7 @@ class EgressPolicy(BaseModel):
         except ValueError:
             return False
 
-    def check_destination(self, host: str, port: Optional[int] = None) -> Tuple[bool, Optional[str]]:
+    def check_destination(self, host: str, port: int | None = None) -> tuple[bool, str | None]:
         """Evalúa un destino (host, puerto) contra las reglas de la política.
         
         Devuelve (allowed, reason_if_blocked).
@@ -108,7 +107,7 @@ class EgressPolicy(BaseModel):
 
         return True, None
 
-    def evaluate_command_egress(self, command: str) -> Tuple[bool, Optional[str]]:
+    def evaluate_command_egress(self, command: str) -> tuple[bool, str | None]:
         """Inspecciona una línea de comando en busca de llamadas o conexiones de red.
         
         Devuelve (allowed, reason_if_blocked).
@@ -157,7 +156,7 @@ class EgressPolicy(BaseModel):
         return True, None
 
 
-CANONICAL_PROVIDER_HOSTS: Set[str] = {
+CANONICAL_PROVIDER_HOSTS: set[str] = {
     "api.groq.com",
     "generativelanguage.googleapis.com",
     "api.openai.com",
@@ -175,11 +174,11 @@ class SSRFProtectionViolation(ValueError):
 
 
 def validate_provider_endpoint(
-    url: Optional[str],
+    url: str | None,
     allow_custom: bool = False,
     profile: str = "dev",
-    allowed_hosts: Optional[Set[str]] = None,
-) -> Optional[str]:
+    allowed_hosts: set[str] | None = None,
+) -> str | None:
     """Valida y filtra exhaustivamente una URL de endpoint remoto contra ataques SSRF (SEC-01).
 
     Garantiza:

@@ -12,7 +12,7 @@ import json
 import os
 import threading
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any
 import logging
 
 logger = logging.getLogger(__name__)
@@ -24,13 +24,13 @@ class PrometheusMetricsExporter:
     # Buckets estándar para latencia en segundos (de 1ms a 5s)
     DEFAULT_LATENCY_BUCKETS = (0.001, 0.005, 0.010, 0.025, 0.050, 0.100, 0.250, 0.500, 1.000, 2.500, 5.000)
 
-    def __init__(self, start_time: Optional[float] = None) -> None:
+    def __init__(self, start_time: float | None = None) -> None:
         self._lock = threading.Lock()
         self._start_time = start_time or time.time()
-        self._custom_counters: Dict[str, Dict[str, float]] = {}
-        self._custom_gauges: Dict[str, Dict[str, float]] = {}
+        self._custom_counters: dict[str, dict[str, float]] = {}
+        self._custom_gauges: dict[str, dict[str, float]] = {}
 
-    def record_counter(self, name: str, value: float = 1.0, labels: Optional[Dict[str, str]] = None) -> None:
+    def record_counter(self, name: str, value: float = 1.0, labels: dict[str, str] | None = None) -> None:
         """Incrementa un contador personalizado."""
         lbl_key = self._format_label_key(labels)
         with self._lock:
@@ -38,7 +38,7 @@ class PrometheusMetricsExporter:
                 self._custom_counters[name] = {}
             self._custom_counters[name][lbl_key] = self._custom_counters[name].get(lbl_key, 0.0) + value
 
-    def set_gauge(self, name: str, value: float, labels: Optional[Dict[str, str]] = None) -> None:
+    def set_gauge(self, name: str, value: float, labels: dict[str, str] | None = None) -> None:
         """Establece el valor de un gauge personalizado."""
         lbl_key = self._format_label_key(labels)
         with self._lock:
@@ -47,18 +47,18 @@ class PrometheusMetricsExporter:
             self._custom_gauges[name][lbl_key] = value
 
     @staticmethod
-    def _format_label_key(labels: Optional[Dict[str, str]]) -> str:
+    def _format_label_key(labels: dict[str, str] | None) -> str:
         if not labels:
             return ""
         items = sorted(labels.items())
         parts = [f'{k}="{v}"' for k, v in items]
         return "{" + ",".join(parts) + "}"
 
-    def generate_metrics(self, service: Optional[Any] = None) -> str:
+    def generate_metrics(self, service: Any | None = None) -> str:
         """Recolecta el estado del servicio y formatea la salida Prometheus 0.0.4."""
         now = time.time()
         uptime = round(now - self._start_time, 2)
-        lines: List[str] = []
+        lines: list[str] = []
 
         # 1. Metadatos del runtime
         lines.append("# HELP praxeon_build_info Build information and current version of PRAXEON runtime.")
@@ -109,7 +109,7 @@ class PrometheusMetricsExporter:
         lines.append(f'praxeon_policy_evaluations_total{{status="review"}} {review}')
 
         # Latencias e histograma de decisiones
-        latencies_sec: List[float] = []
+        latencies_sec: list[float] = []
         nonce_success = 0
         nonce_replay = 0
 
@@ -146,7 +146,7 @@ class PrometheusMetricsExporter:
         lines.append("# HELP praxeon_decision_latency_seconds Latency of System-1 and supervisory decision pipeline in seconds.")
         lines.append("# TYPE praxeon_decision_latency_seconds histogram")
 
-        bucket_counts: Dict[float, int] = {b: 0 for b in self.DEFAULT_LATENCY_BUCKETS}
+        bucket_counts: dict[float, int] = {b: 0 for b in self.DEFAULT_LATENCY_BUCKETS}
         total_latency_sum = 0.0
         for l_sec in latencies_sec:
             total_latency_sum += l_sec
@@ -212,7 +212,7 @@ class PrometheusMetricsExporter:
         return "\n".join(lines) + "\n"
 
 
-_global_exporter: Optional[PrometheusMetricsExporter] = None
+_global_exporter: PrometheusMetricsExporter | None = None
 _exporter_lock = threading.Lock()
 
 

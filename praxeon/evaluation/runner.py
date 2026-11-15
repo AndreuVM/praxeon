@@ -5,7 +5,7 @@ JEV Reasoning Navigator frente a escenarios reproducibles con ground truth.
 """
 
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 from praxeon.domain.models import (
     ActionCandidate,
@@ -45,7 +45,7 @@ class ScenarioResult(BaseModel):
     execution_prevented: bool = True
     capability_verified: bool = True
     latency_ms: float
-    reason_codes: List[str]
+    reason_codes: list[str]
     description: str
 
 
@@ -56,7 +56,7 @@ class BenchmarkReport(BaseModel):
     suite_name: str
     timestamp: float = Field(default_factory=time.time)
     metrics: EvaluationMetrics
-    results: List[ScenarioResult]
+    results: list[ScenarioResult]
 
 
 class PolicyBenchmarkReport(BaseModel):
@@ -135,19 +135,19 @@ class ProviderComparisonReport(BaseModel):
     provider_b_avg_latency_ms: float
     provider_a_p95_latency_ms: float
     provider_b_p95_latency_ms: float
-    disagreements: List[Dict[str, Any]] = Field(default_factory=list)
+    disagreements: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class BenchmarkRunner:
     """Ejecuta suites de escenarios contra el Navigator y realiza estudios de ablación."""
 
-    def __init__(self, navigator: Optional[Navigator] = None):
+    def __init__(self, navigator: Navigator | None = None):
         self.navigator = navigator
 
     def run_scenario(
         self,
         scenario: BenchmarkScenario,
-        navigator: Optional[Navigator] = None,
+        navigator: Navigator | None = None,
     ) -> ScenarioResult:
         """Ejecuta un único escenario normativo registrando la decisión, ejecución física y latencia."""
         nav = navigator or self.navigator
@@ -222,13 +222,13 @@ class BenchmarkRunner:
 
     def run_benchmark(
         self,
-        scenarios: Optional[List[BenchmarkScenario]] = None,
-        navigator: Optional[Navigator] = None,
+        scenarios: list[BenchmarkScenario] | None = None,
+        navigator: Navigator | None = None,
         suite_name: str = "JEV-v0.2-Full-Benchmark",
     ) -> BenchmarkReport:
         """Ejecuta una lista de escenarios y compila las métricas globales."""
         target_scenarios = scenarios or ScenarioCatalog.get_extended_scenarios()
-        results: List[ScenarioResult] = []
+        results: list[ScenarioResult] = []
 
         for sc in target_scenarios:
             res = self.run_scenario(sc, navigator=navigator)
@@ -243,9 +243,9 @@ class BenchmarkRunner:
 
     def run_ablation_study(
         self,
-        scenarios: Optional[List[BenchmarkScenario]] = None,
+        scenarios: list[BenchmarkScenario] | None = None,
         include_router: bool = False,
-    ) -> Dict[str, EvaluationMetrics]:
+    ) -> dict[str, EvaluationMetrics]:
         """Ejecuta el estudio formal de ablaciones de la sección 25 del diseño.
         
         Evalúa:
@@ -257,12 +257,12 @@ class BenchmarkRunner:
         6. Full v0.4 (Opcional si include_router=True): Confidence-Aware Cascade Router.
         """
         target_scenarios = scenarios or ScenarioCatalog.get_extended_scenarios()
-        ablation_results: Dict[str, EvaluationMetrics] = {}
+        ablation_results: dict[str, EvaluationMetrics] = {}
 
         # -------------------------------------------------------------
         # Configuración 1: Policy Only (Sin señales semánticas JEV)
         # -------------------------------------------------------------
-        def eval_config_1(sc: BenchmarkScenario) -> Dict[str, Any]:
+        def eval_config_1(sc: BenchmarkScenario) -> dict[str, Any]:
             start = time.perf_counter()
             reg = ToolRegistry(register_defaults=True)
             pol = PolicyEngine(registry=reg)
@@ -289,7 +289,7 @@ class BenchmarkRunner:
         # -------------------------------------------------------------
         # Configuración 2: JEV sin Evidence Engine (Groundedness ciego)
         # -------------------------------------------------------------
-        def eval_config_2(sc: BenchmarkScenario) -> Dict[str, Any]:
+        def eval_config_2(sc: BenchmarkScenario) -> dict[str, Any]:
             start = time.perf_counter()
             reg = ToolRegistry(register_defaults=True)
             pol = PolicyEngine(registry=reg)
@@ -316,7 +316,7 @@ class BenchmarkRunner:
         # -------------------------------------------------------------
         # Configuración 3: JEV + Evidence (Sin Risk Engine / Sin Veto Shell)
         # -------------------------------------------------------------
-        def eval_config_3(sc: BenchmarkScenario) -> Dict[str, Any]:
+        def eval_config_3(sc: BenchmarkScenario) -> dict[str, Any]:
             start = time.perf_counter()
             # Registro permisivo donde todo es seguro
             reg = ToolRegistry(register_defaults=False)
@@ -346,7 +346,7 @@ class BenchmarkRunner:
         # -------------------------------------------------------------
         # Configuración 4: JEV + Evidence + Risk (Sin FailSafe - modo permisivo v0.1)
         # -------------------------------------------------------------
-        def eval_config_4(sc: BenchmarkScenario) -> Dict[str, Any]:
+        def eval_config_4(sc: BenchmarkScenario) -> dict[str, Any]:
             start = time.perf_counter()
             reg = ToolRegistry(register_defaults=True)
             # FailSafe que permite todo ante caída del proveedor
@@ -402,16 +402,16 @@ class BenchmarkRunner:
 
     def run_expanded_ablation_study(
         self,
-        scenarios: Optional[List[BenchmarkScenario]] = None,
-    ) -> Dict[str, EvaluationMetrics]:
+        scenarios: list[BenchmarkScenario] | None = None,
+    ) -> dict[str, EvaluationMetrics]:
         """Ejecuta el estudio ampliado de ablaciones incluyendo el router de confianza de v0.4 (6 configs)."""
         return self.run_ablation_study(scenarios=scenarios, include_router=True)
 
 
     def compare_v01_vs_v02(
         self,
-        scenarios: Optional[List[BenchmarkScenario]] = None,
-    ) -> Dict[str, Any]:
+        scenarios: list[BenchmarkScenario] | None = None,
+    ) -> dict[str, Any]:
         """Compara cuantitativamente el comportamiento de v0.1 frente a v0.2."""
         ablations = self.run_ablation_study(scenarios=scenarios)
         v01_proxy = ablations["4. JEV + Evidence + Risk (No FailSafe)"]
@@ -426,9 +426,9 @@ class BenchmarkRunner:
 
     def run_provider_comparison(
         self,
-        scenarios: Optional[List[BenchmarkScenario]] = None,
-        provider_a: Optional[Any] = None,
-        provider_b: Optional[Any] = None,
+        scenarios: list[BenchmarkScenario] | None = None,
+        provider_a: Any | None = None,
+        provider_b: Any | None = None,
     ) -> ProviderComparisonReport:
         """Compara empíricamente la concordancia decisional, latencia y telemetría entre dos proveedores."""
         from praxeon.providers.laya import LayaProvider
@@ -439,9 +439,9 @@ class BenchmarkRunner:
 
         agreements = 0
         disagreements = 0
-        latencies_a: List[float] = []
-        latencies_b: List[float] = []
-        disagreement_details: List[Dict[str, Any]] = []
+        latencies_a: list[float] = []
+        latencies_b: list[float] = []
+        disagreement_details: list[dict[str, Any]] = []
 
         for sc in target_scenarios:
             st = SessionState(session_id=f"cmp_{sc.scenario_id}", goal=sc.goal)
@@ -499,7 +499,7 @@ class BenchmarkRunner:
 
     def run_policy_benchmark(
         self,
-        scenarios: Optional[List[BenchmarkScenario]] = None,
+        scenarios: list[BenchmarkScenario] | None = None,
     ) -> PolicyBenchmarkReport:
         """Ejecuta el benchmark formal de políticas evaluando la corrección decisional y matrices de confusión."""
         target = scenarios or ScenarioCatalog.get_extended_scenarios()
@@ -672,7 +672,7 @@ class BenchmarkRunner:
     def run_runtime_benchmark(
         self,
         num_iterations: int = 150,
-        iterations: Optional[int] = None,
+        iterations: int | None = None,
     ) -> RuntimeBenchmarkReport:
         """Mide la latencia percentil (p50/p95/p99) y el throughput de operaciones por segundo."""
         total_ops = iterations if iterations is not None else num_iterations
@@ -687,7 +687,7 @@ class BenchmarkRunner:
             tool_call=ToolCall(tool_name="read_file", arguments={"path": "test.txt"}),
         )
 
-        latencies_ms: List[float] = []
+        latencies_ms: list[float] = []
         t_global_start = time.perf_counter()
 
         for _ in range(total_ops):
@@ -718,7 +718,7 @@ class BenchmarkRunner:
 
     def run_trajectory_benchmark(
         self,
-        scenarios: Optional[List[TrajectoryScenario]] = None,
+        scenarios: list[TrajectoryScenario] | None = None,
     ) -> TrajectoryBenchmarkReport:
         """Evalúa agentes en secuencias multi-paso con dependencias cronológicas, rollbacks y recuperación."""
         from praxeon.providers.replay import ReplayProvider

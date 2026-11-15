@@ -8,7 +8,6 @@ Define escenarios normativos con ground truth estricto para evaluar:
 - Enforcement físico (SecureExecutor)
 """
 
-from typing import List, Optional, Set
 from pydantic import BaseModel, ConfigDict, Field
 from praxeon.domain.models import (
     ActionCandidate,
@@ -31,10 +30,10 @@ class BenchmarkScenario(BaseModel):
     candidate_action: ActionCandidate
     expected_status: DecisionStatus
     simulated_assessment: ProviderAssessment
-    initial_evidence: List[Evidence] = Field(default_factory=list)
-    forbidden_tools: Set[str] = Field(default_factory=set)
+    initial_evidence: list[Evidence] = Field(default_factory=list)
+    forbidden_tools: set[str] = Field(default_factory=set)
     is_destructive: bool = False
-    expected_reason_substr: Optional[str] = None
+    expected_reason_substr: str | None = None
 
 
 class TrajectoryStepDefinition(BaseModel):
@@ -44,9 +43,9 @@ class TrajectoryStepDefinition(BaseModel):
     step_index: int
     action: ActionCandidate
     expected_status: DecisionStatus
-    simulated_assessment: Optional[ProviderAssessment] = None
+    simulated_assessment: ProviderAssessment | None = None
     observation_output: str = "Paso ejecutado correctamente."
-    creates_evidence: Optional[Evidence] = None
+    creates_evidence: Evidence | None = None
     induces_rollback: bool = False
     expected_backtrack: bool = False
     is_confirmed: bool = False
@@ -60,7 +59,7 @@ class TrajectoryScenario(BaseModel):
     scenario_id: str
     description: str
     goal: Goal
-    steps: List[TrajectoryStepDefinition]
+    steps: list[TrajectoryStepDefinition]
     expected_final_success: bool = True
 
 
@@ -68,7 +67,7 @@ class ScenarioCatalog:
     """Catálogo canónico de escenarios de benchmark para evaluación cuantitativa y ablaciones."""
 
     @staticmethod
-    def get_minimal_scenarios() -> List[BenchmarkScenario]:
+    def get_minimal_scenarios() -> list[BenchmarkScenario]:
         """Devuelve los 5 escenarios mínimos requeridos por la sección 23.1 de la arquitectura."""
         return [
             # 1. safe_read: lectura segura y fundamentada
@@ -200,7 +199,7 @@ class ScenarioCatalog:
         ]
 
     @staticmethod
-    def get_extended_scenarios() -> List[BenchmarkScenario]:
+    def get_extended_scenarios() -> list[BenchmarkScenario]:
         """Devuelve el catálogo ampliado cubriendo todas las categorías de la sección 23.2."""
         scenarios = list(ScenarioCatalog.get_minimal_scenarios())
 
@@ -336,7 +335,7 @@ class ScenarioCatalog:
         return scenarios
 
     @staticmethod
-    def generate_large_scale_dataset(count: int = 1000, seed: int = 42) -> List[BenchmarkScenario]:
+    def generate_large_scale_dataset(count: int = 1000, seed: int = 42) -> list[BenchmarkScenario]:
         """Genera un dataset masivo, sintético y reproducible de hasta 1.000+ escenarios normativos.
 
         Distribuye los escenarios proporcionalmente entre las categorías especificadas en la Sección 18 y 23.2:
@@ -356,7 +355,7 @@ class ScenarioCatalog:
         """
         import random
         rng = random.Random(seed)
-        dataset: List[BenchmarkScenario] = []
+        dataset: list[BenchmarkScenario] = []
 
         categories = [
             "normal_progress",
@@ -595,29 +594,29 @@ class ScenarioCatalog:
         return dataset
 
     @classmethod
-    def generate_1000_scenarios(cls, seed: int = 42) -> List[BenchmarkScenario]:
+    def generate_1000_scenarios(cls, seed: int = 42) -> list[BenchmarkScenario]:
         """Genera el dataset canónico de 1.000 escenarios procedurales con semilla."""
         return cls.generate_large_scale_dataset(count=1000, seed=seed)
 
     @classmethod
-    def get_canonical_scenarios(cls) -> List[BenchmarkScenario]:
+    def get_canonical_scenarios(cls) -> list[BenchmarkScenario]:
         """Devuelve el catálogo canónico extendido de escenarios normativos."""
         return cls.get_extended_scenarios()
 
     @classmethod
-    def get_holdout_scenarios(cls, n: int = 200, seed: int = 42) -> List[BenchmarkScenario]:
+    def get_holdout_scenarios(cls, n: int = 200, seed: int = 42) -> list[BenchmarkScenario]:
         """Devuelve un conjunto holdout aislado y determinista para evitar sobreajuste en benchmarks."""
         dataset = cls.generate_1000_scenarios(seed=seed)
         return dataset[1000 - n:]
 
     @classmethod
-    def get_train_scenarios(cls, n: int = 800, seed: int = 42) -> List[BenchmarkScenario]:
+    def get_train_scenarios(cls, n: int = 800, seed: int = 42) -> list[BenchmarkScenario]:
         """Devuelve el conjunto de entrenamiento/desarrollo de escenarios procedurales."""
         dataset = cls.generate_1000_scenarios(seed=seed)
         return dataset[:n]
 
     @classmethod
-    def get_trajectory_scenarios(cls) -> List[TrajectoryScenario]:
+    def get_trajectory_scenarios(cls) -> list[TrajectoryScenario]:
         """Devuelve la suite de trayectorias multi-paso para el Trajectory Benchmark."""
         return [
             # 1. Trayectoria lineal constructiva

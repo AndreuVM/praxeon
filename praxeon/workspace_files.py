@@ -14,7 +14,8 @@ import os
 import shutil
 import tempfile
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any
+from collections.abc import Iterable
 
 from praxeon import workspace_store
 
@@ -49,7 +50,7 @@ def workspace_root() -> Path:
     return root
 
 
-def resolve_inside(rel_path: Optional[str], root: Optional[Path] = None) -> Path:
+def resolve_inside(rel_path: str | None, root: Path | None = None) -> Path:
     """Resuelve `rel_path` dentro de la raíz o lanza WorkspacePathError."""
     root = root or workspace_root()
     rel = (rel_path or "").replace("\\", "/").strip("/")
@@ -69,7 +70,7 @@ def _rel(path: Path, root: Path) -> str:
     return path.relative_to(root).as_posix()
 
 
-def list_tree(rel_path: Optional[str] = None, show_hidden: bool = False) -> Dict[str, Any]:
+def list_tree(rel_path: str | None = None, show_hidden: bool = False) -> dict[str, Any]:
     """Contenido de una carpeta (un nivel, carga perezosa); carpetas primero."""
     root = workspace_root()
     target = resolve_inside(rel_path, root)
@@ -77,7 +78,7 @@ def list_tree(rel_path: Optional[str] = None, show_hidden: bool = False) -> Dict
         raise WorkspaceFileNotFound("La carpeta no existe.")
     if not target.is_dir():
         raise WorkspacePathError("La ruta no es una carpeta.")
-    entries: List[Dict[str, Any]] = []
+    entries: list[dict[str, Any]] = []
     truncated = False
     try:
         with os.scandir(target) as it:
@@ -121,7 +122,7 @@ def _etag(data: bytes, mtime_ns: int) -> str:
     return hashlib.sha1(data, usedforsecurity=False).hexdigest()[:16] + f"-{mtime_ns}"  # ETag, no seguridad
 
 
-def _decode_text(data: bytes) -> Optional[tuple]:
+def _decode_text(data: bytes) -> tuple | None:
     """(texto, codificación) si `data` es texto; None si es binario.
 
     Reconoce BOM UTF-8/UTF-16 y, como último recurso, Windows-1252 (los .txt de Windows con acentos), para poder leerlos y
@@ -146,7 +147,7 @@ def _decode_text(data: bytes) -> Optional[tuple]:
         return None
 
 
-def _media_kind(mime: str, name: str) -> Optional[str]:
+def _media_kind(mime: str, name: str) -> str | None:
     """Tipos que se previsualizan como bytes: pdf o imagen (el SVG es texto: se edita y además se previsualiza)."""
     if mime == "application/pdf":
         return "pdf"
@@ -155,7 +156,7 @@ def _media_kind(mime: str, name: str) -> Optional[str]:
     return None
 
 
-def read_file(rel_path: str) -> Dict[str, Any]:
+def read_file(rel_path: str) -> dict[str, Any]:
     """Metadatos y contenido (texto) de un archivo. PDF e imágenes devuelven `kind` sin contenido (se ven con /file/raw)."""
     root = workspace_root()
     target = resolve_inside(rel_path, root)
@@ -165,7 +166,7 @@ def read_file(rel_path: str) -> Dict[str, Any]:
         raise WorkspacePathError("La ruta no es un archivo.")
     st = target.stat()
     mime = mimetypes.guess_type(target.name)[0] or "application/octet-stream"
-    info: Dict[str, Any] = {
+    info: dict[str, Any] = {
         "rel_path": _rel(target, root),
         "name": target.name,
         "size": st.st_size,
@@ -213,7 +214,7 @@ def _encode(content: str, encoding: str) -> tuple:
         return content.encode("utf-8"), "utf-8"
 
 
-def write_file(rel_path: str, content: str, expected_etag: Optional[str] = None, encoding: str = "utf-8") -> Dict[str, Any]:
+def write_file(rel_path: str, content: str, expected_etag: str | None = None, encoding: str = "utf-8") -> dict[str, Any]:
     """Guarda de forma atómica; WorkspaceConflict si el etag esperado ya no coincide. Conserva la codificación leída."""
     root = workspace_root()
     target = resolve_inside(rel_path, root)
@@ -267,7 +268,7 @@ def _entry_path(rel_path: str, root: Path) -> Path:
     return parent / name
 
 
-def create_entry(rel_path: str, kind: str) -> Dict[str, Any]:
+def create_entry(rel_path: str, kind: str) -> dict[str, Any]:
     """Crea un archivo vacío o una carpeta; WorkspaceExists si ya hay algo con ese nombre."""
     if kind not in ("file", "dir"):
         raise WorkspacePathError("El tipo debe ser «file» o «dir».")
@@ -285,7 +286,7 @@ def create_entry(rel_path: str, kind: str) -> Dict[str, Any]:
     return {"rel_path": _rel(target, root), "type": kind}
 
 
-def delete_entry(rel_path: str) -> Dict[str, Any]:
+def delete_entry(rel_path: str) -> dict[str, Any]:
     """Elimina un archivo o una carpeta con todo su contenido (o un enlace simbólico, sin tocar su destino)."""
     root = workspace_root()
     target = _entry_path(rel_path, root)
@@ -302,7 +303,7 @@ def delete_entry(rel_path: str) -> Dict[str, Any]:
     return {"rel_path": rel, "type": "dir", "removed": removed}
 
 
-def rename_entry(rel_path: str, new_rel_path: str) -> Dict[str, Any]:
+def rename_entry(rel_path: str, new_rel_path: str) -> dict[str, Any]:
     """Renombra o mueve dentro del workspace; WorkspaceExists si el destino ya existe."""
     root = workspace_root()
     source = _entry_path(rel_path, root)
@@ -319,7 +320,7 @@ def rename_entry(rel_path: str, new_rel_path: str) -> Dict[str, Any]:
     return {"rel_path": _rel(dest, root), "old_rel_path": _rel(source, root)}
 
 
-def save_upload(rel_path: str, chunks: Iterable[bytes], overwrite: bool = False, max_bytes: int = MAX_UPLOAD_BYTES) -> Dict[str, Any]:
+def save_upload(rel_path: str, chunks: Iterable[bytes], overwrite: bool = False, max_bytes: int = MAX_UPLOAD_BYTES) -> dict[str, Any]:
     """Guarda un archivo subido (arrastrar y soltar) en `rel_path`, creando las carpetas intermedias dentro del workspace.
 
     Escribe en un temporal y lo renombra al terminar: un corte a mitad de subida nunca deja un archivo a medias.

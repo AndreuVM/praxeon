@@ -6,7 +6,6 @@ evitando el reenvío redundante de fragmentos compartidos o invariantes.
 
 from __future__ import annotations
 
-from typing import Dict, List, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 from praxeon.context.cache import ContextSnapshot
@@ -19,14 +18,14 @@ class ContextDelta(BaseModel):
 
     base_fingerprint: str
     target_fingerprint: str
-    added_fragments: List[ContextFragment] = Field(default_factory=list)
-    removed_fragment_hashes: List[str] = Field(default_factory=list)
+    added_fragments: list[ContextFragment] = Field(default_factory=list)
+    removed_fragment_hashes: list[str] = Field(default_factory=list)
     reused_fragments_count: int = 0
     tokens_diff: int = 0
     is_empty: bool = False
 
     @classmethod
-    def compute(cls, base: Optional[ContextSnapshot], target: ContextSnapshot) -> ContextDelta:
+    def compute(cls, base: ContextSnapshot | None, target: ContextSnapshot) -> ContextDelta:
         """Calcula el delta exacto desde base hacia target."""
         if base is None:
             return cls(
@@ -50,8 +49,8 @@ class ContextDelta(BaseModel):
                 is_empty=True,
             )
 
-        base_hashes: Dict[str, ContextFragment] = {f.content_hash: f for f in base.fragments}
-        target_hashes: Dict[str, ContextFragment] = {f.content_hash: f for f in target.fragments}
+        base_hashes: dict[str, ContextFragment] = {f.content_hash: f for f in base.fragments}
+        target_hashes: dict[str, ContextFragment] = {f.content_hash: f for f in target.fragments}
 
         added = [f for h, f in target_hashes.items() if h not in base_hashes]
         removed_hashes = [h for h in base_hashes.keys() if h not in target_hashes]
@@ -69,7 +68,7 @@ class ContextDelta(BaseModel):
             is_empty=empty,
         )
 
-    def apply_to_fragments(self, base_fragments: List[ContextFragment]) -> List[ContextFragment]:
+    def apply_to_fragments(self, base_fragments: list[ContextFragment]) -> list[ContextFragment]:
         """Aplica las adiciones y eliminaciones sobre una lista base de fragmentos."""
         removed_set = set(self.removed_fragment_hashes)
         retained = [f for f in base_fragments if f.content_hash not in removed_set]

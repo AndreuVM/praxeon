@@ -9,7 +9,6 @@ Supervisa en tiempo real la ejecución de trayectorias y emite directivas adapta
 - TERMINATE: Meta de la tarea completamente satisfecha y verificada.
 """
 
-from typing import List, Optional, Tuple
 
 from praxeon.routing.escalation import DynamicEscalationEngine
 from praxeon.routing.models import TaskRequirement
@@ -21,7 +20,7 @@ class TrajectoryController:
 
     def __init__(
         self,
-        escalation_engine: Optional[DynamicEscalationEngine] = None,
+        escalation_engine: DynamicEscalationEngine | None = None,
         uncertainty_threshold: float = 0.70,
         max_consecutive_errors: int = 2,
     ):
@@ -32,9 +31,9 @@ class TrajectoryController:
     def evaluate_step(
         self,
         step_record: TrajectoryStepRecord,
-        history: List[TrajectoryStepRecord],
+        history: list[TrajectoryStepRecord],
         task: TaskRequirement,
-    ) -> Tuple[TrajectoryDirective, str]:
+    ) -> tuple[TrajectoryDirective, str]:
         """Evalúa el resultado de un paso ejecutado y determina la directiva adaptativa de control."""
         # 1. Verificar si la acción fue denegada por política de seguridad
         if step_record.policy_decision == "DENY":

@@ -20,7 +20,7 @@ import shutil
 import subprocess
 import sys
 import time
-from typing import Any, Dict, Optional, Protocol
+from typing import Any, Protocol
 
 from praxeon.runtime.child_env import child_environment, run_with_tree_timeout
 from praxeon.runtime.fs_tools import content_from_args, list_directory
@@ -30,7 +30,7 @@ from pydantic import BaseModel, ConfigDict
 _TOOL_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$")
 
 
-def is_executable_tool_name(tool_name: Optional[str]) -> bool:
+def is_executable_tool_name(tool_name: str | None) -> bool:
     """Un nombre de herramienta solo se ejecuta como comando si es un identificador simple de un
     ejecutable realmente disponible (catálogo de CLI conocidos o presente en el PATH).
 
@@ -70,8 +70,8 @@ class ExecutionBackend(Protocol):
     def execute_tool(
         self,
         tool_name: str,
-        arguments: Dict[str, Any],
-        context: Optional[Dict[str, Any]] = None,
+        arguments: dict[str, Any],
+        context: dict[str, Any] | None = None,
     ) -> FullAccessResult:
         """Ejecuta una herramienta física autorizada con el contexto de la sesión."""
         ...
@@ -84,14 +84,14 @@ class FullAccessExecutor:
     el CapabilityPayload firmado con execution_mode='full_access'.
     """
 
-    def __init__(self, default_cwd: Optional[str] = None):
+    def __init__(self, default_cwd: str | None = None):
         self.default_cwd = default_cwd or os.getcwd()
 
     def execute_tool(
         self,
         tool_name: str,
-        arguments: Dict[str, Any],
-        context: Optional[Dict[str, Any]] = None,
+        arguments: dict[str, Any],
+        context: dict[str, Any] | None = None,
     ) -> FullAccessResult:
         """Despacha la ejecución física de herramientas built-in sobre el sistema operativo host."""
         ctx = context or {}
@@ -125,7 +125,7 @@ class FullAccessExecutor:
                         exit_code=0,
                         execution_time_ms=round(elapsed, 2),
                     )
-                with open(path, "r", encoding="utf-8", errors="replace") as f:
+                with open(path, encoding="utf-8", errors="replace") as f:
                     content = f.read(100_000)
                     if len(content) >= 100_000:
                         content += "\n\n[... Truncado a 100.000 bytes por límite de buffer ...]"

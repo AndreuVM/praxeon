@@ -27,7 +27,7 @@ import platform
 import shutil
 import subprocess
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any
 from pydantic import BaseModel, ConfigDict
 
 from praxeon import __version__
@@ -96,8 +96,8 @@ class ScientificMatrixBenchmarkReport(BaseModel):
 
     suite_name: str = "LLM_x_System1_Scientific_Matrix"
     metadata: BenchmarkMetadata
-    matrix_cells: List[MatrixCellResult]
-    summary_table: List[Dict[str, Any]]
+    matrix_cells: list[MatrixCellResult]
+    summary_table: list[dict[str, Any]]
     false_allow_critical_verdict: str
     recommendation: str
 
@@ -160,7 +160,7 @@ def collect_hardware_metadata() -> HardwareMetadata:
 def collect_benchmark_metadata(
     seed: int = 42,
     dataset_version: str = "eval-matrix-v1.1",
-    extra_config_params: Optional[Dict[str, Any]] = None,
+    extra_config_params: dict[str, Any] | None = None,
 ) -> BenchmarkMetadata:
     """Construye los metadatos reproducibles de benchmark estructurado (BENCH-02)."""
     import datetime
@@ -178,7 +178,7 @@ def collect_benchmark_metadata(
     config_serialized = json.dumps(config_dict, sort_keys=True)
     config_hash = hashlib.sha256(config_serialized.encode("utf-8")).hexdigest()[:16]
 
-    now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    now_iso = datetime.datetime.now(datetime.UTC).isoformat()
 
     return BenchmarkMetadata(
         praxeon_version=__version__,
@@ -196,7 +196,7 @@ def collect_benchmark_metadata(
 
 def organize_historical_benchmarks(
     base_dir: str = "benchmark_results",
-) -> List[str]:
+) -> list[str]:
     """Separa y archiva formalmente los resultados históricos en benchmark_results/historical (BENCH-02)."""
     base_path = Path(base_dir)
     if not base_path.exists():
@@ -232,7 +232,7 @@ def organize_historical_benchmarks(
 class ScientificMatrixBenchmark:
     """Arnés de benchmark para la matriz cruzada [LLMs generadores] × [System-1 supervisores] (BENCH-01)."""
 
-    DEFAULT_LLMS: List[str] = [
+    DEFAULT_LLMS: list[str] = [
         "qwen2.5-coder:7b",
         "llama-3.3-70b-versatile",
         "gpt-4o-mini",
@@ -240,7 +240,7 @@ class ScientificMatrixBenchmark:
         "simulator",
     ]
 
-    DEFAULT_SUPERVISORS: List[str] = [
+    DEFAULT_SUPERVISORS: list[str] = [
         "sin_supervisor",  # Baseline no supervisado (pass-through)
         "laya",            # LAYA System-1 Reflejo
         "typesafe",        # TypeSafe AI Adapter
@@ -250,8 +250,8 @@ class ScientificMatrixBenchmark:
 
     def __init__(
         self,
-        llms: Optional[List[str]] = None,
-        supervisors: Optional[List[str]] = None,
+        llms: list[str] | None = None,
+        supervisors: list[str] | None = None,
         seed: int = 42,
     ):
         self.llms = llms or self.DEFAULT_LLMS
@@ -262,7 +262,7 @@ class ScientificMatrixBenchmark:
         self,
         llm_name: str,
         supervisor_name: str,
-        scenarios: List[BenchmarkScenario],
+        scenarios: list[BenchmarkScenario],
     ) -> MatrixCellResult:
         """Evalúa un par (LLM, System-1) sobre el conjunto normativo de escenarios."""
         total_tasks = len(scenarios)
@@ -376,7 +376,7 @@ class ScientificMatrixBenchmark:
 
     def run_matrix(
         self,
-        scenarios: Optional[List[BenchmarkScenario]] = None,
+        scenarios: list[BenchmarkScenario] | None = None,
         output_dir: str = "benchmark_results",
         archive_historical: bool = True,
     ) -> ScientificMatrixBenchmarkReport:
@@ -387,8 +387,8 @@ class ScientificMatrixBenchmark:
         target_scenarios = scenarios or ScenarioCatalog.get_extended_scenarios()
         metadata = collect_benchmark_metadata(seed=self.seed)
 
-        cell_results: List[MatrixCellResult] = []
-        summary_table: List[Dict[str, Any]] = []
+        cell_results: list[MatrixCellResult] = []
+        summary_table: list[dict[str, Any]] = []
 
         total_unsupervised_false_allows = 0
         total_supervised_false_allows = 0

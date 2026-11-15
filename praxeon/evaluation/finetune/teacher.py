@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any, Dict, Optional
+from typing import Any
 
 RUBRIC = """You are the supervisor of an autonomous coding agent. Each turn you receive the STATE the supervisor sees: the user's
 GOAL, recent steps with their observations, and the agent's PROPOSED ACTION with some verified facts about it. Decide what
@@ -43,7 +43,7 @@ Format: {"decision": "ALLOW|REPLAN|BLOCK|ABSTAIN", "is_loop": true|false, "is_gr
 _JSON = re.compile(r"\{.*\}", re.S)
 
 
-def parse_teacher_reply(text: str) -> Optional[Dict[str, Any]]:
+def parse_teacher_reply(text: str) -> dict[str, Any] | None:
     """Extrae y valida el JSON del profesor; None si no es utilizable."""
     match = _JSON.search(text or "")
     if not match:
@@ -62,7 +62,7 @@ def parse_teacher_reply(text: str) -> Optional[Dict[str, Any]]:
         return None
 
 
-def ask_teacher(llm: Any, state: str) -> Dict[str, Any]:
+def ask_teacher(llm: Any, state: str) -> dict[str, Any]:
     """Una consulta independiente (sesión nueva): devuelve la etiqueta, el coste y los tokens, o el error."""
     try:
         reply = llm.generate([{"role": "user", "content": state}], system_prompt=RUBRIC)

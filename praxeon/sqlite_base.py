@@ -28,11 +28,12 @@ import logging
 import os
 import sqlite3
 import threading
-from typing import Callable, ClassVar, Optional, Sequence, Tuple, Union
+from typing import ClassVar
+from collections.abc import Callable, Sequence
 
 logger = logging.getLogger(__name__)
 
-MigrationStep = Union[str, Callable[[sqlite3.Connection], None]]
+MigrationStep = str | Callable[[sqlite3.Connection], None]
 Migration = Sequence[MigrationStep]
 
 MEMORY = ":memory:"
@@ -42,11 +43,11 @@ class SqliteStore:
     """WAL una vez, conexión por operación y migraciones con `PRAGMA user_version`."""
 
     DEFAULT_DB_NAME: ClassVar[str] = "praxeon.db"
-    MIGRATIONS: ClassVar[Tuple[Migration, ...]] = ()
+    MIGRATIONS: ClassVar[tuple[Migration, ...]] = ()
     BUSY_TIMEOUT_SECONDS: ClassVar[float] = 30.0
-    ROW_FACTORY: ClassVar[Optional[Callable[..., object]]] = None   # p. ej. sqlite3.Row
+    ROW_FACTORY: ClassVar[Callable[..., object] | None] = None   # p. ej. sqlite3.Row
 
-    def __init__(self, db_path: Optional[str] = None) -> None:
+    def __init__(self, db_path: str | None = None) -> None:
         if db_path == MEMORY:
             self.db_path = MEMORY
         else:
@@ -55,7 +56,7 @@ class SqliteStore:
             self.db_path = str(resolve_db_path(self.DEFAULT_DB_NAME, db_path))
             os.makedirs(os.path.dirname(os.path.abspath(self.db_path)), exist_ok=True)
         self._lock = threading.Lock()
-        self._mem_conn: Optional[sqlite3.Connection] = None
+        self._mem_conn: sqlite3.Connection | None = None
         self._migrate()
 
     # ------------------------------------------------------------------ conexiones

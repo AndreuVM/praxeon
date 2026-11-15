@@ -5,9 +5,9 @@ Define los 15 tipos canónicos de evento, el contrato de payload estructurado,
 y la secuencia monótona por sesión para streaming y replay determinista.
 """
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, UTC
 from enum import Enum
-from typing import Any, Dict, Optional
+from typing import Any
 import uuid
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -69,13 +69,13 @@ class RuntimeEvent(BaseModel):
     session_id: str
     sequence: int  # Secuencia monótona estrictamente creciente por sesión: 1, 2, 3...
     type: EventType
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    node_id: Optional[str] = None
-    parent_id: Optional[str] = None
-    decision_id: Optional[str] = None
-    payload: Dict[str, Any] = Field(default_factory=dict)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    node_id: str | None = None
+    parent_id: str | None = None
+    decision_id: str | None = None
+    payload: dict[str, Any] = Field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Serialización canónica para JSON / WebSocket."""
         return {
             "event_id": self.event_id,
@@ -98,12 +98,12 @@ def make_event(
     session_id: str,
     sequence: int,
     event_type: EventType,
-    node_id: Optional[str] = None,
-    parent_id: Optional[str] = None,
-    decision_id: Optional[str] = None,
-    payload: Optional[Dict[str, Any]] = None,
-    event_id: Optional[str] = None,
-    timestamp: Optional[datetime] = None,
+    node_id: str | None = None,
+    parent_id: str | None = None,
+    decision_id: str | None = None,
+    payload: dict[str, Any] | None = None,
+    event_id: str | None = None,
+    timestamp: datetime | None = None,
 ) -> RuntimeEvent:
     """Crea una instancia inmutable de RuntimeEvent validando secuencia y tipos."""
     return RuntimeEvent(
@@ -111,7 +111,7 @@ def make_event(
         session_id=session_id,
         sequence=sequence,
         type=event_type,
-        timestamp=timestamp or datetime.now(timezone.utc),
+        timestamp=timestamp or datetime.now(UTC),
         node_id=node_id,
         parent_id=parent_id,
         decision_id=decision_id,

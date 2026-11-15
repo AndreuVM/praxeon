@@ -9,11 +9,11 @@ Descompone la arquitectura monolítica del Runtime en cuatro coordinadores espec
 
 from __future__ import annotations
 
-from datetime import datetime as dt, timezone
+from datetime import datetime as dt, UTC
 import logging
 import os
 import threading
-from typing import Any, Dict, List, Optional
+from typing import Any
 import uuid
 from praxeon.domain.events import EventType, RuntimeEvent
 from praxeon.domain.models import (
@@ -52,15 +52,15 @@ class SessionLifecycleCoordinator:
     def create_session(
         self,
         goal: str,
-        session_id: Optional[str] = None,
+        session_id: str | None = None,
         agent_name: str = "CodingAgent",
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
         execution_mode: str = "local_restricted",
-        workspace_root: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        workspace_root: str | None = None,
+    ) -> dict[str, Any]:
         """Crea formalmente una nueva sesión de supervisión y persiste su estado génesis."""
         sid = session_id or f"s-{uuid.uuid4().hex[:8]}"
-        now = dt.now(timezone.utc)
+        now = dt.now(UTC)
 
         meta = dict(metadata or {})
         mode_val = meta.get("execution_mode") or execution_mode
@@ -117,7 +117,7 @@ class SessionLifecycleCoordinator:
 
         return self.service._sessions_meta[sid]
 
-    def get_session(self, session_id: str) -> Optional[Dict[str, Any]]:
+    def get_session(self, session_id: str) -> dict[str, Any] | None:
         """Obtiene el resumen y metadatos de una sesión."""
         with self.service._lock:
             if session_id in self.service._sessions_meta:
@@ -134,15 +134,15 @@ class SessionLifecycleCoordinator:
             "agent_name": "CodingAgent",
             "status": "Active",
             "execution_mode": mode_val,
-            "created_at": dt.now(timezone.utc),
-            "updated_at": dt.now(timezone.utc),
+            "created_at": dt.now(UTC),
+            "updated_at": dt.now(UTC),
             "metadata": state.metadata,
         }
         with self.service._lock:
             self.service._sessions_meta[session_id] = meta
         return meta
 
-    def list_sessions(self) -> List[Dict[str, Any]]:
+    def list_sessions(self) -> list[dict[str, Any]]:
         """Devuelve todas las sesiones registradas con sus contadores de decisiones."""
         session_ids = self.service.state_store.list_sessions()
         with self.service._lock:
@@ -157,7 +157,7 @@ class SessionLifecycleCoordinator:
                 results.append(summary)
         return results
 
-    def get_session_summary(self, session_id: str) -> Optional[Dict[str, Any]]:
+    def get_session_summary(self, session_id: str) -> dict[str, Any] | None:
         """Calcula el resumen agregado de una sesión."""
         sess = self.get_session(session_id)
         if not sess:
@@ -204,7 +204,7 @@ class SessionLifecycleCoordinator:
             "decision_model_effective": dec_effective,
         }
 
-    def get_session_snapshot(self, session_id: str) -> Optional[Dict[str, Any]]:
+    def get_session_snapshot(self, session_id: str) -> dict[str, Any] | None:
         """Snapshot completo con el árbol de decisiones derivado deterministamente."""
         summary = self.get_session_summary(session_id)
         if not summary:
@@ -241,7 +241,7 @@ class SessionLifecycleCoordinator:
     def clear_old_sessions(
         self,
         only_completed: bool = True,
-        exclude_session_id: Optional[str] = None,
+        exclude_session_id: str | None = None,
     ) -> int:
         """Purga sesiones antiguas para liberar espacio."""
         all_sessions = self.list_sessions()
@@ -265,11 +265,11 @@ class SessionLifecycleCoordinator:
         self,
         session_id: str,
         provider: Any,
-        llm_runtime: Optional[Any] = None,
-        context_manager: Optional[Any] = None,
+        llm_runtime: Any | None = None,
+        context_manager: Any | None = None,
         policy_profile: str = "default",
         execution_profile: str = "local_restricted",
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ) -> SessionRuntime:
         """Registra un runtime de ejecución y supervisión aislado para una sesión."""
         with self.service._lock:
@@ -291,7 +291,7 @@ class SessionLifecycleCoordinator:
             if session_id in self.service._session_runtimes:
                 return self.service._session_runtimes[session_id].decision_provider
 
-        meta: Dict[str, Any] = {}
+        meta: dict[str, Any] = {}
         with self.service._lock:
             if session_id in self.service._sessions_meta:
                 meta = dict(self.service._sessions_meta[session_id].get("metadata") or {})
@@ -303,7 +303,7 @@ class SessionLifecycleCoordinator:
         supervisor = meta.get("supervisor") or meta.get("decision_provider")
         decision_model = meta.get("decision_model")
 
-        cfg: Optional[DecisionModelConfig] = None
+        cfg: DecisionModelConfig | None = None
         if isinstance(decision_model, DecisionModelConfig):
             cfg = decision_model
         elif isinstance(decision_model, dict):
@@ -314,7 +314,7 @@ class SessionLifecycleCoordinator:
         elif supervisor:
             cfg = DecisionModelConfig(provider=str(supervisor), model_id=str(supervisor))
 
-        dec_runtime: Optional[DecisionRuntime] = None
+        dec_runtime: DecisionRuntime | None = None
         if cfg:
             try:
                 dec_runtime = DecisionRuntime.from_config(cfg, registry=default_registry)
@@ -338,24 +338,24 @@ class SessionLifecycleCoordinator:
     def start_mission(
         self,
         goal: str,
-        session_id: Optional[str] = None,
+        session_id: str | None = None,
         agent_name: str = "CodingAgent",
         execution_mode: str = "local_restricted",
-        workspace_root: Optional[str] = None,
+        workspace_root: str | None = None,
         llm_provider: str = "simulator",
-        llm_model: Optional[str] = None,
-        api_key: Optional[str] = None,
-        base_url: Optional[str] = None,
+        llm_model: str | None = None,
+        api_key: str | None = None,
+        base_url: str | None = None,
         supervisor: str = "laya",
-        decision_model: Optional[Any] = None,
+        decision_model: Any | None = None,
         max_steps: int = 25,
         step_delay_ms: int = 900,
         autonomous: bool = False,
         allow_unattended_execution: bool = False,
         llm_failure_policy: str = "synthetic_fallback",
-        chat_history: Optional[List[Dict[str, str]]] = None,
-        metadata: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+        chat_history: list[dict[str, str]] | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """Inicia una misión interactiva supervisada en tiempo real."""
         sid = session_id or f"s-{uuid.uuid4().hex[:8]}"
 
@@ -371,7 +371,7 @@ class SessionLifecycleCoordinator:
                 allowed_hosts=allowed_hosts,
             )
 
-        cfg: Optional[DecisionModelConfig] = None
+        cfg: DecisionModelConfig | None = None
         if isinstance(decision_model, DecisionModelConfig):
             cfg = decision_model
         elif isinstance(decision_model, dict):
@@ -382,7 +382,7 @@ class SessionLifecycleCoordinator:
         if not cfg:
             cfg = DecisionModelConfig(provider=supervisor, model_id=supervisor)
 
-        dec_runtime: Optional[DecisionRuntime] = None
+        dec_runtime: DecisionRuntime | None = None
         try:
             dec_runtime = DecisionRuntime.from_config(cfg, registry=default_registry)
             sess_provider = dec_runtime.provider
@@ -503,7 +503,7 @@ class SessionLifecycleCoordinator:
                 return True
         return False
 
-    def run_mission_worker(self, mission: Dict[str, Any]) -> None:
+    def run_mission_worker(self, mission: dict[str, Any]) -> None:
         """Worker asíncrono que genera y propone pasos interactivos para la sesión delegando en la implementación de servicio."""
         return self.service._run_mission_worker_impl(mission)
 
@@ -526,13 +526,13 @@ class StepExecutionCoordinator:
         self,
         decision_id: str,
         approved: bool,
-        reason: Optional[str] = None,
+        reason: str | None = None,
         actor: str = "human_operator",
-        operator_id: Optional[str] = None,
+        operator_id: str | None = None,
         role: str = "operator",
-        operator_token: Optional[str] = None,
+        operator_token: str | None = None,
         caller_is_verified_operator: bool = False,
-        security_profile: Optional[str] = None,
+        security_profile: str | None = None,
     ) -> ConfirmDecisionResponse:
         """Confirma o veta formalmente una decisión en espera de aprobación humana (REVIEW)."""
         return self.service._confirm_decision_impl(
@@ -552,11 +552,11 @@ class StepExecutionCoordinator:
         decision_id: str,
         reason: str,
         actor: str = "human_operator",
-        operator_id: Optional[str] = None,
+        operator_id: str | None = None,
         role: str = "operator",
-        operator_token: Optional[str] = None,
+        operator_token: str | None = None,
         caller_is_verified_operator: bool = False,
-        security_profile: Optional[str] = None,
+        security_profile: str | None = None,
     ) -> ConfirmDecisionResponse:
         """Rechaza formalmente una decisión en espera de aprobación humana (REVIEW)."""
         return self.confirm_decision(
@@ -574,8 +574,8 @@ class StepExecutionCoordinator:
     def execute_decision(
         self,
         decision_id: str,
-        capability_token: Optional[Dict[str, Any]] = None,
-        operator_id: Optional[str] = None,
+        capability_token: dict[str, Any] | None = None,
+        operator_id: str | None = None,
         role: str = "operator",
     ) -> ExecuteDecisionResponse:
         """Ejecuta físicamente la herramienta autorizada en el sandbox o host."""
@@ -593,7 +593,7 @@ class CheckpointCoordinator:
     def __init__(self, service: Any):
         self.service = service
 
-    def create_checkpoint(self, session_id: str, label: Optional[str] = None) -> Dict[str, Any]:
+    def create_checkpoint(self, session_id: str, label: str | None = None) -> dict[str, Any]:
         """Crea un checkpoint atómico persistente del estado actual de la sesión."""
         ckpt = self.service.state_store.create_checkpoint(session_id=session_id, label=label)
         data = ckpt.model_dump(mode="json") if hasattr(ckpt, "model_dump") else dict(ckpt)
@@ -603,10 +603,10 @@ class CheckpointCoordinator:
     def rollback_session(
         self,
         session_id: str,
-        checkpoint_id: Optional[str] = None,
-        culprit_tool: Optional[str] = None,
+        checkpoint_id: str | None = None,
+        culprit_tool: str | None = None,
         reason: str = "Rollback formal por degradación de trayectoria",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Revierte físicamente el estado de una sesión al checkpoint especificado o al más reciente."""
         state = self.service.state_store.load_state(session_id)
         if not state:
@@ -646,7 +646,7 @@ class CheckpointCoordinator:
             for d_id in to_remove:
                 self.service._decisions.pop(d_id, None)
 
-        now_iso = dt.now(timezone.utc).isoformat()
+        now_iso = dt.now(UTC).isoformat()
         self.service.event_bus.emit(
             session_id=session_id,
             event_type=EventType.INTERVENTION_APPLIED,
@@ -689,11 +689,11 @@ class DiagnosticsCoordinator:
     def __init__(self, service: Any):
         self.service = service
 
-    def get_decision_detail(self, decision_id: str) -> Optional[DecisionDetailResponse]:
+    def get_decision_detail(self, decision_id: str) -> DecisionDetailResponse | None:
         """Recupera los datos estructurados en las 4 pestañas requeridas por la Sección 6.3."""
         return self.service._get_decision_detail_impl(decision_id)
 
-    def list_decisions_for_session(self, session_id: str) -> List[Dict[str, Any]]:
+    def list_decisions_for_session(self, session_id: str) -> list[dict[str, Any]]:
         """Lista cronológicamente las decisiones asociadas a una sesión recuperando de SQLite."""
         records = self.service.decision_repository.list_by_session(session_id)
         if not records:
@@ -709,7 +709,7 @@ class DiagnosticsCoordinator:
 
         return self.service._format_decision_records(records)
 
-    def list_all_decisions(self, session_id: Optional[str] = None, limit: int = 150) -> List[Dict[str, Any]]:
+    def list_all_decisions(self, session_id: str | None = None, limit: int = 150) -> list[dict[str, Any]]:
         """Lista cronológicamente o por recencia las decisiones del sistema."""
         if session_id:
             return self.list_decisions_for_session(session_id)
@@ -722,11 +722,11 @@ class DiagnosticsCoordinator:
 
         return self.service._format_decision_records(records)
 
-    def get_events(self, session_id: str) -> List[RuntimeEvent]:
+    def get_events(self, session_id: str) -> list[RuntimeEvent]:
         """Recupera la secuencia ordenada de eventos de una sesión."""
         return self.service.event_bus.store.get_events(session_id)
 
-    def get_available_providers(self) -> Dict[str, Any]:
+    def get_available_providers(self) -> dict[str, Any]:
         """Genera el catálogo dinámico de proveedores disponibles."""
         return self.service._get_available_providers_impl()
 

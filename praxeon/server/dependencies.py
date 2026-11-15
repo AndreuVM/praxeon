@@ -8,13 +8,13 @@ Proposal -> Evidence -> Risk -> Provider -> Policy -> Capability -> Execution
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 
 
 from collections import Counter
 import logging
 import threading
-from typing import Any, Dict, List, Optional
+from typing import Any
 import uuid
 
 logger = logging.getLogger("praxeon.server.dependencies")
@@ -61,7 +61,7 @@ from praxeon.server.runtime_service.decision_pipeline import DecisionPipelineMix
 from praxeon.server.runtime_service.mission_runtime import MissionRuntimeMixin  # noqa: E402
 
 
-def session_counters_from_events(events: List[Any], session_id: str) -> Dict[str, Any]:
+def session_counters_from_events(events: list[Any], session_id: str) -> dict[str, Any]:
     """Contadores del resumen calculados recorriendo los eventos (lo que hace ``EventStore.session_counters`` por SQL)."""
     decided = Counter(str(e.payload.get("status", "")).upper() for e in events if e.type == EventType.POLICY_DECIDED)
     return {
@@ -81,21 +81,21 @@ class RuntimeApplicationService(DecisionPipelineMixin, MissionRuntimeMixin):
 
     def __init__(
         self,
-        event_bus: Optional[EventBus] = None,
-        state_store: Optional[SqliteStateStore] = None,
-        nonce_store: Optional[NonceStore] = None,
-        decision_repository: Optional[SqliteDecisionRepository] = None,
-        config: Optional[PraxeonConfig] = None,
-        db_dir: Optional[str] = None,
-        agent_bus: Optional[AgentMessageBus] = None,
-        agent_registry: Optional[AgentRegistry] = None,
-        agent_router: Optional[AgentRouter] = None,
-        context_manager: Optional[ContextManager] = None,
-        workflow_editor_service: Optional[WorkflowEditorService] = None,
-        adaptive_runtime: Optional[AdaptiveAgentRuntime] = None,
-        provider: Optional[BaseReasoningProvider] = None,
-        security_profile: Optional[str] = None,
-        components: Optional[RuntimeComponents] = None,
+        event_bus: EventBus | None = None,
+        state_store: SqliteStateStore | None = None,
+        nonce_store: NonceStore | None = None,
+        decision_repository: SqliteDecisionRepository | None = None,
+        config: PraxeonConfig | None = None,
+        db_dir: str | None = None,
+        agent_bus: AgentMessageBus | None = None,
+        agent_registry: AgentRegistry | None = None,
+        agent_router: AgentRouter | None = None,
+        context_manager: ContextManager | None = None,
+        workflow_editor_service: WorkflowEditorService | None = None,
+        adaptive_runtime: AdaptiveAgentRuntime | None = None,
+        provider: BaseReasoningProvider | None = None,
+        security_profile: str | None = None,
+        components: RuntimeComponents | None = None,
     ):
         """Los colaboradores los construye ``praxeon.server.bootstrap`` (raíz de composición); los argumentos sustituyen
         alguno ya construido. Con ``components`` se usan tal cual y el resto de argumentos se ignora."""
@@ -138,11 +138,11 @@ class RuntimeApplicationService(DecisionPipelineMixin, MissionRuntimeMixin):
         self.evidence_engine = c.evidence_engine
         self._default_provider = c.default_provider
 
-        self._session_runtimes: Dict[str, SessionRuntime] = {}
+        self._session_runtimes: dict[str, SessionRuntime] = {}
         self._lock = threading.Lock()
-        self._sessions_meta: Dict[str, Dict[str, Any]] = {}
-        self._decisions: Dict[str, Dict[str, Any]] = {}
-        self._running_missions: Dict[str, Dict[str, Any]] = {}
+        self._sessions_meta: dict[str, dict[str, Any]] = {}
+        self._decisions: dict[str, dict[str, Any]] = {}
+        self._running_missions: dict[str, dict[str, Any]] = {}
 
         # Agentes, contexto, workflows y enrutamiento
         self.context_manager = c.context_manager
@@ -204,11 +204,11 @@ class RuntimeApplicationService(DecisionPipelineMixin, MissionRuntimeMixin):
         self,
         session_id: str,
         provider: Any,
-        llm_runtime: Optional[Any] = None,
-        context_manager: Optional[Any] = None,
+        llm_runtime: Any | None = None,
+        context_manager: Any | None = None,
         policy_profile: str = "default",
         execution_profile: str = "local_restricted",
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ) -> SessionRuntime:
         """Registra un runtime de ejecución y supervisión aislado para una sesión."""
         with self._lock:
@@ -234,7 +234,7 @@ class RuntimeApplicationService(DecisionPipelineMixin, MissionRuntimeMixin):
             if session_id in self._session_runtimes:
                 return self._session_runtimes[session_id].decision_provider
 
-        meta: Dict[str, Any] = {}
+        meta: dict[str, Any] = {}
         with self._lock:
             if session_id in self._sessions_meta:
                 meta = dict(self._sessions_meta[session_id].get("metadata") or {})
@@ -246,7 +246,7 @@ class RuntimeApplicationService(DecisionPipelineMixin, MissionRuntimeMixin):
         supervisor = meta.get("supervisor") or meta.get("decision_provider")
         decision_model = meta.get("decision_model")
 
-        cfg: Optional[DecisionModelConfig] = None
+        cfg: DecisionModelConfig | None = None
         if isinstance(decision_model, DecisionModelConfig):
             cfg = decision_model
         elif isinstance(decision_model, dict):
@@ -257,7 +257,7 @@ class RuntimeApplicationService(DecisionPipelineMixin, MissionRuntimeMixin):
         elif supervisor:
             cfg = DecisionModelConfig(provider=str(supervisor), model_id=str(supervisor))
 
-        dec_runtime: Optional[DecisionRuntime] = None
+        dec_runtime: DecisionRuntime | None = None
         if cfg:
             try:
                 dec_runtime = DecisionRuntime.from_config(cfg, registry=default_registry)
@@ -323,7 +323,7 @@ class RuntimeApplicationService(DecisionPipelineMixin, MissionRuntimeMixin):
         """Retorna el bus formal de mensajería inter-agente."""
         return self.agent_bus
 
-    def get_events(self, session_id: str) -> List[RuntimeEvent]:
+    def get_events(self, session_id: str) -> list[RuntimeEvent]:
         """Recupera la secuencia ordenada de eventos de una sesión."""
         return self.event_bus.store.get_events(session_id)
 
@@ -346,12 +346,12 @@ class RuntimeApplicationService(DecisionPipelineMixin, MissionRuntimeMixin):
     def create_session(
         self,
         goal: str,
-        session_id: Optional[str] = None,
+        session_id: str | None = None,
         agent_name: str = "CodingAgent",
-        metadata: Optional[Dict[str, Any]] = None,
-        execution_mode: Optional[str] = None,
-        workspace_root: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        metadata: dict[str, Any] | None = None,
+        execution_mode: str | None = None,
+        workspace_root: str | None = None,
+    ) -> dict[str, Any]:
         """Crea formalmente una nueva sesión de supervisión y persiste su estado génesis.
 
         Sin modo de ejecución (o con ``auto``) la sesión es aislada si el sistema lo permite y, si no, local con un
@@ -360,7 +360,7 @@ class RuntimeApplicationService(DecisionPipelineMixin, MissionRuntimeMixin):
         from praxeon.runtime import isolation
 
         sid = session_id or f"s-{uuid.uuid4().hex[:8]}"
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         meta = dict(metadata or {})
 
@@ -430,7 +430,7 @@ class RuntimeApplicationService(DecisionPipelineMixin, MissionRuntimeMixin):
 
         return self._sessions_meta[sid]
 
-    def get_session(self, session_id: str) -> Optional[Dict[str, Any]]:
+    def get_session(self, session_id: str) -> dict[str, Any] | None:
         """Obtiene el resumen y metadatos de una sesión."""
         with self._lock:
             if session_id in self._sessions_meta:
@@ -448,8 +448,8 @@ class RuntimeApplicationService(DecisionPipelineMixin, MissionRuntimeMixin):
             "agent_name": "CodingAgent",
             "status": "Active",
             "execution_mode": mode_val,
-            "created_at": datetime.now(timezone.utc),
-            "updated_at": datetime.now(timezone.utc),
+            "created_at": datetime.now(UTC),
+            "updated_at": datetime.now(UTC),
             "metadata": state.metadata,
 
         }
@@ -457,7 +457,7 @@ class RuntimeApplicationService(DecisionPipelineMixin, MissionRuntimeMixin):
             self._sessions_meta[session_id] = meta
         return meta
 
-    def list_sessions(self) -> List[Dict[str, Any]]:
+    def list_sessions(self) -> list[dict[str, Any]]:
         """Devuelve todas las sesiones registradas con sus contadores de decisiones."""
         session_ids = self.state_store.list_sessions()
         # Combinar con IDs en memoria
@@ -473,7 +473,7 @@ class RuntimeApplicationService(DecisionPipelineMixin, MissionRuntimeMixin):
                 results.append(summary)
         return results
 
-    def get_session_summary(self, session_id: str) -> Optional[Dict[str, Any]]:
+    def get_session_summary(self, session_id: str) -> dict[str, Any] | None:
         """Calcula el resumen agregado (contadores, eventos, nodos) de una sesión."""
         sess = self.get_session(session_id)
         if not sess:
@@ -523,7 +523,7 @@ class RuntimeApplicationService(DecisionPipelineMixin, MissionRuntimeMixin):
             "decision_model_effective": dec_effective,
         }
 
-    def get_session_snapshot(self, session_id: str) -> Optional[Dict[str, Any]]:
+    def get_session_snapshot(self, session_id: str) -> dict[str, Any] | None:
         """Snapshot completo con el árbol de decisiones derivado deterministamente."""
         summary = self.get_session_summary(session_id)
         if not summary:
@@ -566,7 +566,7 @@ class RuntimeApplicationService(DecisionPipelineMixin, MissionRuntimeMixin):
     def clear_old_sessions(
         self,
         only_completed: bool = True,
-        exclude_session_id: Optional[str] = None,
+        exclude_session_id: str | None = None,
     ) -> int:
         """Purga sesiones antiguas (por defecto solo completadas) para liberar espacio."""
         all_sessions = self.list_sessions()
@@ -593,16 +593,16 @@ class RuntimeApplicationService(DecisionPipelineMixin, MissionRuntimeMixin):
 
 
 
-    def get_available_providers(self) -> Dict[str, Any]:
+    def get_available_providers(self) -> dict[str, Any]:
         """Obtiene dinámicamente el catálogo de providers disponibles (delegado en DiagnosticsCoordinator)."""
         return self.diagnostics_coordinator.get_available_providers()
 
-    def _get_available_providers_impl(self) -> Dict[str, Any]:
+    def _get_available_providers_impl(self) -> dict[str, Any]:
         """Implementación interna del catálogo dinámico de providers."""
         from praxeon.providers.registry import default_registry
 
         # Calcular telemetría observada agregada por provider
-        latency_stats: Dict[str, Dict[str, Any]] = {}
+        latency_stats: dict[str, dict[str, Any]] = {}
         with self._lock:
             for _sid, sess_rt in getattr(self, "_session_runtimes", {}).items():
                 if hasattr(sess_rt, "decision_runtime"):
@@ -727,7 +727,7 @@ __all__ = [
 
 
 # Singleton de servicio para la aplicación Web
-_runtime_service_instance: Optional[RuntimeApplicationService] = None
+_runtime_service_instance: RuntimeApplicationService | None = None
 _service_lock = threading.Lock()
 
 
@@ -745,7 +745,7 @@ def get_runtime_service() -> RuntimeApplicationService:
         return _runtime_service_instance
 
 
-def set_runtime_service(service: Optional[RuntimeApplicationService]) -> None:
+def set_runtime_service(service: RuntimeApplicationService | None) -> None:
     """Inyecta una instancia de servicio (útil para tests con bases de datos aisladas)."""
     global _runtime_service_instance
     with _service_lock:

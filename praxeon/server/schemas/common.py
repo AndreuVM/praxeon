@@ -1,7 +1,7 @@
 """Esquemas base y respuestas comunes para la API REST de PRAXEON 1.0."""
 
-from datetime import datetime, timezone
-from typing import Any, Dict, Generic, Optional, TypeVar
+from datetime import datetime, UTC
+from typing import Any, Generic, TypeVar
 from pydantic import BaseModel, ConfigDict, Field
 
 T = TypeVar("T")
@@ -13,7 +13,7 @@ class APIResponse(BaseModel, Generic[T]):
 
     success: bool = True
     data: T
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class APIErrorResponse(BaseModel):
@@ -23,8 +23,8 @@ class APIErrorResponse(BaseModel):
     success: bool = False
     error_code: str
     message: str
-    details: Optional[Dict[str, Any]] = None
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    details: dict[str, Any] | None = None
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 

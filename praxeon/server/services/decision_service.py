@@ -6,9 +6,9 @@ Centraliza:
 - Registro y aprobación/rechazo de decisiones en el árbol de deliberación.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 import threading
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from praxeon.domain.events import EventType
 from praxeon.policy.engine import PolicyEngine
@@ -38,16 +38,16 @@ class DecisionService:
         self.evidence_engine = evidence_engine
         self.command_classifier = command_classifier
         self._lock = threading.Lock()
-        self._decisions: Dict[str, Dict[str, Any]] = {}
+        self._decisions: dict[str, dict[str, Any]] = {}
 
-    def save_decision(self, decision_record: Dict[str, Any]) -> None:
+    def save_decision(self, decision_record: dict[str, Any]) -> None:
         """Guarda un registro de decisión tanto en memoria como en SQLite WAL."""
         decision_id = decision_record["decision_id"]
         with self._lock:
             self._decisions[decision_id] = decision_record
         self.decision_repository.save(decision_record)
 
-    def get_decision(self, decision_id: str) -> Optional[Dict[str, Any]]:
+    def get_decision(self, decision_id: str) -> dict[str, Any] | None:
         """Recupera un registro de decisión desde memoria o base de datos SQLite."""
         with self._lock:
             record = self._decisions.get(decision_id)
@@ -58,7 +58,7 @@ class DecisionService:
                     self._decisions[decision_id] = record
         return record
 
-    def list_decisions(self, session_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    def list_decisions(self, session_id: str | None = None) -> list[dict[str, Any]]:
         """Lista las decisiones registradas filtradas opcionalmente por sesión."""
         results = self.decision_repository.list_all(session_id=session_id)
         return results
@@ -68,8 +68,8 @@ class DecisionService:
         session_id: str,
         decision_id: str,
         approved_by: str = "operator",
-        modified_arguments: Optional[Dict[str, Any]] = None,
-        reason: Optional[str] = None,
+        modified_arguments: dict[str, Any] | None = None,
+        reason: str | None = None,
     ) -> bool:
         """Confirma una decisión en espera de aprobación humana."""
         record = self.get_decision(decision_id)
@@ -79,7 +79,7 @@ class DecisionService:
         with self._lock:
             record["status"] = "ALLOW"
             record["approved_by"] = approved_by
-            record["confirmed_at"] = datetime.now(timezone.utc).isoformat()
+            record["confirmed_at"] = datetime.now(UTC).isoformat()
             if modified_arguments:
                 record["modified_arguments"] = modified_arguments
             if reason:
@@ -105,7 +105,7 @@ class DecisionService:
         session_id: str,
         decision_id: str,
         rejected_by: str = "operator",
-        reason: Optional[str] = None,
+        reason: str | None = None,
     ) -> bool:
         """Rechaza una decisión pendiente."""
         record = self.get_decision(decision_id)
@@ -115,7 +115,7 @@ class DecisionService:
         with self._lock:
             record["status"] = "BLOCK"
             record["rejected_by"] = rejected_by
-            record["rejected_at"] = datetime.now(timezone.utc).isoformat()
+            record["rejected_at"] = datetime.now(UTC).isoformat()
             record["rejection_reason"] = reason
 
         self.decision_repository.save(record)

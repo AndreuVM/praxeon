@@ -17,7 +17,8 @@ import io
 import json
 import threading
 import urllib.error
-from typing import Any, Dict, Mapping, Optional
+from typing import Any
+from collections.abc import Mapping
 from urllib.parse import urlsplit
 
 import httpx
@@ -27,7 +28,7 @@ MAX_REDIRECTS = 5
 SECRET_HEADERS = ("authorization", "x-api-key", "api-key", "x-goog-api-key", "proxy-authorization")
 USER_AGENT = "Praxeon/1.0.0 (Autonomous Agent Runtime)"
 
-_client: Optional[httpx.Client] = None
+_client: httpx.Client | None = None
 _client_lock = threading.Lock()
 
 
@@ -90,9 +91,9 @@ def request_json(
     method: str,
     url: str,
     payload: Any = None,
-    headers: Optional[Mapping[str, str]] = None,
+    headers: Mapping[str, str] | None = None,
     timeout: float = 60.0,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Envía una petición (con cuerpo JSON si hay `payload`) y devuelve la respuesta JSON.
 
     Errores: ValueError (URL no permitida), urllib.error.HTTPError (status >= 400), urllib.error.URLError (red/timeout).
@@ -111,11 +112,11 @@ def request_json(
     return json.loads(response.content.decode("utf-8"))
 
 
-def post_json(url: str, payload: Any, headers: Optional[Mapping[str, str]] = None, timeout: float = 60.0) -> Dict[str, Any]:
+def post_json(url: str, payload: Any, headers: Mapping[str, str] | None = None, timeout: float = 60.0) -> dict[str, Any]:
     return request_json("POST", url, payload, headers, timeout)
 
 
-def get_json(url: str, headers: Optional[Mapping[str, str]] = None, timeout: float = 10.0) -> Dict[str, Any]:
+def get_json(url: str, headers: Mapping[str, str] | None = None, timeout: float = 10.0) -> dict[str, Any]:
     return request_json("GET", url, None, headers, timeout)
 
 

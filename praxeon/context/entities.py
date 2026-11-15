@@ -8,7 +8,7 @@ Define con tipado estricto e inmutabilidad:
 
 from enum import Enum
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 from praxeon.context.fragments import (
@@ -34,7 +34,7 @@ class ContextDependency(BaseModel):
     source_id: str
     target_id: str
     dependency_type: ContextDependencyType = ContextDependencyType.REQUIRES
-    reason: Optional[str] = None
+    reason: str | None = None
     created_at: float = Field(default_factory=time.time)
 
 
@@ -43,11 +43,11 @@ class ContextReference(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     reference_id: str
-    uri: Optional[str] = None
+    uri: str | None = None
     content_hash: str
     version: int = 1
-    fragment_type: Optional[FragmentType] = None
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    fragment_type: FragmentType | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class ContextItem(BaseModel):
@@ -63,9 +63,9 @@ class ContextItem(BaseModel):
     updated_at: float = Field(default_factory=time.time)
     token_estimate: int = 0
     sensitivity: str = "internal"  # "public", "internal", "secret"
-    dependencies: List[ContextDependency] = Field(default_factory=list)
-    references: List[ContextReference] = Field(default_factory=list)
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    dependencies: list[ContextDependency] = Field(default_factory=list)
+    references: list[ContextReference] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     @classmethod
     def create(
@@ -74,10 +74,10 @@ class ContextItem(BaseModel):
         item_type: FragmentType,
         source_id: str,
         content: str,
-        dependencies: Optional[List[ContextDependency]] = None,
-        references: Optional[List[ContextReference]] = None,
+        dependencies: list[ContextDependency] | None = None,
+        references: list[ContextReference] | None = None,
         sensitivity: str = "internal",
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ) -> "ContextItem":
         """Constructor de conveniencia que calcula el hash criptográfico y los tokens."""
         clean_content = content.strip()
@@ -120,8 +120,8 @@ class ContextItem(BaseModel):
     def from_fragment(
         cls,
         fragment: ContextFragment,
-        dependencies: Optional[List[ContextDependency]] = None,
-        references: Optional[List[ContextReference]] = None,
+        dependencies: list[ContextDependency] | None = None,
+        references: list[ContextReference] | None = None,
     ) -> "ContextItem":
         """Reconstruye un ContextItem a partir de un ContextFragment."""
         deps = list(dependencies or [])

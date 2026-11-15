@@ -8,11 +8,11 @@ Garantiza:
 3. Reconstrucción determinista desde el log de eventos (EventStore) ante cache miss.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 import json
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from praxeon.domain.action import ActionCandidate, ToolCall
 from praxeon.domain.decision import (
@@ -26,7 +26,7 @@ from praxeon.sqlite_base import SqliteStore
 logger = logging.getLogger("praxeon.runtime.decision_store")
 
 
-def _serialize_decision_record(record: Dict[str, Any]) -> str:
+def _serialize_decision_record(record: dict[str, Any]) -> str:
     """Serializa un registro de decisión a JSON preservando tipos Pydantic y datetimes."""
     data = {}
     for k, v in record.items():
@@ -49,7 +49,7 @@ def _serialize_decision_record(record: Dict[str, Any]) -> str:
     return json.dumps(data, default=str)
 
 
-def _deserialize_decision_record(raw_json: str) -> Dict[str, Any]:
+def _deserialize_decision_record(raw_json: str) -> dict[str, Any]:
     """Reconstruye un registro estructurado a partir del JSON persistido."""
     from praxeon.server.schemas.decision import PolicyDTO, ProviderEvaluationDTO, RiskDTO
 
@@ -111,7 +111,7 @@ class SqliteDecisionRepository(SqliteStore):
     )
 
 
-    def save(self, record: Dict[str, Any]) -> None:
+    def save(self, record: dict[str, Any]) -> None:
         """Guarda o actualiza un registro de decisión completo."""
         decision_id = record["decision_id"]
         session_id = record["session_id"]
@@ -121,7 +121,7 @@ class SqliteDecisionRepository(SqliteStore):
             record.get("execution_mode")
             or getattr(record.get("receipt"), "execution_mode", ExecutionMode.LOCAL_RESTRICTED.value)
         )
-        created_at_dt = record.get("created_at") or datetime.now(timezone.utc)
+        created_at_dt = record.get("created_at") or datetime.now(UTC)
         created_at_str = created_at_dt.isoformat() if isinstance(created_at_dt, datetime) else str(created_at_dt)
 
         data_json = _serialize_decision_record(record)
@@ -153,7 +153,7 @@ class SqliteDecisionRepository(SqliteStore):
             finally:
                 self._close_conn(conn)
 
-    def get(self, decision_id: str) -> Optional[Dict[str, Any]]:
+    def get(self, decision_id: str) -> dict[str, Any] | None:
         """Recupera un registro de decisión por su ID."""
         with self._lock:
             conn = self._get_connection()
@@ -170,7 +170,7 @@ class SqliteDecisionRepository(SqliteStore):
             finally:
                 self._close_conn(conn)
 
-    def list_by_session(self, session_id: str) -> List[Dict[str, Any]]:
+    def list_by_session(self, session_id: str) -> list[dict[str, Any]]:
         """Recupera la lista de decisiones asociadas a una sesión."""
         with self._lock:
             conn = self._get_connection()
@@ -185,7 +185,7 @@ class SqliteDecisionRepository(SqliteStore):
             finally:
                 self._close_conn(conn)
 
-    def list_all(self, limit: int = 200) -> List[Dict[str, Any]]:
+    def list_all(self, limit: int = 200) -> list[dict[str, Any]]:
         """Recupera la lista de decisiones más recientes de todas las sesiones ordenadas cronológicamente."""
         with self._lock:
             conn = self._get_connection()
@@ -203,12 +203,12 @@ class SqliteDecisionRepository(SqliteStore):
     def reconstruct_from_events(
         self,
         session_id: str,
-        events: List[RuntimeEvent],
-    ) -> Dict[str, Dict[str, Any]]:
+        events: list[RuntimeEvent],
+    ) -> dict[str, dict[str, Any]]:
         """Reconstruye el registro observable de decisiones a partir del stream inmutable de eventos."""
         from praxeon.server.schemas.decision import PolicyDTO, ProviderEvaluationDTO, RiskDTO
 
-        decisions: Dict[str, Dict[str, Any]] = {}
+        decisions: dict[str, dict[str, Any]] = {}
 
         for ev in events:
             if ev.session_id != session_id:

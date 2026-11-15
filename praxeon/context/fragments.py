@@ -8,7 +8,7 @@ from enum import Enum
 import hashlib
 import json
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -48,10 +48,10 @@ class ContextFragment(BaseModel):
     content_hash: str
     created_at: float = Field(default_factory=time.time)
     updated_at: float = Field(default_factory=time.time)
-    dependencies: List[str] = Field(default_factory=list)
+    dependencies: list[str] = Field(default_factory=list)
     sensitivity: str = "internal"  # "public", "internal", "secret"
     token_estimate: int = 0
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     @classmethod
     def create(
@@ -60,9 +60,9 @@ class ContextFragment(BaseModel):
         fragment_type: FragmentType,
         source_id: str,
         content: str,
-        dependencies: Optional[List[str]] = None,
+        dependencies: list[str] | None = None,
         sensitivity: str = "internal",
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ) -> "ContextFragment":
         """Constructor de conveniencia que calcula automáticamente hash y estimación de tokens."""
         clean_content = content.strip()
@@ -90,9 +90,9 @@ class ContextFragment(BaseModel):
 
 def GoalFragment(
     goal_text: str,
-    criteria: Optional[List[str]] = None,
+    criteria: list[str] | None = None,
     session_id: str = "default_session",
-    metadata: Optional[Dict[str, Any]] = None,
+    metadata: dict[str, Any] | None = None,
 ) -> ContextFragment:
     """Crea un fragmento de meta con criterios de éxito asociados."""
     crit_str = ("\nCriterios de éxito:\n" + "\n".join(f"- {c}" for c in criteria)) if criteria else ""
@@ -113,7 +113,7 @@ def GoalFragment(
 def ConstraintFragment(
     constraint_text: str,
     rule_id: str = "rule_custom",
-    metadata: Optional[Dict[str, Any]] = None,
+    metadata: dict[str, Any] | None = None,
 ) -> ContextFragment:
     """Crea un fragmento de restricción u orden operativa."""
     full_content = f"RESTRICCIÓN [{rule_id}]: {constraint_text}"
@@ -130,8 +130,8 @@ def ConstraintFragment(
 def EvidenceFragment(
     evidence_id: str,
     claim: str,
-    source_step_id: Optional[str] = None,
-    metadata: Optional[Dict[str, Any]] = None,
+    source_step_id: str | None = None,
+    metadata: dict[str, Any] | None = None,
 ) -> ContextFragment:
     """Crea un fragmento de evidencia empírica contrastada."""
     full_content = f"EVIDENCIA [{evidence_id}]: {claim}"
@@ -150,8 +150,8 @@ def ObservationFragment(
     step_id: str,
     tool_name: str,
     observation: str,
-    arguments: Optional[Dict[str, Any]] = None,
-    metadata: Optional[Dict[str, Any]] = None,
+    arguments: dict[str, Any] | None = None,
+    metadata: dict[str, Any] | None = None,
 ) -> ContextFragment:
     """Crea un fragmento que registra la observación obtenida al invocar una herramienta."""
     args_repr = json.dumps(arguments or {}, ensure_ascii=False) if arguments else ""
@@ -175,8 +175,8 @@ def DecisionFragment(
     decision_id: str,
     status: str,
     explanation: str = "",
-    action_id: Optional[str] = None,
-    metadata: Optional[Dict[str, Any]] = None,
+    action_id: str | None = None,
+    metadata: dict[str, Any] | None = None,
 ) -> ContextFragment:
     """Crea un fragmento de veredicto o decisión de supervisión."""
     full_content = f"DECISIÓN [{decision_id}]: {status.upper()} - {explanation}".strip()
@@ -195,7 +195,7 @@ def TaskFragment(
     task_id: int,
     goal: str,
     summary: str,
-    metadata: Optional[Dict[str, Any]] = None,
+    metadata: dict[str, Any] | None = None,
 ) -> ContextFragment:
     """Crea un fragmento de tarea previa completada (memoria episódica de sesión concatenada)."""
     full_content = f"TAREA PREVIA #{task_id} [{goal}]: {summary}"
@@ -212,7 +212,7 @@ def TaskFragment(
 def EnvironmentFragment(
     environment_info: str,
     source_id: str = "host_env",
-    metadata: Optional[Dict[str, Any]] = None,
+    metadata: dict[str, Any] | None = None,
 ) -> ContextFragment:
     """Crea un fragmento de contexto del entorno anfitrión (SO, cwd, dependencias)."""
     full_content = f"ENTORNO: {environment_info}"
@@ -229,8 +229,8 @@ def EnvironmentFragment(
 def FileFragment(
     file_path: str,
     content_preview: str,
-    file_hash: Optional[str] = None,
-    metadata: Optional[Dict[str, Any]] = None,
+    file_hash: str | None = None,
+    metadata: dict[str, Any] | None = None,
 ) -> ContextFragment:
     """Crea un fragmento de contenido o esquema de archivo descubierto."""
     fhash = file_hash or compute_content_hash(content_preview)
@@ -250,9 +250,9 @@ def FileFragment(
 
 def SummaryFragment(
     summary_text: str,
-    covered_step_ids: Optional[List[str]] = None,
+    covered_step_ids: list[str] | None = None,
     source_id: str = "compaction_summary",
-    metadata: Optional[Dict[str, Any]] = None,
+    metadata: dict[str, Any] | None = None,
 ) -> ContextFragment:
     """Crea un fragmento de resumen compacto de pasos históricos."""
     deps = list(covered_step_ids or [])

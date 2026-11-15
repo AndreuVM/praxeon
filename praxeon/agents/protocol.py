@@ -7,12 +7,12 @@ Especifica el formato canónico, inmutable y verificable de intercambio de mensa
   referencias a evidencias empíricas (evidence_refs), snapshot de contexto y huella de integridad.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from enum import Enum, IntEnum
 import hashlib
 import hmac
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any
 import uuid
 from pydantic import BaseModel, ConfigDict, Field, computed_field
 
@@ -50,18 +50,18 @@ class AgentMessage(BaseModel):
     sender_id: str = Field(description="ID del agente emisor o 'praxeon_supervisor'")
     receiver_id: str = Field(description="ID del agente destinatario o '*' para broadcast")
     session_id: str = Field(description="Sesión de supervisión a la que pertenece la interacción")
-    task_id: Optional[str] = Field(default=None, description="Identificador de la tarea asociada si aplica")
+    task_id: str | None = Field(default=None, description="Identificador de la tarea asociada si aplica")
     message_type: MessageType = Field(default=MessageType.REQUEST)
     priority: MessagePriority = Field(default=MessagePriority.NORMAL)
-    correlation_id: Optional[str] = Field(default=None, description="ID del mensaje al que responde este mensaje")
-    in_reply_to: Optional[str] = Field(default=None, description="ID directo del mensaje de solicitud previa")
-    payload: Dict[str, Any] = Field(default_factory=dict, description="Contenido de datos o directiva")
-    evidence_refs: List[str] = Field(default_factory=list, description="IDs de evidencias de SessionState respaldatorias")
-    context_snapshot_fingerprint: Optional[str] = Field(default=None, description="Huella de contexto L1/L2 vinculada")
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    received_integrity_hash: Optional[str] = Field(default=None, description="Hash de integridad emitido por el remitente o recibido en la red")
-    signature: Optional[str] = Field(default=None, description="Firma HMAC-SHA256 para autenticación de origen y no repudio")
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    correlation_id: str | None = Field(default=None, description="ID del mensaje al que responde este mensaje")
+    in_reply_to: str | None = Field(default=None, description="ID directo del mensaje de solicitud previa")
+    payload: dict[str, Any] = Field(default_factory=dict, description="Contenido de datos o directiva")
+    evidence_refs: list[str] = Field(default_factory=list, description="IDs de evidencias de SessionState respaldatorias")
+    context_snapshot_fingerprint: str | None = Field(default=None, description="Huella de contexto L1/L2 vinculada")
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    received_integrity_hash: str | None = Field(default=None, description="Hash de integridad emitido por el remitente o recibido en la red")
+    signature: str | None = Field(default=None, description="Firma HMAC-SHA256 para autenticación de origen y no repudio")
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     def model_post_init(self, __context: Any) -> None:
         """Inicializa received_integrity_hash con el hash calculado si no fue provisto explícitamente."""
@@ -102,7 +102,7 @@ class AgentMessage(BaseModel):
         """Hash de integridad truncado canónico (16 caracteres) para compatibilidad histórica."""
         return self.computed_integrity_hash[:16]
 
-    def verify_integrity(self, expected_hash: Optional[str] = None) -> bool:
+    def verify_integrity(self, expected_hash: str | None = None) -> bool:
         """Verifica la correspondencia criptográfica del hash contra alteración del payload o cabeceras."""
         target = expected_hash or self.received_integrity_hash or self.metadata.get("expected_hash") or self.metadata.get("integrity_hash")
         if not target:
@@ -134,10 +134,10 @@ class AgentMessage(BaseModel):
     def create_response(
         self,
         sender_id: str,
-        payload: Dict[str, Any],
-        message_id: Optional[str] = None,
-        priority: Optional[MessagePriority] = None,
-        evidence_refs: Optional[List[str]] = None,
+        payload: dict[str, Any],
+        message_id: str | None = None,
+        priority: MessagePriority | None = None,
+        evidence_refs: list[str] | None = None,
     ) -> "AgentMessage":
         """Genera una respuesta formal referenciando este mensaje como correlation_id."""
         msg_id = message_id or f"msg_resp_{uuid.uuid4().hex[:12]}"
@@ -159,9 +159,9 @@ class AgentMessage(BaseModel):
     def create_ack(
         self,
         sender_id: str,
-        message_id: Optional[str] = None,
-        note: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        message_id: str | None = None,
+        note: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> "AgentMessage":
         """Genera una confirmación formal positiva (ACK) en respuesta a este mensaje."""
         msg_id = message_id or f"msg_ack_{uuid.uuid4().hex[:12]}"
@@ -186,9 +186,9 @@ class AgentMessage(BaseModel):
         self,
         sender_id: str,
         reason: str,
-        error_code: Optional[str] = None,
-        message_id: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        error_code: str | None = None,
+        message_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> "AgentMessage":
         """Genera una confirmación formal negativa (NACK) / rechazo en respuesta a este mensaje."""
         msg_id = message_id or f"msg_nack_{uuid.uuid4().hex[:12]}"
@@ -216,11 +216,11 @@ class AgentMessage(BaseModel):
     def create_result(
         self,
         sender_id: str,
-        payload: Dict[str, Any],
-        message_id: Optional[str] = None,
-        priority: Optional[MessagePriority] = None,
-        evidence_refs: Optional[List[str]] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        payload: dict[str, Any],
+        message_id: str | None = None,
+        priority: MessagePriority | None = None,
+        evidence_refs: list[str] | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> "AgentMessage":
         """Genera un resultado formal estructurado en respuesta a una solicitud o tarea previa."""
         msg_id = message_id or f"msg_res_{uuid.uuid4().hex[:12]}"
@@ -248,11 +248,11 @@ class AgentMessage(BaseModel):
         receiver_id: str,
         session_id: str,
         task_id: str,
-        payload: Dict[str, Any],
-        message_id: Optional[str] = None,
+        payload: dict[str, Any],
+        message_id: str | None = None,
         priority: MessagePriority = MessagePriority.NORMAL,
-        evidence_refs: Optional[List[str]] = None,
-        context_snapshot_fingerprint: Optional[str] = None,
+        evidence_refs: list[str] | None = None,
+        context_snapshot_fingerprint: str | None = None,
     ) -> "AgentMessage":
         """Crea un mensaje de delegación supervisada de tarea."""
         msg_id = message_id or f"msg_del_{uuid.uuid4().hex[:12]}"
@@ -269,7 +269,7 @@ class AgentMessage(BaseModel):
             context_snapshot_fingerprint=context_snapshot_fingerprint,
         )
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Serialización completa a diccionario con trazabilidad de hashes y firma."""
         dump = self.model_dump(mode="json")
         dump["integrity_hash"] = self.integrity_hash
@@ -279,7 +279,7 @@ class AgentMessage(BaseModel):
         return dump
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "AgentMessage":
+    def from_dict(cls, data: dict[str, Any]) -> "AgentMessage":
         """Reconstruye un mensaje desde un diccionario serializado preservando hashes."""
         clean = dict(data)
         legacy_hash = clean.pop("integrity_hash", None)

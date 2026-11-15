@@ -8,7 +8,8 @@ y la eliminación programada para la versión 2.0.
 
 import sys
 import warnings
-from typing import Any, Callable
+from typing import Any
+from collections.abc import Callable
 
 
 def _warn_and_delegate(legacy_cmd: str, canonical_cmd: str, target_fn: Callable[..., Any]) -> Any:

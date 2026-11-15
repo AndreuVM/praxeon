@@ -6,10 +6,10 @@ Centraliza:
 - Generación y orquestación de pasos hacia el objetivo de la misión.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 import re
 import threading
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 
 class MissionService:
@@ -17,25 +17,25 @@ class MissionService:
 
     def __init__(self):
         self._lock = threading.Lock()
-        self._running_missions: Dict[str, Dict[str, Any]] = {}
+        self._running_missions: dict[str, dict[str, Any]] = {}
 
-    def register_mission(self, session_id: str, mission_meta: Dict[str, Any]) -> None:
+    def register_mission(self, session_id: str, mission_meta: dict[str, Any]) -> None:
         """Registra una misión activa en el sistema de seguimiento."""
         with self._lock:
             self._running_missions[session_id] = {
                 **mission_meta,
-                "registered_at": datetime.now(timezone.utc),
+                "registered_at": datetime.now(UTC),
                 "is_paused": False,
                 "is_cancelled": False,
             }
 
-    def get_mission(self, session_id: str) -> Optional[Dict[str, Any]]:
+    def get_mission(self, session_id: str) -> dict[str, Any] | None:
         """Recupera los metadatos y estado actual de una misión."""
         with self._lock:
             record = self._running_missions.get(session_id)
             return dict(record) if record else None
 
-    def list_active_missions(self) -> List[Dict[str, Any]]:
+    def list_active_missions(self) -> list[dict[str, Any]]:
         """Lista todas las misiones registradas activas."""
         with self._lock:
             return [dict(v) for v in self._running_missions.values()]
@@ -72,7 +72,7 @@ class MissionService:
             return True
 
 
-def generate_goal_tailored_steps(goal: str, max_steps: int = 6) -> List[Dict[str, Any]]:
+def generate_goal_tailored_steps(goal: str, max_steps: int = 6) -> list[dict[str, Any]]:
     """Genera una secuencia de pasos lógicos adaptados semánticamente al objetivo del usuario.
 
     Garantiza que incluso en modo simulado o fallback offline, cada tarea reciba un árbol de
@@ -84,7 +84,7 @@ def generate_goal_tailored_steps(goal: str, max_steps: int = 6) -> List[Dict[str
     file_matches = re.findall(r'[a-zA-Z0-9_\-./\\]+\.[a-zA-Z0-9_]+', goal)
     explicit_file = file_matches[0] if file_matches else None
 
-    steps: List[Dict[str, Any]] = []
+    steps: list[dict[str, Any]] = []
 
     # Categoría 0: Peticiones Creativas y Conversacionales (cuentos, historias, relatos, poemas, saludos)
     if any(k in g_lower for k in ("cuento", "historia", "relato", "poema", "chiste", "convers", "saludo", "hola", "narraci")):

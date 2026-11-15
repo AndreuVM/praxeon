@@ -20,7 +20,6 @@ import re
 import shutil
 import subprocess
 from dataclasses import dataclass
-from typing import Optional, Tuple
 
 logger = logging.getLogger("praxeon.providers.hardware")
 
@@ -45,10 +44,10 @@ class PlacementPlan:
     kev_device: str
     kev_cuda_graphs: bool
     reason: str
-    gpu: Optional[GpuInfo] = None
+    gpu: GpuInfo | None = None
 
 
-def detect_gpu() -> Optional[GpuInfo]:
+def detect_gpu() -> GpuInfo | None:
     """Primera GPU NVIDIA visible, o None si no hay controlador o GPU."""
     exe = shutil.which("nvidia-smi")
     if not exe:
@@ -65,14 +64,14 @@ def detect_gpu() -> Optional[GpuInfo]:
         return None
 
 
-def estimate_kev_vram_mb(run: Optional[str]) -> int:
+def estimate_kev_vram_mb(run: str | None) -> int:
     """VRAM estimada para servir un checkpoint de KEV en bfloat16, a partir del tamaño del nombre (kev-4b, kev-0.8b…)."""
     match = re.search(r"(\d+(?:\.\d+)?)\s*b\b", (run or DEFAULT_KEV_RUN).lower())
     billions = float(match.group(1)) if match else 4.0
     return int(billions * KEV_MB_PER_BILLION + KEV_BASE_MB)
 
 
-_KEV_IN_USE: Optional[bool] = None  # None: nadie lo ha declarado; False: solo LAYA; True: KEV o cascada en uso (no se revierte)
+_KEV_IN_USE: bool | None = None  # None: nadie lo ha declarado; False: solo LAYA; True: KEV o cascada en uso (no se revierte)
 
 
 def declare_kev_in_use(in_use: bool) -> None:
@@ -94,7 +93,7 @@ def _kev_wanted() -> bool:
 
 
 def plan_placement(
-    gpu: Optional[GpuInfo] = None, kev_run: Optional[str] = None, kev_wanted: Optional[bool] = None
+    gpu: GpuInfo | None = None, kev_run: str | None = None, kev_wanted: bool | None = None
 ) -> PlacementPlan:
     """Decide dónde corre cada modelo (ver el docstring del módulo)."""
     gpu = gpu if gpu is not None else detect_gpu()
@@ -126,7 +125,7 @@ def plan_placement(
     return PlacementPlan("cpu", "cpu", False, f"nada cabe en {gpu.name} ({gpu.total_mb} MB): todo en la CPU", gpu)
 
 
-def _forced(env_name: str, requested: Optional[str]) -> Optional[str]:
+def _forced(env_name: str, requested: str | None) -> str | None:
     value = (requested or "").strip().lower()
     if value and value != "auto":
         return value
@@ -134,7 +133,7 @@ def _forced(env_name: str, requested: Optional[str]) -> Optional[str]:
     return value if value and value != "auto" else None
 
 
-def laya_device(requested: Optional[str] = None) -> Tuple[str, str]:
+def laya_device(requested: str | None = None) -> tuple[str, str]:
     """Dispositivo de LAYA y el motivo. Lo pedido o ``LAYA_DEVICE`` manda; con «auto» decide el plan."""
     forced = _forced("LAYA_DEVICE", requested)
     if forced:
@@ -147,7 +146,7 @@ def laya_device(requested: Optional[str] = None) -> Tuple[str, str]:
     return device, plan.reason
 
 
-def kev_device(requested: Optional[str] = None, run: Optional[str] = None) -> Tuple[str, bool, str]:
+def kev_device(requested: str | None = None, run: str | None = None) -> tuple[str, bool, str]:
     """Dispositivo del servidor de KEV, si activar sus CUDA graphs y el motivo."""
     plan = plan_placement(kev_run=run, kev_wanted=True)
     forced = _forced("KEV_DEVICE", requested)

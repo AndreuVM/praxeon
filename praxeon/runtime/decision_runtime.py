@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from praxeon.domain.assessment import ProviderAssessment
 from praxeon.domain.decision_provider import (
@@ -33,7 +33,7 @@ class DecisionRuntime:
         self,
         config: DecisionModelConfig,
         provider: DecisionProvider,
-        registry: Optional[DecisionProviderRegistry] = None,
+        registry: DecisionProviderRegistry | None = None,
     ):
         self.config = config
         self.provider = provider
@@ -42,14 +42,14 @@ class DecisionRuntime:
         self._call_count: int = 0
         self._fallback_count: int = 0
         self._total_latency_ms: float = 0.0
-        self._last_assessment_timestamp: Optional[float] = None
+        self._last_assessment_timestamp: float | None = None
 
     @classmethod
     def from_config(
         cls,
         config: DecisionModelConfig,
-        registry: Optional[DecisionProviderRegistry] = None,
-    ) -> "DecisionRuntime":
+        registry: DecisionProviderRegistry | None = None,
+    ) -> DecisionRuntime:
         """Construye un DecisionRuntime instanciando el provider a través del registro."""
         reg = registry or default_registry
         provider_instance = reg.create(config)
@@ -95,15 +95,15 @@ class DecisionRuntime:
     def evaluate(
         self,
         state: Any,
-        actions: List[ActionCandidate],
-    ) -> List[ProviderAssessment]:
+        actions: list[ActionCandidate],
+    ) -> list[ProviderAssessment]:
         """Evalúa semánticamente las acciones candidatas, midiendo latencia y enriqueciendo metadatos."""
         self._call_count += 1
         start_time = time.perf_counter()
         is_fallback_active = False
         degradation_reason = None
 
-        raw_assessments: List[ProviderAssessment] = []
+        raw_assessments: list[ProviderAssessment] = []
 
         try:
             if not self.provider.is_available():
@@ -164,7 +164,7 @@ class DecisionRuntime:
         self._last_assessment_timestamp = time.time()
 
         # Enriquecer cada ProviderAssessment con los metadatos de auditoría estandarizados (DMI-07)
-        enriched: List[ProviderAssessment] = []
+        enriched: list[ProviderAssessment] = []
         for ass in raw_assessments:
             # Crear nueva instancia con campos enriquecidos si faltan
             item_data = ass.model_dump()
@@ -200,7 +200,7 @@ class DecisionRuntime:
             failure_reason="Empty evaluation result",
         )
 
-    def get_telemetry(self) -> Dict[str, Any]:
+    def get_telemetry(self) -> dict[str, Any]:
         """Devuelve las métricas de rendimiento y resiliencia del runtime de decisión."""
         avg_lat = (
             round(self._total_latency_ms / self._call_count, 2)

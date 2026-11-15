@@ -7,10 +7,10 @@ Proporciona supervisión continua e independiente del ciclo de vida de ejecucion
 - Persistencia periódica de checkpoints en SqlitePersistenceStore tras cada ciclo de evaluación.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 import logging
 import threading
-from typing import Any, Dict, Optional
+from typing import Any
 
 from praxeon.domain.events import EventType
 from praxeon.workflows.engine import WorkflowEngine
@@ -24,19 +24,19 @@ class WorkflowScheduler:
 
     def __init__(
         self,
-        persistence_store: Optional[Any] = None,
+        persistence_store: Any | None = None,
         interval_seconds: float = 0.5,
-        event_bus: Optional[Any] = None,
+        event_bus: Any | None = None,
     ):
         self.persistence_store = persistence_store
         self.event_bus = event_bus
-        self._waiting_nodes: Dict[str, set] = {}
+        self._waiting_nodes: dict[str, set] = {}
         self.interval_seconds = max(0.05, interval_seconds)
-        self._engines: Dict[str, WorkflowEngine] = {}
-        self._persisted_signatures: Dict[str, tuple] = {}
+        self._engines: dict[str, WorkflowEngine] = {}
+        self._persisted_signatures: dict[str, tuple] = {}
         self._lock = threading.RLock()
         self._stop_event = threading.Event()
-        self._thread: Optional[threading.Thread] = None
+        self._thread: threading.Thread | None = None
 
     def register_engine(self, engine: WorkflowEngine) -> None:
         """Registra un WorkflowEngine para supervisión periódica en segundo plano."""
@@ -50,7 +50,7 @@ class WorkflowScheduler:
                 except Exception as exc:
                     logger.warning(f"Error al persistir ejecución inicial en scheduler: {exc}")
 
-    def unregister_engine(self, identifier: str) -> Optional[WorkflowEngine]:
+    def unregister_engine(self, identifier: str) -> WorkflowEngine | None:
         """Elimina un motor de la supervisión activa (por execution_id o workflow_id)."""
         with self._lock:
             # Buscar por execution_id
@@ -62,7 +62,7 @@ class WorkflowScheduler:
                     return self._engines.pop(eid)
             return None
 
-    def get_active_engines(self) -> Dict[str, WorkflowEngine]:
+    def get_active_engines(self) -> dict[str, WorkflowEngine]:
         """Retorna una copia del diccionario de motores supervisados."""
         with self._lock:
             return dict(self._engines)
@@ -96,16 +96,16 @@ class WorkflowScheduler:
         self._thread = None
         logger.info("WorkflowScheduler detenido.")
 
-    def poll_once(self, current_time: Optional[datetime] = None) -> Dict[str, Any]:
+    def poll_once(self, current_time: datetime | None = None) -> dict[str, Any]:
         """Ejecuta una ronda de inspección, reactivación de reintentos y control de timeouts.
 
         Retorna un informe con los cambios producidos durante la ronda.
         """
-        now = current_time or datetime.now(timezone.utc)
+        now = current_time or datetime.now(UTC)
         if now.tzinfo is None:
-            now = now.replace(tzinfo=timezone.utc)
+            now = now.replace(tzinfo=UTC)
 
-        report: Dict[str, Any] = {
+        report: dict[str, Any] = {
             "evaluated_engines": 0,
             "timed_out_workflows": [],
             "retried_nodes": [],

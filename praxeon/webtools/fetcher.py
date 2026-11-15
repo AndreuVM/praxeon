@@ -15,7 +15,7 @@ import ssl
 import zlib
 from dataclasses import dataclass
 from html.parser import HTMLParser
-from typing import Dict, Iterable, List, Optional, Tuple
+from collections.abc import Iterable
 from urllib.parse import urljoin, urlsplit
 
 MAX_BYTES = 1_000_000
@@ -40,7 +40,7 @@ class Page:
     truncated: bool
 
 
-def host_allowed(host: str, allowed: Optional[Iterable[str]]) -> bool:
+def host_allowed(host: str, allowed: Iterable[str] | None) -> bool:
     """`allowed=None` es modo abierto; si no, el host debe ser uno de la lista o un subdominio suyo."""
     if allowed is None:
         return True
@@ -89,7 +89,7 @@ class _PinnedTls(http.client.HTTPSConnection):
         self.sock = self._context.wrap_socket(sock, server_hostname=self.host)
 
 
-def _read_body(resp: http.client.HTTPResponse, max_bytes: int) -> Tuple[bytes, bool]:
+def _read_body(resp: http.client.HTTPResponse, max_bytes: int) -> tuple[bytes, bool]:
     encoding = (resp.getheader("Content-Encoding") or "").lower()
     decomp = zlib.decompressobj(16 + zlib.MAX_WBITS) if "gzip" in encoding else None
     out, size = [], 0
@@ -108,13 +108,13 @@ def _read_body(resp: http.client.HTTPResponse, max_bytes: int) -> Tuple[bytes, b
 def fetch_raw(
     url: str,
     *,
-    headers: Optional[Dict[str, str]] = None,
-    allowed_hosts: Optional[Iterable[str]] = None,
+    headers: dict[str, str] | None = None,
+    allowed_hosts: Iterable[str] | None = None,
     max_bytes: int = MAX_BYTES,
     timeout: float = TIMEOUT_S,
     max_redirects: int = MAX_REDIRECTS,
     allow_private: bool = False,
-) -> Tuple[str, int, str, bytes, bool]:
+) -> tuple[str, int, str, bytes, bool]:
     """GET con las reglas de arriba. Devuelve (url final, estado, content-type, cuerpo, truncado)."""
     current = url
     allowed = None if allowed_hosts is None else list(allowed_hosts)
@@ -165,8 +165,8 @@ _BLOCK = {"p", "div", "br", "li", "ul", "ol", "tr", "table", "section", "article
 class _Text(HTMLParser):
     def __init__(self):
         super().__init__(convert_charrefs=True)
-        self.parts: List[str] = []
-        self.main: List[str] = []       # texto dentro de <main>/<article>: si hay bastante, es el contenido real de la página
+        self.parts: list[str] = []
+        self.main: list[str] = []       # texto dentro de <main>/<article>: si hay bastante, es el contenido real de la página
         self.title = ""
         self._skip = 0
         self._main = 0
@@ -222,7 +222,7 @@ def _decode(body: bytes, content_type: str) -> str:
         return body.decode("utf-8", errors="replace")
 
 
-def extract_text(body: bytes, content_type: str) -> Tuple[str, str]:
+def extract_text(body: bytes, content_type: str) -> tuple[str, str]:
     """(título, texto) de un HTML; el texto plano y JSON se devuelven tal cual."""
     raw = _decode(body, content_type)
     if "html" not in content_type and not raw.lstrip().lower().startswith(("<!doctype html", "<html")):
@@ -242,7 +242,7 @@ def _drop_menu_lists(text: str) -> str:
     return "\n\n".join(kept) if sum(map(len, kept)) >= 200 else text      # si casi no queda nada, mejor devolver todo
 
 
-def fetch_page(url: str, *, max_chars: int = 8000, allowed_hosts: Optional[Iterable[str]] = None, allow_private: bool = False) -> Page:
+def fetch_page(url: str, *, max_chars: int = 8000, allowed_hosts: Iterable[str] | None = None, allow_private: bool = False) -> Page:
     final, status, ctype, body, cut = fetch_raw(url, allowed_hosts=allowed_hosts, allow_private=allow_private)
     if status >= 400:
         raise WebError(f"La página respondió HTTP {status}.")

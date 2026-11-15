@@ -10,8 +10,9 @@ from __future__ import annotations
 import math
 import re
 import threading
-from datetime import datetime, timezone
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from datetime import datetime, UTC
+from typing import Any
+from collections.abc import Callable
 from urllib.parse import urlsplit
 
 from praxeon.domain.models import RiskLevel
@@ -35,7 +36,7 @@ ALIASES = {"search_web": "web_search", "read_url_content": "web_fetch"}
 
 
 class WebTools:
-    def __init__(self, registry: Any, executor: Any, settings: Optional[WebSettingsStore] = None, *, allow_private: bool = False) -> None:
+    def __init__(self, registry: Any, executor: Any, settings: WebSettingsStore | None = None, *, allow_private: bool = False) -> None:
         self.registry = registry
         self.executor = executor
         self.settings = settings or WebSettingsStore()
@@ -44,7 +45,7 @@ class WebTools:
         self._ddg_factory: Callable[[], DuckDuckGoSearch] = lambda: DuckDuckGoSearch(allow_private=allow_private)
         self._sanitizer = DataSanitizer()
         self._lock = threading.Lock()
-        self._used: Dict[str, Dict[str, int]] = {}
+        self._used: dict[str, dict[str, int]] = {}
 
     # ------------------------------------------------------------------ registro
     def register(self) -> None:
@@ -61,7 +62,7 @@ class WebTools:
             self.executor.register_handler(name, handler)
 
     # ------------------------------------------------------------------ reglas
-    def _allowed_hosts(self) -> Optional[List[str]]:
+    def _allowed_hosts(self) -> list[str] | None:
         """None = abierto (Full Access); si no, la lista de dominios del operador."""
         mode = (CALL_CONTEXT.get() or {}).get("mode")
         return None if mode == FULL_ACCESS else self.settings.allowed_domains()
@@ -97,7 +98,7 @@ class WebTools:
             raise WebError("La URL contiene un bloque que parece datos codificados (base64 o aleatorio): no se envía.")
 
     # ------------------------------------------------------------------ handlers
-    def _search(self, args: Dict[str, Any]) -> str:
+    def _search(self, args: dict[str, Any]) -> str:
         self._ensure_enabled()
         query = str(args.get("query") or args.get("q") or "").strip()
         if not query:
@@ -117,7 +118,7 @@ class WebTools:
         lines = [f"{i}. {r.title}\n   {r.url}" + (f"  ({r.age})" if r.age else "") + (f"\n   {r.snippet}" if r.snippet else "") for i, r in enumerate(results, 1)]
         return f"{HEADER.format(what=what)}\n{note}Búsqueda «{query}»:\n" + "\n".join(lines)
 
-    def run_search(self, query: str, count: int) -> Tuple[List[SearchResult], str, str]:
+    def run_search(self, query: str, count: int) -> tuple[list[SearchResult], str, str]:
         """(resultados, proveedor usado, nota). `auto`: Brave si hay clave y, si falla, DuckDuckGo; sin clave, DuckDuckGo."""
         choice, key = self.settings.search_provider(), self.settings.api_key()
         if choice == "brave":
@@ -132,7 +133,7 @@ class WebTools:
     def search_available(self) -> bool:
         return self.settings.search_provider() != "brave" or bool(self.settings.api_key())
 
-    def _fetch(self, args: Dict[str, Any]) -> str:
+    def _fetch(self, args: dict[str, Any]) -> str:
         self._ensure_enabled()
         url = str(args.get("url") or args.get("uri") or "").strip()
         if not url:
@@ -147,12 +148,12 @@ class WebTools:
             max_chars = DEFAULT_CHARS
         self._spend("lectura", MAX_FETCHES_PER_SESSION)
         page = fetch_page(url, max_chars=max_chars, allowed_hosts=self._allowed_hosts(), allow_private=self._allow_private)
-        read_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+        read_at = datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
         head = f"{HEADER.format(what=page.url)}\nLeído: {read_at}" + (f"\nTítulo: {page.title}" if page.title else "")
         return f"{head}\n\n{page.text}" + ("\n\n[… texto recortado …]" if page.truncated else "")
 
     # ------------------------------------------------------------------ prompt
-    def prompt_section(self, allowed: Optional[Callable[[str], Optional[str]]] = None) -> str:
+    def prompt_section(self, allowed: Callable[[str], str | None] | None = None) -> str:
         """Líneas para el prompt: solo si el acceso está activado y la herramienta está permitida al agente."""
         if not self.settings.enabled():
             return ""

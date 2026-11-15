@@ -8,7 +8,7 @@ nombres siguen importándose también desde `praxeon.server.dependencies` por co
 import logging
 import os
 import warnings
-from typing import Any, Optional
+from typing import Any
 
 from fastapi import Cookie, Depends, Header, HTTPException, Request, status
 
@@ -28,7 +28,7 @@ logger = logging.getLogger("praxeon.server.dependencies")
 INVALID_CREDENTIALS = "Credenciales inválidas o caducadas."
 
 
-def set_active_security_profile(profile: Optional[str]) -> None:
+def set_active_security_profile(profile: str | None) -> None:
     """Obsoleto (se retira en v2.0.0): el perfil lo fija ``create_app(profile=...)`` en la aplicación y en su servicio.
 
     Por compatibilidad, cambia el perfil del servicio del proceso si ya existe (nunca lo crea).
@@ -46,7 +46,7 @@ def set_active_security_profile(profile: Optional[str]) -> None:
         service.security_profile = resolve_security_profile(profile)
 
 
-def get_active_security_profile() -> Optional[str]:
+def get_active_security_profile() -> str | None:
     """Obsoleto (se retira en v2.0.0): perfil del servicio del proceso, si existe; usa ``service.security_profile``."""
     from praxeon.server import dependencies
 
@@ -54,7 +54,7 @@ def get_active_security_profile() -> Optional[str]:
     return getattr(service, "security_profile", None) if service is not None else None
 
 
-def _warn_dev_auth_once(request: Optional[Request]) -> None:
+def _warn_dev_auth_once(request: Request | None) -> None:
     """Avisa una vez por aplicación de que se atiende sin autenticación (perfil dev desde localhost)."""
     state = getattr(getattr(request, "app", None), "state", None)
     if state is None:
@@ -67,7 +67,7 @@ def _warn_dev_auth_once(request: Optional[Request]) -> None:
 PROXY_HEADERS = ("x-forwarded-for", "forwarded", "x-real-ip")
 
 
-def effective_client_host(conn: Any) -> Optional[str]:
+def effective_client_host(conn: Any) -> str | None:
     """Host del cliente para decidir si es local. Si la conexión llega con cabeceras de proxy inverso,
     el peer TCP (casi siempre loopback) no es el cliente real: se trata como externo ("proxied")."""
     headers = getattr(conn, "headers", None)
@@ -95,7 +95,7 @@ def enforce_cookie_csrf(request: Any, token_from_cookie: bool) -> None:
             )
 
 
-def is_auth_required(profile: Optional[str] = None, client_host: Optional[str] = None) -> bool:
+def is_auth_required(profile: str | None = None, client_host: str | None = None) -> bool:
     """Determina si la autenticación por API key es obligatoria.
     
     Es obligatoria si:
@@ -127,9 +127,9 @@ def get_auth_service(runtime: RuntimeApplicationService = Depends(get_runtime_se
 
 def get_current_tenant(
     request: Request = None,
-    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
-    authorization: Optional[str] = Header(None, alias="Authorization"),
-    praxeon_access_token: Optional[str] = Cookie(None, alias=AuthService.COOKIE_ACCESS_NAME),
+    x_api_key: str | None = Header(None, alias="X-API-Key"),
+    authorization: str | None = Header(None, alias="Authorization"),
+    praxeon_access_token: str | None = Cookie(None, alias=AuthService.COOKIE_ACCESS_NAME),
     auth_service: AuthService = Depends(get_auth_service),
 ) -> TenantContext:
     """Dependency que autentica e inyecta el TenantContext con RBAC desde JWT, Cookie o API Key."""
@@ -230,11 +230,11 @@ def require_route_permission(read: Permission, write: Permission):
 
 def verify_api_key(
     request: Request = None,
-    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
-    authorization: Optional[str] = Header(None, alias="Authorization"),
-    praxeon_access_token: Optional[str] = Cookie(None, alias=AuthService.COOKIE_ACCESS_NAME),
+    x_api_key: str | None = Header(None, alias="X-API-Key"),
+    authorization: str | None = Header(None, alias="Authorization"),
+    praxeon_access_token: str | None = Cookie(None, alias=AuthService.COOKIE_ACCESS_NAME),
     auth_service: AuthService = Depends(get_auth_service),
-) -> Optional[str]:
+) -> str | None:
     """Dependency de FastAPI para validar la presencia y autenticidad de API Key o JWT (compatibilidad retroactiva)."""
 
     app_profile = getattr(request.app.state, "security_profile", None) if (request and hasattr(request, "app") and hasattr(request.app, "state")) else None

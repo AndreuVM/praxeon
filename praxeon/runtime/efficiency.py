@@ -9,7 +9,6 @@ Implementa los requisitos formales de la Fase 1 del Roadmap:
 """
 
 import time
-from typing import Dict, List, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -24,7 +23,7 @@ class ModelPricing(BaseModel):
 
 
 # Catálogo canónico de precios de mercado (USD / 1M tokens) para modelos pequeños y potentes
-MODEL_PRICING_CATALOG: Dict[str, ModelPricing] = {
+MODEL_PRICING_CATALOG: dict[str, ModelPricing] = {
     "claude-3-5-sonnet": ModelPricing(
         model_name="claude-3-5-sonnet",
         price_per_million_input_tokens=3.00,
@@ -72,7 +71,7 @@ class StepEfficiencyRecord(BaseModel):
     total_step_latency_ms: float = 0.0
     physical_execution_attempted: bool = False
     physical_execution_allowed: bool = False
-    physical_execution_success: Optional[bool] = None
+    physical_execution_success: bool | None = None
     is_error: bool = False
     cost_usd: float = 0.0
     timestamp: float = Field(default_factory=time.time)
@@ -102,7 +101,7 @@ class SessionEfficiencySummary(BaseModel):
     execution_reduction_percentage: float
     errors_count: int
     total_cost_usd: float
-    steps: List[StepEfficiencyRecord] = Field(default_factory=list)
+    steps: list[StepEfficiencyRecord] = Field(default_factory=list)
 
 
 class EfficiencyMetrics(BaseModel):
@@ -158,7 +157,7 @@ class EfficiencyCalculator:
         scale: str,
         model_name: str,
         successful_completion: bool,
-        steps: List[StepEfficiencyRecord],
+        steps: list[StepEfficiencyRecord],
     ) -> SessionEfficiencySummary:
         """Agrega los registros de pasos en un resumen de sesión con métricas consolidadas."""
         total_steps = len(steps)
@@ -214,8 +213,8 @@ class EfficiencyCalculator:
     @classmethod
     def calculate_comparative_metrics(
         cls,
-        praxeon_sessions: List[SessionEfficiencySummary],
-        baseline_sessions: Optional[List[SessionEfficiencySummary]] = None,
+        praxeon_sessions: list[SessionEfficiencySummary],
+        baseline_sessions: list[SessionEfficiencySummary] | None = None,
     ) -> EfficiencyMetrics:
         """Calcula las 4 métricas formales de la Fase 1 comparando PRAXEON frente a Baseline."""
         if not praxeon_sessions:

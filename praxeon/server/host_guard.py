@@ -7,7 +7,7 @@ Lo que la delata es la cabecera `Host`, que seguirá siendo el dominio del ataca
 from __future__ import annotations
 
 import os
-from typing import Iterable, List, Optional
+from collections.abc import Iterable
 
 LOOPBACK_HOSTS = ("localhost", "127.0.0.1", "::1", "testserver", "testclient")     # los dos últimos: clientes de prueba de Starlette
 
@@ -20,7 +20,7 @@ def _bare_host(value: str) -> str:
     return value.rsplit(":", 1)[0] if value.count(":") == 1 else value
 
 
-def configured_hosts() -> Optional[List[str]]:
+def configured_hosts() -> list[str] | None:
     """Hosts definidos por el operador en PRAXEON_ALLOWED_HOSTS (separados por comas), o None si no los definió."""
     raw = [h.strip().lower() for h in (os.environ.get("PRAXEON_ALLOWED_HOSTS") or "").split(",") if h.strip()]
     return raw or None

@@ -3,7 +3,7 @@
 La clave se guarda pero la API nunca la devuelve. Toda la ruta exige permisos de administración.
 """
 
-from typing import List, Literal, Optional
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
@@ -16,10 +16,10 @@ router = APIRouter(prefix="/v1/web", tags=["Web"])
 
 
 class WebSettingsRequest(BaseModel):
-    enabled: Optional[bool] = None
-    allowed_domains: Optional[List[str]] = Field(default=None, max_length=200)
-    search_provider: Optional[Literal["auto", "brave", "duckduckgo"]] = Field(default=None, description="auto: Brave si hay clave, si no DuckDuckGo")
-    brave_api_key: Optional[str] = Field(default=None, max_length=300, description="Vacío borra la guardada; ausente la conserva")
+    enabled: bool | None = None
+    allowed_domains: list[str] | None = Field(default=None, max_length=200)
+    search_provider: Literal["auto", "brave", "duckduckgo"] | None = Field(default=None, description="auto: Brave si hay clave, si no DuckDuckGo")
+    brave_api_key: str | None = Field(default=None, max_length=300, description="Vacío borra la guardada; ausente la conserva")
 
 
 def _web(service=Depends(get_runtime_service)):

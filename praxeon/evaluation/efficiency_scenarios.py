@@ -12,7 +12,6 @@ Define tareas para evaluar comparativamente:
 
 from enum import Enum
 import random
-from typing import List
 from pydantic import BaseModel, ConfigDict, Field
 
 from praxeon.domain.models import (
@@ -38,9 +37,9 @@ class TaskScenario(BaseModel):
     model_name: str
     title: str
     goal: Goal
-    baseline_actions: List[ActionCandidate]
-    supervised_actions: List[ActionCandidate]
-    injected_anomalies: List[str] = Field(default_factory=list)
+    baseline_actions: list[ActionCandidate]
+    supervised_actions: list[ActionCandidate]
+    injected_anomalies: list[str] = Field(default_factory=list)
     expected_baseline_success: bool = True
     expected_supervised_success: bool = True
 
@@ -353,10 +352,10 @@ def build_scenario_long_pipeline(
     )
 
 
-def create_efficiency_benchmark_suite(seed: int = 42) -> List[TaskScenario]:
+def create_efficiency_benchmark_suite(seed: int = 42) -> list[TaskScenario]:
     """Genera la batería representativa canónica de benchmarks de eficiencia multiescala y heterogéneo."""
     random.seed(seed)
-    suite: List[TaskScenario] = [
+    suite: list[TaskScenario] = [
         # Escala Corta (SLMs y LLMs)
         build_scenario_short_slm_inspection("short_slm_deepseek_01"),
         build_scenario_short_slm_inspection("short_slm_llama_02"),

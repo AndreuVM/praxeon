@@ -13,7 +13,7 @@ from __future__ import annotations
 import asyncio
 from enum import Enum
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 from praxeon.agents.bus import AgentMessageBus, TopologyType
@@ -65,7 +65,7 @@ class MessageTransport:
         consumer_name: str,
         count: int = 10,
         block_ms: int = 50,
-    ) -> List[Tuple[str, AgentMessage]]:
+    ) -> list[tuple[str, AgentMessage]]:
         """Lee mensajes nuevos no asignados dentro de un consumer group."""
         raise NotImplementedError
 
@@ -73,7 +73,7 @@ class MessageTransport:
         """Confirma el procesamiento exitoso (ACK) de un mensaje eliminándolo de PEL."""
         raise NotImplementedError
 
-    async def get_pending(self, stream_name: str, group_name: str) -> List[PendingMessageRecord]:
+    async def get_pending(self, stream_name: str, group_name: str) -> list[PendingMessageRecord]:
         """Consulta los mensajes pendientes que aún no han recibido ACK."""
         raise NotImplementedError
 
@@ -83,7 +83,7 @@ class MessageTransport:
         group_name: str,
         min_idle_ms: float,
         new_consumer_name: str,
-    ) -> List[Tuple[str, AgentMessage]]:
+    ) -> list[tuple[str, AgentMessage]]:
         """Reasigna mensajes estancados por un consumidor caído a uno nuevo (failover)."""
         raise NotImplementedError
 
@@ -100,11 +100,11 @@ class InMemoryStreamTransport(MessageTransport):
     """
 
     def __init__(self) -> None:
-        self._streams: Dict[str, List[StreamEntry]] = {}
+        self._streams: dict[str, list[StreamEntry]] = {}
         # (stream_name, group_name) -> último índice leído
-        self._group_last_idx: Dict[Tuple[str, str], int] = {}
+        self._group_last_idx: dict[tuple[str, str], int] = {}
         # (stream_name, group_name) -> Dict[stream_id, PendingMessageRecord]
-        self._pel: Dict[Tuple[str, str], Dict[str, PendingMessageRecord]] = {}
+        self._pel: dict[tuple[str, str], dict[str, PendingMessageRecord]] = {}
         self._sequence: int = 0
         self._lock = asyncio.Lock()
 
@@ -135,7 +135,7 @@ class InMemoryStreamTransport(MessageTransport):
         consumer_name: str,
         count: int = 10,
         block_ms: int = 50,
-    ) -> List[Tuple[str, AgentMessage]]:
+    ) -> list[tuple[str, AgentMessage]]:
         key = (stream_name, group_name)
         if key not in self._group_last_idx:
             await self.create_consumer_group(stream_name, group_name)
@@ -148,7 +148,7 @@ class InMemoryStreamTransport(MessageTransport):
                 available = stream[last_idx : last_idx + count]
 
                 if available:
-                    results: List[Tuple[str, AgentMessage]] = []
+                    results: list[tuple[str, AgentMessage]] = []
                     now = time.time()
                     for entry in available:
                         # Añadir a PEL
@@ -179,7 +179,7 @@ class InMemoryStreamTransport(MessageTransport):
                 return True
             return False
 
-    async def get_pending(self, stream_name: str, group_name: str) -> List[PendingMessageRecord]:
+    async def get_pending(self, stream_name: str, group_name: str) -> list[PendingMessageRecord]:
         async with self._lock:
             key = (stream_name, group_name)
             return list(self._pel.get(key, {}).values())
@@ -190,12 +190,12 @@ class InMemoryStreamTransport(MessageTransport):
         group_name: str,
         min_idle_ms: float,
         new_consumer_name: str,
-    ) -> List[Tuple[str, AgentMessage]]:
+    ) -> list[tuple[str, AgentMessage]]:
         async with self._lock:
             key = (stream_name, group_name)
             pel = self._pel.get(key, {})
             now = time.time()
-            claimed: List[Tuple[str, AgentMessage]] = []
+            claimed: list[tuple[str, AgentMessage]] = []
 
             for s_id, record in list(pel.items()):
                 idle_ms = (now - record.delivered_at) * 1000.0
@@ -215,7 +215,7 @@ class RedisStreamsTransport(MessageTransport):
     utiliza el motor emulado determinista en memoria para total portabilidad.
     """
 
-    def __init__(self, redis_url: Optional[str] = None) -> None:
+    def __init__(self, redis_url: str | None = None) -> None:
         self.redis_url = redis_url
         self._fallback_transport = InMemoryStreamTransport()
         self._is_connected = False
@@ -234,13 +234,13 @@ class RedisStreamsTransport(MessageTransport):
         consumer_name: str,
         count: int = 10,
         block_ms: int = 50,
-    ) -> List[Tuple[str, AgentMessage]]:
+    ) -> list[tuple[str, AgentMessage]]:
         return await self._fallback_transport.read_group(stream_name, group_name, consumer_name, count, block_ms)
 
     async def acknowledge(self, stream_name: str, group_name: str, stream_id: str) -> bool:
         return await self._fallback_transport.acknowledge(stream_name, group_name, stream_id)
 
-    async def get_pending(self, stream_name: str, group_name: str) -> List[PendingMessageRecord]:
+    async def get_pending(self, stream_name: str, group_name: str) -> list[PendingMessageRecord]:
         return await self._fallback_transport.get_pending(stream_name, group_name)
 
     async def claim_stale(
@@ -249,14 +249,14 @@ class RedisStreamsTransport(MessageTransport):
         group_name: str,
         min_idle_ms: float,
         new_consumer_name: str,
-    ) -> List[Tuple[str, AgentMessage]]:
+    ) -> list[tuple[str, AgentMessage]]:
         return await self._fallback_transport.claim_stale(stream_name, group_name, min_idle_ms, new_consumer_name)
 
 
 class RabbitMQTransport(MessageTransport):
     """Transporte AMQP para brokers basados en RabbitMQ."""
 
-    def __init__(self, amqp_url: Optional[str] = None) -> None:
+    def __init__(self, amqp_url: str | None = None) -> None:
         self.amqp_url = amqp_url
         self._fallback_transport = InMemoryStreamTransport()
 
@@ -273,13 +273,13 @@ class RabbitMQTransport(MessageTransport):
         consumer_name: str,
         count: int = 10,
         block_ms: int = 50,
-    ) -> List[Tuple[str, AgentMessage]]:
+    ) -> list[tuple[str, AgentMessage]]:
         return await self._fallback_transport.read_group(stream_name, group_name, consumer_name, count, block_ms)
 
     async def acknowledge(self, stream_name: str, group_name: str, stream_id: str) -> bool:
         return await self._fallback_transport.acknowledge(stream_name, group_name, stream_id)
 
-    async def get_pending(self, stream_name: str, group_name: str) -> List[PendingMessageRecord]:
+    async def get_pending(self, stream_name: str, group_name: str) -> list[PendingMessageRecord]:
         return await self._fallback_transport.get_pending(stream_name, group_name)
 
     async def claim_stale(
@@ -288,7 +288,7 @@ class RabbitMQTransport(MessageTransport):
         group_name: str,
         min_idle_ms: float,
         new_consumer_name: str,
-    ) -> List[Tuple[str, AgentMessage]]:
+    ) -> list[tuple[str, AgentMessage]]:
         return await self._fallback_transport.claim_stale(stream_name, group_name, min_idle_ms, new_consumer_name)
 
 
@@ -298,7 +298,7 @@ class ClusterNodeInfo(BaseModel):
 
     node_id: str
     cluster_id: str
-    registered_agents: List[str]
+    registered_agents: list[str]
     is_active: bool = True
     last_heartbeat: float = Field(default_factory=time.time)
 
@@ -310,10 +310,10 @@ class DistributedAgentMessageBus(AgentMessageBus):
         self,
         node_id: str = "node_001",
         cluster_id: str = "cluster_praxeon_default",
-        transport: Optional[MessageTransport] = None,
+        transport: MessageTransport | None = None,
         default_topology: TopologyType = TopologyType.HUB_AND_SPOKE,
         supervisor_id: str = "praxeon_supervisor",
-        shared_secret: Optional[str] = None,
+        shared_secret: str | None = None,
         enforce_integrity: bool = False,
     ):
         super().__init__(
@@ -325,7 +325,7 @@ class DistributedAgentMessageBus(AgentMessageBus):
         self.node_id = node_id
         self.cluster_id = cluster_id
         self.transport = transport or InMemoryStreamTransport()
-        self._cluster_nodes: Dict[str, ClusterNodeInfo] = {}
+        self._cluster_nodes: dict[str, ClusterNodeInfo] = {}
 
     def get_stream_name(self, receiver_id: str) -> str:
         """Construye el nombre canónico del stream de destino."""
@@ -348,10 +348,10 @@ class DistributedAgentMessageBus(AgentMessageBus):
     async def async_receive(
         self,
         agent_id: str,
-        group_name: Optional[str] = None,
+        group_name: str | None = None,
         count: int = 10,
         auto_ack: bool = False,
-    ) -> List[Tuple[str, AgentMessage]]:
+    ) -> list[tuple[str, AgentMessage]]:
         """Recibe mensajes para un agente desde el stream distribuido."""
         stream_name = self.get_stream_name(agent_id)
         group = group_name or f"grp_{agent_id}"
@@ -370,7 +370,7 @@ class DistributedAgentMessageBus(AgentMessageBus):
 
         return messages
 
-    async def async_ack(self, agent_id: str, stream_id: str, group_name: Optional[str] = None) -> bool:
+    async def async_ack(self, agent_id: str, stream_id: str, group_name: str | None = None) -> bool:
         """Confirma el procesamiento de un mensaje en el cluster."""
         stream_name = self.get_stream_name(agent_id)
         group = group_name or f"grp_{agent_id}"
@@ -380,8 +380,8 @@ class DistributedAgentMessageBus(AgentMessageBus):
         self,
         agent_id: str,
         min_idle_ms: float = 2000.0,
-        group_name: Optional[str] = None,
-    ) -> List[Tuple[str, AgentMessage]]:
+        group_name: str | None = None,
+    ) -> list[tuple[str, AgentMessage]]:
         """Recupera mensajes asignados a nodos caídos que no enviaron ACK (Crash Recovery)."""
         stream_name = self.get_stream_name(agent_id)
         group = group_name or f"grp_{agent_id}"
@@ -397,7 +397,7 @@ class DistributedAgentMessageBus(AgentMessageBus):
         """Registra la presencia de un nodo en el cluster."""
         self._cluster_nodes[node_info.node_id] = node_info
 
-    def get_cluster_status(self) -> Dict[str, Any]:
+    def get_cluster_status(self) -> dict[str, Any]:
         """Devuelve el estado consolidado de la topología multi-nodo."""
         return {
             "cluster_id": self.cluster_id,

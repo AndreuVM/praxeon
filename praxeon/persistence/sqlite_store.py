@@ -7,10 +7,10 @@ Proporciona persistencia durable, ACID y versionada para:
 4. Historial e instancias de ejecución de flujos de trabajo (workflow_executions).
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 import json
 import sqlite3
-from typing import Any, Dict, List, Optional
+from typing import Any
 import uuid
 
 from praxeon.agents.definition import AgentDefinition, AgentStatus
@@ -99,7 +99,7 @@ class SqlitePersistenceStore(SqliteStore):
         """Persiste atómicamente un agente y registra su versión inmutable."""
         agent_dict = agent.to_dict()
         definition_json = json.dumps(agent_dict, ensure_ascii=False)
-        now_str = datetime.now(timezone.utc).isoformat()
+        now_str = datetime.now(UTC).isoformat()
         created_at_str = agent.created_at.isoformat() if hasattr(agent.created_at, "isoformat") else str(agent.created_at)
         updated_at_str = agent.updated_at.isoformat() if hasattr(agent.updated_at, "isoformat") else str(agent.updated_at)
 
@@ -157,7 +157,7 @@ class SqlitePersistenceStore(SqliteStore):
             finally:
                 self._close_conn(conn)
 
-    def get_agent(self, agent_id: str) -> Optional[AgentDefinition]:
+    def get_agent(self, agent_id: str) -> AgentDefinition | None:
         """Recupera un agente. Si está corrupto, lo envía a cuarentena y retorna None."""
         with self._lock:
             conn = self._get_connection()
@@ -192,16 +192,16 @@ class SqlitePersistenceStore(SqliteStore):
 
     def list_agents(
         self,
-        status: Optional[AgentStatus] = None,
-        role: Optional[str] = None,
+        status: AgentStatus | None = None,
+        role: str | None = None,
         include_quarantined: bool = False,
-    ) -> List[AgentDefinition]:
+    ) -> list[AgentDefinition]:
         """Lista agentes activos o filtrados con protección contra registros corruptos."""
         with self._lock:
             conn = self._get_connection()
             try:
                 query = "SELECT * FROM agents WHERE 1=1"
-                params: List[Any] = []
+                params: list[Any] = []
                 if not include_quarantined:
                     query += " AND is_quarantined = 0"
                 if status is not None:
@@ -212,7 +212,7 @@ class SqlitePersistenceStore(SqliteStore):
                     params.append(role)
 
                 rows = conn.execute(query, params).fetchall()
-                agents: List[AgentDefinition] = []
+                agents: list[AgentDefinition] = []
                 for row in rows:
                     raw_json = row["definition_json"]
                     agent_id = row["agent_id"]
@@ -248,7 +248,7 @@ class SqlitePersistenceStore(SqliteStore):
                     if hard_delete:
                         conn.execute("DELETE FROM agents WHERE agent_id = ?;", (agent_id,))
                     else:
-                        now_str = datetime.now(timezone.utc).isoformat()
+                        now_str = datetime.now(UTC).isoformat()
                         raw_json = row["definition_json"]
                         try:
                             data = json.loads(raw_json)
@@ -269,7 +269,7 @@ class SqlitePersistenceStore(SqliteStore):
             finally:
                 self._close_conn(conn)
 
-    def get_agent_versions(self, agent_id: str) -> List[Dict[str, Any]]:
+    def get_agent_versions(self, agent_id: str) -> list[dict[str, Any]]:
         """Recupera el catálogo histórico inmutable de versiones de un agente."""
         with self._lock:
             conn = self._get_connection()
@@ -287,7 +287,7 @@ class SqlitePersistenceStore(SqliteStore):
             finally:
                 self._close_conn(conn)
 
-    def get_agent_version(self, agent_id: str, version: int) -> Optional[AgentDefinition]:
+    def get_agent_version(self, agent_id: str, version: int) -> AgentDefinition | None:
         """Obtiene una versión histórica inmutable específica de un agente."""
         with self._lock:
             conn = self._get_connection()
@@ -314,12 +314,12 @@ class SqlitePersistenceStore(SqliteStore):
         self,
         conn: sqlite3.Connection,
         entity_type: str,
-        entity_id: Optional[str],
+        entity_id: str | None,
         raw_content: str,
         error: str,
     ) -> str:
         record_id = f"quarantine_{uuid.uuid4().hex[:12]}"
-        now_str = datetime.now(timezone.utc).isoformat()
+        now_str = datetime.now(UTC).isoformat()
         with conn:
             conn.execute(
                 """
@@ -346,7 +346,7 @@ class SqlitePersistenceStore(SqliteStore):
     def quarantine_record(
         self,
         entity_type: str,
-        entity_id: Optional[str],
+        entity_id: str | None,
         raw_content: str,
         error: str,
     ) -> str:
@@ -358,7 +358,7 @@ class SqlitePersistenceStore(SqliteStore):
             finally:
                 self._close_conn(conn)
 
-    def list_quarantined(self, entity_type: Optional[str] = None) -> List[Dict[str, Any]]:
+    def list_quarantined(self, entity_type: str | None = None) -> list[dict[str, Any]]:
         """Obtiene la lista de registros en cuarentena."""
         with self._lock:
             conn = self._get_connection()
@@ -391,7 +391,7 @@ class SqlitePersistenceStore(SqliteStore):
                     entity_id = row["entity_id"]
                     conn.execute("DELETE FROM quarantined_records WHERE record_id = ?;", (record_id,))
                     if entity_type == "agent" and entity_id:
-                        now_str = datetime.now(timezone.utc).isoformat()
+                        now_str = datetime.now(UTC).isoformat()
                         conn.execute(
                             """
                             UPDATE agents
@@ -415,7 +415,7 @@ class SqlitePersistenceStore(SqliteStore):
         """Persiste transaccionalmente una instancia de WorkflowExecution."""
         exec_dict = execution.to_dict()
         exec_json = json.dumps(exec_dict, ensure_ascii=False)
-        now_str = datetime.now(timezone.utc).isoformat()
+        now_str = datetime.now(UTC).isoformat()
         created_at_str = execution.created_at.isoformat() if hasattr(execution.created_at, "isoformat") else str(execution.created_at)
         finished_at_str = execution.finished_at.isoformat() if execution.finished_at else None
 
@@ -448,7 +448,7 @@ class SqlitePersistenceStore(SqliteStore):
             finally:
                 self._close_conn(conn)
 
-    def get_workflow_execution(self, execution_id: str) -> Optional[WorkflowExecution]:
+    def get_workflow_execution(self, execution_id: str) -> WorkflowExecution | None:
         """Obtiene una ejecución formal por su identificador único."""
         with self._lock:
             conn = self._get_connection()
@@ -466,15 +466,15 @@ class SqlitePersistenceStore(SqliteStore):
 
     def list_workflow_executions(
         self,
-        workflow_id: Optional[str] = None,
-        status: Optional[WorkflowStatus] = None,
-    ) -> List[WorkflowExecution]:
+        workflow_id: str | None = None,
+        status: WorkflowStatus | None = None,
+    ) -> list[WorkflowExecution]:
         """Lista ejecuciones registradas aplicando filtros opcionales de workflow_id o estado."""
         with self._lock:
             conn = self._get_connection()
             try:
                 query = "SELECT execution_json FROM workflow_executions WHERE 1=1"
-                params: List[Any] = []
+                params: list[Any] = []
                 if workflow_id:
                     query += " AND workflow_id = ?"
                     params.append(workflow_id)
@@ -484,7 +484,7 @@ class SqlitePersistenceStore(SqliteStore):
                 query += " ORDER BY created_at DESC"
 
                 rows = conn.execute(query, params).fetchall()
-                results: List[WorkflowExecution] = []
+                results: list[WorkflowExecution] = []
                 for row in rows:
                     data = json.loads(row["execution_json"])
                     results.append(WorkflowExecution.from_dict(data))
@@ -514,7 +514,7 @@ class SqlitePersistenceStore(SqliteStore):
         """Persiste transaccionalmente una definición de WorkflowDefinition."""
         wf_dict = workflow.to_dict()
         wf_json = json.dumps(wf_dict, ensure_ascii=False)
-        now_str = datetime.now(timezone.utc).isoformat()
+        now_str = datetime.now(UTC).isoformat()
         created_at_str = (
             workflow.created_at.isoformat()
             if hasattr(workflow.created_at, "isoformat")
@@ -556,7 +556,7 @@ class SqlitePersistenceStore(SqliteStore):
             finally:
                 self._close_conn(conn)
 
-    def get_workflow(self, workflow_id: str) -> Optional[WorkflowDefinition]:
+    def get_workflow(self, workflow_id: str) -> WorkflowDefinition | None:
         """Obtiene una definición de workflow persistida."""
         with self._lock:
             conn = self._get_connection()
@@ -572,7 +572,7 @@ class SqlitePersistenceStore(SqliteStore):
             finally:
                 self._close_conn(conn)
 
-    def list_workflows(self) -> List[WorkflowDefinition]:
+    def list_workflows(self) -> list[WorkflowDefinition]:
         """Lista todas las definiciones de workflows persistidas."""
         with self._lock:
             conn = self._get_connection()
@@ -580,7 +580,7 @@ class SqlitePersistenceStore(SqliteStore):
                 rows = conn.execute(
                     "SELECT workflow_json FROM workflows ORDER BY updated_at DESC;"
                 ).fetchall()
-                results: List[WorkflowDefinition] = []
+                results: list[WorkflowDefinition] = []
                 for row in rows:
                     data = json.loads(row["workflow_json"])
                     results.append(WorkflowDefinition.from_dict(data))

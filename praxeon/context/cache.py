@@ -8,7 +8,8 @@ NUNCA constituye autorización, NUNCA emite una Capability y NUNCA ejecuta una a
 from collections import OrderedDict
 import threading
 import time
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
+from collections.abc import Callable
 from pydantic import BaseModel, ConfigDict, Field
 
 from praxeon.context.fragments import ContextFragment
@@ -20,14 +21,14 @@ class ContextSnapshot(BaseModel):
 
     fingerprint: str
     session_id: str
-    fragments: List[ContextFragment] = Field(default_factory=list)
+    fragments: list[ContextFragment] = Field(default_factory=list)
     formatted_prompt: str
     total_tokens: int
     truncated: bool = False
     created_at: float = Field(default_factory=time.time)
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
-    def get_fragment_by_type(self, fragment_type: str) -> List[ContextFragment]:
+    def get_fragment_by_type(self, fragment_type: str) -> list[ContextFragment]:
         """Filtra fragmentos que componen esta instantánea por su categoría."""
         return [f for f in self.fragments if f.fragment_type == fragment_type]
 
@@ -35,7 +36,7 @@ class ContextSnapshot(BaseModel):
 class ContextCache:
     """Protocolo / clase base abstracta para almacenes de caché de contexto."""
 
-    def get(self, key: str) -> Optional[ContextSnapshot]:
+    def get(self, key: str) -> ContextSnapshot | None:
         raise NotImplementedError
 
     def put(self, key: str, snapshot: ContextSnapshot) -> None:
@@ -47,7 +48,7 @@ class ContextCache:
     def clear(self) -> None:
         raise NotImplementedError
 
-    def stats(self) -> Dict[str, Any]:
+    def stats(self) -> dict[str, Any]:
         raise NotImplementedError
 
 
@@ -62,9 +63,9 @@ class InMemoryContextCache(ContextCache):
         # OrderedDict gobernado por LRU: clave fingerprint -> ContextSnapshot
         self._store: OrderedDict[str, ContextSnapshot] = OrderedDict()
         # Índice secundario para control y búsqueda por sesión: session_id -> Set[fingerprint]
-        self._session_index: Dict[str, set] = {}
+        self._session_index: dict[str, set] = {}
         # Índice terciario por nodo en el árbol/DAG de razonamiento: node_id -> Set[fingerprint]
-        self._node_index: Dict[str, set] = {}
+        self._node_index: dict[str, set] = {}
 
         # Métricas operacionales
         self._hits = 0
@@ -73,7 +74,7 @@ class InMemoryContextCache(ContextCache):
         self._invalidations = 0
         self._evictions = 0
 
-    def get(self, key: str) -> Optional[ContextSnapshot]:
+    def get(self, key: str) -> ContextSnapshot | None:
         """Recupera un snapshot si existe, actualizando su posición en LRU."""
         with self._lock:
             if key in self._store:
@@ -176,7 +177,7 @@ class InMemoryContextCache(ContextCache):
             self._session_index.clear()
             self._node_index.clear()
 
-    def stats(self) -> Dict[str, Any]:
+    def stats(self) -> dict[str, Any]:
         """Retorna las métricas agregadas de rendimiento del caché."""
         with self._lock:
             total_reqs = self._hits + self._misses
@@ -205,7 +206,7 @@ class InMemoryFragmentCache:
         self._misses = 0
         self._evictions = 0
 
-    def get(self, content_hash: str) -> Optional[ContextFragment]:
+    def get(self, content_hash: str) -> ContextFragment | None:
         """Recupera un fragmento por su hash de contenido."""
         with self._lock:
             if content_hash in self._store:
@@ -230,7 +231,7 @@ class InMemoryFragmentCache:
         with self._lock:
             self._store.clear()
 
-    def stats(self) -> Dict[str, Any]:
+    def stats(self) -> dict[str, Any]:
         with self._lock:
             total = self._hits + self._misses
             rate = (self._hits / total) if total > 0 else 0.0

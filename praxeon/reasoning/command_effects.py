@@ -20,7 +20,7 @@ import re
 import tempfile
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import List, Optional, Sequence, Tuple
+from collections.abc import Sequence
 
 from praxeon.reasoning.shell_syntax import POSIX, POWERSHELL, SimpleCommand, Word
 
@@ -111,25 +111,25 @@ class Write:
 @dataclass
 class Effects:
     name: str = ""
-    deletes: List[Word] = field(default_factory=list)
+    deletes: list[Word] = field(default_factory=list)
     delete_recursive: bool = False
     delete_dynamic: bool = False          # objetivos que llegan por tubería, xargs o {}: no se conocen
     delete_filtered: bool = False         # find con filtros: no borra la raíz entera
-    truncates: List[Word] = field(default_factory=list)
-    writes: List[Write] = field(default_factory=list)
-    payloads: List[Tuple[str, str]] = field(default_factory=list)      # (código, dialecto) que se ejecuta dentro
-    inner: List[List[Word]] = field(default_factory=list)              # comandos que lanza (env, xargs, find -exec...)
-    inline_code: Optional[Tuple[str, str]] = None                       # (lenguaje, código)
+    truncates: list[Word] = field(default_factory=list)
+    writes: list[Write] = field(default_factory=list)
+    payloads: list[tuple[str, str]] = field(default_factory=list)      # (código, dialecto) que se ejecuta dentro
+    inner: list[list[Word]] = field(default_factory=list)              # comandos que lanza (env, xargs, find -exec...)
+    inline_code: tuple[str, str] | None = None                       # (lenguaje, código)
     verdict: str = ""                     # find_inspect, git_clean_force, git_clean_dry, git_clean, git_discard,
     #                                       benign, expression, wrapper, dangerous_env, dynamic_exec, dynamic_name,
     #                                       dynamic_read, privilege, foreach_member
-    cwd_change: Optional[Word] = None     # cd/Set-Location/pushd a esta carpeta
+    cwd_change: Word | None = None     # cd/Set-Location/pushd a esta carpeta
     cwd_reset: bool = False               # popd / cd - : la carpeta vuelve a una anterior
 
 
-def _positionals(words: Sequence[Word], with_value: set, *, ps: bool = False) -> List[Word]:
+def _positionals(words: Sequence[Word], with_value: set, *, ps: bool = False) -> list[Word]:
     """Argumentos que no son opciones (ni el valor de una opción que lo lleva)."""
-    out: List[Word] = []
+    out: list[Word] = []
     skip = False
     end_of_opts = False
     for w in words:
@@ -150,10 +150,10 @@ def _positionals(words: Sequence[Word], with_value: set, *, ps: bool = False) ->
     return out
 
 
-def _ps_params(words: Sequence[Word]) -> Tuple[dict, List[Word], set]:
+def _ps_params(words: Sequence[Word]) -> tuple[dict, list[Word], set]:
     """Parámetros de un cmdlet: ``{nombre: [valores]}``, posicionales y modificadores sin valor (``-Force``)."""
     params: dict = {}
-    positionals: List[Word] = []
+    positionals: list[Word] = []
     switches: set = set()
     i = 0
     while i < len(words):
@@ -184,9 +184,9 @@ _PS_VALUE_PARAMS = {
 }
 
 
-def _split_paths(words: Sequence[Word]) -> List[Word]:
+def _split_paths(words: Sequence[Word]) -> list[Word]:
     """``'a','b'`` de PowerShell llega como una palabra ``a,b``: una ruta por elemento."""
-    out: List[Word] = []
+    out: list[Word] = []
     for w in words:
         if "," in w.value and not w.dynamic:
             out.extend(Word(p, p, w.quoted) for p in w.value.split(",") if p)
@@ -254,7 +254,7 @@ def _is_ps_value(first: Word, cmd: SimpleCommand) -> bool:
     return cmd.nested and first.raw.startswith(("'", '"'))
 
 
-def _fold_echo(word: Word) -> Optional[str]:
+def _fold_echo(word: Word) -> str | None:
     """``$(echo rm)`` / `` `echo rm` `` → ``rm``: sustitución constante (un truco de ofuscación habitual)."""
     m = re.fullmatch(r"\$\(\s*(?:echo|printf)\s+(['\"]?)([\w.-]+)\1\s*\)|`\s*(?:echo|printf)\s+(['\"]?)([\w.-]+)\3\s*`", word.raw)
     if not m:
@@ -293,7 +293,7 @@ def _ps_expression(first: Word, eff: Effects) -> Effects:
 # ------------------------------------------------------------------------------------------------ manejadores
 
 
-def _delete(eff: Effects, args: List[Word], cmd: SimpleCommand, ps: bool) -> None:
+def _delete(eff: Effects, args: list[Word], cmd: SimpleCommand, ps: bool) -> None:
     name = eff.name
     if name in ("remove-item", "ri") or (ps and name in ("rm", "del", "erase", "rd", "rmdir")):
         params, pos, switches = _ps_params(args)
@@ -312,8 +312,8 @@ def _delete(eff: Effects, args: List[Word], cmd: SimpleCommand, ps: bool) -> Non
         eff.delete_dynamic = True
 
 
-def _find(eff: Effects, args: List[Word], cmd: SimpleCommand, ps: bool) -> None:
-    roots: List[Word] = []
+def _find(eff: Effects, args: list[Word], cmd: SimpleCommand, ps: bool) -> None:
+    roots: list[Word] = []
     i = 0
     while i < len(args) and not args[i].value.startswith(("-", "(", "!")):
         roots.append(args[i])
@@ -331,7 +331,7 @@ def _find(eff: Effects, args: List[Word], cmd: SimpleCommand, ps: bool) -> None:
             eff.delete_recursive = True
         elif v in ("-exec", "-execdir", "-ok", "-okdir"):
             k = j + 1
-            inner: List[Word] = []
+            inner: list[Word] = []
             while k < len(exprs) and exprs[k].value not in (";", "+"):
                 inner.append(exprs[k])
                 k += 1
@@ -358,7 +358,7 @@ def _find(eff: Effects, args: List[Word], cmd: SimpleCommand, ps: bool) -> None:
         eff.verdict = "find_inspect"
 
 
-def _git(eff: Effects, args: List[Word], cmd: SimpleCommand, ps: bool) -> None:
+def _git(eff: Effects, args: list[Word], cmd: SimpleCommand, ps: bool) -> None:
     i = 0
     while i < len(args) and args[i].value.startswith("-"):
         i += 2 if args[i].value in ("-C", "-c", "--git-dir", "--work-tree", "--namespace") else 1
@@ -385,23 +385,23 @@ def _git(eff: Effects, args: List[Word], cmd: SimpleCommand, ps: bool) -> None:
         eff.verdict = "git_discard"
 
 
-def _truncate(eff: Effects, args: List[Word], cmd: SimpleCommand, ps: bool) -> None:
+def _truncate(eff: Effects, args: list[Word], cmd: SimpleCommand, ps: bool) -> None:
     eff.truncates.extend(_positionals(args, {"-s", "--size", "-r", "--reference"}))
 
 
-def _shred(eff: Effects, args: List[Word], cmd: SimpleCommand, ps: bool) -> None:
+def _shred(eff: Effects, args: list[Word], cmd: SimpleCommand, ps: bool) -> None:
     targets = _positionals(args, {"-n", "--iterations", "-s", "--size", "--random-source"})
     eff.truncates.extend(targets)
     if any(w.value in ("-u", "--remove") or (w.value.startswith("-") and not w.value.startswith("--") and "u" in w.value) for w in args):
         eff.deletes.extend(targets)
 
 
-def _clear_content(eff: Effects, args: List[Word], cmd: SimpleCommand, ps: bool) -> None:
+def _clear_content(eff: Effects, args: list[Word], cmd: SimpleCommand, ps: bool) -> None:
     params, pos, _ = _ps_params(args)
     eff.truncates.extend(_split_paths(params.get("path", []) + params.get("literalpath", []) + pos))
 
 
-def _touch_mkdir(eff: Effects, args: List[Word], cmd: SimpleCommand, ps: bool) -> None:
+def _touch_mkdir(eff: Effects, args: list[Word], cmd: SimpleCommand, ps: bool) -> None:
     if ps and eff.name in ("mkdir", "md"):
         params, pos, _ = _ps_params(args)
         targets = params.get("path", []) + params.get("name", []) + pos
@@ -410,7 +410,7 @@ def _touch_mkdir(eff: Effects, args: List[Word], cmd: SimpleCommand, ps: bool) -
     eff.writes.extend(Write(t, "create") for t in _split_paths(targets))
 
 
-def _new_item(eff: Effects, args: List[Word], cmd: SimpleCommand, ps: bool) -> None:
+def _new_item(eff: Effects, args: list[Word], cmd: SimpleCommand, ps: bool) -> None:
     params, pos, switches = _ps_params(args)
     kind = " ".join(w.value.lower() for w in params.get("itemtype", []) + params.get("type", []))
     targets = _split_paths(params.get("path", []) + params.get("name", []) + pos[:1])
@@ -422,7 +422,7 @@ def _new_item(eff: Effects, args: List[Word], cmd: SimpleCommand, ps: bool) -> N
         eff.writes.extend(Write(t, mode) for t in targets)
 
 
-def _copy_move(eff: Effects, args: List[Word], cmd: SimpleCommand, ps: bool) -> None:
+def _copy_move(eff: Effects, args: list[Word], cmd: SimpleCommand, ps: bool) -> None:
     name = eff.name
     moving = name in ("mv", "move", "move-item", "mi", "rename-item", "ren", "rni")
     if name in ("copy-item", "cpi", "move-item", "mi", "rename-item", "rni") or (ps and name in ("cp", "copy", "mv", "move", "ren")):
@@ -441,7 +441,7 @@ def _copy_move(eff: Effects, args: List[Word], cmd: SimpleCommand, ps: bool) -> 
         eff.writes.extend(Write(s, "move_source") for s in _split_paths(sources))
 
 
-def _robocopy_xcopy(eff: Effects, args: List[Word], cmd: SimpleCommand, ps: bool) -> None:
+def _robocopy_xcopy(eff: Effects, args: list[Word], cmd: SimpleCommand, ps: bool) -> None:
     pos = [w for w in args if not w.value.startswith("/")]
     flags = {w.value.lower() for w in args if w.value.startswith("/")}
     if len(pos) >= 2:
@@ -452,7 +452,7 @@ def _robocopy_xcopy(eff: Effects, args: List[Word], cmd: SimpleCommand, ps: bool
             eff.delete_filtered = True
 
 
-def _rsync(eff: Effects, args: List[Word], cmd: SimpleCommand, ps: bool) -> None:
+def _rsync(eff: Effects, args: list[Word], cmd: SimpleCommand, ps: bool) -> None:
     pos = _positionals(args, {"-e", "--rsh", "--exclude", "--include", "--filter", "-f"})
     if len(pos) >= 2:
         dest = pos[-1]
@@ -464,7 +464,7 @@ def _rsync(eff: Effects, args: List[Word], cmd: SimpleCommand, ps: bool) -> None
                 eff.delete_filtered = True
 
 
-def _tee(eff: Effects, args: List[Word], cmd: SimpleCommand, ps: bool) -> None:
+def _tee(eff: Effects, args: list[Word], cmd: SimpleCommand, ps: bool) -> None:
     if eff.name == "tee-object" or ps:
         params, pos, switches = _ps_params(args)
         targets = params.get("filepath", []) + params.get("literalpath", []) + params.get("path", []) + pos[:1]
@@ -475,7 +475,7 @@ def _tee(eff: Effects, args: List[Word], cmd: SimpleCommand, ps: bool) -> None:
     eff.writes.extend(Write(t, mode) for t in targets)
 
 
-def _set_content(eff: Effects, args: List[Word], cmd: SimpleCommand, ps: bool) -> None:
+def _set_content(eff: Effects, args: list[Word], cmd: SimpleCommand, ps: bool) -> None:
     params, pos, switches = _ps_params(args)
     targets = params.get("path", []) + params.get("literalpath", []) + params.get("filepath", []) + pos[:1]
     append = eff.name in ("add-content", "ac") or "append" in switches
@@ -483,7 +483,7 @@ def _set_content(eff: Effects, args: List[Word], cmd: SimpleCommand, ps: bool) -
     eff.writes.extend(Write(t, mode) for t in _split_paths(targets))
 
 
-def _sed(eff: Effects, args: List[Word], cmd: SimpleCommand, ps: bool) -> None:
+def _sed(eff: Effects, args: list[Word], cmd: SimpleCommand, ps: bool) -> None:
     if not any(w.value.startswith("-i") or w.value.startswith("--in-place") or re.fullmatch(r"-[a-zA-Z]*i[a-zA-Z]*", w.value) for w in args):
         return
     pos = _positionals(args, {"-e", "-f", "--expression", "--file", "-l"})
@@ -492,7 +492,7 @@ def _sed(eff: Effects, args: List[Word], cmd: SimpleCommand, ps: bool) -> None:
     eff.writes.extend(Write(f, "edit") for f in files)
 
 
-def _ln(eff: Effects, args: List[Word], cmd: SimpleCommand, ps: bool) -> None:
+def _ln(eff: Effects, args: list[Word], cmd: SimpleCommand, ps: bool) -> None:
     pos = _positionals(args, {"-t", "--target-directory", "-S", "--suffix"})
     if len(pos) >= 2:
         eff.writes.append(Write(pos[-1], "create"))
@@ -501,13 +501,13 @@ def _ln(eff: Effects, args: List[Word], cmd: SimpleCommand, ps: bool) -> None:
         eff.writes.append(Write(pos[0], "link"))
 
 
-def _dd(eff: Effects, args: List[Word], cmd: SimpleCommand, ps: bool) -> None:
+def _dd(eff: Effects, args: list[Word], cmd: SimpleCommand, ps: bool) -> None:
     for w in args:
         if w.value.startswith("of="):
             eff.writes.append(Write(Word(w.value[3:], w.raw[3:], w.quoted, w.dynamic), "truncate"))
 
 
-def _shell(eff: Effects, args: List[Word], cmd: SimpleCommand, ps: bool) -> None:
+def _shell(eff: Effects, args: list[Word], cmd: SimpleCommand, ps: bool) -> None:
     for k, w in enumerate(args):
         v = w.value
         if v.startswith("-") and not v.startswith("--") and "c" in v[1:] and k + 1 < len(args):
@@ -517,7 +517,7 @@ def _shell(eff: Effects, args: List[Word], cmd: SimpleCommand, ps: bool) -> None
             return                                                    # `bash script.sh`: ejecuta un fichero
 
 
-def _cmd_exe(eff: Effects, args: List[Word], cmd: SimpleCommand, ps: bool) -> None:
+def _cmd_exe(eff: Effects, args: list[Word], cmd: SimpleCommand, ps: bool) -> None:
     for k, w in enumerate(args):
         if w.value.lower() in ("/c", "/k", "/r"):
             payload = " ".join(x.raw for x in args[k + 1:])
@@ -527,7 +527,7 @@ def _cmd_exe(eff: Effects, args: List[Word], cmd: SimpleCommand, ps: bool) -> No
             return
 
 
-def _powershell(eff: Effects, args: List[Word], cmd: SimpleCommand, ps: bool) -> None:
+def _powershell(eff: Effects, args: list[Word], cmd: SimpleCommand, ps: bool) -> None:
     with_value = {"-executionpolicy", "-ep", "-ex", "-windowstyle", "-w", "-workingdirectory", "-wd", "-outputformat",
                   "-of", "-inputformat", "-if", "-configurationname", "-version", "-v", "-psconsolefile", "-settingsfile"}
     k = 0
@@ -549,14 +549,14 @@ def _powershell(eff: Effects, args: List[Word], cmd: SimpleCommand, ps: bool) ->
         return
 
 
-def _eval(eff: Effects, args: List[Word], cmd: SimpleCommand, ps: bool) -> None:
+def _eval(eff: Effects, args: list[Word], cmd: SimpleCommand, ps: bool) -> None:
     if not args or any(w.dynamic for w in args):
         eff.verdict = "dynamic_exec"
         return
     eff.payloads.append((" ".join(w.value for w in args), POWERSHELL if ps else POSIX))
 
 
-def _start_process(eff: Effects, args: List[Word], cmd: SimpleCommand, ps: bool) -> None:
+def _start_process(eff: Effects, args: list[Word], cmd: SimpleCommand, ps: bool) -> None:
     params, pos, _ = _ps_params(args)
     if any(w.value.lower() == "runas" for w in params.get("verb", [])):
         eff.verdict = "privilege"
@@ -566,7 +566,7 @@ def _start_process(eff: Effects, args: List[Word], cmd: SimpleCommand, ps: bool)
         eff.inner.append(program + params.get("argumentlist", []))
 
 
-def _foreach(eff: Effects, args: List[Word], cmd: SimpleCommand, ps: bool) -> None:
+def _foreach(eff: Effects, args: list[Word], cmd: SimpleCommand, ps: bool) -> None:
     params, pos, _ = _ps_params(args)
     members = params.get("membername", []) + [w for w in pos if w.value != "{…}"]
     eff.verdict = "foreach_member" if members else "benign"
@@ -574,7 +574,7 @@ def _foreach(eff: Effects, args: List[Word], cmd: SimpleCommand, ps: bool) -> No
         eff.delete_dynamic = True                                     # `ls | % Delete`: borra cada elemento recibido
 
 
-def _download(eff: Effects, args: List[Word], cmd: SimpleCommand, ps: bool) -> None:
+def _download(eff: Effects, args: list[Word], cmd: SimpleCommand, ps: bool) -> None:
     """Descargas que guardan en un fichero: ``curl -o``, ``wget -O``/``-P``, ``Invoke-WebRequest -OutFile``."""
     if eff.name in ("invoke-webrequest", "iwr", "invoke-restmethod", "irm") or (ps and eff.name in ("curl", "wget")):
         params, _, _ = _ps_params(args)
@@ -594,7 +594,7 @@ def _download(eff: Effects, args: List[Word], cmd: SimpleCommand, ps: bool) -> N
 _CONTENT_READERS = {"cat", "type", "get-content", "gc", "head", "tail", "more", "less", "tac", "nl", "strings", "xxd", "od"}
 
 
-def _content_reader(eff: Effects, args: List[Word], cmd: SimpleCommand, ps: bool) -> None:
+def _content_reader(eff: Effects, args: list[Word], cmd: SimpleCommand, ps: bool) -> None:
     """Volcar ficheros cuya ruta solo se conoce al ejecutar (``Get-Content $_.FullName``, ``ls | Get-Content``) puede
     incluir ``.env`` o claves: la comprobación de lecturas sensibles no los ve."""
     if ps or eff.name in ("get-content", "gc"):
@@ -607,7 +607,7 @@ def _content_reader(eff: Effects, args: List[Word], cmd: SimpleCommand, ps: bool
         eff.verdict = "dynamic_read"
 
 
-def _cd(eff: Effects, args: List[Word], cmd: SimpleCommand, ps: bool) -> None:
+def _cd(eff: Effects, args: list[Word], cmd: SimpleCommand, ps: bool) -> None:
     eff.verdict = "benign"
     if eff.name in ("popd", "pop-location"):
         eff.cwd_reset = True
@@ -622,20 +622,20 @@ def _cd(eff: Effects, args: List[Word], cmd: SimpleCommand, ps: bool) -> None:
         eff.cwd_change = Word("~", "~")
 
 
-def _export(eff: Effects, args: List[Word], cmd: SimpleCommand, ps: bool) -> None:
+def _export(eff: Effects, args: list[Word], cmd: SimpleCommand, ps: bool) -> None:
     assigns = [w for w in args if not w.value.startswith("-")]
     if not assigns or not all("=" in w.value for w in assigns):
         return                                                        # `export -p` / `export X` muestran o marcan: verbo
     eff.verdict = _assignment_verdict(assigns)
 
 
-def _set(eff: Effects, args: List[Word], cmd: SimpleCommand, ps: bool) -> None:
+def _set(eff: Effects, args: list[Word], cmd: SimpleCommand, ps: bool) -> None:
     if not ps and args and all(re.fullmatch(r"[-+][a-zA-Z]+", w.value) or w.value in ("pipefail", "errexit", "nounset", "xtrace")
                                for w in args):
         eff.verdict = "benign"                                        # set -e, set -euo pipefail
 
 
-def _wrapper(eff: Effects, name: str, args: List[Word]) -> None:
+def _wrapper(eff: Effects, name: str, args: list[Word]) -> None:
     with_value = _WRAPPER_OPTS_WITH_VALUE[name]
     k = 0
     if name == "command" and args and args[0].value in ("-v", "-V"):
@@ -663,7 +663,7 @@ def _wrapper(eff: Effects, name: str, args: List[Word]) -> None:
         eff.inner.append([Word("echo", "echo"), XARGS_INPUT])
 
 
-def _inline(eff: Effects, name: str, args: List[Word]) -> None:
+def _inline(eff: Effects, name: str, args: list[Word]) -> None:
     flags = INLINE_INTERPRETERS[name]
     for k, w in enumerate(args):
         if w.value in flags and k + 1 < len(args):
@@ -756,12 +756,12 @@ def _host_real(path: str) -> str:
     return _norm(path)
 
 
-def temp_roots() -> List[str]:
+def temp_roots() -> list[str]:
     # Solo se comparan rutas con estas carpetas; no se crea ni se abre nada en ellas
     return [_norm(tempfile.gettempdir()), "/tmp", "/var/tmp"]  # nosec B108
 
 
-def resolve(value: str, root: Optional[str], cwd: Optional[str] = None) -> Optional[str]:
+def resolve(value: str, root: str | None, cwd: str | None = None) -> str | None:
     """Ruta absoluta normalizada de ``value`` (``None`` si depende de una variable que no se conoce).
 
     Las relativas se resuelven contra ``cwd`` (tras un ``cd``) o el workspace; sin workspace, contra uno virtual.
@@ -783,7 +783,7 @@ def resolve(value: str, root: Optional[str], cwd: Optional[str] = None) -> Optio
     return p
 
 
-def locate(word: Word, root: Optional[str], cwd: Optional[str] = None) -> Location:
+def locate(word: Word, root: str | None, cwd: str | None = None) -> Location:
     """Dónde cae la ruta ``word`` respecto al workspace ``root`` (sin él, un workspace virtual: relativas dentro)."""
     value = word.value.strip()
     if not value:
@@ -809,7 +809,7 @@ def locate(word: Word, root: Optional[str], cwd: Optional[str] = None) -> Locati
     return Location.OUTSIDE
 
 
-def is_whole_workspace(word: Word, root: Optional[str], cwd: Optional[str] = None) -> bool:
+def is_whole_workspace(word: Word, root: str | None, cwd: str | None = None) -> bool:
     """La ruta es la carpeta del workspace entera (``.``, ``*``, ``./``, la propia raíz)."""
     path = resolve(word.value.rstrip("/\\*").rstrip("/\\") or ".", root, cwd)
     ws = _host_real(_norm(root)) if root else _VIRTUAL_ROOT
@@ -820,7 +820,7 @@ def is_whole_workspace(word: Word, root: Optional[str], cwd: Optional[str] = Non
     return path == ws
 
 
-def existing_file(word: Word, root: Optional[str], cwd: Optional[str] = None) -> bool:
+def existing_file(word: Word, root: str | None, cwd: str | None = None) -> bool:
     """La ruta ya existe como fichero (sin workspace real, solo se comprueban las absolutas)."""
     path = resolve(word.value, root, cwd)
     if path is None or path.startswith(_VIRTUAL_ROOT):

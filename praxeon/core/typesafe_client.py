@@ -2,7 +2,7 @@
 
 import logging
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from praxeon.config import PraxeonConfig, default_config
 from praxeon.models.schema import ActionCandidate, LoopType, Step
@@ -16,7 +16,7 @@ from praxeon.providers.typesafe import Choice, Noul, Score, create_sdk_client, i
 class TypeSafeJEVClient:
     """Cliente para evaluar razonamiento y decisiones usando el modelo Jev de TypeSafe AI."""
 
-    def __init__(self, config: Optional[PraxeonConfig] = None):
+    def __init__(self, config: PraxeonConfig | None = None):
         self.config = config or default_config
         if self.config.typesafe_api_key is not None:
             self.api_key = self.config.typesafe_api_key
@@ -40,8 +40,8 @@ class TypeSafeJEVClient:
 
     def _invoke_system_one_with_retry(
         self,
-        state: Dict[str, Any],
-        questions: Dict[str, Any],
+        state: dict[str, Any],
+        questions: dict[str, Any],
         max_retries: int = 2,
     ) -> Any:
         """Invoca system_one con los reintentos del proveedor TypeSafe ante fallos transitorios."""
@@ -50,9 +50,9 @@ class TypeSafeJEVClient:
     def evaluate_step_chunk(
         self,
         goal: str,
-        history: List[Step],
-        candidates: List[ActionCandidate],
-    ) -> Optional[Dict[str, Any]]:
+        history: list[Step],
+        candidates: list[ActionCandidate],
+    ) -> dict[str, Any] | None:
         """Invoca el modelo Jev vía TypeSafe AI para evaluar un bloque agrupado de pasos en una sola llamada.
         
         Permite ahorrar peticiones a la API agrupando la supervisión de múltiples pasos
@@ -193,7 +193,7 @@ class TypeSafeJEVClient:
             div_step_str = str(getattr(div_choice_obj, "choice", "none")) if div_choice_obj else "none"
 
             # Determinar índice del paso con fallo
-            flagged_index: Optional[int] = None
+            flagged_index: int | None = None
             if is_divergent:
                 if div_step_str.startswith("step_"):
                     try:
@@ -289,9 +289,9 @@ class TypeSafeJEVClient:
     def evaluate_candidate(
         self,
         goal: str,
-        history: List[Step],
+        history: list[Step],
         candidate: ActionCandidate,
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """Invoca el modelo Jev vía TypeSafe AI para clasificar bucles y calcular JEV para un candidato individual.
         
         Retorna un diccionario con métricas tipadas o None si la API no está disponible o falla.

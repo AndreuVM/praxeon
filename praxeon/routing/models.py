@@ -7,11 +7,11 @@ y recibos formales de decisiones de enrutamiento:
 - RoutingDecision: Resultado formal, auditable y trazable de la asignación de un agente.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from enum import Enum
 import hashlib
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 from praxeon.agents.protocol import MessagePriority
@@ -43,16 +43,16 @@ class TaskRequirement(BaseModel):
 
     task_id: str = Field(description="Identificador único de la tarea")
     prompt: str = Field(description="Descripción o directiva en lenguaje natural")
-    required_capabilities: List[str] = Field(default_factory=list, description="Capacidades operacionales requeridas")
-    required_tools: List[str] = Field(default_factory=list, description="Herramientas indispensables para la tarea")
-    target_files: List[str] = Field(default_factory=list, description="Archivos involucrados")
-    expected_output_type: Optional[str] = Field(default=None, description="Tipo de artefacto esperado")
+    required_capabilities: list[str] = Field(default_factory=list, description="Capacidades operacionales requeridas")
+    required_tools: list[str] = Field(default_factory=list, description="Herramientas indispensables para la tarea")
+    target_files: list[str] = Field(default_factory=list, description="Archivos involucrados")
+    expected_output_type: str | None = Field(default=None, description="Tipo de artefacto esperado")
     priority: MessagePriority = Field(default=MessagePriority.NORMAL)
-    max_acceptable_cost: Optional[float] = Field(default=None, ge=0.0)
+    max_acceptable_cost: float | None = Field(default=None, ge=0.0)
     complexity: TaskComplexity = Field(default=TaskComplexity.MEDIUM)
     inferred_risk: RiskLevel = Field(default=RiskLevel.LOW)
-    metadata: Dict[str, Any] = Field(default_factory=dict)
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     @property
     def fingerprint(self) -> str:
@@ -77,15 +77,15 @@ class RoutingDecision(BaseModel):
     selected_agent_id: str
     confidence: float = Field(ge=0.0, le=1.0, description="Nivel de confianza en la idoneidad del agente")
     strategy_used: RoutingStrategyType
-    alternative_agent_ids: List[str] = Field(default_factory=list)
+    alternative_agent_ids: list[str] = Field(default_factory=list)
     rationale: str = Field(description="Justificación técnica de la selección")
-    matched_capabilities: List[str] = Field(default_factory=list)
+    matched_capabilities: list[str] = Field(default_factory=list)
     estimated_cost: float = Field(default=0.0, ge=0.0)
     escalation_level: int = Field(default=0, ge=0, description="Nivel de escalado aplicado si hubo re-enrutamiento")
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Serializa la decisión a diccionario estándar."""
         dump = self.model_dump(mode="json")
         return dump

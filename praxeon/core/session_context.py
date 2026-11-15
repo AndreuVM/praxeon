@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 import platform
 import sys
-from typing import Any, Dict, List, Optional, Set
+from typing import Any
 
 from rich.panel import Panel
 from rich.table import Table
@@ -19,10 +19,10 @@ class TaskRecord:
     summary: str
     final_answer: str
     executed_steps: int
-    discovered_files: List[str] = field(default_factory=list)
-    modified_files: List[str] = field(default_factory=list)
-    key_findings: List[str] = field(default_factory=list)
-    history_steps: List[Dict[str, Any]] = field(default_factory=list)
+    discovered_files: list[str] = field(default_factory=list)
+    modified_files: list[str] = field(default_factory=list)
+    key_findings: list[str] = field(default_factory=list)
+    history_steps: list[dict[str, Any]] = field(default_factory=list)
 
 
 class SessionContextManager:
@@ -31,10 +31,10 @@ class SessionContextManager:
     def __init__(self, max_history_tasks: int = 8, max_context_chars: int = 12000):
         self.max_history_tasks = max_history_tasks
         self.max_context_chars = max_context_chars
-        self.task_records: List[TaskRecord] = []
-        self.all_discovered_files: Set[str] = set()
-        self.all_modified_files: Set[str] = set()
-        self.conversation_history: List[Dict[str, str]] = []
+        self.task_records: list[TaskRecord] = []
+        self.all_discovered_files: set[str] = set()
+        self.all_modified_files: set[str] = set()
+        self.conversation_history: list[dict[str, str]] = []
 
     def is_empty(self) -> bool:
         """Indica si es la primera tarea de la sesión (sin contexto previo)."""
@@ -46,12 +46,12 @@ class SessionContextManager:
         summary: str,
         final_answer: str,
         executed_steps: int,
-        history_steps: Optional[List[Dict[str, Any]]] = None,
+        history_steps: list[dict[str, Any]] | None = None,
     ) -> TaskRecord:
         """Registra la finalización de una tarea y extrae automáticamente hechos y archivos descubiertos."""
-        discovered: Set[str] = set()
-        modified: Set[str] = set()
-        findings: List[str] = []
+        discovered: set[str] = set()
+        modified: set[str] = set()
+        findings: list[str] = []
 
         if history_steps:
             for st in history_steps:
@@ -95,7 +95,7 @@ class SessionContextManager:
         self.task_records.append(record)
         return record
 
-    def get_task_fragments(self) -> List[Any]:
+    def get_task_fragments(self) -> list[Any]:
         """Convierte los registros de tareas previas en TaskFragments estructurados de ContextManager."""
         from praxeon.context.fragments import TaskFragment
         frags = []
@@ -114,7 +114,7 @@ class SessionContextManager:
             )
         return frags
 
-    def get_environment_fragment(self, root_dir: Optional[str] = None) -> Any:
+    def get_environment_fragment(self, root_dir: str | None = None) -> Any:
         """Convierte la información del entorno anfitrión en un EnvironmentFragment cacheable."""
         from praxeon.context.fragments import EnvironmentFragment
         env_text = self.get_environment_info(root_dir=root_dir)
@@ -149,7 +149,7 @@ class SessionContextManager:
             'Action: finish {"summary": "explicación clara, fundamentada y completa de la solución final"}'
         )
 
-    def get_environment_info(self, root_dir: Optional[str] = None) -> str:
+    def get_environment_info(self, root_dir: str | None = None) -> str:
         """Recolecta información estructurada sobre el entorno de ejecución del sistema y el espacio de trabajo."""
         cwd = Path(root_dir) if root_dir else Path.cwd()
         os_name = platform.system()
@@ -225,7 +225,7 @@ class SessionContextManager:
 
         return "\n".join(env_lines)
 
-    def prepare_task_conversation(self, current_goal: str) -> List[Dict[str, str]]:
+    def prepare_task_conversation(self, current_goal: str) -> list[dict[str, str]]:
         """Prepara el historial de conversación inyectando la información de entorno y memoria de tareas previas."""
         system_content = self.build_initial_system_prompt()
         env_info = self.get_environment_info()
@@ -321,14 +321,14 @@ class SessionContextManager:
         )
 
     @staticmethod
-    def get_directory_tree(root_dir: str, max_files: int = 100) -> List[str]:
+    def get_directory_tree(root_dir: str, max_files: int = 100) -> list[str]:
         """Obtiene una lista representativa de archivos del directorio raíz respetando exclusiones estándar."""
         root_path = Path(root_dir)
         if not root_path.exists() or not root_path.is_dir():
             return []
 
         ignored = {".git", ".venv", "venv", "__pycache__", "node_modules", "dist", ".pytest_cache", ".eggs", "build"}
-        found_files: List[str] = []
+        found_files: list[str] = []
         try:
             for root, dirs, filenames in os.walk(root_path):
                 dirs[:] = [d for d in dirs if d not in ignored and not d.startswith(".")]

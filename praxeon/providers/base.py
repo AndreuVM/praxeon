@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any, List, Optional
+from typing import Any
 from praxeon.domain.decision_provider import DecisionProviderMetadata
 from praxeon.domain.models import ActionCandidate, ProviderAssessment
 
@@ -13,10 +13,10 @@ class BaseReasoningProvider(ABC):
 
     name: str = "base"
     model_name: str = "default"
-    model_version: Optional[str] = None
+    model_version: str | None = None
     backend: str = "local"
-    device: Optional[str] = None
-    capabilities: List[str] = []
+    device: str | None = None
+    capabilities: list[str] = []
 
     @property
     def provider_id(self) -> str:
@@ -27,8 +27,8 @@ class BaseReasoningProvider(ABC):
     def evaluate(
         self,
         state: Any,
-        actions: List[ActionCandidate],
-    ) -> List[ProviderAssessment]:
+        actions: list[ActionCandidate],
+    ) -> list[ProviderAssessment]:
         """Evalúa semánticamente las acciones candidatas bajo el estado provisto."""
         pass
 

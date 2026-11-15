@@ -8,12 +8,12 @@ de decisión (choice, score, noul) que consume el resto del runtime.
 
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any
 
 DECISIONS = ("ALLOW", "REPLAN", "BLOCK", "ABSTAIN")
 
 # Los modelos se entrenaron sobre todo con texto en inglés: las preguntas van en inglés y el estado con el contenido real.
-QUESTIONS: Dict[str, Dict[str, Any]] = {
+QUESTIONS: dict[str, dict[str, Any]] = {
     "decision": {
         "type": "choice",
         "instructions": "An autonomous agent proposes the CANDIDATE ACTION below. What should its supervisor decide?",
@@ -56,7 +56,7 @@ def parse_answers(data: Any):
     if not isinstance(answers, dict):
         raise ValueError("Respuesta sin 'answers'.")
 
-    def need(key: str, kind: str) -> Dict[str, Any]:
+    def need(key: str, kind: str) -> dict[str, Any]:
         ans = answers.get(key)
         if not isinstance(ans, dict) or ans.get("type") != kind:
             raise ValueError(f"Respuesta sin la pregunta '{key}' de tipo {kind}.")

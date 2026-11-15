@@ -9,14 +9,14 @@ de responsabilidad única:
 
 from abc import abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Protocol
+from typing import Any, Protocol
 
 
 @dataclass(frozen=True)
 class ParsedStep:
     """Paso ReAct parseado emitido por un agente o adaptador."""
     tool_name: str
-    tool_args: Dict[str, Any] = field(default_factory=dict)
+    tool_args: dict[str, Any] = field(default_factory=dict)
     thought_rationale: str = ""
     raw_output: str = ""
     is_finish: bool = False
@@ -29,7 +29,7 @@ class CircuitBreakerStatus:
     technical_circuit_open: bool = False
     semantic_fixations: int = 0
     semantic_circuit_open: bool = False
-    recent_action_signatures: List[str] = field(default_factory=list)
+    recent_action_signatures: list[str] = field(default_factory=list)
 
 
 class AgentAdapterProtocol(Protocol):
@@ -38,7 +38,7 @@ class AgentAdapterProtocol(Protocol):
     @abstractmethod
     def generate_step(
         self,
-        conversation: List[Dict[str, str]],
+        conversation: list[dict[str, str]],
         system_prompt: str,
         goal: str,
         step_idx: int,
@@ -51,7 +51,7 @@ class TrajectoryControllerProtocol(Protocol):
     """Protocolo para supervisión cognitiva, control de bucles y gestión de ramas."""
 
     @abstractmethod
-    def record_action_attempt(self, tool: str, args: Dict[str, Any]) -> bool:
+    def record_action_attempt(self, tool: str, args: dict[str, Any]) -> bool:
         """Registra una propuesta de acción y retorna True si se detectó bucle semántico."""
         ...
 

@@ -5,7 +5,7 @@ y evidencias contrastadas sin requerir bases vectoriales ni modelos de embedding
 """
 
 import hashlib
-from typing import Any, Dict, List, Optional, Set
+from typing import Any
 from praxeon.context.fragments import (
     ContextFragment,
     GoalFragment,
@@ -41,10 +41,10 @@ class DAGContextSelector:
     def resolve_ancestral_nodes(
         self,
         active_node_id: str,
-        steps: List[Any],
-        metadata: Dict[str, Any],
-        dependency_graph: Optional[Any] = None,
-    ) -> Optional[Set[str]]:
+        steps: list[Any],
+        metadata: dict[str, Any],
+        dependency_graph: Any | None = None,
+    ) -> set[str] | None:
         """Resuelve el conjunto de nodos ancestros en el DAG requeridos para active_node_id."""
         import networkx as nx
 
@@ -99,20 +99,20 @@ class DAGContextSelector:
     def select(
         self,
         state: Any,
-        candidate_action: Optional[ActionCandidate] = None,
-        session_context: Optional[Any] = None,
-        active_node_id: Optional[str] = None,
-        dependency_graph: Optional[Any] = None,
-    ) -> List[ContextFragment]:
+        candidate_action: ActionCandidate | None = None,
+        session_context: Any | None = None,
+        active_node_id: str | None = None,
+        dependency_graph: Any | None = None,
+    ) -> list[ContextFragment]:
         """Extrae y estructura los fragmentos de contexto pertinentes para el nodo actual de la trayectoria."""
-        fragments: List[ContextFragment] = []
+        fragments: list[ContextFragment] = []
 
         # 1. Fragmento de Meta (GOAL) y criterios de éxito
         session_id = getattr(state, "session_id", "session_default")
         goal_obj = getattr(state, "goal", None)
         if goal_obj is None:
             goal_text = "Objetivo no especificado"
-            criteria: List[str] = []
+            criteria: list[str] = []
         elif isinstance(goal_obj, str):
             goal_text = goal_obj
             criteria = []
@@ -188,11 +188,11 @@ class DAGContextSelector:
             fragments.append(EvidenceFragment(evidence_id=str(ev_id), claim=claim))
 
         # 6. Filtrado de Ramas Podadas y Selección de Pasos Pertinentes (F2-03 y F2-04)
-        pruned_branches: Set[str] = set(metadata.get("pruned_branches", []))
-        pruned_nodes: Set[str] = set(metadata.get("pruned_nodes", []))
+        pruned_branches: set[str] = set(metadata.get("pruned_branches", []))
+        pruned_nodes: set[str] = set(metadata.get("pruned_nodes", []))
 
         admissible_steps = []
-        key_decisions: List[ContextFragment] = []
+        key_decisions: list[ContextFragment] = []
 
         for step in raw_steps:
             step_action = getattr(step, "action", None)

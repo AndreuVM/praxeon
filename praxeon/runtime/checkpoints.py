@@ -4,9 +4,9 @@ Permite restaurar el estado canónico anterior ante ramas degenerativas,
 invalidando descendientes y prohibiendo transiciones fallidas.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import Any
 from praxeon.domain.checkpoint import Checkpoint
 from praxeon.runtime.state import SessionState
 
@@ -15,8 +15,8 @@ class CheckpointManager:
     """Gestiona la creación, almacenamiento y restauración de checkpoints."""
 
     def __init__(self):
-        self._checkpoints: Dict[str, Checkpoint] = {}
-        self.rollback_history: List[Dict[str, Any]] = []
+        self._checkpoints: dict[str, Checkpoint] = {}
+        self.rollback_history: list[dict[str, Any]] = []
 
     def save_checkpoint(self, checkpoint: Checkpoint) -> None:
         """Almacena un checkpoint directamente en el almacén."""
@@ -39,17 +39,17 @@ class CheckpointManager:
         return checkpoint
 
 
-    def get_checkpoint(self, checkpoint_id: str) -> Optional[Checkpoint]:
+    def get_checkpoint(self, checkpoint_id: str) -> Checkpoint | None:
         """Recupera un checkpoint específico por ID."""
         return self._checkpoints.get(checkpoint_id)
 
-    def get_latest_checkpoint(self) -> Optional[Checkpoint]:
+    def get_latest_checkpoint(self) -> Checkpoint | None:
         """Devuelve el checkpoint más reciente creado."""
         if not self._checkpoints:
             return None
         return list(self._checkpoints.values())[-1]
 
-    def get_genesis_checkpoint(self) -> Optional[Checkpoint]:
+    def get_genesis_checkpoint(self) -> Checkpoint | None:
         """Devuelve el checkpoint inicial (génesis) de la sesión."""
         if not self._checkpoints:
             return None
@@ -59,7 +59,7 @@ class CheckpointManager:
         self,
         checkpoint_id: str,
         current_state: SessionState,
-        culprit_tool: Optional[str] = None,
+        culprit_tool: str | None = None,
         reason: str = "Restauración de checkpoint",
     ) -> SessionState:
         """Restaura el estado a partir de un checkpoint registrado."""
@@ -70,7 +70,7 @@ class CheckpointManager:
         checkpoint_id: str,
         current_state: SessionState,
 
-        culprit_tool: Optional[str] = None,
+        culprit_tool: str | None = None,
         reason: str = "Backtracking por degradación de trayectoria",
     ) -> SessionState:
         """Restaura el estado al checkpoint indicado, invalidando descendientes y prohibiendo la transición fallida.
@@ -91,7 +91,7 @@ class CheckpointManager:
 
         # 3. Registrar auditoría de rollback
         self.rollback_history.append({
-            "timestamp": datetime.now(timezone.utc),
+            "timestamp": datetime.now(UTC),
             "checkpoint_id": checkpoint_id,
 
             "target_step_index": checkpoint.step_index,
@@ -102,6 +102,6 @@ class CheckpointManager:
 
         return restored_state
 
-    def list_checkpoints(self) -> List[Checkpoint]:
+    def list_checkpoints(self) -> list[Checkpoint]:
         """Devuelve todos los checkpoints ordenados cronológicamente."""
         return list(self._checkpoints.values())

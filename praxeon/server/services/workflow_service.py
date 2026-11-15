@@ -7,7 +7,7 @@ Coordina:
 """
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from praxeon.agents.bus import AgentMessageBus
 from praxeon.persistence.sqlite_store import SqlitePersistenceStore
@@ -31,10 +31,10 @@ class WorkflowService:
 
     def __init__(
         self,
-        event_bus: Optional[EventBus] = None,
-        agent_bus: Optional[AgentMessageBus] = None,
-        editor_service: Optional[WorkflowEditorService] = None,
-        persistence_store: Optional[SqlitePersistenceStore] = None,
+        event_bus: EventBus | None = None,
+        agent_bus: AgentMessageBus | None = None,
+        editor_service: WorkflowEditorService | None = None,
+        persistence_store: SqlitePersistenceStore | None = None,
         enable_scheduler: bool = False,
     ):
         self.event_bus = event_bus
@@ -47,7 +47,7 @@ class WorkflowService:
         )
         self.scheduler = WorkflowScheduler(persistence_store=self.persistence_store, event_bus=event_bus)
         # Motores que avanzan fuera del scheduler (misiones gobernadas por workflow): aprobar/cancelar siguen funcionando
-        self._external_engines: Dict[str, WorkflowEngine] = {}
+        self._external_engines: dict[str, WorkflowEngine] = {}
         if enable_scheduler:
             self.scheduler.start()
 
@@ -64,18 +64,18 @@ class WorkflowService:
     def delete_workflow(self, workflow_id: str) -> bool:
         return self.editor_service.delete_workflow(workflow_id)
 
-    def get_workflow(self, workflow_id: str) -> Optional[WorkflowDefinition]:
+    def get_workflow(self, workflow_id: str) -> WorkflowDefinition | None:
         return self.editor_service.get_workflow(workflow_id)
 
-    def list_workflows(self) -> List[Dict[str, Any]]:
+    def list_workflows(self) -> list[dict[str, Any]]:
         return self.editor_service.list_workflows()
 
     def run_workflow_execution(
         self,
         workflow_id: str,
-        initial_variables: Optional[Dict[str, Any]] = None,
+        initial_variables: dict[str, Any] | None = None,
         register_in_scheduler: bool = True,
-    ) -> Optional[WorkflowExecution]:
+    ) -> WorkflowExecution | None:
         """Inicia una nueva instancia de ejecución para el workflow especificado."""
         wf = self.get_workflow(workflow_id)
         if not wf:
@@ -131,7 +131,7 @@ class WorkflowService:
         except Exception:
             logger.warning("No se pudo publicar el aviso de fallo de nodo", exc_info=True)
 
-    def resolve_failed_node(self, execution_id: str, node_id: str, action: str) -> Optional[bool]:
+    def resolve_failed_node(self, execution_id: str, node_id: str, action: str) -> bool | None:
         """Decisión del operador sobre un nodo fallido de una misión con workflow: retry | skip | abort.
 
         None si la ejecución no está activa; False si el nodo no está esperando una decisión.
@@ -148,10 +148,10 @@ class WorkflowService:
             engine.context.variables["_failure_decision"] = {"node_id": node_id, "action": action}
         return True
 
-    def _active_engine(self, execution_id: str) -> Optional[WorkflowEngine]:
+    def _active_engine(self, execution_id: str) -> WorkflowEngine | None:
         return self._external_engines.get(execution_id) or self.scheduler.get_active_engines().get(execution_id)
 
-    def cancel_execution(self, execution_id: str, reason: str = "Cancelada por el operador") -> Optional[WorkflowExecution]:
+    def cancel_execution(self, execution_id: str, reason: str = "Cancelada por el operador") -> WorkflowExecution | None:
         """Cancela una ejecución activa (no altera una ya terminada)."""
         engine = self._active_engine(execution_id)
         if engine is None:
@@ -163,7 +163,7 @@ class WorkflowService:
 
     def approve_execution_node(
         self, execution_id: str, node_id: str, approved: bool = True, comment: str = "", approver_id: str = "operator"
-    ) -> Optional[bool]:
+    ) -> bool | None:
         """Aprueba o rechaza un nodo en espera de una ejecución activa. None si la ejecución no está activa."""
         engine = self._active_engine(execution_id)
         if engine is None:
@@ -176,16 +176,16 @@ class WorkflowService:
         if self.persistence_store:
             self.persistence_store.save_workflow_execution(execution)
 
-    def get_execution(self, execution_id: str) -> Optional[WorkflowExecution]:
+    def get_execution(self, execution_id: str) -> WorkflowExecution | None:
         if self.persistence_store:
             return self.persistence_store.get_workflow_execution(execution_id)
         return None
 
     def list_executions(
         self,
-        workflow_id: Optional[str] = None,
-        status: Optional[WorkflowStatus] = None,
-    ) -> List[WorkflowExecution]:
+        workflow_id: str | None = None,
+        status: WorkflowStatus | None = None,
+    ) -> list[WorkflowExecution]:
         if self.persistence_store:
             return self.persistence_store.list_workflow_executions(
                 workflow_id=workflow_id,

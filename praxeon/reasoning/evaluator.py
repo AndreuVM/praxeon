@@ -4,7 +4,6 @@ Evita el colapso de dimensiones ortogonales en un único escalar decisorio.
 JEV se calcula como una señal analítica estructurada dentro de ProviderAssessment.
 """
 
-from typing import List, Optional
 from praxeon.domain.models import ProviderAssessment
 
 
@@ -26,13 +25,13 @@ class CognitiveEvaluator:
     def build_assessment(
         provider_name: str,
         available: bool,
-        progress_prob: Optional[float] = None,
-        grounded_prob: Optional[float] = None,
-        loop_prob: Optional[float] = None,
-        novelty_prob: Optional[float] = None,
+        progress_prob: float | None = None,
+        grounded_prob: float | None = None,
+        loop_prob: float | None = None,
+        novelty_prob: float | None = None,
         confidence: float = 1.0,
-        failure_reason: Optional[str] = None,
-        reason_codes: Optional[List[str]] = None,
+        failure_reason: str | None = None,
+        reason_codes: list[str] | None = None,
     ) -> ProviderAssessment:
         """Sintetiza un ProviderAssessment estructurado preservando dimensiones independientes."""
         analytical_jev = None

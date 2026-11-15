@@ -11,7 +11,7 @@ explícita y auditable; un BLOCK/REPLAN falla el nodo.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 import threading
 
 from praxeon.domain.action import ActionCandidate, ToolCall
@@ -25,7 +25,7 @@ from praxeon.runtime.state import SessionState
 class WorkflowApprovalRequired(Exception):
     """La política exige confirmación humana antes de ejecutar la herramienta del nodo."""
 
-    def __init__(self, action_id: str, tool_name: str, reason_codes: List[str]):
+    def __init__(self, action_id: str, tool_name: str, reason_codes: list[str]):
         self.action_id = action_id
         self.tool_name = tool_name
         self.reason_codes = list(reason_codes)
@@ -43,10 +43,10 @@ class SupervisedToolRunner:
 
     def __init__(
         self,
-        policy_engine: Optional[PolicyEngine] = None,
-        executor: Optional[SecureExecutor] = None,
+        policy_engine: PolicyEngine | None = None,
+        executor: SecureExecutor | None = None,
         execution_mode: str = "local_restricted",
-        workspace_root: Optional[str] = None,
+        workspace_root: str | None = None,
     ):
         self.policy_engine = policy_engine or PolicyEngine()
         self.executor = executor or SecureExecutor(secret_key=self.policy_engine.secret_key)
@@ -54,7 +54,7 @@ class SupervisedToolRunner:
             self.executor.secret_key = self.policy_engine.secret_key
         self.execution_mode = execution_mode
         self.workspace_root = workspace_root
-        self._states: Dict[str, SessionState] = {}
+        self._states: dict[str, SessionState] = {}
         self._lock = threading.Lock()
 
     @staticmethod
@@ -65,7 +65,7 @@ class SupervisedToolRunner:
         with self._lock:
             state = self._states.get(execution_id)
             if state is None:
-                metadata: Dict[str, Any] = {"execution_mode": self.execution_mode}
+                metadata: dict[str, Any] = {"execution_mode": self.execution_mode}
                 if self.workspace_root:
                     metadata["workspace_root"] = self.workspace_root
                 state = SessionState(
@@ -76,7 +76,7 @@ class SupervisedToolRunner:
                 self._states[execution_id] = state
             return state
 
-    def _build_action(self, execution_id: str, node_id: str, tool_name: str, arguments: Dict[str, Any]) -> ActionCandidate:
+    def _build_action(self, execution_id: str, node_id: str, tool_name: str, arguments: dict[str, Any]) -> ActionCandidate:
         return ActionCandidate(
             id=self.action_id_for(execution_id, node_id),
             description=f"Nodo de workflow '{node_id}' invoca '{tool_name}'",
@@ -84,8 +84,8 @@ class SupervisedToolRunner:
             rationale=f"Workflow node {node_id}",
         )
 
-    def confirm(self, execution_id: str, node_id: str, tool_name: str, arguments: Dict[str, Any],
-                approver_id: str = "operator", reason: Optional[str] = None) -> None:
+    def confirm(self, execution_id: str, node_id: str, tool_name: str, arguments: dict[str, Any],
+                approver_id: str = "operator", reason: str | None = None) -> None:
         """Registra la confirmación humana (ticket auditable) de esa acción concreta."""
         from praxeon.domain.action import compute_action_hash
         action = self._build_action(execution_id, node_id, tool_name, arguments)
@@ -97,7 +97,7 @@ class SupervisedToolRunner:
         )
 
     def run(self, execution_id: str, workflow_id: str, node_id: str, tool_name: str,
-            arguments: Dict[str, Any]) -> Dict[str, Any]:
+            arguments: dict[str, Any]) -> dict[str, Any]:
         """Evalúa, autoriza y ejecuta la herramienta; lanza si la política no la permite."""
         state = self._state_for(execution_id, workflow_id)
         action = self._build_action(execution_id, node_id, tool_name, arguments)

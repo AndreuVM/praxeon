@@ -11,7 +11,7 @@ from __future__ import annotations
 import os
 import sys
 import subprocess  # nosec B404 - solo TimeoutExpired; los procesos los lanzan los backends
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from praxeon.policy.egress import EgressPolicy
 from praxeon.runtime import isolation
@@ -31,18 +31,18 @@ class IsolatedSandbox(LocalProcessSandbox):
 
     def __init__(
         self,
-        workspace_root: Optional[str] = None,
-        backend: Optional[str] = None,
-        egress_policy: Optional[EgressPolicy] = None,
-        read_paths: Optional[List[str]] = None,
+        workspace_root: str | None = None,
+        backend: str | None = None,
+        egress_policy: EgressPolicy | None = None,
+        read_paths: list[str] | None = None,
     ):
         super().__init__(workspace_root=workspace_root, allow_network=False, egress_policy=egress_policy)
         current = isolation.status()
         self.backend = backend if backend is not None else current.backend
         self.unavailable_reason = None if self.backend else current.reason
         self.read_paths = list(read_paths) if read_paths is not None else isolation.tool_read_paths()
-        self._appcontainer: Optional[Any] = None                     # AppContainer (solo Windows)
-        self._container: Optional[ContainerSandboxAdapter] = None
+        self._appcontainer: Any | None = None                     # AppContainer (solo Windows)
+        self._container: ContainerSandboxAdapter | None = None
         if self.backend == "container":
             self._container = ContainerSandboxAdapter(
                 config=ContainerSandboxConfig(fallback_to_local=False), workspace_root=self.workspace_root,
@@ -52,8 +52,8 @@ class IsolatedSandbox(LocalProcessSandbox):
     def execute_command(
         self,
         command: str,
-        cwd: Optional[str] = None,
-        env: Optional[Dict[str, str]] = None,
+        cwd: str | None = None,
+        env: dict[str, str] | None = None,
         timeout: float = 15.0,
     ) -> SandboxExecutionResult:
         if not self.backend:
@@ -65,12 +65,12 @@ class IsolatedSandbox(LocalProcessSandbox):
 
     def _run_bounded_subprocess(
         self,
-        args: List[str],
+        args: list[str],
         cwd: str,
-        env: Dict[str, str],
+        env: dict[str, str],
         timeout: float,
         max_bytes: int = 524288,
-    ) -> Tuple[int, str, bool]:
+    ) -> tuple[int, str, bool]:
         env = dict(env)
         # git no debe subir más allá del workspace: las carpetas de encima no son accesibles desde el aislamiento
         env["GIT_CEILING_DIRECTORIES"] = os.path.dirname(self.workspace_root)
@@ -83,8 +83,8 @@ class IsolatedSandbox(LocalProcessSandbox):
             return super()._run_bounded_subprocess(wrapped, cwd, {"PATH": env.get("PATH", "/usr/bin:/bin")}, timeout, max_bytes)
         raise SandboxViolation(f"Backend de aislamiento desconocido: {self.backend}")
 
-    def _run_in_appcontainer(self, args: List[str], cwd: str, env: Dict[str, str], timeout: float,
-                             max_bytes: int) -> Tuple[int, str, bool]:
+    def _run_in_appcontainer(self, args: list[str], cwd: str, env: dict[str, str], timeout: float,
+                             max_bytes: int) -> tuple[int, str, bool]:
         if self._appcontainer is None:
             self._appcontainer = self._open_appcontainer()
         if args and os.path.basename(args[0]).lower().startswith("powershell") and len(args) >= 2:

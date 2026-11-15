@@ -1,30 +1,31 @@
 """Almacén de estado y sesiones para recuperación atómica (runtime/state_store.py)."""
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 from praxeon.domain.interfaces import CheckpointStore, StateStore
 from praxeon.domain.models import Checkpoint
 from praxeon.runtime.state import SessionState
 
 from praxeon.sqlite_base import SqliteStore
+import builtins
 
 
 class InMemoryStateStore(StateStore, CheckpointStore):
     """Implementación en memoria de almacén de estados y checkpoints de sesión."""
 
     def __init__(self):
-        self._states: Dict[str, SessionState] = {}
-        self._checkpoints: Dict[str, Checkpoint] = {}
-        self._session_checkpoints: Dict[str, List[str]] = {}
+        self._states: dict[str, SessionState] = {}
+        self._checkpoints: dict[str, Checkpoint] = {}
+        self._session_checkpoints: dict[str, list[str]] = {}
 
     def save_state(self, state: SessionState) -> None:
         """Guarda o actualiza el estado de la sesión."""
         self._states[state.session_id] = state
 
-    def load_state(self, session_id: str) -> Optional[SessionState]:
+    def load_state(self, session_id: str) -> SessionState | None:
         """Recupera el estado de una sesión por su identificador."""
         return self._states.get(session_id)
 
-    def list_sessions(self) -> List[str]:
+    def list_sessions(self) -> list[str]:
         """Devuelve la lista de IDs de sesiones conocidas."""
         return list(self._states.keys())
 
@@ -42,15 +43,15 @@ class InMemoryStateStore(StateStore, CheckpointStore):
             if checkpoint.id not in self._session_checkpoints[sid]:
                 self._session_checkpoints[sid].append(checkpoint.id)
 
-    def get(self, checkpoint_id: str) -> Optional[Checkpoint]:
+    def get(self, checkpoint_id: str) -> Checkpoint | None:
         """Alias para get_checkpoint."""
         return self.get_checkpoint(checkpoint_id)
 
-    def get_checkpoint(self, checkpoint_id: str) -> Optional[Checkpoint]:
+    def get_checkpoint(self, checkpoint_id: str) -> Checkpoint | None:
         """Obtiene un checkpoint por su ID."""
         return self._checkpoints.get(checkpoint_id)
 
-    def get_latest_checkpoint(self, session_id: Optional[str] = None) -> Optional[Checkpoint]:
+    def get_latest_checkpoint(self, session_id: str | None = None) -> Checkpoint | None:
         """Obtiene el último checkpoint registrado para una sesión o globalmente."""
         if session_id:
             cids = self._session_checkpoints.get(session_id, [])
@@ -62,11 +63,11 @@ class InMemoryStateStore(StateStore, CheckpointStore):
         last_id = list(self._checkpoints.keys())[-1]
         return self._checkpoints.get(last_id)
 
-    def list(self, session_id: Optional[str] = None) -> List[Checkpoint]:
+    def list(self, session_id: str | None = None) -> list[Checkpoint]:
         """Alias para list_checkpoints."""
         return self.list_checkpoints(session_id)
 
-    def list_checkpoints(self, session_id: Optional[str] = None) -> List[Checkpoint]:
+    def list_checkpoints(self, session_id: str | None = None) -> builtins.list[Checkpoint]:
         """Lista cronológicamente todos los checkpoints de una sesión o globalmente."""
         if session_id:
             cids = self._session_checkpoints.get(session_id, [])
@@ -76,8 +77,8 @@ class InMemoryStateStore(StateStore, CheckpointStore):
     def create_checkpoint(
         self,
         session_id: str,
-        label: Optional[str] = None,
-        state: Optional[SessionState] = None,
+        label: str | None = None,
+        state: SessionState | None = None,
     ) -> Checkpoint:
         """Crea y persiste un snapshot de checkpoint atómico para la sesión."""
         import uuid
@@ -108,9 +109,9 @@ class InMemoryStateStore(StateStore, CheckpointStore):
         self,
         session_id: str,
         checkpoint_id: str,
-        culprit_tool: Optional[str] = None,
+        culprit_tool: str | None = None,
         reason: str = "Restauración de checkpoint",
-    ) -> Optional[SessionState]:
+    ) -> SessionState | None:
         """Restaura el estado de la sesión al snapshot del checkpoint y lo persiste."""
         chk = self.get_checkpoint(checkpoint_id)
         if not chk or (chk.session_id and chk.session_id != session_id):
@@ -127,9 +128,9 @@ class InMemoryStateStore(StateStore, CheckpointStore):
         self,
         session_id: str,
         checkpoint_id: str,
-        culprit_tool: Optional[str] = None,
+        culprit_tool: str | None = None,
         reason: str = "Restauración de checkpoint",
-    ) -> Optional[SessionState]:
+    ) -> SessionState | None:
         """Alias para restore_checkpoint."""
         return self.restore_checkpoint(session_id, checkpoint_id, culprit_tool=culprit_tool, reason=reason)
 
@@ -144,7 +145,7 @@ class InMemoryStateStore(StateStore, CheckpointStore):
         getattr(self, "_missions", {}).pop(session_id, None)
         return had_state or bool(cids)
 
-    def save_mission(self, mission: Dict[str, Any]) -> None:
+    def save_mission(self, mission: dict[str, Any]) -> None:
         """Persiste el estado de una misión interactiva."""
         if not hasattr(self, "_missions"):
             self._missions = {}
@@ -152,13 +153,13 @@ class InMemoryStateStore(StateStore, CheckpointStore):
         if sid:
             self._missions[sid] = dict(mission)
 
-    def load_mission(self, session_id: str) -> Optional[Dict[str, Any]]:
+    def load_mission(self, session_id: str) -> dict[str, Any] | None:
         """Recupera el estado persistido de una misión."""
         if not hasattr(self, "_missions"):
             self._missions = {}
         return self._missions.get(session_id)
 
-    def list_missions(self, status: Optional[str] = None) -> List[Dict[str, Any]]:
+    def list_missions(self, status: str | None = None) -> builtins.list[dict[str, Any]]:
         """Lista misiones filtradas opcionalmente por estado."""
         if not hasattr(self, "_missions"):
             self._missions = {}
@@ -167,7 +168,7 @@ class InMemoryStateStore(StateStore, CheckpointStore):
             return [m for m in all_m if m.get("status") == status]
         return all_m
 
-    def reconcile_interrupted_missions(self, reason: Optional[str] = None) -> List[Dict[str, Any]]:
+    def reconcile_interrupted_missions(self, reason: str | None = None) -> builtins.list[dict[str, Any]]:
         """Reconcilia transaccionalmente misiones interrumpidas tras reinicio."""
         if not hasattr(self, "_missions"):
             self._missions = {}
@@ -200,7 +201,7 @@ class SqliteStateStore(SqliteStore, StateStore, CheckpointStore):
 
     DEFAULT_DB_NAME = 'state.db'
 
-    def __init__(self, db_path: Optional[str] = None):
+    def __init__(self, db_path: str | None = None):
         self._seq = 0
         super().__init__(db_path)
 
@@ -244,7 +245,7 @@ class SqliteStateStore(SqliteStore, StateStore, CheckpointStore):
             conn = self._get_connection()
             try:
                 raw_json = state.model_dump_json()
-                now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                now = datetime.datetime.now(datetime.UTC).isoformat()
                 with conn:
 
                     conn.execute(
@@ -257,7 +258,7 @@ class SqliteStateStore(SqliteStore, StateStore, CheckpointStore):
             finally:
                 self._close_conn(conn)
 
-    def load_state(self, session_id: str) -> Optional[SessionState]:
+    def load_state(self, session_id: str) -> SessionState | None:
         with self._lock:
             conn = self._get_connection()
             try:
@@ -270,7 +271,7 @@ class SqliteStateStore(SqliteStore, StateStore, CheckpointStore):
             finally:
                 self._close_conn(conn)
 
-    def list_sessions(self) -> List[str]:
+    def list_sessions(self) -> list[str]:
         """Devuelve la lista de IDs de sesiones registradas en SQLite."""
         with self._lock:
             conn = self._get_connection()
@@ -292,7 +293,7 @@ class SqliteStateStore(SqliteStore, StateStore, CheckpointStore):
             try:
                 self._seq += 1
                 raw_json = checkpoint.model_dump_json()
-                now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                now = datetime.datetime.now(datetime.UTC).isoformat()
                 with conn:
                     conn.execute(
                         """
@@ -304,11 +305,11 @@ class SqliteStateStore(SqliteStore, StateStore, CheckpointStore):
             finally:
                 self._close_conn(conn)
 
-    def get(self, checkpoint_id: str) -> Optional[Checkpoint]:
+    def get(self, checkpoint_id: str) -> Checkpoint | None:
         """Alias para get_checkpoint."""
         return self.get_checkpoint(checkpoint_id)
 
-    def get_checkpoint(self, checkpoint_id: str) -> Optional[Checkpoint]:
+    def get_checkpoint(self, checkpoint_id: str) -> Checkpoint | None:
         with self._lock:
             conn = self._get_connection()
             try:
@@ -321,7 +322,7 @@ class SqliteStateStore(SqliteStore, StateStore, CheckpointStore):
             finally:
                 self._close_conn(conn)
 
-    def get_latest_checkpoint(self, session_id: Optional[str] = None) -> Optional[Checkpoint]:
+    def get_latest_checkpoint(self, session_id: str | None = None) -> Checkpoint | None:
         with self._lock:
             conn = self._get_connection()
             try:
@@ -342,11 +343,11 @@ class SqliteStateStore(SqliteStore, StateStore, CheckpointStore):
             finally:
                 self._close_conn(conn)
 
-    def list(self, session_id: Optional[str] = None) -> List[Checkpoint]:
+    def list(self, session_id: str | None = None) -> list[Checkpoint]:
         """Alias para list_checkpoints."""
         return self.list_checkpoints(session_id)
 
-    def list_checkpoints(self, session_id: Optional[str] = None) -> List[Checkpoint]:
+    def list_checkpoints(self, session_id: str | None = None) -> builtins.list[Checkpoint]:
         with self._lock:
             conn = self._get_connection()
             try:
@@ -368,8 +369,8 @@ class SqliteStateStore(SqliteStore, StateStore, CheckpointStore):
     def create_checkpoint(
         self,
         session_id: str,
-        label: Optional[str] = None,
-        state: Optional[SessionState] = None,
+        label: str | None = None,
+        state: SessionState | None = None,
     ) -> Checkpoint:
         """Crea y persiste un snapshot de checkpoint atómico para la sesión en SQLite."""
         import uuid
@@ -400,9 +401,9 @@ class SqliteStateStore(SqliteStore, StateStore, CheckpointStore):
         self,
         session_id: str,
         checkpoint_id: str,
-        culprit_tool: Optional[str] = None,
+        culprit_tool: str | None = None,
         reason: str = "Restauración de checkpoint",
-    ) -> Optional[SessionState]:
+    ) -> SessionState | None:
         """Restaura el estado de la sesión al snapshot del checkpoint y lo persiste en SQLite."""
         chk = self.get_checkpoint(checkpoint_id)
         if not chk or (chk.session_id and chk.session_id != session_id):
@@ -419,9 +420,9 @@ class SqliteStateStore(SqliteStore, StateStore, CheckpointStore):
         self,
         session_id: str,
         checkpoint_id: str,
-        culprit_tool: Optional[str] = None,
+        culprit_tool: str | None = None,
         reason: str = "Restauración de checkpoint",
-    ) -> Optional[SessionState]:
+    ) -> SessionState | None:
         """Alias para restore_checkpoint."""
         return self.restore_checkpoint(session_id, checkpoint_id, culprit_tool=culprit_tool, reason=reason)
 
@@ -439,7 +440,7 @@ class SqliteStateStore(SqliteStore, StateStore, CheckpointStore):
             finally:
                 self._close_conn(conn)
 
-    def save_mission(self, mission: Dict[str, Any]) -> None:
+    def save_mission(self, mission: dict[str, Any]) -> None:
         """Persiste transaccionalmente el estado completo de una misión en SQLite (REC-01)."""
         import datetime
         import json
@@ -450,7 +451,7 @@ class SqliteStateStore(SqliteStore, StateStore, CheckpointStore):
         current_step = int(mission.get("current_step") or 0)
         max_steps = int(mission.get("max_steps") or 25)
         raw_json = json.dumps(mission)
-        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        now = datetime.datetime.now(datetime.UTC).isoformat()
         with self._lock:
             conn = self._get_connection()
             try:
@@ -465,7 +466,7 @@ class SqliteStateStore(SqliteStore, StateStore, CheckpointStore):
             finally:
                 self._close_conn(conn)
 
-    def load_mission(self, session_id: str) -> Optional[Dict[str, Any]]:
+    def load_mission(self, session_id: str) -> dict[str, Any] | None:
         """Carga el estado persistido de una misión por su ID."""
         import json
         with self._lock:
@@ -480,7 +481,7 @@ class SqliteStateStore(SqliteStore, StateStore, CheckpointStore):
             finally:
                 self._close_conn(conn)
 
-    def list_missions(self, status: Optional[str] = None) -> List[Dict[str, Any]]:
+    def list_missions(self, status: str | None = None) -> builtins.list[dict[str, Any]]:
         """Lista misiones persistidas en SQLite."""
         import json
         with self._lock:
@@ -495,12 +496,12 @@ class SqliteStateStore(SqliteStore, StateStore, CheckpointStore):
             finally:
                 self._close_conn(conn)
 
-    def reconcile_interrupted_missions(self, reason: Optional[str] = None) -> List[Dict[str, Any]]:
+    def reconcile_interrupted_missions(self, reason: str | None = None) -> builtins.list[dict[str, Any]]:
         """Reconcilia transaccionalmente misiones interrumpidas detectadas tras reiniciar el proceso (REC-01)."""
         import datetime
         import json
         interrupted = []
-        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        now = datetime.datetime.now(datetime.UTC).isoformat()
         rec_reason = reason or "Process restart / ungraceful shutdown"
         with self._lock:
             conn = self._get_connection()

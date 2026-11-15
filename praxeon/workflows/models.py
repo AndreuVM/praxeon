@@ -10,9 +10,9 @@ Define las abstracciones fundamentales para orquestación de flujos de trabajo e
 """
 
 from collections import deque
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from enum import Enum
-from typing import Any, Dict, List, Optional, Set, Union
+from typing import Any
 import re
 import uuid
 from pydantic import BaseModel, ConfigDict, Field
@@ -80,7 +80,7 @@ _FIELD_PATH = re.compile(r"^[A-Za-z_][\w\-]*(\.[\w\-]+)*$")
 _CONST_FIELDS = {"_const_true", "_const_false", "true", "True", "false", "False"}
 
 
-def invalid_condition_field(field: Any) -> Optional[str]:
+def invalid_condition_field(field: Any) -> str | None:
     """Devuelve por qué `field` no es una ruta de campo válida (o None). Una ruta es `outputs.<nodo>.<clave>`, sin valores ni comillas."""
     text = str(field or "").strip()
     if not text or text in _CONST_FIELDS or _FIELD_PATH.match(text):
@@ -99,7 +99,7 @@ class EdgeCondition(BaseModel):
     operator: str = Field(default="==", description="Operador de comparación: ==, !=, >, >=, <, <=, in, contains, is_true, is_false")
     expected_value: Any = Field(default=None, description="Valor de referencia para la comparación")
 
-    def evaluate(self, context: Union[Dict[str, Any], Any]) -> bool:
+    def evaluate(self, context: dict[str, Any] | Any) -> bool:
         """Evalúa la condición de manera segura contra un diccionario de contexto o EvaluationContext."""
         if hasattr(context, "resolve_field"):
             val = context.resolve_field(self.field)
@@ -165,7 +165,7 @@ class WorkflowEdge(BaseModel):
     edge_id: str = Field(description="Identificador único de la arista")
     from_node: str = Field(description="Identificador del nodo origen")
     to_node: str = Field(description="Identificador del nodo destino")
-    condition: Optional[EdgeCondition] = Field(default=None, description="Condición lógica opcional")
+    condition: EdgeCondition | None = Field(default=None, description="Condición lógica opcional")
     label: str = Field(default="", description="Etiqueta visual de la conexión")
 
 
@@ -176,20 +176,20 @@ class WorkflowNode(BaseModel):
     node_id: str = Field(description="Identificador único del nodo")
     name: str = Field(description="Nombre descriptivo legible")
     node_type: NodeType = Field(default=NodeType.TASK)
-    agent_id: Optional[str] = Field(default=None, description="ID del agente asignado si node_type == AGENT")
-    tool_name: Optional[str] = Field(default=None, description="Herramienta a invocar si node_type == TASK")
-    inputs: Dict[str, Any] = Field(default_factory=dict, description="Parámetros de entrada o mapeos de contexto")
-    outputs: Dict[str, Any] = Field(default_factory=dict, description="Resultados producidos tras la ejecución")
+    agent_id: str | None = Field(default=None, description="ID del agente asignado si node_type == AGENT")
+    tool_name: str | None = Field(default=None, description="Herramienta a invocar si node_type == TASK")
+    inputs: dict[str, Any] = Field(default_factory=dict, description="Parámetros de entrada o mapeos de contexto")
+    outputs: dict[str, Any] = Field(default_factory=dict, description="Resultados producidos tras la ejecución")
     status: NodeStatus = Field(default=NodeStatus.PENDING)
     retry_policy: RetryPolicy = Field(default_factory=RetryPolicy)
-    timeout_seconds: Optional[int] = Field(default=120, ge=1)
+    timeout_seconds: int | None = Field(default=120, ge=1)
     position: UIPosition = Field(default_factory=UIPosition)
-    control_config: Optional[Dict[str, Any]] = Field(default=None, description="Configuración de control de flujo declarativa")
-    input_mapping: Optional[Dict[str, str]] = Field(default=None, description="Mapeo explícito de entradas desde namespaces")
-    output_mapping: Optional[Dict[str, str]] = Field(default=None, description="Mapeo explícito de salidas hacia namespaces")
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    control_config: dict[str, Any] | None = Field(default=None, description="Configuración de control de flujo declarativa")
+    input_mapping: dict[str, str] | None = Field(default=None, description="Mapeo explícito de entradas desde namespaces")
+    output_mapping: dict[str, str] | None = Field(default=None, description="Mapeo explícito de salidas hacia namespaces")
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
-    def with_status(self, new_status: NodeStatus, outputs: Optional[Dict[str, Any]] = None) -> "WorkflowNode":
+    def with_status(self, new_status: NodeStatus, outputs: dict[str, Any] | None = None) -> "WorkflowNode":
         """Genera una copia inmutable con estado y outputs actualizados."""
         dump = self.model_dump()
         dump["status"] = new_status
@@ -206,48 +206,48 @@ class WorkflowDefinition(BaseModel):
     name: str = Field(description="Nombre del flujo de trabajo")
     description: str = Field(default="")
     version: int = Field(default=1, ge=1)
-    nodes: Dict[str, WorkflowNode] = Field(default_factory=dict, description="Catálogo de nodos indexados por node_id")
-    edges: List[WorkflowEdge] = Field(default_factory=list, description="Lista de conexiones dirigidas")
-    variables: Dict[str, Any] = Field(default_factory=dict, description="Variables globales del flujo")
-    timeout_seconds: Optional[float] = Field(default=None, description="Timeout global máximo de ejecución en segundos")
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    nodes: dict[str, WorkflowNode] = Field(default_factory=dict, description="Catálogo de nodos indexados por node_id")
+    edges: list[WorkflowEdge] = Field(default_factory=list, description="Lista de conexiones dirigidas")
+    variables: dict[str, Any] = Field(default_factory=dict, description="Variables globales del flujo")
+    timeout_seconds: float | None = Field(default=None, description="Timeout global máximo de ejecución en segundos")
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
-    def get_start_node(self) -> Optional[WorkflowNode]:
+    def get_start_node(self) -> WorkflowNode | None:
         """Obtiene el nodo de inicio principal del flujo."""
         for node in self.nodes.values():
             if node.node_type == NodeType.START:
                 return node
         return None
 
-    def get_end_nodes(self) -> List[WorkflowNode]:
+    def get_end_nodes(self) -> list[WorkflowNode]:
         """Obtiene todos los nodos terminales del flujo."""
         return [node for node in self.nodes.values() if node.node_type == NodeType.END]
 
-    def get_outgoing_edges(self, node_id: str) -> List[WorkflowEdge]:
+    def get_outgoing_edges(self, node_id: str) -> list[WorkflowEdge]:
         """Retorna todas las aristas que parten del nodo especificado."""
         return [e for e in self.edges if e.from_node == node_id]
 
-    def get_incoming_edges(self, node_id: str) -> List[WorkflowEdge]:
+    def get_incoming_edges(self, node_id: str) -> list[WorkflowEdge]:
         """Retorna todas las aristas que llegan al nodo especificado."""
         return [e for e in self.edges if e.to_node == node_id]
 
-    def get_upstream_node_ids(self, node_id: str) -> List[str]:
+    def get_upstream_node_ids(self, node_id: str) -> list[str]:
         """Obtiene los IDs de los nodos predecesores inmediatos."""
         return [e.from_node for e in self.get_incoming_edges(node_id)]
 
-    def get_downstream_node_ids(self, node_id: str) -> List[str]:
+    def get_downstream_node_ids(self, node_id: str) -> list[str]:
         """Obtiene los IDs de los nodos sucesores inmediatos."""
         return [e.to_node for e in self.get_outgoing_edges(node_id)]
 
-    def validate_graph(self) -> List[str]:
+    def validate_graph(self) -> list[str]:
         """Valida rigurosamente la coherencia estructural y topológica del grafo.
         
         Retorna:
             Lista de errores encontrados. Si la lista está vacía, el grafo es válido.
         """
-        errors: List[str] = []
+        errors: list[str] = []
 
         # 1. Validar existencia del nodo START
         start_nodes = [n for n in self.nodes.values() if n.node_type == NodeType.START]
@@ -263,7 +263,7 @@ class WorkflowDefinition(BaseModel):
 
         # 3. Validar consistencia referencial de las aristas
         node_ids = set(self.nodes.keys())
-        edge_ids: Set[str] = set()
+        edge_ids: set[str] = set()
 
         for edge in self.edges:
             if edge.edge_id in edge_ids:
@@ -303,7 +303,7 @@ class WorkflowDefinition(BaseModel):
                 errors.append(f"El nodo END '{end_node.node_id}' no puede tener aristas salientes.")
 
         # 6. Validar alcanzabilidad desde START (detección de nodos aislados o huérfanos)
-        visited_forward: Set[str] = set()
+        visited_forward: set[str] = set()
         queue = deque([start_id])
         while queue:
             curr = queue.popleft()
@@ -345,7 +345,7 @@ class WorkflowDefinition(BaseModel):
                 errors.append(f"El nodo DELEGATE '{dn_id}' tiene un modo de enrutamiento inválido: '{rm}'. Debe ser MANUAL o AUTOMATIC.")
 
         # Separar candidatas a aristas de retorno estructuradas hacia nodos WHILE
-        loop_back_edge_ids: Set[str] = {
+        loop_back_edge_ids: set[str] = {
             edge.edge_id for edge in self.edges if edge.to_node in while_nodes
         }
 
@@ -388,9 +388,9 @@ class WorkflowDefinition(BaseModel):
 
         return errors
 
-    def lint_graph(self) -> List[str]:
+    def lint_graph(self) -> list[str]:
         """Avisos no bloqueantes sobre configuraciones probablemente erróneas (el grafo sigue siendo válido)."""
-        warnings: List[str] = []
+        warnings: list[str] = []
         for nid, node in self.nodes.items():
             incoming = self.get_incoming_edges(nid)
             if node.node_type == NodeType.TASK and not node.tool_name:
@@ -407,7 +407,7 @@ class WorkflowDefinition(BaseModel):
                 )
         return warnings
 
-    def topological_sort(self) -> List[str]:
+    def topological_sort(self) -> list[str]:
         """Calcula el orden topológico de ejecución respetando dependencias."""
         errors = self.validate_graph()
         if errors:
@@ -415,7 +415,7 @@ class WorkflowDefinition(BaseModel):
 
         node_ids = set(self.nodes.keys())
         while_nodes = {nid for nid, n in self.nodes.items() if n.node_type == NodeType.WHILE}
-        loop_back_edge_ids: Set[str] = {
+        loop_back_edge_ids: set[str] = {
             edge.edge_id for edge in self.edges if edge.to_node in while_nodes
         }
 
@@ -424,7 +424,7 @@ class WorkflowDefinition(BaseModel):
             for nid in node_ids
         }
         kahn_queue = deque([nid for nid, deg in in_degree.items() if deg == 0])
-        order: List[str] = []
+        order: list[str] = []
 
         while kahn_queue:
             curr = kahn_queue.popleft()
@@ -440,8 +440,8 @@ class WorkflowDefinition(BaseModel):
 
     def create_execution(
         self,
-        execution_id: Optional[str] = None,
-        initial_variables: Optional[Dict[str, Any]] = None,
+        execution_id: str | None = None,
+        initial_variables: dict[str, Any] | None = None,
     ) -> "WorkflowExecution":
         """Crea una nueva instancia independiente y aislada de ejecución para este workflow."""
         exec_id = execution_id or f"exec_{uuid.uuid4().hex[:12]}"
@@ -457,12 +457,12 @@ class WorkflowDefinition(BaseModel):
             node_retries={nid: 0 for nid in self.nodes},
         )
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Serializa la definición a diccionario estructurado."""
         return self.model_dump(mode="json")
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "WorkflowDefinition":
+    def from_dict(cls, data: dict[str, Any]) -> "WorkflowDefinition":
         """Deserializa un diccionario en una instancia de WorkflowDefinition."""
         clean = dict(data)
         if isinstance(clean.get("created_at"), str):
@@ -491,19 +491,19 @@ class WorkflowExecution(BaseModel):
     execution_id: str = Field(description="Identificador único de la instancia de ejecución")
     workflow_id: str = Field(description="ID del WorkflowDefinition asociado")
     status: WorkflowStatus = Field(default=WorkflowStatus.IDLE)
-    node_states: Dict[str, NodeStatus] = Field(default_factory=dict, description="Estado de cada nodo en esta ejecución")
-    node_outputs: Dict[str, Dict[str, Any]] = Field(default_factory=dict, description="Outputs producidos por cada nodo")
-    node_retries: Dict[str, int] = Field(default_factory=dict, description="Reintentos por nodo")
-    node_started_at: Dict[str, datetime] = Field(default_factory=dict, description="Momento de inicio de ejecución por nodo")
-    node_retry_after: Dict[str, datetime] = Field(default_factory=dict, description="Momento a partir del cual el nodo puede reintentarse")
-    variables: Dict[str, Any] = Field(default_factory=dict, description="Variables dinámicas de ejecución")
-    execution_history: List[str] = Field(default_factory=list, description="Secuencia de nodos ejecutados")
-    checkpoints: List[Dict[str, Any]] = Field(default_factory=list, description="Instantáneas de estado para rollback")
-    error_message: Optional[str] = Field(default=None)
-    started_at: Optional[datetime] = Field(default=None)
-    finished_at: Optional[datetime] = Field(default=None)
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    node_states: dict[str, NodeStatus] = Field(default_factory=dict, description="Estado de cada nodo en esta ejecución")
+    node_outputs: dict[str, dict[str, Any]] = Field(default_factory=dict, description="Outputs producidos por cada nodo")
+    node_retries: dict[str, int] = Field(default_factory=dict, description="Reintentos por nodo")
+    node_started_at: dict[str, datetime] = Field(default_factory=dict, description="Momento de inicio de ejecución por nodo")
+    node_retry_after: dict[str, datetime] = Field(default_factory=dict, description="Momento a partir del cual el nodo puede reintentarse")
+    variables: dict[str, Any] = Field(default_factory=dict, description="Variables dinámicas de ejecución")
+    execution_history: list[str] = Field(default_factory=list, description="Secuencia de nodos ejecutados")
+    checkpoints: list[dict[str, Any]] = Field(default_factory=list, description="Instantáneas de estado para rollback")
+    error_message: str | None = Field(default=None)
+    started_at: datetime | None = Field(default=None)
+    finished_at: datetime | None = Field(default=None)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     def is_active(self) -> bool:
         """Determina si la ejecución está en progreso (RUNNING o PAUSED)."""
@@ -513,12 +513,12 @@ class WorkflowExecution(BaseModel):
         """Determina si la ejecución ha concluido (COMPLETED, FAILED o CANCELLED)."""
         return self.status in (WorkflowStatus.COMPLETED, WorkflowStatus.FAILED, WorkflowStatus.CANCELLED)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Serialización canónica a diccionario."""
         return self.model_dump(mode="json")
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "WorkflowExecution":
+    def from_dict(cls, data: dict[str, Any]) -> "WorkflowExecution":
         """Deserialización desde diccionario estructurado."""
         clean = dict(data)
         if isinstance(clean.get("started_at"), str):

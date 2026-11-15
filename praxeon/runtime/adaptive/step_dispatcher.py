@@ -8,7 +8,7 @@ Implementa el principio 'Semántica != Autoridad':
 - Valida la conformidad de la acción física antes de permitir su ejecución por el runtime.
 """
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from praxeon.agents.definition import AgentDefinition
 from praxeon.context.fingerprint import ContextFingerprint
@@ -25,7 +25,7 @@ class StepLevelAdaptiveDispatcher:
     # Herramientas globales de riesgo crítico que siempre exigen confirmación o sandbox estricto
     CRITICAL_SYSTEM_TOOLS = {"run_destructive_command", "drop_table", "drop_database", "format_disk", "kill_process"}
 
-    def __init__(self, context_manager: Optional[ContextManager] = None):
+    def __init__(self, context_manager: ContextManager | None = None):
         self.context_manager = context_manager or ContextManager()
 
     def create_dispatch_spec(
@@ -99,7 +99,7 @@ class StepLevelAdaptiveDispatcher:
         self,
         task: TaskRequirement,
         agent: AgentDefinition,
-    ) -> List[str]:
+    ) -> list[str]:
         """Calcula la intersección segura de herramientas del agente y la tarea."""
         if "*" in agent.allowed_tools:
             # Si el agente tiene comodín '*', filtrar explícitamente sus herramientas prohibidas
@@ -118,8 +118,8 @@ class StepLevelAdaptiveDispatcher:
         self,
         spec: StepDispatchSpec,
         tool_name: str,
-        arguments: Optional[Dict[str, Any]] = None,
-    ) -> Tuple[bool, Optional[str]]:
+        arguments: dict[str, Any] | None = None,
+    ) -> tuple[bool, str | None]:
         """Verifica en tiempo de ejecución previa si la acción propuesta está autorizada en la tupla de paso."""
         # 1. Verificar presencia en lista blanca del paso
         if tool_name not in spec.authorized_tools:

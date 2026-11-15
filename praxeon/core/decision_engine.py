@@ -9,7 +9,7 @@ Sustituye sistemáticamente al antiguo JEVEngine manteniendo retrocompatibilidad
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from praxeon.config import PraxeonConfig, default_config
 from praxeon.core.state_graph import StateGraph
@@ -28,7 +28,7 @@ from praxeon.models.schema import (
 class DecisionEngine:
     """Motor canónico de evaluación decisional y cognitiva sin supuestos permisivos en caídas."""
 
-    def __init__(self, state_graph: StateGraph, config: Optional[PraxeonConfig] = None):
+    def __init__(self, state_graph: StateGraph, config: PraxeonConfig | None = None):
         self.graph = state_graph
         self.config = config or state_graph.config or default_config
         self.supervisor_name = getattr(self.config.provider, "name", "typesafe").lower()
@@ -174,9 +174,9 @@ class DecisionEngine:
 
     def evaluate_candidate_chunk(
         self,
-        candidates: List[ActionCandidate],
-        batch_semantics: Optional[BatchSemantics] = None,
-    ) -> List[Tuple[ActionCandidate, DecisionScore, Optional[Dict[str, Any]]]]:
+        candidates: list[ActionCandidate],
+        batch_semantics: BatchSemantics | None = None,
+    ) -> list[tuple[ActionCandidate, DecisionScore, dict[str, Any] | None]]:
         """Evalúa un bloque agrupado de candidatos respetando BatchSemantics."""
         if not candidates:
             return []
@@ -260,7 +260,7 @@ class DecisionEngine:
                     candidates=candidates,
                 )
 
-        results: List[Tuple[ActionCandidate, DecisionScore, Optional[Dict[str, Any]]]] = []
+        results: list[tuple[ActionCandidate, DecisionScore, dict[str, Any] | None]] = []
         flagged_idx = chunk_eval.get("flagged_index") if chunk_eval else None
         is_independent = batch_semantics.independent if batch_semantics else False
 
@@ -315,9 +315,9 @@ class DecisionEngine:
 
     def evaluate_step_chunk(
         self,
-        steps: List[Step],
-        batch_semantics: Optional[BatchSemantics] = None,
-    ) -> List[Tuple[Step, DecisionScore, Optional[Dict[str, Any]]]]:
+        steps: list[Step],
+        batch_semantics: BatchSemantics | None = None,
+    ) -> list[tuple[Step, DecisionScore, dict[str, Any] | None]]:
         """Convierte y evalúa un bloque de pasos existentes o propuestos."""
         candidates = [
             ActionCandidate(
@@ -329,7 +329,7 @@ class DecisionEngine:
             for step in steps
         ]
         cand_results = self.evaluate_candidate_chunk(candidates, batch_semantics=batch_semantics)
-        step_results: List[Tuple[Step, DecisionScore, Optional[Dict[str, Any]]]] = []
+        step_results: list[tuple[Step, DecisionScore, dict[str, Any] | None]] = []
         for step, (_, sc, metadata) in zip(steps, cand_results, strict=False):
             step_results.append((step, sc, metadata))
         return step_results
@@ -345,10 +345,10 @@ class DecisionEngine:
         return self.evaluate_candidate(candidate)
 
     def rank_candidates(
-        self, candidates: List[ActionCandidate]
-    ) -> List[Tuple[ActionCandidate, DecisionScore]]:
+        self, candidates: list[ActionCandidate]
+    ) -> list[tuple[ActionCandidate, DecisionScore]]:
         """Evalúa un lote de candidatos y los devuelve ordenados de mayor a menor puntuación."""
-        scored: List[Tuple[ActionCandidate, DecisionScore]] = []
+        scored: list[tuple[ActionCandidate, DecisionScore]] = []
         for cand in candidates:
             score = self.evaluate_candidate(cand)
             scored.append((cand, score))
@@ -356,7 +356,7 @@ class DecisionEngine:
         scored.sort(key=lambda item: item[1].total_score, reverse=True)
         return scored
 
-    def diagnose_trajectory(self, trajectory: Optional[Trajectory] = None) -> LoopReport:
+    def diagnose_trajectory(self, trajectory: Trajectory | None = None) -> LoopReport:
         """Diagnostica la trayectoria actual o proporcionada usando TypeSafe AI o LAYA."""
         traj = trajectory or Trajectory(
             session_id=self.graph.session_id,

@@ -6,7 +6,6 @@ import json
 import re
 from dataclasses import dataclass
 from html.parser import HTMLParser
-from typing import List, Optional
 from urllib.parse import parse_qs, urlencode, urlsplit
 
 from praxeon.webtools.fetcher import WebError, fetch_raw
@@ -31,7 +30,7 @@ class BraveSearch:
         self._endpoint = endpoint
         self._allow_private = allow_private      # solo para pruebas con un servidor local
 
-    def search(self, query: str, count: int = 5) -> List[SearchResult]:
+    def search(self, query: str, count: int = 5) -> list[SearchResult]:
         if not self._key:
             raise WebError("Falta la clave de Brave Search (Ajustes → Internet, o la variable BRAVE_API_KEY).")
         url = f"{self._endpoint}?{urlencode({'q': query, 'count': max(1, min(int(count), 10))})}"
@@ -65,9 +64,9 @@ class _DdgParser(HTMLParser):
 
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
-        self.items: List[SearchResult] = []
-        self._field: Optional[str] = None      # "title" | "snippet" mientras se lee ese enlace
-        self._buf: List[str] = []
+        self.items: list[SearchResult] = []
+        self._field: str | None = None      # "title" | "snippet" mientras se lee ese enlace
+        self._buf: list[str] = []
         self._href = ""
         self._ad = False
 
@@ -124,7 +123,7 @@ class DuckDuckGoSearch:
         self._endpoint = endpoint
         self._allow_private = allow_private
 
-    def search(self, query: str, count: int = 5) -> List[SearchResult]:
+    def search(self, query: str, count: int = 5) -> list[SearchResult]:
         url = f"{self._endpoint}?{urlencode({'q': query})}"
         _, status, _, body, _ = fetch_raw(url, headers={"Accept": "text/html", "Accept-Language": "es-ES,es;q=0.9,en;q=0.5"}, allow_private=self._allow_private)
         if status != 200:

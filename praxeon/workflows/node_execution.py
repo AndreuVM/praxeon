@@ -13,8 +13,9 @@ El valor que devuelve ``execute_node`` queda en ``NodeRun.result``.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
-from typing import TYPE_CHECKING, Any, Callable, Dict, Optional
+from datetime import datetime, timedelta, UTC
+from typing import TYPE_CHECKING, Any
+from collections.abc import Callable
 import uuid
 
 from praxeon.agents.protocol import AgentMessage, MessagePriority, MessageType
@@ -31,12 +32,12 @@ if TYPE_CHECKING:
 class NodeRun:
     """Un nodo en ejecución: sus entradas, su salida y lo que ``execute_node`` devolverá."""
 
-    engine: "WorkflowEngine"
+    engine: WorkflowEngine
     node_id: str
     node: WorkflowNode
     now: datetime
-    resolved_inputs: Dict[str, Any] = field(default_factory=dict)
-    output: Dict[str, Any] = field(default_factory=dict)
+    resolved_inputs: dict[str, Any] = field(default_factory=dict)
+    output: dict[str, Any] = field(default_factory=dict)
     success: bool = True
     result: bool = False
 
@@ -45,17 +46,17 @@ class NodeRun:
         return self.engine.context
 
     @property
-    def control_config(self) -> Dict[str, Any]:
+    def control_config(self) -> dict[str, Any]:
         return self.node.control_config or self.node.metadata.get("control_config", {})
 
-    def park(self, status: NodeStatus, output: Dict[str, Any]) -> None:
+    def park(self, status: NodeStatus, output: dict[str, Any]) -> None:
         """Deja el nodo a la espera con la salida dada (no se completa ni cuenta como fallo)."""
         with self.engine._lock:
             self.context.node_states[self.node_id] = status
             self.context.node_outputs[self.node_id] = output
 
 
-def _merge(base: Dict[str, Any], extra: Dict[str, Any]) -> Dict[str, Any]:
+def _merge(base: dict[str, Any], extra: dict[str, Any]) -> dict[str, Any]:
     from praxeon.workflows.engine import _deep_merge
     return _deep_merge(base, extra)
 
@@ -63,18 +64,18 @@ def _merge(base: Dict[str, Any], extra: Dict[str, Any]) -> Dict[str, Any]:
 # ------------------------------------------------------------------------------------------------ ejecutores por tipo
 # Cada ejecutor devuelve la salida del nodo, o None si el nodo quedó a la espera (con su estado ya fijado).
 
-NodeExecutor = Callable[[NodeRun], Optional[Dict[str, Any]]]
+NodeExecutor = Callable[[NodeRun], dict[str, Any] | None]
 
 
-def _run_start(run: NodeRun) -> Optional[Dict[str, Any]]:
-    return {"status": "started", "timestamp": datetime.now(timezone.utc).isoformat()}
+def _run_start(run: NodeRun) -> dict[str, Any] | None:
+    return {"status": "started", "timestamp": datetime.now(UTC).isoformat()}
 
 
-def _run_end(run: NodeRun) -> Optional[Dict[str, Any]]:
-    return {"status": "finished", "timestamp": datetime.now(timezone.utc).isoformat()}
+def _run_end(run: NodeRun) -> dict[str, Any] | None:
+    return {"status": "finished", "timestamp": datetime.now(UTC).isoformat()}
 
 
-def _run_task(run: NodeRun) -> Optional[Dict[str, Any]]:
+def _run_task(run: NodeRun) -> dict[str, Any] | None:
     """Tarea: handler registrado, herramienta supervisada (PolicyEngine -> capability -> SecureExecutor -> sandbox),
     ejecutor de nodos o, solo si se permite expresamente, un resultado sintético."""
     engine, node, inputs = run.engine, run.node, run.resolved_inputs
@@ -107,7 +108,7 @@ def _run_task(run: NodeRun) -> Optional[Dict[str, Any]]:
     )
 
 
-def _dispatch_to_agent(run: NodeRun, bus: Any, agent_id: str, prefix: str, waiting_output: Dict[str, Any]) -> None:
+def _dispatch_to_agent(run: NodeRun, bus: Any, agent_id: str, prefix: str, waiting_output: dict[str, Any]) -> None:
     """Envía la tarea al buzón del agente y deja el nodo esperando su respuesta asíncrona."""
     msg = AgentMessage(
         message_id=f"{prefix}_{run.node_id}_{uuid.uuid4().hex[:8]}",
@@ -123,7 +124,7 @@ def _dispatch_to_agent(run: NodeRun, bus: Any, agent_id: str, prefix: str, waiti
     run.park(NodeStatus.WAITING_RESULT, {**waiting_output, "message_id": msg.message_id, "status": "waiting_result"})
 
 
-def _run_agent(run: NodeRun) -> Optional[Dict[str, Any]]:
+def _run_agent(run: NodeRun) -> dict[str, Any] | None:
     engine, node = run.engine, run.node
     if engine.node_runner is not None:
         return engine.node_runner(node, run.resolved_inputs, engine)
@@ -144,7 +145,7 @@ def _run_agent(run: NodeRun) -> Optional[Dict[str, Any]]:
     )
 
 
-def _run_decision(run: NodeRun) -> Optional[Dict[str, Any]]:
+def _run_decision(run: NodeRun) -> dict[str, Any] | None:
     """DECISION / IF: evalúa la condición de control_config o, sin ella, la primera arista saliente que se cumpla."""
     engine, node_id = run.engine, run.node_id
     ctrl = run.node.control_config or run.node.metadata.get("control_config")
@@ -189,7 +190,7 @@ def _run_decision(run: NodeRun) -> Optional[Dict[str, Any]]:
     }
 
 
-def _run_while(run: NodeRun) -> Optional[Dict[str, Any]]:
+def _run_while(run: NodeRun) -> dict[str, Any] | None:
     """WHILE: repite el cuerpo mientras se cumpla la condición; al agotar el límite aborta, escala o sale (on_limit).
 
     El límite solo actúa si la condición pide seguir iterando: un bucle cuya condición ya es falsa termina de forma
@@ -256,7 +257,7 @@ def _run_while(run: NodeRun) -> Optional[Dict[str, Any]]:
         }
 
 
-def _run_delegate(run: NodeRun) -> Optional[Dict[str, Any]]:
+def _run_delegate(run: NodeRun) -> dict[str, Any] | None:
     """DELEGATE: asigna la tarea a un agente (fijo o, en modo AUTOMATIC, el primer candidato)."""
     engine, node_id = run.engine, run.node_id
     ctrl = run.control_config
@@ -291,7 +292,7 @@ def _run_delegate(run: NodeRun) -> Optional[Dict[str, Any]]:
     raise NotImplementedError(f"No handler or bus configured for delegated agent '{target_agent}' in node '{node_id}'.")
 
 
-def _run_human_approval(run: NodeRun) -> Optional[Dict[str, Any]]:
+def _run_human_approval(run: NodeRun) -> dict[str, Any] | None:
     ctrl = run.control_config
     run.park(NodeStatus.WAITING_APPROVAL, {
         "prompt": ctrl.get("prompt") or run.node.inputs.get("prompt") or "Aprobación requerida",
@@ -302,7 +303,7 @@ def _run_human_approval(run: NodeRun) -> Optional[Dict[str, Any]]:
     return None
 
 
-def _run_parallel_join(run: NodeRun) -> Optional[Dict[str, Any]]:
+def _run_parallel_join(run: NodeRun) -> dict[str, Any] | None:
     """PARALLEL_JOIN: fusiona las salidas de las ramas (shallow, namespace o reduce) y, si se pide, cancela las que sigan."""
     engine, ctrl = run.engine, run.control_config
     merge_policy = ctrl.get("merge_policy", "shallow")
@@ -314,7 +315,7 @@ def _run_parallel_join(run: NodeRun) -> Optional[Dict[str, Any]]:
                     engine.context.node_states[edge.from_node] = NodeStatus.CANCELLED
 
     outputs = engine.context.node_outputs
-    merged: Dict[str, Any] = {"parallel_sync": True, "status": "completed"}
+    merged: dict[str, Any] = {"parallel_sync": True, "status": "completed"}
     for edge in incoming_edges:
         upstream = outputs.get(edge.from_node, {})
         if merge_policy == "namespace":
@@ -326,11 +327,11 @@ def _run_parallel_join(run: NodeRun) -> Optional[Dict[str, Any]]:
     return merged
 
 
-def _run_parallel_fork(run: NodeRun) -> Optional[Dict[str, Any]]:
+def _run_parallel_fork(run: NodeRun) -> dict[str, Any] | None:
     return {"parallel_sync": True, "status": "completed"}
 
 
-NODE_EXECUTORS: Dict[NodeType, NodeExecutor] = {
+NODE_EXECUTORS: dict[NodeType, NodeExecutor] = {
     NodeType.START: _run_start,
     NodeType.END: _run_end,
     NodeType.TASK: _run_task,
@@ -473,11 +474,11 @@ class RecordNodeResultStep(Step[NodeRun]):
 NODE_STEPS: tuple[Step[NodeRun], ...] = (PrepareNodeStep(), RunNodeStep(), RecordNodeResultStep())
 
 
-def execute_node(engine: "WorkflowEngine", node_id: str, current_time: Optional[datetime] = None) -> bool:
+def execute_node(engine: WorkflowEngine, node_id: str, current_time: datetime | None = None) -> bool:
     """Ejecuta un nodo individual y devuelve si avanzó (completado o a la espera) o no (fallo, reintento, cancelación)."""
-    now = current_time or datetime.now(timezone.utc)
+    now = current_time or datetime.now(UTC)
     if now.tzinfo is None:
-        now = now.replace(tzinfo=timezone.utc)
+        now = now.replace(tzinfo=UTC)
     run = NodeRun(engine=engine, node_id=node_id, node=engine.workflow.nodes[node_id], now=now)
     run_steps(NODE_STEPS, run)
     return run.result

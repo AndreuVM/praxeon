@@ -8,10 +8,10 @@ Especifica las estructuras inmutables para el ciclo adaptativo de ejecución:
 - AdaptiveExecutionSummary: Resumen formal auditable de ejecución para reportes y telemetría.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from enum import Enum
 import hashlib
-from typing import Any, Dict, List, Optional
+from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 from praxeon.domain.assessment import RiskLevel
@@ -36,11 +36,11 @@ class StepDispatchSpec(BaseModel):
     assigned_role: str = Field(description="Rol operacional activo en el paso")
     model_name: str = Field(description="Modelo configurado para el agente en este paso")
     minimal_context_fingerprint: str = Field(description="Huella SHA-256 del fragmento de contexto mínimo suficiente")
-    authorized_tools: List[str] = Field(default_factory=list, description="Herramientas explícitamente permitidas")
+    authorized_tools: list[str] = Field(default_factory=list, description="Herramientas explícitamente permitidas")
     max_risk_level: RiskLevel = Field(default=RiskLevel.MEDIUM, description="Techo de riesgo tolerado para el paso")
     require_human_confirmation: bool = Field(default=False)
     sandbox_tier: str = Field(default="local", description="Nivel de aislamiento (local, dry_run, container)")
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     @property
     def authorization_digest(self) -> str:
@@ -56,14 +56,14 @@ class TrajectoryStepRecord(BaseModel):
     step_id: str
     step_index: int
     dispatch_spec: StepDispatchSpec
-    action_proposed: Dict[str, Any] = Field(default_factory=dict)
+    action_proposed: dict[str, Any] = Field(default_factory=dict)
     policy_decision: str = Field(default="ALLOW")
-    observation: Optional[str] = Field(default=None)
+    observation: str | None = Field(default=None)
     directive: TrajectoryDirective = Field(default=TrajectoryDirective.CONTINUE)
     tokens_used: int = Field(default=0, ge=0)
     step_cost: float = Field(default=0.0, ge=0.0)
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class AdaptiveSessionState(BaseModel):
@@ -79,9 +79,9 @@ class AdaptiveSessionState(BaseModel):
     total_cost: float = Field(default=0.0, ge=0.0)
     total_tokens: int = Field(default=0, ge=0)
     current_branch_id: str = Field(default="root_main")
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class AdaptiveExecutionSummary(BaseModel):
@@ -95,10 +95,10 @@ class AdaptiveExecutionSummary(BaseModel):
     total_steps: int
     total_cost: float
     total_tokens: int
-    agents_involved: List[str]
+    agents_involved: list[str]
     escalations_count: int
-    directives_applied: List[str]
-    final_artifact_or_result: Optional[str] = None
+    directives_applied: list[str]
+    final_artifact_or_result: str | None = None
     duration_seconds: float = Field(default=0.0, ge=0.0)
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    metadata: dict[str, Any] = Field(default_factory=dict)

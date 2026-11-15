@@ -10,7 +10,8 @@ Implementa la búsqueda de trayectorias multirruta para PRAXEON:
 
 from enum import Enum
 import time
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
+from typing import TYPE_CHECKING, Any
+from collections.abc import Callable
 import uuid
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -58,15 +59,15 @@ class SearchResult(BaseModel):
     branching_factor: int
     success: bool
     is_experimental: bool = False
-    committed_branch: Optional[BranchPath] = None
-    all_branches: List[BranchPath] = Field(default_factory=list)
+    committed_branch: BranchPath | None = None
+    all_branches: list[BranchPath] = Field(default_factory=list)
     explored_branches_count: int = 0
     pruned_branches_count: int = 0
     abandoned_branches_count: int = 0
     total_steps_evaluated: int = 0
     total_wall_ms: float = 0.0
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "strategy": self.strategy.value,
             "branching_factor": self.branching_factor,
@@ -88,9 +89,9 @@ class TreeSearchEngine:
 
     def __init__(
         self,
-        pruner: Optional[BranchPruner] = None,
-        config: Optional[SearchConfig] = None,
-        tool_registry: Optional[ToolRegistry] = None,
+        pruner: BranchPruner | None = None,
+        config: SearchConfig | None = None,
+        tool_registry: ToolRegistry | None = None,
     ):
         self.pruner = pruner or BranchPruner()
         self.config = config or SearchConfig()
@@ -155,12 +156,12 @@ class TreeSearchEngine:
     def expand_branch(
         self,
         branch: BranchPath,
-        candidates: List[ActionCandidate],
+        candidates: list[ActionCandidate],
         state: "SessionState",
-        current_best_score: Optional[float] = None,
-    ) -> List[BranchPath]:
+        current_best_score: float | None = None,
+    ) -> list[BranchPath]:
         """Expande una rama generando ramas hijas para cada acción candidata viable."""
-        all_generated: List[BranchPath] = []
+        all_generated: list[BranchPath] = []
 
         for idx, cand in enumerate(candidates):
             child_id = f"{branch.branch_id}_sub_{branch.depth+1}_{idx+1}"
@@ -210,8 +211,8 @@ class TreeSearchEngine:
     def run_search(
         self,
         initial_state: "SessionState",
-        candidate_generator: Callable[[BranchPath, "SessionState", int], List[ActionCandidate]],
-        goal_checker: Optional[Callable[[BranchPath, "SessionState"], bool]] = None,
+        candidate_generator: Callable[[BranchPath, "SessionState", int], list[ActionCandidate]],
+        goal_checker: Callable[[BranchPath, "SessionState"], bool] | None = None,
     ) -> SearchResult:
         """Ejecuta la búsqueda multirruta hasta converger, alcanzar éxito o límite de profundidad."""
         start_wall = time.perf_counter()
@@ -223,9 +224,9 @@ class TreeSearchEngine:
             status=BranchStatus.ACTIVE,
         )
 
-        all_branches: List[BranchPath] = [root_branch]
-        active_frontier: List[BranchPath] = [root_branch]
-        committed_branch: Optional[BranchPath] = None
+        all_branches: list[BranchPath] = [root_branch]
+        active_frontier: list[BranchPath] = [root_branch]
+        committed_branch: BranchPath | None = None
         total_steps_eval = 0
         depth = 0
 
@@ -235,7 +236,7 @@ class TreeSearchEngine:
 
         while active_frontier and depth < self.config.max_depth:
             depth += 1
-            next_generation: List[BranchPath] = []
+            next_generation: list[BranchPath] = []
             best_score_so_far = max((b.score.composite_score for b in active_frontier), default=0.5)
 
             for branch in active_frontier:

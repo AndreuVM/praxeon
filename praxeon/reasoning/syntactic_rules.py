@@ -19,7 +19,7 @@ CRITICAL mayor que el análisis sintáctico, se queda la anterior (red de seguri
 from __future__ import annotations
 
 import hashlib
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from praxeon.domain.assessment import CommandCategory, CommandRiskAssessment, RiskLevel
 from praxeon.reasoning import command_effects as fx
@@ -44,11 +44,11 @@ def _assess(op: str, category: CommandCategory, risk: RiskLevel, rule: str, reas
 class _Cwd:
     """Carpeta de trabajo a lo largo del comando: ``cd /etc && echo x > hosts`` escribe en /etc, no en el workspace."""
 
-    def __init__(self, root: Optional[str]):
+    def __init__(self, root: str | None):
         self.root = root
-        self.cwd: Optional[str] = None
+        self.cwd: str | None = None
         self.unknown = False
-        self.stack: List[tuple] = []
+        self.stack: list[tuple] = []
 
     def cd(self, target: Word) -> None:
         self.stack.append((self.cwd, self.unknown))
@@ -82,27 +82,27 @@ class SyntacticAnalysisMixin:
     """Ruta sintáctica de ``CommandClassifier.classify`` (ver el docstring del módulo)."""
 
     # Los aporta CommandClassifier
-    def _classify_atomic(self, op_clean: str, tool: Optional[str] = None, arguments: Optional[Dict[str, Any]] = None,
-                         context: Optional[Dict[str, Any]] = None) -> CommandRiskAssessment:
+    def _classify_atomic(self, op_clean: str, tool: str | None = None, arguments: dict[str, Any] | None = None,
+                         context: dict[str, Any] | None = None) -> CommandRiskAssessment:
         raise NotImplementedError
 
-    def _sensitive_read(self, op_clean: str, op_lower: str, ctx_hash: str) -> Optional[CommandRiskAssessment]:
+    def _sensitive_read(self, op_clean: str, op_lower: str, ctx_hash: str) -> CommandRiskAssessment | None:
         raise NotImplementedError
 
-    def _aggregate(self, subs: List[CommandRiskAssessment], op_clean: str, context: Optional[Dict[str, Any]],
-                   extra_reasons: Optional[List[str]] = None, classifier: str = "deterministic_compound") -> CommandRiskAssessment:
+    def _aggregate(self, subs: list[CommandRiskAssessment], op_clean: str, context: dict[str, Any] | None,
+                   extra_reasons: list[str] | None = None, classifier: str = "deterministic_compound") -> CommandRiskAssessment:
         raise NotImplementedError
 
     # ------------------------------------------------------------------------------------------------ entrada
 
-    def _classify_syntactic(self, op_clean: str, context: Optional[Dict[str, Any]]) -> Optional[CommandRiskAssessment]:
+    def _classify_syntactic(self, op_clean: str, context: dict[str, Any] | None) -> CommandRiskAssessment | None:
         """Clasificación por análisis sintáctico, o ``None`` si el texto no se puede analizar con seguridad."""
         try:
             script = parse(op_clean, _dialect_of(context))
         except ShellSyntaxError:
             return None
         cwd = _Cwd((context or {}).get("workspace_root"))
-        subs: List[CommandRiskAssessment] = []
+        subs: list[CommandRiskAssessment] = []
         for cmd in script.commands:
             subs.extend(self._assess_command(cmd, script.dialect, context, cwd, 0))
         if not subs:
@@ -110,25 +110,25 @@ class SyntacticAnalysisMixin:
         if len(subs) == 1:
             only = subs[0]
             return only.model_copy(update={"operation": op_clean,
-                                           "context_hash": hashlib.sha256(f"{op_clean}|{context or {}}".encode("utf-8")).hexdigest()})
+                                           "context_hash": hashlib.sha256(f"{op_clean}|{context or {}}".encode()).hexdigest()})
         return self._aggregate(subs, op_clean, context, classifier=_CLASSIFIER)
 
-    def _classify_payload(self, code: str, dialect: str, context: Optional[Dict[str, Any]], cwd: _Cwd,
-                          depth: int) -> List[CommandRiskAssessment]:
+    def _classify_payload(self, code: str, dialect: str, context: dict[str, Any] | None, cwd: _Cwd,
+                          depth: int) -> list[CommandRiskAssessment]:
         """Lo que se ejecuta dentro de ``bash -c``, ``powershell -Command``, ``eval``..."""
         try:
             script = parse(code, dialect)
         except ShellSyntaxError:
             return [self._classify_atomic(code, context=context)]
-        out: List[CommandRiskAssessment] = []
+        out: list[CommandRiskAssessment] = []
         for cmd in script.commands:
             out.extend(self._assess_command(cmd, dialect, context, cwd, depth + 1))
         return out
 
     # ------------------------------------------------------------------------------------------------ un comando
 
-    def _assess_command(self, cmd: SimpleCommand, dialect: str, context: Optional[Dict[str, Any]], cwd: _Cwd,
-                        depth: int) -> List[CommandRiskAssessment]:
+    def _assess_command(self, cmd: SimpleCommand, dialect: str, context: dict[str, Any] | None, cwd: _Cwd,
+                        depth: int) -> list[CommandRiskAssessment]:
         if not (cmd.words or cmd.redirects or cmd.assignments):
             return []
         text = _command_text(cmd)
@@ -136,7 +136,7 @@ class SyntacticAnalysisMixin:
             return [_assess(text, CommandCategory.UNKNOWN, RiskLevel.HIGH, "RULE_NESTING_TOO_DEEP",
                             "Comando anidado demasiadas veces para analizarlo: requiere revisión humana.")]
         eff = fx.analyze(cmd, dialect)
-        out: List[CommandRiskAssessment] = []
+        out: list[CommandRiskAssessment] = []
         for code, d in eff.payloads:
             out.extend(self._classify_payload(code, d, context, cwd, depth))
         for argv in eff.inner:
@@ -150,7 +150,7 @@ class SyntacticAnalysisMixin:
             cwd.back()
         return out
 
-    def _base_assessment(self, cmd: SimpleCommand, eff: fx.Effects, text: str, context: Optional[Dict[str, Any]],
+    def _base_assessment(self, cmd: SimpleCommand, eff: fx.Effects, text: str, context: dict[str, Any] | None,
                          cwd: _Cwd, dialect: str) -> CommandRiskAssessment:
         v = eff.verdict
         if v == "privilege":
@@ -254,7 +254,7 @@ class SyntacticAnalysisMixin:
     def _with_targets(self, base: CommandRiskAssessment, eff: fx.Effects, cwd: _Cwd) -> CommandRiskAssessment:
         """Sube el riesgo según dónde escribe el comando (fuera, protegido, destino variable, sobrescritura)."""
         L = fx.Location
-        findings: List[tuple] = []
+        findings: list[tuple] = []
         writes = False
         for w in eff.writes:
             loc = cwd.locate(w.target)
@@ -281,7 +281,7 @@ class SyntacticAnalysisMixin:
                                  f"Sobrescribiría un fichero existente ('{label}') sin copia: requiere confirmación humana."))
         if not writes:
             return base
-        update: Dict[str, Any] = {"read_only": False}
+        update: dict[str, Any] = {"read_only": False}
         category = base.category
         if category in (CommandCategory.INSPECTION, CommandCategory.BUILD_TEST):
             category = CommandCategory.LOCAL_MUTATION
@@ -329,7 +329,7 @@ def _command_text(cmd: SimpleCommand) -> str:
     return " ".join(parts)
 
 
-def _dialect_of(context: Optional[Dict[str, Any]]) -> Optional[str]:
+def _dialect_of(context: dict[str, Any] | None) -> str | None:
     """Dialecto indicado en el contexto (``shell``); sin él, se deduce del propio texto."""
     shell = str((context or {}).get("shell") or "").lower()
     if shell in ("powershell", "pwsh"):

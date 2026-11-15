@@ -4,7 +4,7 @@ Dar de alta un servidor equivale a permitir que se ejecute un programa en esta m
 permisos de administración.
 """
 
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
@@ -17,21 +17,21 @@ router = APIRouter(prefix="/v1/mcp", tags=["MCP"])
 
 
 class ServerRequest(BaseModel):
-    command: Optional[str] = Field(default=None, description="Servidor local (stdio): ejecutable (npx, uvx, python…)")
-    args: List[str] = Field(default_factory=list)
-    url: Optional[str] = Field(
+    command: str | None = Field(default=None, description="Servidor local (stdio): ejecutable (npx, uvx, python…)")
+    args: list[str] = Field(default_factory=list)
+    url: str | None = Field(
         default=None,
         description="Servidor remoto (SSE o HTTP streamable). Puede llevar «${VARIABLE}» para el token. Al editar, vacío conserva la guardada "
         "(la API nunca devuelve la URL completa).",
     )
-    headers: Dict[str, Optional[str]] = Field(default_factory=dict, description="Cabeceras HTTP (p. ej. Authorization); null conserva el valor guardado")
+    headers: dict[str, str | None] = Field(default_factory=dict, description="Cabeceras HTTP (p. ej. Authorization); null conserva el valor guardado")
     transport: Literal["auto", "sse", "streamable_http"] = "auto"
-    env: Dict[str, Optional[str]] = Field(
+    env: dict[str, str | None] = Field(
         default_factory=dict,
         description="Variables del servidor; usa ${VAR} para tomarlas del entorno de PRAXEON. Un valor null conserva el ya guardado "
         "(la API nunca devuelve los valores, así que al editar se reenvían las claves sin tocar).",
     )
-    cwd: Optional[str] = None
+    cwd: str | None = None
     trust_hints: bool = False
     timeout_s: float = Field(default=60.0, gt=0, le=3600)
 
@@ -48,12 +48,12 @@ def _missing(name: str) -> HTTPException:
     return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Servidor MCP '{name}' no encontrado.")
 
 
-@router.get("/servers", response_model=APIResponse[List[Dict[str, Any]]])
+@router.get("/servers", response_model=APIResponse[list[dict[str, Any]]])
 def list_servers(mcp=Depends(_mcp)):
     return APIResponse(data=mcp.status())
 
 
-@router.put("/servers/{name}", response_model=APIResponse[Dict[str, Any]])
+@router.put("/servers/{name}", response_model=APIResponse[dict[str, Any]])
 def put_server(name: str, req: ServerRequest, mcp=Depends(_mcp)):
     """Crea o actualiza un servidor. Si cambia lo que se ejecuta, queda desactivado y sin aprobar."""
     current = mcp.store.get(name)
@@ -85,14 +85,14 @@ def put_server(name: str, req: ServerRequest, mcp=Depends(_mcp)):
     return APIResponse(data=mcp.describe(name))
 
 
-@router.delete("/servers/{name}", response_model=APIResponse[Dict[str, Any]])
+@router.delete("/servers/{name}", response_model=APIResponse[dict[str, Any]])
 def delete_server(name: str, mcp=Depends(_mcp)):
     if not mcp.remove(name):
         raise _missing(name)
     return APIResponse(data={"deleted": name})
 
 
-@router.post("/servers/{name}/enable", response_model=APIResponse[Dict[str, Any]])
+@router.post("/servers/{name}/enable", response_model=APIResponse[dict[str, Any]])
 def enable_server(name: str, mcp=Depends(_mcp)):
     """Activa y arranca el servidor para que puedas revisar sus herramientas (aún no se exponen al agente)."""
     try:
@@ -101,7 +101,7 @@ def enable_server(name: str, mcp=Depends(_mcp)):
         raise _missing(name) from exc
 
 
-@router.post("/servers/{name}/disable", response_model=APIResponse[Dict[str, Any]])
+@router.post("/servers/{name}/disable", response_model=APIResponse[dict[str, Any]])
 def disable_server(name: str, mcp=Depends(_mcp)):
     try:
         return APIResponse(data=mcp.disable(name))
@@ -109,7 +109,7 @@ def disable_server(name: str, mcp=Depends(_mcp)):
         raise _missing(name) from exc
 
 
-@router.post("/servers/{name}/restart", response_model=APIResponse[Dict[str, Any]])
+@router.post("/servers/{name}/restart", response_model=APIResponse[dict[str, Any]])
 def restart_server(name: str, mcp=Depends(_mcp)):
     try:
         return APIResponse(data=mcp.start_server(name))
@@ -117,7 +117,7 @@ def restart_server(name: str, mcp=Depends(_mcp)):
         raise _missing(name) from exc
 
 
-@router.post("/servers/{name}/approve", response_model=APIResponse[Dict[str, Any]])
+@router.post("/servers/{name}/approve", response_model=APIResponse[dict[str, Any]])
 def approve_server(name: str, req: ApproveRequest, mcp=Depends(_mcp)):
     """Aprueba las herramientas revisadas (por huella) y las expone a los agentes."""
     try:
@@ -128,7 +128,7 @@ def approve_server(name: str, req: ApproveRequest, mcp=Depends(_mcp)):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
 
-@router.put("/servers/{name}/tools/{tool}", response_model=APIResponse[Dict[str, Any]])
+@router.put("/servers/{name}/tools/{tool}", response_model=APIResponse[dict[str, Any]])
 def put_tool_override(name: str, tool: str, req: ToolOverride, mcp=Depends(_mcp)):
     """Ajusta riesgo, solo-lectura, confirmación o desactiva una herramienta concreta."""
     cfg = mcp.store.get(name)

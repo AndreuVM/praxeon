@@ -12,7 +12,7 @@ Soporta backends:
 - 'simulated': Motor determinista calibrado para pruebas y benchmarks reproducibles offline.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 import json
 import logging
 import math
@@ -23,7 +23,7 @@ import time
 import urllib.error
 
 from praxeon import http_client
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -78,11 +78,11 @@ LAYA_RECORD_VERSION = int(os.getenv("LAYA_RECORD_VERSION", "") or (2 if LAYA_LOC
 _STATE_FITS = ((6, 300), (4, 160), (3, 90), (2, 50), (1, 30), (0, 0))
 _ARGS_CHARS = 400
 
-_ROUTERS: Dict[Optional[str], Any] = {}
+_ROUTERS: dict[str | None, Any] = {}
 _ROUTER_LOCK = threading.Lock()
 
 
-def resolve_device(requested: Optional[str] = None) -> str:
+def resolve_device(requested: str | None = None) -> str:
     """Dispositivo de inferencia: lo pedido o `LAYA_DEVICE`; con «auto» decide el plan según el hardware (hardware.py)."""
     device, reason = laya_device(requested)
     if device.startswith("cuda"):
@@ -100,7 +100,7 @@ def resolve_device(requested: Optional[str] = None) -> str:
 
 
 def build_laya_state(ctx: ProviderContext, max_steps: int, obs_chars: int, *, with_classifier: bool = True,
-                     record_version: Optional[int] = None) -> str:
+                     record_version: int | None = None) -> str:
     """Estado para el modelo, con el mismo formato que el gestor de contexto pero acotado a `max_steps` y `obs_chars`.
 
     El checkpoint lee unos 1.024 tokens en total y las preguntas ocupan más de la mitad: si el estado no cabe, recorta por
@@ -131,7 +131,7 @@ def build_laya_state(ctx: ProviderContext, max_steps: int, obs_chars: int, *, wi
     return "\n".join(lines)
 
 
-def calibrate_choice(choice: Dict[str, Any], temperature: float) -> Dict[str, Any]:
+def calibrate_choice(choice: dict[str, Any], temperature: float) -> dict[str, Any]:
     """Aplica la temperatura posterior a las probabilidades de la decisión; la etiqueta (argmax) no cambia."""
     probs = {str(k): float(v) for k, v in (choice.get("probabilities") or {}).items()}
     if not probs or abs(temperature - 1.0) < 1e-9:
@@ -150,11 +150,11 @@ class LayaDecisionPrimitives(BaseModel):
     """Estructura de las tres primitivas fundamentales retornadas por LAYA."""
     model_config = ConfigDict(frozen=True)
 
-    choice: Dict[str, Any] = Field(
+    choice: dict[str, Any] = Field(
         default_factory=lambda: {"label": "ALLOW", "probabilities": {"ALLOW": 1.0}, "confidence": 1.0}
     )
     score: float = 1.0
-    noul: Dict[str, float] = Field(
+    noul: dict[str, float] = Field(
         default_factory=lambda: {"is_loop": 0.0, "is_grounded": 1.0, "is_novel": 1.0}
     )
 
@@ -178,9 +178,9 @@ class LayaProvider(BaseReasoningProvider):
         self,
         backend: str = "auto",
         model_name: str = "laya-v1-calibrated",
-        endpoint_url: Optional[str] = None,
-        auth_token: Optional[str] = None,
-        context_builder: Optional[ProviderContextBuilder] = None,
+        endpoint_url: str | None = None,
+        auth_token: str | None = None,
+        context_builder: ProviderContextBuilder | None = None,
         max_context_tokens: int = 2048,
         timeout: float = 5.0,
         device: str = "auto",
@@ -327,7 +327,7 @@ class LayaProvider(BaseReasoningProvider):
             self.backend = "simulated"
             return self._infer_primitives_calibrated(ctx)
         kwargs = {} if LAYA_CHECKPOINT == "auto" else {"model": LOCAL_MODEL_ALIAS if LAYA_LOCAL_CHECKPOINT else LAYA_CHECKPOINT}
-        result: Dict[str, Any] = {}
+        result: dict[str, Any] = {}
         fit = (0, 0)
         for fit in _STATE_FITS:
             result = router.predict(build_laya_state(ctx, *fit), QUESTIONS, **kwargs)
@@ -503,7 +503,7 @@ class LayaProvider(BaseReasoningProvider):
             analytical_jev = progress_prob * (1.0 - loop_prob) * grounded_prob
 
             px = self.CODE_PREFIX
-            reason_codes: List[str] = [f"{px}_CHOICE_{choice_data.get('label', 'ALLOW')}"]
+            reason_codes: list[str] = [f"{px}_CHOICE_{choice_data.get('label', 'ALLOW')}"]
             if choice_data.get("label") == "BLOCK":
                 reason_codes.append(f"{px}_DESTRUCTIVE_BLOCK")
             elif choice_data.get("label") == "REPLAN":
@@ -530,7 +530,7 @@ class LayaProvider(BaseReasoningProvider):
                 "noul": noul_data,
                 "veto_mode": self.veto_mode,
                 "memory_mb": self._get_resident_memory_mb(),
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "timestamp": datetime.now(UTC).isoformat(),
             }
 
 
@@ -575,7 +575,7 @@ class LayaProvider(BaseReasoningProvider):
     def evaluate(
         self,
         state: Any,
-        actions: List[ActionCandidate],
-    ) -> List[ProviderAssessment]:
+        actions: list[ActionCandidate],
+    ) -> list[ProviderAssessment]:
         """Evalúa un lote de acciones candidatas de forma secuencial preservando consistencia."""
         return [self.evaluate_action(state, action) for action in actions]

@@ -5,7 +5,7 @@ término de sesión o expiración por TTL.
 """
 
 import time
-from typing import Callable, Set
+from collections.abc import Callable
 from praxeon.context.cache import ContextSnapshot
 from praxeon.context.fragments import FragmentType
 
@@ -28,7 +28,7 @@ def invalidate_by_evidence_id(evidence_id: str) -> Callable[[ContextSnapshot], b
     return _matches
 
 
-def invalidate_by_evidence_ids(evidence_ids: Set[str]) -> Callable[[ContextSnapshot], bool]:
+def invalidate_by_evidence_ids(evidence_ids: set[str]) -> Callable[[ContextSnapshot], bool]:
     """Invalida snapshots dependientes de un conjunto de evidencias modificadas."""
     def _matches(snap: ContextSnapshot) -> bool:
         for frag in snap.fragments:

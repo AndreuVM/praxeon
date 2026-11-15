@@ -11,7 +11,8 @@ import time
 from contextlib import contextmanager
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
+from typing import Any
+from collections.abc import Callable, Iterable
 
 from praxeon.evaluation.agentbench.arms import Listener, RunResult, run_bare, run_praxeon
 from praxeon.evaluation.agentbench.metering import MeteredLLM, PriceTable
@@ -35,7 +36,7 @@ class _WarmupLLM:
         return None
 
 
-def parse_arm(arm: str) -> Tuple[str, Dict[str, Any]]:
+def parse_arm(arm: str) -> tuple[str, dict[str, Any]]:
     """`bare` | `praxeon[:supervisor[:modo[:operador]]]` -> (nombre, opciones).
 
     Modo por defecto: local_restricted. Operador simulado por defecto: `strict` (aprueba lo que pide revisión salvo el acto
@@ -57,8 +58,8 @@ def _key(provider: str, model: str, arm: str, task: str, repeat: int) -> str:
     return f"{provider}|{model}|{arm}|{task}|{repeat}"
 
 
-def load_done(path: Path) -> Dict[str, Dict[str, Any]]:
-    done: Dict[str, Dict[str, Any]] = {}
+def load_done(path: Path) -> dict[str, dict[str, Any]]:
+    done: dict[str, dict[str, Any]] = {}
     if path.exists():
         for line in path.read_text(encoding="utf-8").splitlines():
             if line.strip():
@@ -80,12 +81,12 @@ def _scratch_dir():
 
 def run_one(
     task: Task, arm: str, provider: str, model: str, repeat: int, llm_factory: LLMFactory, prices: PriceTable,
-    max_steps: Optional[int], timeout_s: float, decision_model: Optional[Dict[str, Any]] = None,
+    max_steps: int | None, timeout_s: float, decision_model: dict[str, Any] | None = None,
 ) -> RunResult:
     name, opts = parse_arm(arm)
     result = RunResult(task=task.id, kind=task.kind, arm=arm, provider=provider, model=model, repeat=repeat)
     listener = Listener() if task.needs_listener else None
-    ctx: Dict[str, Any] = {"port": listener.port if listener else 0}
+    ctx: dict[str, Any] = {"port": listener.port if listener else 0}
     os.environ["PRAXEON_TRACE_LABEL"] = f"{provider}|{model}|{arm}|{task.id}|{repeat}"   # une el volcado del supervisor con runs.jsonl
     with _scratch_dir() as tmp:
         root = Path(tmp)
@@ -141,11 +142,11 @@ def run_one(
 
 
 def run_matrix(
-    models: Iterable[Tuple[str, str]], arms: List[str], tasks: List[Task], repeats: int, out_path: Path,
-    llm_factory: LLMFactory, prices: PriceTable, max_steps: Optional[int] = None, timeout_s: float = 900.0,
-    seed: int = 7, decision_models: Optional[Dict[str, Dict[str, Any]]] = None,
+    models: Iterable[tuple[str, str]], arms: list[str], tasks: list[Task], repeats: int, out_path: Path,
+    llm_factory: LLMFactory, prices: PriceTable, max_steps: int | None = None, timeout_s: float = 900.0,
+    seed: int = 7, decision_models: dict[str, dict[str, Any]] | None = None,
     log: Callable[[str], None] = print,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Orden: repetición → tarea → modelo → brazos (barajados con semilla) para que la deriva (carga, caché, calor)
     no favorezca siempre al mismo brazo. Las ejecuciones ya guardadas se omiten (reanudación)."""
     out_path.parent.mkdir(parents=True, exist_ok=True)

@@ -14,7 +14,8 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from enum import Enum
-from typing import ClassVar, Generic, Iterable, TypeVar
+from typing import ClassVar, Generic, TypeVar
+from collections.abc import Iterable
 
 C = TypeVar("C")
 

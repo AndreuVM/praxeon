@@ -8,9 +8,9 @@ Define las estructuras canónicas para la exploración en árbol/grafo de razona
 - RollbackCheckpoint: Punto de restauración atómico para backtracking y reversión de estado en ramas.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 from praxeon.domain.action import ActionCandidate
@@ -64,15 +64,15 @@ class BranchStep(BaseModel):
 
     step_id: str
     action: ActionCandidate
-    decision: Optional[PolicyDecision] = None
-    observation: Optional[str] = None
+    decision: PolicyDecision | None = None
+    observation: str | None = None
     is_speculative: bool = True
-    step_score: Optional[float] = None
+    step_score: float | None = None
     token_estimate: int = 0
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "step_id": self.step_id,
             "action": self.action.model_dump() if hasattr(self.action, "model_dump") else str(self.action),
@@ -95,13 +95,13 @@ class RollbackCheckpoint(BaseModel):
     session_id: str
     step_index: int
     state_snapshot_hash: str
-    evidence_ids: List[str] = Field(default_factory=list)
-    forbidden_tools: List[str] = Field(default_factory=list)
-    active_variables: Dict[str, Any] = Field(default_factory=dict)
+    evidence_ids: list[str] = Field(default_factory=list)
+    forbidden_tools: list[str] = Field(default_factory=list)
+    active_variables: dict[str, Any] = Field(default_factory=dict)
     reason: str = "Branch checkpoint"
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "checkpoint_id": self.checkpoint_id,
             "branch_id": self.branch_id,
@@ -119,15 +119,15 @@ class RollbackCheckpoint(BaseModel):
 class BranchPath(BaseModel):
     """Ruta o rama estructurada en el árbol/grafo de razonamiento multirruta."""
     branch_id: str
-    parent_branch_id: Optional[str] = None
+    parent_branch_id: str | None = None
     root_session_id: str
     status: BranchStatus = BranchStatus.EXPLORING
-    steps: List[BranchStep] = Field(default_factory=list)
+    steps: list[BranchStep] = Field(default_factory=list)
     score: BranchScore = Field(default_factory=BranchScore)
-    prune_reason: Optional[str] = None
-    checkpoint_id: Optional[str] = None
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    prune_reason: str | None = None
+    checkpoint_id: str | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     @property
     def depth(self) -> int:
@@ -135,7 +135,7 @@ class BranchPath(BaseModel):
         return len(self.steps)
 
     @property
-    def actions(self) -> List[ActionCandidate]:
+    def actions(self) -> list[ActionCandidate]:
         """Secuencia de acciones contenidas en esta rama."""
         return [s.action for s in self.steps]
 
@@ -152,7 +152,7 @@ class BranchPath(BaseModel):
         """Marca la rama como la ganadora consolidada para ejecución real."""
         self.status = BranchStatus.COMMITTED
 
-    def mark_abandoned(self, reason: Optional[str] = None) -> None:
+    def mark_abandoned(self, reason: str | None = None) -> None:
         """Marca la rama como abandonada por suboptimalidad."""
         self.status = BranchStatus.ABANDONED
         if reason:
@@ -162,7 +162,7 @@ class BranchPath(BaseModel):
         """Actualiza la puntuación multidimensional de la rama."""
         self.score = new_score
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Serialización estructurada para el árbol y la API."""
         return {
             "branch_id": self.branch_id,

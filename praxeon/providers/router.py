@@ -12,7 +12,8 @@ La confianza actúa como señal de enrutamiento ('routing signal'), nunca como p
 
 from enum import Enum
 import logging
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
+from collections.abc import Callable
 
 from pydantic import BaseModel, ConfigDict
 
@@ -91,11 +92,11 @@ class ConfidenceAwareRouter(BaseReasoningProvider):
         secondary_provider: BaseReasoningProvider,
         default_confidence_threshold: float = 0.70,
         secondary_confidence_threshold: float = 0.50,
-        risk_thresholds: Optional[Dict[RiskLevel, float]] = None,
+        risk_thresholds: dict[RiskLevel, float] | None = None,
         strategy: RoutingStrategy = RoutingStrategy.CASCADE_CONFIDENCE,
         escalate_on_unavailable: bool = True,
         track_disagreements: bool = True,
-        risk_assessor: Optional[Callable[[ActionCandidate], RiskAssessment]] = None,
+        risk_assessor: Callable[[ActionCandidate], RiskAssessment] | None = None,
     ):
         self.primary = primary_provider
         self.secondary = secondary_provider
@@ -168,13 +169,13 @@ class ConfidenceAwareRouter(BaseReasoningProvider):
     def evaluate(
         self,
         state: Any,
-        actions: List[ActionCandidate],
-    ) -> List[ProviderAssessment]:
+        actions: list[ActionCandidate],
+    ) -> list[ProviderAssessment]:
         """Evalúa las acciones mediante la estrategia de enrutamiento configurada."""
         if not actions:
             return []
 
-        results: List[ProviderAssessment] = []
+        results: list[ProviderAssessment] = []
         for action in actions:
             assessment = self._evaluate_single_action(state, action)
             results.append(assessment)
@@ -313,7 +314,7 @@ class ConfidenceAwareRouter(BaseReasoningProvider):
             "reason_codes": reason_codes,
         })
 
-    def _call_primary(self, state: Any, action: ActionCandidate) -> List[ProviderAssessment]:
+    def _call_primary(self, state: Any, action: ActionCandidate) -> list[ProviderAssessment]:
         try:
             return self.primary.evaluate(state, [action])
         except Exception as e:
@@ -327,7 +328,7 @@ class ConfidenceAwareRouter(BaseReasoningProvider):
                 )
             ]
 
-    def _call_secondary(self, state: Any, action: ActionCandidate) -> List[ProviderAssessment]:
+    def _call_secondary(self, state: Any, action: ActionCandidate) -> list[ProviderAssessment]:
         try:
             return self.secondary.evaluate(state, [action])
         except Exception as e:

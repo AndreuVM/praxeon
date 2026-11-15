@@ -18,7 +18,7 @@ Es la detección canónica de bucles del runtime (pipeline de propuestas, LAYA, 
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any
 
 WRITE_TOOLS = ("edit_file", "write_file", "create_file", "write_to_file", "save_file", "replace_file_content")
 SHELL_TOOLS = ("run_command", "run_script", "git")
@@ -28,16 +28,16 @@ CONFIRMED_LOOP = 0.88
 STAGNATION = 0.85
 
 
-def _target(args: Dict[str, Any]) -> str:
+def _target(args: dict[str, Any]) -> str:
     return str(args.get("path") or args.get("file") or args.get("command") or args.get("cmd") or args.get("raw")
                or args.get("query") or "").strip().lower()
 
 
-def _content(args: Dict[str, Any]) -> str:
+def _content(args: dict[str, Any]) -> str:
     return str(args.get("content") or args.get("diff") or "")
 
 
-def is_mutation(tool: str, args: Dict[str, Any]) -> bool:
+def is_mutation(tool: str, args: dict[str, Any]) -> bool:
     """¿Esta acción cambia el estado del proyecto (escribe un archivo o ejecuta algo que modifica)?"""
     tool = (tool or "").lower()
     if tool in WRITE_TOOLS:
@@ -70,7 +70,7 @@ def _is_failure(observation: str) -> bool:
     return len(obs) <= 300 or obs.startswith(("error", "fallo", "traceback"))
 
 
-def estimate_loop_probability(history: List[Dict[str, Any]], tool_name: str, args: Dict[str, Any]) -> float:
+def estimate_loop_probability(history: list[dict[str, Any]], tool_name: str, args: dict[str, Any]) -> float:
     """Probabilidad de que la acción candidata sea un bucle, dado el historial (dicts con tool, arguments, observation)."""
     tool_name = (tool_name or "").lower()
     args = args or {}

@@ -15,7 +15,8 @@ import os
 import signal
 import subprocess
 import sys
-from typing import Any, Dict, Iterable, Mapping, Optional
+from typing import Any
+from collections.abc import Iterable, Mapping
 
 # Variables que las herramientas comunes necesitan para arrancar (comparación sin distinguir mayúsculas)
 BASE_ALLOWED_ENV = frozenset({
@@ -65,9 +66,9 @@ def _is_allowed(name: str, extra: Iterable[str]) -> bool:
 
 
 def child_environment(
-    source: Optional[Mapping[str, str]] = None,
+    source: Mapping[str, str] | None = None,
     blocked_markers: Iterable[str] = (),
-) -> Dict[str, str]:
+) -> dict[str, str]:
     """Entorno para un proceso hijo: solo variables de la lista blanca y nunca las que parecen secretos.
 
     `blocked_markers` añade subcadenas a retirar (p. ej. la lista de bloqueo propia del sandbox).
@@ -75,7 +76,7 @@ def child_environment(
     env = os.environ if source is None else source
     extra = _extra_patterns(env)
     blocked = tuple(m.upper() for m in blocked_markers)
-    clean: Dict[str, str] = {}
+    clean: dict[str, str] = {}
     for name, value in env.items():
         if not _is_allowed(name, extra) or looks_secret(name):
             continue
@@ -85,7 +86,7 @@ def child_environment(
     return clean
 
 
-def process_group_kwargs() -> Dict[str, Any]:
+def process_group_kwargs() -> dict[str, Any]:
     """Argumentos de Popen para que el proceso y sus descendientes formen un grupo que se pueda terminar entero."""
     if sys.platform == "win32":
         return {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
@@ -136,7 +137,7 @@ def run_with_tree_timeout(args, *, timeout: float, **popen_kwargs) -> subprocess
         return subprocess.CompletedProcess(args, proc.returncode, stdout, stderr)
 
 
-def full_access_enabled(source: Optional[Mapping[str, str]] = None) -> bool:
+def full_access_enabled(source: Mapping[str, str] | None = None) -> bool:
     """Full Access solo está disponible si el proceso lo habilita (la app de escritorio lo hace; servidor y CLI no)."""
     env = os.environ if source is None else source
     return env.get("PRAXEON_ALLOW_FULL_ACCESS", "").strip().lower() in ("1", "true", "yes")

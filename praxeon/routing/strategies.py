@@ -10,7 +10,7 @@ Implementa las estrategias canónicas de selección multicriterio:
 """
 
 import re
-from typing import Any, Dict, List, Set, Tuple
+from typing import Any
 import uuid
 
 from praxeon.agents.definition import AgentDefinition
@@ -26,7 +26,7 @@ class CostAwareRoutingStrategy:
     """Estrategia de ruteo orientada al coste de inferencia y optimización presupuestaria."""
 
     # Tarifas estimadas por millón de tokens (promedio blended entrada/salida)
-    MODEL_RATES_PER_1M: Dict[str, float] = {
+    MODEL_RATES_PER_1M: dict[str, float] = {
         "flash": 0.25,        # e.g., gemini-1.5-flash (~$0.00000025/token)
         "haiku": 0.25,        # e.g., claude-3-haiku
         "-mini": 0.35,        # e.g., gpt-4o-mini
@@ -51,13 +51,13 @@ class CostAwareRoutingStrategy:
         cost_per_token = rate / 1_000_000.0
         return round(estimated_tokens * cost_per_token, 6)
 
-    def route(self, task: TaskRequirement, eligible: List[AgentDefinition]) -> RoutingDecision:
+    def route(self, task: TaskRequirement, eligible: list[AgentDefinition]) -> RoutingDecision:
         """Selecciona el agente más económico que satisface los requerimientos técnicos y de calidad."""
         if not eligible:
             raise ValueError(f"No hay agentes elegibles para la tarea '{task.task_id}'.")
 
         tokens = task.metadata.get("classification", {}).get("estimated_tokens", 1500)
-        scored_candidates: List[Tuple[float, float, str, AgentDefinition]] = []
+        scored_candidates: list[tuple[float, float, str, AgentDefinition]] = []
 
         for ag in eligible:
             cost = self.estimate_agent_task_cost(ag, tokens)
@@ -117,17 +117,17 @@ class SemanticRoutingStrategy:
     """Estrategia de ruteo por afinidad semántica y especialización técnica."""
 
     @staticmethod
-    def _tokenize(text: str) -> Set[str]:
+    def _tokenize(text: str) -> set[str]:
         """Tokeniza y normaliza un texto a un conjunto de términos limpios."""
         cleaned = re.sub(r"[^\w\s-]", " ", text.lower())
         tokens = {t.strip() for t in cleaned.split() if len(t.strip()) > 2}
         return tokens
 
     @classmethod
-    def compute_affinity(cls, task: TaskRequirement, agent: AgentDefinition) -> Tuple[float, List[str]]:
+    def compute_affinity(cls, task: TaskRequirement, agent: AgentDefinition) -> tuple[float, list[str]]:
         """Calcula el score de afinidad semántica y las coincidencias clave."""
         prompt_tokens = cls._tokenize(task.prompt)
-        matches: List[str] = []
+        matches: list[str] = []
         score = 0.0
 
         # 1. Correspondencia con Rol (peso 3.5)
@@ -166,12 +166,12 @@ class SemanticRoutingStrategy:
 
         return score, matches
 
-    def route(self, task: TaskRequirement, eligible: List[AgentDefinition]) -> RoutingDecision:
+    def route(self, task: TaskRequirement, eligible: list[AgentDefinition]) -> RoutingDecision:
         """Selecciona el agente con mayor afinidad semántica hacia la directiva."""
         if not eligible:
             raise ValueError(f"No hay agentes elegibles para la tarea '{task.task_id}'.")
 
-        scored: List[Tuple[float, List[str], AgentDefinition]] = []
+        scored: list[tuple[float, list[str], AgentDefinition]] = []
         for ag in eligible:
             aff_score, matches = self.compute_affinity(task, ag)
             scored.append((aff_score, matches, ag))
@@ -214,13 +214,13 @@ class AdaptiveRoutingStrategy:
         self.w_cost = weight_cost / total
         self.w_cap = weight_capabilities / total
 
-    def route(self, task: TaskRequirement, eligible: List[AgentDefinition]) -> RoutingDecision:
+    def route(self, task: TaskRequirement, eligible: list[AgentDefinition]) -> RoutingDecision:
         """Pondera armónicamente afinidad semántica, contención de costes y cobertura técnica."""
         if not eligible:
             raise ValueError(f"No hay agentes elegibles para la tarea '{task.task_id}'.")
 
         tokens = task.metadata.get("classification", {}).get("estimated_tokens", 1500)
-        evaluated: List[Dict[str, Any]] = []
+        evaluated: list[dict[str, Any]] = []
 
         # 1. Obtener métricas primarias de cada agente
         for ag in eligible:

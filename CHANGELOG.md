@@ -37,6 +37,9 @@ Todas las modificaciones notables de este proyecto están documentadas en este a
     `perl`/`ruby`/`node`/`php` que borra o lanza procesos ya no son «desconocidos»: según el alcance, revisión o veto.
 
 ### Changed
+- Calidad (auditoría AUD-23, etapa 2): `praxeon/` usa las anotaciones y APIs de Python 3.11 (`list[int]`, `X | None`,
+  `datetime.UTC`) y `ruff` pasa a exigirlo (regla UP). Cambio mecánico y aislado en su propio commit; `class X(str, Enum)` se
+  mantiene a propósito (UP042), porque `StrEnum` cambia lo que devuelve `str()` en valores que ya están serializados.
 - Rendimiento (auditoría P-03/P-04). Mismos resultados, medidos antes y después:
   - El hash de estado que firman los recibos es un hash de hashes: cada paso y cada evidencia se resumen por separado
     y el estado vivo cachea esos resúmenes. Firmar y verificar ya no reserializa toda la trayectoria en cada paso:
@@ -146,6 +149,10 @@ Todas las modificaciones notables de este proyecto están documentadas en este a
 - **Host de confianza:** el servidor solo responde a `localhost`/`127.0.0.1`/`[::1]` salvo `PRAXEON_ALLOWED_HOSTS`; `praxeon-server`
   y `praxeon-web` generan un token por arranque si no hay `PRAXEON_API_KEY`.
 - Los comandos del agente ya no heredan todas las variables de entorno: si una herramienta necesita otra, `PRAXEON_CHILD_ENV_ALLOW`.
+- **Nombres de tres esquemas del OpenAPI.** Con las anotaciones modernas (`dict[...]`, `list[...]`), Pydantic nombra distinto
+  los envoltorios genéricos: `APIResponse_Dict_str__Any__` pasa a `APIResponse_dict_str__Any__`, `APIResponse_List_Dict_str__Any___`
+  a `APIResponse_list_dict_str__Any___` y `APIResponse_List_SessionSummaryResponse__` a `APIResponse_list_SessionSummaryResponse__`
+  (y su `title`). Rutas, campos y tipos no cambian; solo afecta a quien genere un cliente desde `openapi.json` y use esos nombres.
 
 ### Security
 - Remediación de la auditoría del 2026-11-01: claves independientes para API, JWT y recibos derivadas por HKDF (S-03); validación

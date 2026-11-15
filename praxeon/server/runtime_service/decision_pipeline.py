@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, UTC
 
 
 import hmac
@@ -10,7 +10,7 @@ import logging
 import os
 from praxeon.policy.sanitizer import payload_limit_from_env
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger("praxeon.server.dependencies")
 
@@ -58,13 +58,13 @@ class DecisionPipelineMixin:
     # PIPELINE DE DECISIÓN FORMAL (Proposal -> Evidence -> Risk -> Policy -> Capability)
     # =========================================================================
 
-    def _may_auto_confirm(self, tool: Optional[str]) -> bool:
+    def _may_auto_confirm(self, tool: str | None) -> bool:
         """Full Access autorizado aprueba solo lo que pide confirmación; las herramientas externas con efectos (MCP) no."""
         registry = getattr(self, "registry", None)
         spec = registry.get_tool(tool) if registry is not None and tool else None
         return spec is None or spec.auto_confirm
 
-    def _adopt_external_tool_profile(self, tool: Optional[str], assessment: Any) -> Any:
+    def _adopt_external_tool_profile(self, tool: str | None, assessment: Any) -> Any:
         """Una herramienta externa registrada (MCP) que el clasificador no reconoce (UNKNOWN) se clasifica según su ToolSpec.
 
         Solo se rebaja a «inspección» lo que el registro marca como solo lectura (por decisión del operador); cualquier
@@ -106,7 +106,7 @@ class DecisionPipelineMixin:
         return self.step_coordinator.propose_action(session_id, proposal)
 
     @staticmethod
-    def _node_scoped_state(state: SessionState, session_meta: Dict[str, Any], action_id: str) -> SessionState:
+    def _node_scoped_state(state: SessionState, session_meta: dict[str, Any], action_id: str) -> SessionState:
         """Vista del estado con solo los pasos del nodo de workflow que propone la acción (el resto de sesiones, intacto)."""
         if not session_meta.get("workflow_id"):
             return state
@@ -129,11 +129,11 @@ class DecisionPipelineMixin:
     # DECISION INSPECTOR (4 Tabs: Decision, Evidence, Policy, Receipt)
     # =========================================================================
 
-    def get_decision_detail(self, decision_id: str) -> Optional[DecisionDetailResponse]:
+    def get_decision_detail(self, decision_id: str) -> DecisionDetailResponse | None:
         """Recupera los datos estructurados en las 4 pestañas requeridas por la Sección 6.3 (delegado en DiagnosticsCoordinator)."""
         return self.diagnostics_coordinator.get_decision_detail(decision_id)
 
-    def _get_decision_detail_impl(self, decision_id: str) -> Optional[DecisionDetailResponse]:
+    def _get_decision_detail_impl(self, decision_id: str) -> DecisionDetailResponse | None:
         """Implementación interna de recuperación de detalle de decisión."""
         with self._lock:
             record = self._decisions.get(decision_id)
@@ -169,7 +169,7 @@ class DecisionPipelineMixin:
         receipt: DecisionReceipt = record["receipt"]
         risk: RiskDTO = record["risk"]
         policy: PolicyDTO = record["policy"]
-        providers: List[ProviderEvaluationDTO] = record["providers"]
+        providers: list[ProviderEvaluationDTO] = record["providers"]
 
         # Determinar atributos de ejecución para la subsección Execution
         mode_val = record.get("execution_mode") or getattr(receipt, "execution_mode", "local_restricted")
@@ -259,7 +259,7 @@ class DecisionPipelineMixin:
             receipt_tab=receipt_tab,
         )
 
-    def list_decisions_for_session(self, session_id: str) -> List[Dict[str, Any]]:
+    def list_decisions_for_session(self, session_id: str) -> list[dict[str, Any]]:
         """Lista cronológicamente las decisiones asociadas a una sesión recuperando de SQLite."""
         # 1. Recuperar del repositorio SQLite WAL
         records = self.decision_repository.list_by_session(session_id)
@@ -277,7 +277,7 @@ class DecisionPipelineMixin:
 
         return self._format_decision_records(records)
 
-    def list_all_decisions(self, session_id: Optional[str] = None, limit: int = 150) -> List[Dict[str, Any]]:
+    def list_all_decisions(self, session_id: str | None = None, limit: int = 150) -> list[dict[str, Any]]:
         """Lista cronológicamente o por recencia las decisiones del sistema."""
         if session_id:
             return self.list_decisions_for_session(session_id)
@@ -290,7 +290,7 @@ class DecisionPipelineMixin:
 
         return self._format_decision_records(records)
 
-    def _format_decision_records(self, records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def _format_decision_records(self, records: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Formatea registros de decisión para consumo por vistas de auditoría del frontend."""
         results = []
         for d in records:
@@ -340,7 +340,7 @@ class DecisionPipelineMixin:
             if isinstance(created_at_val, datetime):
                 created_at_str = created_at_val.isoformat()
             else:
-                created_at_str = str(created_at_val or datetime.now(timezone.utc).isoformat())
+                created_at_str = str(created_at_val or datetime.now(UTC).isoformat())
 
             # Proveedor principal
 
@@ -382,13 +382,13 @@ class DecisionPipelineMixin:
         self,
         decision_id: str,
         approved: bool,
-        reason: Optional[str] = None,
+        reason: str | None = None,
         actor: str = "human_operator",
-        operator_id: Optional[str] = None,
+        operator_id: str | None = None,
         role: str = "operator",
-        operator_token: Optional[str] = None,
+        operator_token: str | None = None,
         caller_is_verified_operator: bool = False,
-        security_profile: Optional[str] = None,
+        security_profile: str | None = None,
     ) -> ConfirmDecisionResponse:
         """Autoriza o bloquea una decisión en espera de aprobación humana (delegado en StepExecutionCoordinator)."""
         return self.step_coordinator.confirm_decision(
@@ -407,13 +407,13 @@ class DecisionPipelineMixin:
         self,
         decision_id: str,
         approved: bool,
-        reason: Optional[str] = None,
+        reason: str | None = None,
         actor: str = "human_operator",
-        operator_id: Optional[str] = None,
+        operator_id: str | None = None,
         role: str = "operator",
-        operator_token: Optional[str] = None,
+        operator_token: str | None = None,
         caller_is_verified_operator: bool = False,
-        security_profile: Optional[str] = None,
+        security_profile: str | None = None,
     ) -> ConfirmDecisionResponse:
         """Implementación interna de autorización o bloqueo de decisión."""
         with self._lock:
@@ -465,7 +465,7 @@ class DecisionPipelineMixin:
 
         session_id = record["session_id"]
         action: ActionCandidate = record["action"]
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         session_mode = record.get("execution_mode") or "local_restricted"
 
         if approved:
@@ -561,11 +561,11 @@ class DecisionPipelineMixin:
         decision_id: str,
         reason: str,
         actor: str = "human_operator",
-        operator_id: Optional[str] = None,
+        operator_id: str | None = None,
         role: str = "operator",
-        operator_token: Optional[str] = None,
+        operator_token: str | None = None,
         caller_is_verified_operator: bool = False,
-        security_profile: Optional[str] = None,
+        security_profile: str | None = None,
     ) -> ConfirmDecisionResponse:
         """Rechaza formalmente una decisión en espera de aprobación humana (REVIEW)."""
         return self.confirm_decision(
@@ -583,8 +583,8 @@ class DecisionPipelineMixin:
     def execute_decision(
         self,
         decision_id: str,
-        capability_token: Optional[Dict[str, Any]] = None,
-        operator_id: Optional[str] = None,
+        capability_token: dict[str, Any] | None = None,
+        operator_id: str | None = None,
         role: str = "operator",
     ) -> ExecuteDecisionResponse:
         """Ejecuta físicamente la herramienta autorizada en el sandbox o host (delegado en StepExecutionCoordinator)."""
@@ -598,8 +598,8 @@ class DecisionPipelineMixin:
     def _execute_decision_impl(
         self,
         decision_id: str,
-        capability_token: Optional[Dict[str, Any]] = None,
-        operator_id: Optional[str] = None,
+        capability_token: dict[str, Any] | None = None,
+        operator_id: str | None = None,
         role: str = "operator",
     ) -> ExecuteDecisionResponse:
         """Implementación interna de ejecución de decisión."""
@@ -647,9 +647,9 @@ class DecisionPipelineMixin:
                 try:
                     exp_dt = datetime.fromisoformat(exp) if isinstance(exp, str) else exp
                     if exp_dt:
-                        now_utc = datetime.now(timezone.utc)
+                        now_utc = datetime.now(UTC)
                         if exp_dt.tzinfo is None:
-                            exp_dt = exp_dt.replace(tzinfo=timezone.utc)
+                            exp_dt = exp_dt.replace(tzinfo=UTC)
                         if now_utc > exp_dt:
                             raise PolicyViolation(f"Ejecución física DENEGADA: El capability token ha expirado (expiró en: {exp_dt.isoformat()}).")
                 except PolicyViolation:
@@ -691,7 +691,7 @@ class DecisionPipelineMixin:
             )
             # Marcar recibo como ejecutado
             updated_receipt = receipt.model_copy(
-                update={"is_executed": True, "execution_timestamp": datetime.now(timezone.utc)}
+                update={"is_executed": True, "execution_timestamp": datetime.now(UTC)}
             )
             record["receipt"] = updated_receipt
             self.decision_repository.save(record)

@@ -11,7 +11,7 @@ import json
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from praxeon.agent_llm import BaseAgentLLM
 from praxeon.live_agent import parse_llm_steps
@@ -30,9 +30,9 @@ class LLMMeter:
     reported_cost_usd: float = 0.0
     has_reported_cost: bool = False
     failed_calls: int = 0
-    proposed: List[Dict[str, Any]] = field(default_factory=list)  # acciones propuestas por el modelo, en orden
+    proposed: list[dict[str, Any]] = field(default_factory=list)  # acciones propuestas por el modelo, en orden
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "llm_calls": self.calls, "prompt_tokens": self.prompt_tokens, "output_tokens": self.output_tokens,
             "cached_tokens": self.cached_tokens, "total_tokens": self.prompt_tokens + self.output_tokens,
@@ -70,7 +70,7 @@ class MeteredLLM(BaseAgentLLM):
             raise AttributeError(name)
         return getattr(self.inner, name)
 
-    def generate(self, messages: List[Dict[str, str]], system_prompt: Optional[str] = None) -> str:
+    def generate(self, messages: list[dict[str, str]], system_prompt: str | None = None) -> str:
         m = self.meter
         if hasattr(self.inner, "last_usage"):
             self.inner.last_usage = None
@@ -112,12 +112,12 @@ class MeteredLLM(BaseAgentLLM):
 class PriceTable:
     """Precios en USD por millón de tokens. Sin precio conocido el coste queda en None: no se inventa."""
 
-    prices: Dict[str, Dict[str, float]] = field(default_factory=dict)  # clave = subcadena del modelo
-    reference: Optional[Dict[str, float]] = None  # precio de referencia común para comparar modelos locales
+    prices: dict[str, dict[str, float]] = field(default_factory=dict)  # clave = subcadena del modelo
+    reference: dict[str, float] | None = None  # precio de referencia común para comparar modelos locales
 
     @classmethod
-    def load(cls, path: Optional[str], reference: Optional[str] = None) -> "PriceTable":
-        prices: Dict[str, Dict[str, float]] = {}
+    def load(cls, path: str | None, reference: str | None = None) -> PriceTable:
+        prices: dict[str, dict[str, float]] = {}
         if path:
             prices = json.loads(Path(path).read_text(encoding="utf-8"))
         ref = None
@@ -126,7 +126,7 @@ class PriceTable:
             ref = {"input": inp, "output": out, "cached": inp}
         return cls(prices=prices, reference=ref)
 
-    def lookup(self, provider: str, model: str) -> Optional[Dict[str, float]]:
+    def lookup(self, provider: str, model: str) -> dict[str, float] | None:
         if provider in ("ollama", "lmstudio"):
             return {"input": 0.0, "output": 0.0, "cached": 0.0}  # local: sin coste monetario por token
         for key, price in self.prices.items():
@@ -134,10 +134,10 @@ class PriceTable:
                 return price
         return None
 
-    def cost(self, provider: str, model: str, meter: Dict[str, Any]) -> Dict[str, Any]:
+    def cost(self, provider: str, model: str, meter: dict[str, Any]) -> dict[str, Any]:
         price = self.lookup(provider, model)
         fresh = max(0, meter["prompt_tokens"] - meter["cached_tokens"])
-        result: Dict[str, Any] = {"cost_usd": None, "cost_source": "unknown", "reference_cost_usd": None}
+        result: dict[str, Any] = {"cost_usd": None, "cost_source": "unknown", "reference_cost_usd": None}
         if meter.get("reported_cost_usd") is not None:
             result.update(cost_usd=meter["reported_cost_usd"], cost_source="reported_by_provider")
         elif price is not None:

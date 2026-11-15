@@ -2,7 +2,7 @@
 
 import hashlib
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -14,7 +14,7 @@ class ToolCall(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     tool_name: str
-    arguments: Dict[str, Any] = Field(default_factory=dict)
+    arguments: dict[str, Any] = Field(default_factory=dict)
 
 
 class ActionCandidate(BaseModel):
@@ -23,14 +23,14 @@ class ActionCandidate(BaseModel):
 
     id: str
     description: str
-    tool_call: Optional[ToolCall] = None
-    rationale: Optional[str] = None
-    requires_evidence: List[str] = Field(default_factory=list)
+    tool_call: ToolCall | None = None
+    rationale: str | None = None
+    requires_evidence: list[str] = Field(default_factory=list)
     estimated_cost: float = 0.0
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
     synthetic_fallback: bool = False
-    model_source: Optional[str] = None
-    provenance: Optional[ActionProvenance] = None
+    model_source: str | None = None
+    provenance: ActionProvenance | None = None
 
 
 def compute_action_hash(action: ActionCandidate) -> str:

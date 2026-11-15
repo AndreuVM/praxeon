@@ -9,9 +9,9 @@ Analiza directivas en lenguaje natural y contexto operacional para inferir:
 6. Emisión de especificación formal inmutable TaskRequirement.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 import re
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any
 import uuid
 
 from praxeon.agents.protocol import MessagePriority
@@ -42,7 +42,7 @@ class TaskClassifier:
     ]
 
     # Mapeo canónico de patrones hacia capabilities de agentes
-    CAPABILITY_PATTERNS: Dict[str, List[str]] = {
+    CAPABILITY_PATTERNS: dict[str, list[str]] = {
         "code_authoring": [
             r"\b(implement|code|write\s+code|develop|create\s+function|create\s+class|feature|script|author)\b",
             r"\b(build\s+component|add\s+endpoint|new\s+endpoint|implement\s+(?:handler|service|interface|endpoint))\b",
@@ -87,7 +87,7 @@ class TaskClassifier:
     }
 
     # Herramientas asociadas a capacidades o patrones
-    TOOL_INFERENCE_RULES: Dict[str, List[str]] = {
+    TOOL_INFERENCE_RULES: dict[str, list[str]] = {
         "run_command": [
             r"\b(command|exec|terminal|bash|shell|run\s+tests|pytest|compile|build\s+project)\b",
         ],
@@ -108,10 +108,10 @@ class TaskClassifier:
         ],
     }
 
-    def infer_risk_level(self, prompt: str, target_files: Optional[List[str]] = None) -> Tuple[RiskLevel, List[str]]:
+    def infer_risk_level(self, prompt: str, target_files: list[str] | None = None) -> tuple[RiskLevel, list[str]]:
         """Determina el nivel de riesgo inferido y los factores de riesgo detectados."""
         prompt_lower = prompt.lower()
-        reasons: List[str] = []
+        reasons: list[str] = []
 
         # 1. Comprobar riesgo CRITICAL
         for pattern in self.CRITICAL_RISK_PATTERNS:
@@ -150,10 +150,10 @@ class TaskClassifier:
         reasons.append("Operación de bajo impacto sin factores de riesgo detectados")
         return RiskLevel.LOW, reasons
 
-    def infer_capabilities(self, prompt: str) -> List[str]:
+    def infer_capabilities(self, prompt: str) -> list[str]:
         """Extrae el conjunto de capacidades canónicas requeridas para la tarea."""
         prompt_lower = prompt.lower()
-        matched: List[str] = []
+        matched: list[str] = []
 
         for cap_name, patterns in self.CAPABILITY_PATTERNS.items():
             for pat in patterns:
@@ -163,9 +163,9 @@ class TaskClassifier:
 
         return sorted(list(set(matched)))
 
-    def infer_required_tools(self, prompt: str, explicit_tools: Optional[List[str]] = None) -> List[str]:
+    def infer_required_tools(self, prompt: str, explicit_tools: list[str] | None = None) -> list[str]:
         """Infiere herramientas indispensables combinando explícitas y patrones del prompt."""
-        tools: Set[str] = set(explicit_tools or [])
+        tools: set[str] = set(explicit_tools or [])
         prompt_lower = prompt.lower()
 
         for tool_name, patterns in self.TOOL_INFERENCE_RULES.items():
@@ -179,10 +179,10 @@ class TaskClassifier:
     def infer_complexity(
         self,
         prompt: str,
-        target_files: Optional[List[str]] = None,
-        capabilities: Optional[List[str]] = None,
+        target_files: list[str] | None = None,
+        capabilities: list[str] | None = None,
         risk: RiskLevel = RiskLevel.LOW,
-    ) -> Tuple[TaskComplexity, Dict[str, Any]]:
+    ) -> tuple[TaskComplexity, dict[str, Any]]:
         """Calcula la complejidad multidimensional de la tarea."""
         words = prompt.strip().split()
         word_count = len(words)
@@ -255,9 +255,9 @@ class TaskClassifier:
     def estimate_cost_and_tokens(
         self,
         prompt: str,
-        target_files: Optional[List[str]] = None,
+        target_files: list[str] | None = None,
         complexity: TaskComplexity = TaskComplexity.MEDIUM,
-    ) -> Tuple[int, float]:
+    ) -> tuple[int, float]:
         """Estima los tokens totales (entrada + salida) y el coste proyectado en USD."""
         words = len(prompt.split())
         prompt_tokens = int(words * 1.33)
@@ -283,11 +283,11 @@ class TaskClassifier:
     def classify(
         self,
         prompt: str,
-        task_id: Optional[str] = None,
-        target_files: Optional[List[str]] = None,
-        explicit_tools: Optional[List[str]] = None,
+        task_id: str | None = None,
+        target_files: list[str] | None = None,
+        explicit_tools: list[str] | None = None,
         priority: MessagePriority = MessagePriority.NORMAL,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ) -> TaskRequirement:
         """Realiza el análisis multidimensional integral y construye el TaskRequirement."""
         tid = task_id or f"task_{uuid.uuid4().hex[:8]}"
@@ -324,7 +324,7 @@ class TaskClassifier:
             "complexity_details": comp_details,
             "estimated_tokens": est_tokens,
             "estimated_cost": est_cost,
-            "classified_at": datetime.now(timezone.utc).isoformat(),
+            "classified_at": datetime.now(UTC).isoformat(),
         }
 
         return TaskRequirement(

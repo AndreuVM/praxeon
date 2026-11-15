@@ -1,7 +1,6 @@
 """Reglas de permisos, confirmaciones y gobierno de ejecución (policy/permissions.py)."""
 
-from datetime import datetime, timedelta, timezone
-from typing import Dict, List, Optional, Set
+from datetime import datetime, timedelta, UTC
 from pydantic import BaseModel, ConfigDict, Field
 from praxeon.domain.models import ActionCandidate, DecisionStatus, PolicyDecision, RiskAssessment
 from praxeon.policy.registry import ToolRegistry
@@ -17,21 +16,21 @@ class HumanApprovalTicket(BaseModel):
     action_id: str
     action_hash: str
     approver_id: str = "operator"
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    expires_at: Optional[datetime] = None
-    reason: Optional[str] = None
-    signature: Optional[str] = None
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    expires_at: datetime | None = None
+    reason: str | None = None
+    signature: str | None = None
 
-    def is_expired(self, now: Optional[datetime] = None) -> bool:
+    def is_expired(self, now: datetime | None = None) -> bool:
         """Comprueba si el ticket ha superado su ventana temporal de validez."""
         if self.expires_at is None:
             return False
-        current_time = now or datetime.now(timezone.utc)
+        current_time = now or datetime.now(UTC)
         exp = self.expires_at
         if exp.tzinfo is None and current_time.tzinfo is not None:
-            exp = exp.replace(tzinfo=timezone.utc)
+            exp = exp.replace(tzinfo=UTC)
         elif exp.tzinfo is not None and current_time.tzinfo is None:
-            current_time = current_time.replace(tzinfo=timezone.utc)
+            current_time = current_time.replace(tzinfo=UTC)
         return current_time > exp
 
 
@@ -41,16 +40,16 @@ class PermissionManager:
 
     def __init__(
         self,
-        registry: Optional[ToolRegistry] = None,
+        registry: ToolRegistry | None = None,
         require_confirmation_for_high_risk: bool = True,
-        audit_log_path: Optional[str] = None,
+        audit_log_path: str | None = None,
     ):
         import os
         self.registry = registry or ToolRegistry(register_defaults=True)
         self.require_confirmation_for_high_risk = require_confirmation_for_high_risk
         self.audit_log_path = audit_log_path
-        self._confirmed_actions: Set[str] = set()
-        self._tickets: Dict[str, HumanApprovalTicket] = {}
+        self._confirmed_actions: set[str] = set()
+        self._tickets: dict[str, HumanApprovalTicket] = {}
 
         if self.audit_log_path and os.path.exists(self.audit_log_path):
             self._load_audit_log()
@@ -59,7 +58,7 @@ class PermissionManager:
         if not self.audit_log_path:
             return
         try:
-            with open(self.audit_log_path, "r", encoding="utf-8") as f:
+            with open(self.audit_log_path, encoding="utf-8") as f:
                 for line in f:
                     line = line.strip()
                     if line:
@@ -83,13 +82,13 @@ class PermissionManager:
     def confirm_action(
         self,
         action_id: str,
-        action_hash: Optional[str] = None,
+        action_hash: str | None = None,
         approver_id: str = "operator",
-        ttl_seconds: Optional[float] = 300.0,
-        reason: Optional[str] = None,
+        ttl_seconds: float | None = 300.0,
+        reason: str | None = None,
     ) -> HumanApprovalTicket:
         """Marca una acción como confirmada explícitamente emitiendo un ticket auditable."""
-        expires_at = datetime.now(timezone.utc) + timedelta(seconds=ttl_seconds) if ttl_seconds else None
+        expires_at = datetime.now(UTC) + timedelta(seconds=ttl_seconds) if ttl_seconds else None
         ticket = HumanApprovalTicket(
 
             action_id=action_id,
@@ -101,11 +100,11 @@ class PermissionManager:
         self.grant_approval(ticket)
         return ticket
 
-    def get_approval_ticket(self, action_id: str) -> Optional[HumanApprovalTicket]:
+    def get_approval_ticket(self, action_id: str) -> HumanApprovalTicket | None:
         """Recupera el ticket de aprobación asociado a una acción."""
         return self._tickets.get(action_id)
 
-    def is_action_confirmed(self, action_id: str, action_hash: Optional[str] = None) -> bool:
+    def is_action_confirmed(self, action_id: str, action_hash: str | None = None) -> bool:
         """Verifica si la acción cuenta con confirmación vigente y coincidente en hash."""
         ticket = self._tickets.get(action_id)
         if not ticket:
@@ -120,7 +119,7 @@ class PermissionManager:
         self,
         action: ActionCandidate,
         risk: RiskAssessment,
-        forbidden_tools: Optional[List[str]] = None,
+        forbidden_tools: list[str] | None = None,
     ) -> PolicyDecision:
         """Determina la autorización operacional de la herramienta candidata."""
         forbidden = forbidden_tools or []

@@ -9,7 +9,7 @@ Implementa las fórmulas formales de la sección 6 de la auditoría técnica:
 """
 
 import math
-from typing import Any, Dict, List, Optional
+from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 from praxeon.domain.models import DecisionStatus
 
@@ -52,22 +52,22 @@ class EvaluationMetrics(BaseModel):
     latency_mean_ms: float
 
     # Desglose por clases (ALLOW, BLOCK, REPLAN, ABSTAIN)
-    confusion_matrix: Dict[str, Dict[str, int]] = Field(default_factory=dict)
-    class_metrics: Dict[str, Dict[str, float]] = Field(default_factory=dict)
+    confusion_matrix: dict[str, dict[str, int]] = Field(default_factory=dict)
+    class_metrics: dict[str, dict[str, float]] = Field(default_factory=dict)
 
     # Métricas de Calibración y Routing (Fase 3 / v0.4)
-    ece: Optional[float] = None
-    brier_score: Optional[float] = None
-    local_decision_rate: Optional[float] = None
-    escalation_rate: Optional[float] = None
-    provider_disagreement_rate: Optional[float] = None
+    ece: float | None = None
+    brier_score: float | None = None
+    local_decision_rate: float | None = None
+    escalation_rate: float | None = None
+    provider_disagreement_rate: float | None = None
 
     @property
-    def economic_value(self) -> Dict[str, float]:
+    def economic_value(self) -> dict[str, float]:
         """Calcula el valor económico neto del supervisor según la Sección 20."""
         return compute_navigator_economic_value(self)
 
-    def to_summary_dict(self) -> Dict[str, Any]:
+    def to_summary_dict(self) -> dict[str, Any]:
 
         """Devuelve un resumen plano legible para reportes y tablas."""
         summary = {
@@ -106,7 +106,7 @@ class MetricsCalculator:
     """Calcula las métricas de evaluación a partir de predicciones y ground truth."""
 
     @staticmethod
-    def _percentile(values: List[float], p: float) -> float:
+    def _percentile(values: list[float], p: float) -> float:
         """Calcula el percentil p (0..1) de una lista de floats."""
         if not values:
             return 0.0
@@ -123,7 +123,7 @@ class MetricsCalculator:
     @classmethod
     def calculate(
         cls,
-        results: List[Dict[str, Any]],
+        results: list[dict[str, Any]],
     ) -> EvaluationMetrics:
         """Calcula las métricas a partir de una lista de resultados de escenarios."""
         total = len(results)
@@ -151,7 +151,7 @@ class MetricsCalculator:
             )
 
         all_statuses = [s.value for s in DecisionStatus]
-        matrix: Dict[str, Dict[str, int]] = {
+        matrix: dict[str, dict[str, int]] = {
             exp: {act: 0 for act in all_statuses} for exp in all_statuses
         }
 
@@ -174,7 +174,7 @@ class MetricsCalculator:
         unverified_finish_blocked = 0
         unverified_finish_total = 0
 
-        latencies: List[float] = []
+        latencies: list[float] = []
 
         for r in results:
             exp_val = r["expected_status"].value if hasattr(r["expected_status"], "value") else str(r["expected_status"])
@@ -230,10 +230,10 @@ class MetricsCalculator:
         accuracy = correct / total
 
         # Macro precision, recall, f1 sobre todas las clases
-        precisions: List[float] = []
-        recalls: List[float] = []
+        precisions: list[float] = []
+        recalls: list[float] = []
 
-        class_metrics: Dict[str, Dict[str, float]] = {}
+        class_metrics: dict[str, dict[str, float]] = {}
         for s in all_statuses:
             tp = matrix[s][s]
             fp = sum(matrix[other][s] for other in all_statuses if other != s)
@@ -330,8 +330,8 @@ class MetricsCalculator:
                 if r.get("disagreement") or r.get("disagreement_with_primary"):
                     disagreements += 1
 
-        ece_val: Optional[float] = None
-        brier_val: Optional[float] = None
+        ece_val: float | None = None
+        brier_val: float | None = None
         if confidences and len(confidences) == len(labels):
             from praxeon.evaluation.calibration import CalibrationCalculator
             cal = CalibrationCalculator.compute_ece(confidences, labels)
@@ -382,7 +382,7 @@ def compute_navigator_economic_value(
     supervisor_cost_per_query: float = 0.002,
     latency_cost_per_second: float = 0.01,
     false_block_penalty: float = 10.0,
-) -> Dict[str, float]:
+) -> dict[str, float]:
     """Calcula el valor económico neto del supervisor según la Sección 20 de la Auditoría Técnica.
 
     NavigatorValue = AvoidedFailureCost - NavigatorCost - AddedLatencyCost - FalseBlockCost

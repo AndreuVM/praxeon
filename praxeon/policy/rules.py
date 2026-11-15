@@ -18,7 +18,8 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from functools import cached_property
-from typing import TYPE_CHECKING, Any, ClassVar, Dict, Iterable, List, Optional, Set
+from typing import TYPE_CHECKING, Any, ClassVar
+from collections.abc import Iterable
 
 from praxeon.domain.models import (
     ActionCandidate,
@@ -47,7 +48,7 @@ CHOICE_PROBABILITY_PROVIDERS = ("laya", "kev")
 class SupervisorReading:
     """Lectura del juicio del supervisor que comparten varias reglas del grupo SUPERVISOR_RULES."""
 
-    label: Optional[str]
+    label: str | None
     advisory: bool
     weak_veto: bool
     advisory_review: bool
@@ -55,8 +56,8 @@ class SupervisorReading:
     provider_tag: str
 
     @classmethod
-    def read(cls, provider: ProviderAssessment, engine: "PolicyEngine") -> "SupervisorReading":
-        metadata: Dict[str, Any] = provider.metadata if isinstance(provider.metadata, dict) else {}
+    def read(cls, provider: ProviderAssessment, engine: PolicyEngine) -> SupervisorReading:
+        metadata: dict[str, Any] = provider.metadata if isinstance(provider.metadata, dict) else {}
         choice = metadata.get("choice", {})
         label = choice.get("label")
         weak_veto = (
@@ -89,24 +90,24 @@ class SupervisorReading:
 class PolicyContext:
     """Todo lo que las reglas necesitan para decidir sobre una acción; ``reason_codes`` acumula los motivos."""
 
-    engine: "PolicyEngine"
+    engine: PolicyEngine
     action: ActionCandidate
-    tool_name: Optional[str]
+    tool_name: str | None
     risk: RiskAssessment
-    operation_assessment: Optional[CommandRiskAssessment] = None
-    provider_assessment: Optional[ProviderAssessment] = None
-    available_evidence: List[Evidence] = field(default_factory=list)
-    forbidden_tools: Set[str] = field(default_factory=set)
-    completion_assessment: Optional[Any] = None
+    operation_assessment: CommandRiskAssessment | None = None
+    provider_assessment: ProviderAssessment | None = None
+    available_evidence: list[Evidence] = field(default_factory=list)
+    forbidden_tools: set[str] = field(default_factory=set)
+    completion_assessment: Any | None = None
     is_read_only: bool = False
-    reason_codes: List[str] = field(default_factory=list)
+    reason_codes: list[str] = field(default_factory=list)
 
     @cached_property
     def action_hash(self) -> str:
         return compute_action_hash(self.action)
 
     @cached_property
-    def supervisor(self) -> Optional[SupervisorReading]:
+    def supervisor(self) -> SupervisorReading | None:
         """Lectura del supervisor, o None si no hay supervisor o no está disponible (eso lo decide el fail-safe)."""
         provider = self.provider_assessment
         if provider is None or not provider.available:
@@ -118,7 +119,7 @@ class PolicyContext:
         return bool(self.tool_name and not self.engine.registry.is_known(self.tool_name))
 
     @property
-    def category(self) -> Optional[CommandCategory]:
+    def category(self) -> CommandCategory | None:
         return self.operation_assessment.category if self.operation_assessment is not None else None
 
 
@@ -128,14 +129,14 @@ class Rule(ABC):
     name: ClassVar[str]
 
     @abstractmethod
-    def apply(self, ctx: PolicyContext) -> Optional[DecisionStatus]:
+    def apply(self, ctx: PolicyContext) -> DecisionStatus | None:
         """Evalúa la regla; puede añadir motivos a ``ctx.reason_codes`` aunque no decida."""
 
     def __repr__(self) -> str:
         return f"<Rule {self.name}>"
 
 
-def run_rules(rules: Iterable[Rule], ctx: PolicyContext) -> Optional[DecisionStatus]:
+def run_rules(rules: Iterable[Rule], ctx: PolicyContext) -> DecisionStatus | None:
     """Aplica las reglas en orden y devuelve el primer veredicto, o None si ninguna decide."""
     for rule in rules:
         status = rule.apply(ctx)
@@ -152,7 +153,7 @@ class ForbiddenToolRule(Rule):
 
     name = "forbidden_tool"
 
-    def apply(self, ctx: PolicyContext) -> Optional[DecisionStatus]:
+    def apply(self, ctx: PolicyContext) -> DecisionStatus | None:
         if ctx.tool_name and ctx.tool_name in ctx.forbidden_tools:
             ctx.reason_codes.append("TOOL_FORBIDDEN_BY_SUPERVISOR")
             return DecisionStatus.BLOCK
@@ -164,7 +165,7 @@ class UnknownToolSignalRule(Rule):
 
     name = "unknown_tool_signal"
 
-    def apply(self, ctx: PolicyContext) -> Optional[DecisionStatus]:
+    def apply(self, ctx: PolicyContext) -> DecisionStatus | None:
         if ctx.tool_is_unknown:
             ctx.reason_codes.append("UNKNOWN_TOOL_UNCERTAIN")
             ctx.reason_codes.append("UNKNOWN_TOOL_NOT_REGISTERED")
@@ -176,7 +177,7 @@ class PrivilegeEscalationRule(Rule):
 
     name = "privilege_escalation"
 
-    def apply(self, ctx: PolicyContext) -> Optional[DecisionStatus]:
+    def apply(self, ctx: PolicyContext) -> DecisionStatus | None:
         op = ctx.operation_assessment
         if op is not None and (op.category == CommandCategory.PRIVILEGE or op.privilege_escalation):
             ctx.reason_codes.append("PRIVILEGE_ESCALATION_BLOCK")
@@ -190,7 +191,7 @@ class DestructiveCommandRule(Rule):
 
     name = "destructive_command"
 
-    def apply(self, ctx: PolicyContext) -> Optional[DecisionStatus]:
+    def apply(self, ctx: PolicyContext) -> DecisionStatus | None:
         op = ctx.operation_assessment
         if op is not None and (op.category == CommandCategory.DESTRUCTIVE or op.destructive):
             ctx.reason_codes.append("DESTRUCTIVE_COMMAND_BLOCK")
@@ -206,7 +207,7 @@ class RequiredEvidenceRule(Rule):
 
     name = "required_evidence"
 
-    def apply(self, ctx: PolicyContext) -> Optional[DecisionStatus]:
+    def apply(self, ctx: PolicyContext) -> DecisionStatus | None:
         claims = {ev.claim.lower().strip() for ev in ctx.available_evidence}
         missing = [req for req in ctx.action.requires_evidence or [] if req.lower().strip() not in claims]
         if missing:
@@ -220,7 +221,7 @@ class UnverifiedCompletionRule(Rule):
 
     name = "unverified_completion"
 
-    def apply(self, ctx: PolicyContext) -> Optional[DecisionStatus]:
+    def apply(self, ctx: PolicyContext) -> DecisionStatus | None:
         completion = ctx.completion_assessment
         if completion is None or getattr(completion, "is_complete", True):
             return None
@@ -238,7 +239,7 @@ class ProviderUnavailableRule(Rule):
 
     name = "provider_unavailable"
 
-    def apply(self, ctx: PolicyContext) -> Optional[DecisionStatus]:
+    def apply(self, ctx: PolicyContext) -> DecisionStatus | None:
         provider = ctx.provider_assessment
         if provider is None or provider.available:
             return None
@@ -260,7 +261,7 @@ class SupervisorNoticesRule(Rule):
 
     name = "supervisor_notices"
 
-    def apply(self, ctx: PolicyContext) -> Optional[DecisionStatus]:
+    def apply(self, ctx: PolicyContext) -> DecisionStatus | None:
         reading, provider = ctx.supervisor, ctx.provider_assessment
         if reading is None or provider is None:
             return None
@@ -278,7 +279,7 @@ class AdvisoryReviewRule(Rule):
 
     name = "advisory_review"
 
-    def apply(self, ctx: PolicyContext) -> Optional[DecisionStatus]:
+    def apply(self, ctx: PolicyContext) -> DecisionStatus | None:
         reading = ctx.supervisor
         if reading is None or not reading.advisory_review:
             return None
@@ -294,7 +295,7 @@ class LowProviderConfidenceRule(Rule):
 
     name = "low_provider_confidence"
 
-    def apply(self, ctx: PolicyContext) -> Optional[DecisionStatus]:
+    def apply(self, ctx: PolicyContext) -> DecisionStatus | None:
         reading, provider = ctx.supervisor, ctx.provider_assessment
         if reading is None or provider is None or reading.advisory:
             return None
@@ -315,7 +316,7 @@ class SupervisorBlockRule(Rule):
 
     name = "supervisor_block"
 
-    def apply(self, ctx: PolicyContext) -> Optional[DecisionStatus]:
+    def apply(self, ctx: PolicyContext) -> DecisionStatus | None:
         reading, provider = ctx.supervisor, ctx.provider_assessment
         if reading is None or provider is None or not reading.can_veto:
             return None
@@ -330,7 +331,7 @@ class LoopDetectionRule(Rule):
 
     name = "loop_detection"
 
-    def apply(self, ctx: PolicyContext) -> Optional[DecisionStatus]:
+    def apply(self, ctx: PolicyContext) -> DecisionStatus | None:
         provider = ctx.provider_assessment
         if ctx.supervisor is None or provider is None:
             return None
@@ -345,7 +346,7 @@ class SupervisorReplanRule(Rule):
 
     name = "supervisor_replan"
 
-    def apply(self, ctx: PolicyContext) -> Optional[DecisionStatus]:
+    def apply(self, ctx: PolicyContext) -> DecisionStatus | None:
         reading, provider = ctx.supervisor, ctx.provider_assessment
         if reading is None or provider is None or not reading.can_veto:
             return None
@@ -364,7 +365,7 @@ class LowGroundingRule(Rule):
 
     name = "low_grounding"
 
-    def apply(self, ctx: PolicyContext) -> Optional[DecisionStatus]:
+    def apply(self, ctx: PolicyContext) -> DecisionStatus | None:
         reading, provider = ctx.supervisor, ctx.provider_assessment
         if reading is None or provider is None or reading.advisory:
             return None
@@ -386,7 +387,7 @@ class CriticalRiskRule(Rule):
 
     name = "critical_risk"
 
-    def apply(self, ctx: PolicyContext) -> Optional[DecisionStatus]:
+    def apply(self, ctx: PolicyContext) -> DecisionStatus | None:
         if ctx.risk.level == RiskLevel.CRITICAL:
             ctx.reason_codes.append("CRITICAL_OPERATIONAL_RISK")
             return DecisionStatus.BLOCK
@@ -397,10 +398,10 @@ class ConfirmationRule(Rule):
     """Regla que pide confirmación humana: ALLOW si una persona ya confirmó esta acción exacta, si no ABSTAIN."""
 
     @abstractmethod
-    def abstain_code(self, ctx: PolicyContext) -> Optional[str]:
+    def abstain_code(self, ctx: PolicyContext) -> str | None:
         """Motivo por el que la acción necesita confirmación, o None si esta regla no la pide."""
 
-    def apply(self, ctx: PolicyContext) -> Optional[DecisionStatus]:
+    def apply(self, ctx: PolicyContext) -> DecisionStatus | None:
         code = self.abstain_code(ctx)
         if code is None:
             return None
@@ -424,7 +425,7 @@ class ContentLossReviewRule(ConfirmationRule):
 
     name = "content_loss_review"
 
-    def abstain_code(self, ctx: PolicyContext) -> Optional[str]:
+    def abstain_code(self, ctx: PolicyContext) -> str | None:
         op = ctx.operation_assessment
         matched = set(op.matched_rules or []) if op is not None else set()
         if not matched & REVIEW_RULES:
@@ -439,7 +440,7 @@ class ExternalEffectConfirmationRule(ConfirmationRule):
 
     name = "external_effect_confirmation"
 
-    def abstain_code(self, ctx: PolicyContext) -> Optional[str]:
+    def abstain_code(self, ctx: PolicyContext) -> str | None:
         category = ctx.category
         if category in (CommandCategory.REMOTE_MUTATION, CommandCategory.NETWORK):
             return f"{category.name}_REQUIRES_CONFIRMATION"
@@ -451,7 +452,7 @@ class UnknownOperationRule(ConfirmationRule):
 
     name = "unknown_operation"
 
-    def abstain_code(self, ctx: PolicyContext) -> Optional[str]:
+    def abstain_code(self, ctx: PolicyContext) -> str | None:
         return "UNKNOWN_OPERATION_REVIEW" if ctx.category == CommandCategory.UNKNOWN else None
 
 
@@ -460,7 +461,7 @@ class UnknownToolConfirmationRule(ConfirmationRule):
 
     name = "unknown_tool_confirmation"
 
-    def abstain_code(self, ctx: PolicyContext) -> Optional[str]:
+    def abstain_code(self, ctx: PolicyContext) -> str | None:
         return "UNKNOWN_TOOL_REQUIRES_CONFIRMATION" if ctx.tool_is_unknown else None
 
 
@@ -469,7 +470,7 @@ class RiskConfirmationRule(ConfirmationRule):
 
     name = "risk_confirmation"
 
-    def abstain_code(self, ctx: PolicyContext) -> Optional[str]:
+    def abstain_code(self, ctx: PolicyContext) -> str | None:
         return "HUMAN_CONFIRMATION_REQUIRED" if ctx.risk.requires_confirmation else None
 
 
@@ -481,7 +482,7 @@ class AuthorizeRule(Rule):
 
     name = "authorize"
 
-    def apply(self, ctx: PolicyContext) -> Optional[DecisionStatus]:
+    def apply(self, ctx: PolicyContext) -> DecisionStatus | None:
         ctx.reason_codes.append("GROUNDED_LOW_RISK_AUTHORIZED")
         return DecisionStatus.ALLOW
 

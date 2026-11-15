@@ -1,7 +1,7 @@
 """Esquemas de respuesta y confirmación de decisiones para PRAXEON 1.0 (Sección 3.3 y 6.3)."""
 
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import datetime, UTC
+from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -11,7 +11,7 @@ class ProviderEvaluationDTO(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     name: str
-    score: Optional[float] = None
+    score: float | None = None
     verdict: str  # ALLOW, REVIEW, BLOCK, UNAVAILABLE
     available: bool = True
 
@@ -22,7 +22,7 @@ class RiskDTO(BaseModel):
 
     level: str  # LOW, MEDIUM, HIGH, CRITICAL
     score: float
-    reasons: List[str] = Field(default_factory=list)
+    reasons: list[str] = Field(default_factory=list)
 
 
 class PolicyDTO(BaseModel):
@@ -30,7 +30,7 @@ class PolicyDTO(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     decision: str  # ALLOW, BLOCK, REQUIRE_HUMAN_CONFIRMATION, REPLAN
-    reason_codes: List[str] = Field(default_factory=list)
+    reason_codes: list[str] = Field(default_factory=list)
     requires_confirmation: bool = False
 
 
@@ -43,12 +43,12 @@ class DecisionResponse(BaseModel):
     status: str  # ALLOW, REVIEW, BLOCK, PENDING
     action_hash: str
     risk: RiskDTO
-    providers: List[ProviderEvaluationDTO] = Field(default_factory=list)
+    providers: list[ProviderEvaluationDTO] = Field(default_factory=list)
     policy: PolicyDTO
     execution_mode: str = "local_restricted"
-    capability: Optional[Dict[str, Any]] = None
-    expires_at: Optional[datetime] = None
-    operation_assessment: Optional[Dict[str, Any]] = None
+    capability: dict[str, Any] | None = None
+    expires_at: datetime | None = None
+    operation_assessment: dict[str, Any] | None = None
 
 
 class DecisionDetailResponse(BaseModel):
@@ -60,33 +60,33 @@ class DecisionDetailResponse(BaseModel):
     action_id: str
 
     # Pestaña 1: Decision
-    decision_tab: Dict[str, Any]
+    decision_tab: dict[str, Any]
 
     # Pestaña 2: Evidence
-    evidence_tab: Dict[str, Any]
+    evidence_tab: dict[str, Any]
 
     # Pestaña 3: Policy
-    policy_tab: Dict[str, Any]
+    policy_tab: dict[str, Any]
 
     # Pestaña 4: Receipt
-    receipt_tab: Dict[str, Any]
+    receipt_tab: dict[str, Any]
 
 
 class ConfirmDecisionRequest(BaseModel):
     """Petición humana para aprobar o rechazar una decisión en espera (REVIEW)."""
     approved: bool = Field(..., description="True para autorizar la acción; False para bloquearla")
-    reason: Optional[str] = Field(None, description="Justificación u observaciones del revisor humano (obligatorio al rechazar)")
-    actor: Optional[str] = Field("human_operator", description="Identidad del supervisor humano")
-    operator_id: Optional[str] = Field("operator_admin", description="ID de usuario del operador humano")
-    operator_token: Optional[str] = Field(None, description="Token o clave del operador para autenticación e integridad de confirmación (Finding 14)")
+    reason: str | None = Field(None, description="Justificación u observaciones del revisor humano (obligatorio al rechazar)")
+    actor: str | None = Field("human_operator", description="Identidad del supervisor humano")
+    operator_id: str | None = Field("operator_admin", description="ID de usuario del operador humano")
+    operator_token: str | None = Field(None, description="Token o clave del operador para autenticación e integridad de confirmación (Finding 14)")
 
 
 class RejectDecisionRequest(BaseModel):
     """Petición explícita para rechazar una decisión en espera (REVIEW) con justificación obligatoria."""
     reason: str = Field(..., description="Justificación obligatoria del rechazo del operador")
-    actor: Optional[str] = Field("human_operator", description="Identidad del supervisor humano")
-    operator_id: Optional[str] = Field("operator_admin", description="ID de usuario del operador humano")
-    operator_token: Optional[str] = Field(None, description="Token o clave del operador para autenticación e integridad de confirmación (Finding 14)")
+    actor: str | None = Field("human_operator", description="Identidad del supervisor humano")
+    operator_id: str | None = Field("operator_admin", description="ID de usuario del operador humano")
+    operator_token: str | None = Field(None, description="Token o clave del operador para autenticación e integridad de confirmación (Finding 14)")
 
 
 class ConfirmDecisionResponse(BaseModel):
@@ -96,18 +96,18 @@ class ConfirmDecisionResponse(BaseModel):
     decision_id: str
     status: str  # ALLOW o BLOCKED
     message: str
-    execution_mode: Optional[str] = "local_restricted"
-    operator_id: Optional[str] = None
-    role: Optional[str] = None
-    capability: Optional[Dict[str, Any]] = None
-    confirmed_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    execution_mode: str | None = "local_restricted"
+    operator_id: str | None = None
+    role: str | None = None
+    capability: dict[str, Any] | None = None
+    confirmed_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 
 class ExecuteDecisionRequest(BaseModel):
     """Petición para invocar la ejecución física con capability token."""
-    capability_token: Optional[Dict[str, Any]] = Field(None, description="Capability token firmado emitido por el runtime")
-    operator_id: Optional[str] = Field(None, description="Identificador del operador que dispara la ejecución")
+    capability_token: dict[str, Any] | None = Field(None, description="Capability token firmado emitido por el runtime")
+    operator_id: str | None = Field(None, description="Identificador del operador que dispara la ejecución")
 
 
 class ExecuteDecisionResponse(BaseModel):

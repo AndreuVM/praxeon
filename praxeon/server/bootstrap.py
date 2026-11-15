@@ -15,7 +15,7 @@ import logging
 import os
 import secrets
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 from praxeon.agents.bus import AgentMessageBus
 from praxeon.agents.registry import AgentRegistry
@@ -63,7 +63,7 @@ logger = logging.getLogger("praxeon.server.dependencies")
 DEFAULT_AGENT_TEMPLATES = ("developer", "security_auditor", "researcher", "writer", "code_reviewer")
 
 
-def resolve_security_profile(profile: Optional[str] = None) -> str:
+def resolve_security_profile(profile: str | None = None) -> str:
     """Perfil de seguridad del proceso: el indicado o ``PRAXEON_PROFILE``/``PRAXEON_ENV``; ``dev`` por defecto."""
     return (profile or os.environ.get("PRAXEON_PROFILE") or os.environ.get("PRAXEON_ENV") or "dev").lower().strip()
 
@@ -146,20 +146,20 @@ def _agent_registry(db_dir: str) -> AgentRegistry:
 
 def build_components(
     *,
-    config: Optional[PraxeonConfig] = None,
-    db_dir: Optional[str] = None,
-    security_profile: Optional[str] = None,
-    event_bus: Optional[EventBus] = None,
-    state_store: Optional[SqliteStateStore] = None,
-    nonce_store: Optional[NonceStore] = None,
-    decision_repository: Optional[SqliteDecisionRepository] = None,
-    agent_bus: Optional[AgentMessageBus] = None,
-    agent_registry: Optional[AgentRegistry] = None,
-    agent_router: Optional[AgentRouter] = None,
-    context_manager: Optional[ContextManager] = None,
-    workflow_editor_service: Optional[WorkflowEditorService] = None,
-    adaptive_runtime: Optional[AdaptiveAgentRuntime] = None,
-    provider: Optional[BaseReasoningProvider] = None,
+    config: PraxeonConfig | None = None,
+    db_dir: str | None = None,
+    security_profile: str | None = None,
+    event_bus: EventBus | None = None,
+    state_store: SqliteStateStore | None = None,
+    nonce_store: NonceStore | None = None,
+    decision_repository: SqliteDecisionRepository | None = None,
+    agent_bus: AgentMessageBus | None = None,
+    agent_registry: AgentRegistry | None = None,
+    agent_router: AgentRouter | None = None,
+    context_manager: ContextManager | None = None,
+    workflow_editor_service: WorkflowEditorService | None = None,
+    adaptive_runtime: AdaptiveAgentRuntime | None = None,
+    provider: BaseReasoningProvider | None = None,
 ) -> RuntimeComponents:
     """Construye y conecta los colaboradores del servicio. Lo que se pase ya construido se usa tal cual."""
     cfg = config or default_config
@@ -246,7 +246,7 @@ def build_components(
     )
 
 
-def build_runtime_service(security_profile: Optional[str] = None, **overrides: Any) -> "RuntimeApplicationService":
+def build_runtime_service(security_profile: str | None = None, **overrides: Any) -> RuntimeApplicationService:
     """El servicio de aplicación completo, con sus colaboradores construidos aquí."""
     from praxeon.server.dependencies import RuntimeApplicationService
 

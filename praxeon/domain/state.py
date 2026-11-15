@@ -1,7 +1,6 @@
 """Entidades inmutables de estado de trayectoria e instantáneas de supervisión."""
 
-from datetime import datetime, timezone
-from typing import List, Optional, Set
+from datetime import datetime, UTC
 from pydantic import BaseModel, ConfigDict, Field
 
 from praxeon.domain.action import ActionCandidate
@@ -16,8 +15,8 @@ class StateStepRecord(BaseModel):
 
     action: ActionCandidate
     decision: PolicyDecision
-    observation: Optional[str] = None
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    observation: str | None = None
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 
@@ -29,7 +28,7 @@ class StateSnapshot(BaseModel):
     goal: Goal
     step_count: int
     evidence_count: int
-    forbidden_tools: List[str] = Field(default_factory=list)
+    forbidden_tools: list[str] = Field(default_factory=list)
     state_hash: str = ""
 
 
@@ -39,6 +38,6 @@ class TrajectoryState(BaseModel):
 
     session_id: str
     goal: Goal
-    steps: List[StateStepRecord] = Field(default_factory=list)
-    evidence: List[Evidence] = Field(default_factory=list)
-    forbidden_tools: Set[str] = Field(default_factory=set)
+    steps: list[StateStepRecord] = Field(default_factory=list)
+    evidence: list[Evidence] = Field(default_factory=list)
+    forbidden_tools: set[str] = Field(default_factory=set)

@@ -9,7 +9,7 @@ Implementa los requisitos de las Secciones 12 y 22 de la Auditoría Técnica:
 
 import os
 import re
-from typing import Any, Dict, Optional
+from typing import Any
 
 # Patrones regex de secretos comunes
 SECRET_PATTERNS = [
@@ -53,7 +53,7 @@ def payload_limit_from_env() -> int:
 class DataSanitizer:
     """Sanitiza strings y diccionarios para evitar fugas de información sensible."""
 
-    def __init__(self, redact_secrets: bool = True, redact_pii: bool = True, max_payload_bytes: Optional[int] = None):
+    def __init__(self, redact_secrets: bool = True, redact_pii: bool = True, max_payload_bytes: int | None = None):
         self.redact_secrets = redact_secrets
         self.redact_pii = redact_pii
         # Un listado grande de un servidor MCP (p. ej. el árbol de un proyecto) pesa cientos de KB: con 100 KB quedaba cortado a mitad de JSON.
@@ -82,7 +82,7 @@ class DataSanitizer:
     def redact_dict(self, data: Any) -> Any:
         """Sanitiza recursivamente estructuras de datos (dicts, lists, primitives)."""
         if isinstance(data, dict):
-            sanitized: Dict[str, Any] = {}
+            sanitized: dict[str, Any] = {}
             for k, v in data.items():
                 k_lower = str(k).lower().strip()
                 if self.redact_secrets and any(sens in k_lower for sens in SENSITIVE_KEY_NAMES):

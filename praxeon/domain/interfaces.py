@@ -3,7 +3,7 @@
 Garantiza el desacoplamiento total respecto a SDKs específicos como typesafe-sdk.
 """
 
-from typing import Any, Dict, List, Optional, Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 from praxeon.domain.models import (
     ActionCandidate,
     Checkpoint,
@@ -21,8 +21,8 @@ class ReasoningProvider(Protocol):
     def evaluate(
         self,
         state: Any,
-        actions: List[ActionCandidate],
-    ) -> List[ProviderAssessment]:
+        actions: list[ActionCandidate],
+    ) -> list[ProviderAssessment]:
         """Evalúa semánticamente una lista de acciones candidatas bajo el estado actual."""
         ...
 
@@ -35,7 +35,7 @@ class EvidenceProvider(Protocol):
         self,
         state: Any,
         action: ActionCandidate,
-    ) -> List[Evidence]:
+    ) -> list[Evidence]:
         """Recupera la evidencia empírica que respalda una acción candidata."""
         ...
 
@@ -44,7 +44,7 @@ class EvidenceProvider(Protocol):
 class EvidenceStore(Protocol):
     """Protocolo para almacenamiento e indexación de evidencias."""
 
-    def get_all_active_evidence(self) -> List[Evidence]:
+    def get_all_active_evidence(self) -> list[Evidence]:
         ...
 
     def has_evidence(self, claim: str) -> bool:
@@ -60,7 +60,7 @@ class Executor(Protocol):
         action: ActionCandidate,
         state: Any,
         receipt: Any = None,
-        decision: Optional[PolicyDecision] = None,
+        decision: PolicyDecision | None = None,
     ) -> Any:
         """Ejecuta físicamente la herramienta autorizada (con su recibo firmado) y captura la observación resultante."""
         ...
@@ -74,23 +74,23 @@ class CheckpointStore(Protocol):
         """Almacena una instantánea atómica de checkpoint."""
         ...
 
-    def get_checkpoint(self, checkpoint_id: str) -> Optional[Checkpoint]:
+    def get_checkpoint(self, checkpoint_id: str) -> Checkpoint | None:
         """Obtiene un checkpoint específico por ID."""
         ...
 
-    def get_latest_checkpoint(self, session_id: Optional[str] = None) -> Optional[Checkpoint]:
+    def get_latest_checkpoint(self, session_id: str | None = None) -> Checkpoint | None:
         """Devuelve el checkpoint más reciente de una sesión o globalmente."""
         ...
 
-    def list_checkpoints(self, session_id: Optional[str] = None) -> List[Checkpoint]:
+    def list_checkpoints(self, session_id: str | None = None) -> list[Checkpoint]:
         """Devuelve la lista ordenada de checkpoints registrados."""
         ...
 
     def create_checkpoint(
         self,
         session_id: str,
-        label: Optional[str] = None,
-        state: Optional[Any] = None,
+        label: str | None = None,
+        state: Any | None = None,
     ) -> Checkpoint:
         """Crea y persiste un nuevo checkpoint snapshot del estado actual."""
         ...
@@ -99,9 +99,9 @@ class CheckpointStore(Protocol):
         self,
         session_id: str,
         checkpoint_id: str,
-        culprit_tool: Optional[str] = None,
+        culprit_tool: str | None = None,
         reason: str = "Restauración de checkpoint",
-    ) -> Optional[Any]:
+    ) -> Any | None:
         """Restaura el estado de la sesión al checkpoint especificado y persiste el estado restaurado."""
         ...
 
@@ -113,10 +113,10 @@ class StateStore(Protocol):
     def save_state(self, state: Any) -> None:
         ...
 
-    def load_state(self, session_id: str) -> Optional[Any]:
+    def load_state(self, session_id: str) -> Any | None:
         ...
 
-    def list_sessions(self) -> List[str]:
+    def list_sessions(self) -> list[str]:
         ...
 
     def delete_session(self, session_id: str) -> bool:
@@ -130,9 +130,9 @@ class PolicyEngineProtocol(Protocol):
     def evaluate_action(
         self,
         action: ActionCandidate,
-        state: Dict[str, Any],
-        provider_assessment: Optional[ProviderAssessment] = None,
-        available_evidence: Optional[List[Evidence]] = None,
+        state: dict[str, Any],
+        provider_assessment: ProviderAssessment | None = None,
+        available_evidence: list[Evidence] | None = None,
     ) -> Any:
         ...
 

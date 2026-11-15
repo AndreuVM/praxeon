@@ -10,7 +10,8 @@ Aplica los principios fundamentales:
 
 import os
 import time
-from typing import Any, Callable, Dict, Optional
+from typing import Any
+from collections.abc import Callable
 from pydantic import BaseModel, ConfigDict
 from praxeon.domain.action import compute_action_hash
 from praxeon.domain.decision import (
@@ -44,9 +45,9 @@ class PolicyViolation(Exception):
     def __init__(
         self,
         message: str,
-        action: Optional[ActionCandidate] = None,
-        decision: Optional[PolicyDecision] = None,
-        receipt: Optional[DecisionReceipt] = None,
+        action: ActionCandidate | None = None,
+        decision: PolicyDecision | None = None,
+        receipt: DecisionReceipt | None = None,
     ):
         super().__init__(message)
         self.action = action
@@ -61,7 +62,7 @@ class ToolObservation(BaseModel):
     output: str
     success: bool = True
     execution_time_ms: float = 0.0
-    tool_name: Optional[str] = None
+    tool_name: str | None = None
     is_error: bool = False
 
 
@@ -70,14 +71,14 @@ class SecureExecutor(Executor):
 
     def __init__(
         self,
-        registry: Optional[ToolRegistry] = None,
-        sandbox: Optional[SandboxAdapter] = None,
+        registry: ToolRegistry | None = None,
+        sandbox: SandboxAdapter | None = None,
         dry_run: bool = False,
-        sanitizer: Optional[DataSanitizer] = None,
+        sanitizer: DataSanitizer | None = None,
         strict_capability: bool = True,
-        secret_key: Optional[str] = None,
-        nonce_store: Optional[NonceStore] = None,
-        full_access_executor: Optional[FullAccessExecutor] = None,
+        secret_key: str | None = None,
+        nonce_store: NonceStore | None = None,
+        full_access_executor: FullAccessExecutor | None = None,
         allow_full_access: bool = False,
         insecure_skip_signature: bool = False,
     ):
@@ -95,11 +96,11 @@ class SecureExecutor(Executor):
         self.nonce_store = nonce_store if nonce_store is not None else InMemoryNonceStore()
         self.full_access_executor = full_access_executor or FullAccessExecutor()
         self.allow_full_access = allow_full_access
-        self.container_sandbox: Optional[SandboxAdapter] = None
-        self._isolated_sandboxes: Dict[str, SandboxAdapter] = {}
-        self._custom_handlers: Dict[str, Callable[[Dict[str, Any]], str]] = {}
+        self.container_sandbox: SandboxAdapter | None = None
+        self._isolated_sandboxes: dict[str, SandboxAdapter] = {}
+        self._custom_handlers: dict[str, Callable[[dict[str, Any]], str]] = {}
 
-    def register_handler(self, tool_name: str, handler: Callable[[Dict[str, Any]], str]) -> None:
+    def register_handler(self, tool_name: str, handler: Callable[[dict[str, Any]], str]) -> None:
         """Permite inyectar controladores personalizados o mocks para herramientas."""
         self._custom_handlers[tool_name] = handler
 
@@ -110,8 +111,8 @@ class SecureExecutor(Executor):
         self,
         action: ActionCandidate,
         state: SessionState,
-        receipt: Optional[DecisionReceipt] = None,
-        decision: Optional[PolicyDecision] = None,
+        receipt: DecisionReceipt | None = None,
+        decision: PolicyDecision | None = None,
     ) -> ToolObservation:
         """Valida rigurosamente la autorización mediante capability/recibo y ejecuta en sandbox."""
         tool_name = action.tool_call.tool_name if action.tool_call else None
@@ -353,7 +354,7 @@ class SecureExecutor(Executor):
             is_error=is_error,
         )
 
-    def _get_effective_sandbox(self, state: Optional[SessionState] = None) -> SandboxAdapter:
+    def _get_effective_sandbox(self, state: SessionState | None = None) -> SandboxAdapter:
         """Obtiene o instancia el SandboxAdapter adecuado según el workspace_root de la sesión."""
         if state is None:
             return self.sandbox
@@ -374,7 +375,7 @@ class SecureExecutor(Executor):
         return self.sandbox
 
     def _execute_builtin_tool_in_sandbox(
-        self, tool_name: str, args: Dict[str, Any], state: Optional[SessionState] = None
+        self, tool_name: str, args: dict[str, Any], state: SessionState | None = None
     ) -> tuple[str, bool, bool]:
         """Ejecuta controladores nativos seguros delegando en el SandboxAdapter efectivo."""
         target_sb = self._get_effective_sandbox(state)
@@ -416,7 +417,7 @@ class SecureExecutor(Executor):
         return f"Herramienta '{tool_name}' sin controlador físico implementado en sandbox.", False, True
 
     @staticmethod
-    def _list_dir_in_workspace(sandbox: Any, args: Dict[str, Any]) -> tuple[str, bool, bool]:
+    def _list_dir_in_workspace(sandbox: Any, args: dict[str, Any]) -> tuple[str, bool, bool]:
         """list_dir confinado al workspace del sandbox (misma contención de rutas que read_file)."""
         raw = str(args.get("path") or args.get("dir") or ".").strip() or "."
         try:
@@ -427,7 +428,7 @@ class SecureExecutor(Executor):
         text, ok = list_directory(target, raw)
         return text, ok, not ok
 
-    def _get_effective_container_sandbox(self, state: Optional[SessionState] = None) -> SandboxAdapter:
+    def _get_effective_container_sandbox(self, state: SessionState | None = None) -> SandboxAdapter:
         """Sandbox del modo aislado (``container``) vinculado al workspace de la sesión (Finding 9, AUD-19).
 
         El backend lo elige ``praxeon.runtime.isolation`` (AppContainer, bubblewrap o Docker/Podman); sin backend, el
@@ -452,7 +453,7 @@ class SecureExecutor(Executor):
         return adapter
 
     def _execute_builtin_tool_in_container(
-        self, tool_name: str, args: Dict[str, Any], state: Optional[SessionState] = None
+        self, tool_name: str, args: dict[str, Any], state: SessionState | None = None
     ) -> tuple[str, bool, bool]:
         """Ejecuta controladores en el sandbox aislado del workspace de la sesión (Finding 9, AUD-19)."""
         target_container = self._get_effective_container_sandbox(state)

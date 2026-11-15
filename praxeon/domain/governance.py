@@ -8,10 +8,10 @@ Permite alternar formalmente entre:
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from enum import Enum
 import os
-from typing import Any, Optional
+from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -21,7 +21,7 @@ class FallbackMode(str, Enum):
     BEST_EFFORT = "BEST_EFFORT"
 
 
-def resolve_fallback_mode(mode: Optional[Any] = None) -> FallbackMode:
+def resolve_fallback_mode(mode: Any | None = None) -> FallbackMode:
     """Resuelve el modo de gobernanza desde el argumento, variable de entorno o configuración predeterminada."""
     if mode is not None:
         if isinstance(mode, FallbackMode):
@@ -56,6 +56,6 @@ class ActionProvenance(BaseModel):
         description="Modo de gobernanza en vigor al emitir la acción",
     )
     timestamp: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc),
+        default_factory=lambda: datetime.now(UTC),
         description="Timestamp UTC de generación",
     )

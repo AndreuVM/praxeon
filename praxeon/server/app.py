@@ -3,7 +3,7 @@
 import argparse
 import os
 import secrets
-from typing import Any, List, Optional
+from typing import Any
 import uvicorn
 from fastapi import Depends, FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -24,7 +24,7 @@ logger = logging.getLogger("praxeon.server.app")
 INSECURE_API_KEYS = frozenset({"", "praxeon_secret_hmac_key_v1", "default", "secret", "change_me"})
 
 
-def validate_security_profile(profile: Optional[str] = None) -> List[str]:
+def validate_security_profile(profile: str | None = None) -> list[str]:
     """Valida el perfil de seguridad del runtime conforme a la Sección 8 y Sección 18 (Criterio 11)."""
     prof = (profile or os.environ.get("PRAXEON_PROFILE") or os.environ.get("PRAXEON_ENV") or "dev").lower().strip()
 
@@ -65,8 +65,8 @@ def validate_security_profile(profile: Optional[str] = None) -> List[str]:
 
 
 def create_app(
-    profile: Optional[str] = None,
-    service: Optional[Any] = None,
+    profile: str | None = None,
+    service: Any | None = None,
 ) -> FastAPI:
     """Crea y configura la aplicación FastAPI con rutas y middleware."""
     from praxeon.server.auth_deps import require_permission
@@ -163,7 +163,7 @@ def create_app(
     return app
 
 
-_default_app: Optional[FastAPI] = None
+_default_app: FastAPI | None = None
 
 
 def __getattr__(name: str) -> Any:
@@ -199,7 +199,7 @@ def validate_network_binding(host: str) -> None:
             )
 
 
-def ensure_local_token(host: str) -> Optional[str]:
+def ensure_local_token(host: str) -> str | None:
     """En local sin PRAXEON_API_KEY se genera un token aleatorio por arranque (como la app de escritorio) y se devuelve para
     mostrarlo. Se desactiva con PRAXEON_ALLOW_INSECURE_DEV=1 (modo antiguo: loopback sin autenticación)."""
     if os.environ.get("PRAXEON_API_KEY", "").strip():

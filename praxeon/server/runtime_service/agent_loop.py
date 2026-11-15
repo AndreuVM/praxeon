@@ -19,7 +19,8 @@ import os
 import re
 import time
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, Iterable, List, Optional
+from typing import Any
+from collections.abc import Callable, Iterable
 
 from praxeon.core.pipeline import Outcome, Step, run_steps
 from praxeon.domain.events import EventType
@@ -70,7 +71,7 @@ _FINISH_CALL = re.compile(
 # ------------------------------------------------------------------------------------------------ utilidades
 
 
-def _made_progress(record: Dict[str, Any]) -> bool:
+def _made_progress(record: dict[str, Any]) -> bool:
     """Un paso correcto que cambió algo: escribió/ejecutó, o llamó a una herramienta MCP de escritura."""
     if not record.get("success"):
         return False
@@ -86,14 +87,14 @@ def _llm_observation_limit() -> int:
         return 150_000
 
 
-def _missing_path_from_reasons(reason_codes: Optional[List[str]]) -> Optional[str]:
+def _missing_path_from_reasons(reason_codes: list[str] | None) -> str | None:
     for code in reason_codes or []:
         if str(code).startswith(_MISSING_PREFIX) and str(code).endswith(")"):
             return str(code)[len(_MISSING_PREFIX):-1]
     return None
 
 
-def _targets_missing_path(tool: str, args: Dict[str, Any], workspace_root: Optional[str]) -> bool:
+def _targets_missing_path(tool: str, args: dict[str, Any], workspace_root: str | None) -> bool:
     """True si la acción lee o lista una ruta que de verdad no existe en el workspace (comprobación directa)."""
     if tool not in ("read_file", "view_file", "list_dir"):
         return False
@@ -106,7 +107,7 @@ def _targets_missing_path(tool: str, args: Dict[str, Any], workspace_root: Optio
     return not os.path.exists(path)
 
 
-def _missing_path_feedback(path: str, workspace_root: Optional[str]) -> str:
+def _missing_path_feedback(path: str, workspace_root: str | None) -> str:
     """Mensaje para el agente cuando referencia una ruta inexistente (evita que la reintente o la alucine)."""
     base = workspace_root or os.getcwd()
     candidate = path if os.path.isabs(path) else os.path.join(base, path)
@@ -151,11 +152,11 @@ def _answer_after_last_thought(llm_output: str) -> str:
 
 def build_loop_system_prompt(
     runtime: Any,
-    mission: Dict[str, Any],
+    mission: dict[str, Any],
     goal: str,
-    trace: Optional[Dict[str, Any]],
+    trace: dict[str, Any] | None,
     role_preamble: str,
-    tool_filter: Optional[Callable[[str], Optional[str]]],
+    tool_filter: Callable[[str], str | None] | None,
 ) -> str:
     """Prompt de sistema del bucle: el de misión o el de nodo de workflow, más las secciones de MCP, web y skills.
 
@@ -202,7 +203,7 @@ class LoopContext:
 
     # configuración (no cambia durante el bucle)
     runtime: Any
-    mission: Dict[str, Any]
+    mission: dict[str, Any]
     agent_llm: Any
     goal: str
     max_steps: int
@@ -214,29 +215,29 @@ class LoopContext:
     root_id: str
     owns_session: bool
     anchor_id: str
-    tool_filter: Optional[Callable[[str], Optional[str]]] = None
-    trace: Optional[Dict[str, Any]] = None
-    finish_check: Optional[Callable[[str], Optional[str]]] = None
+    tool_filter: Callable[[str], str | None] | None = None
+    trace: dict[str, Any] | None = None
+    finish_check: Callable[[str], str | None] | None = None
     llm_fail_policy: str = "synthetic_fallback"
 
     # estado entre turnos
     step_idx: int = 0
-    step_records: List[Dict[str, Any]] = field(default_factory=list)
+    step_records: list[dict[str, Any]] = field(default_factory=list)
     active_parent_id: str = ""
     consecutive_failures: int = 0
     technical_failures: int = 0
     semantic_fixations: int = 0
     finish_rejections: int = 0   # finish rechazados por faltar campos del grafo: tras MAX_FINISH_REJECTIONS se acepta
-    recent_action_signatures: List[str] = field(default_factory=list)
+    recent_action_signatures: list[str] = field(default_factory=list)
     circuit_breaker_triggered: bool = False
-    final_answer: Optional[str] = None
+    final_answer: str | None = None
     forced_termination: bool = False
 
     # estado del turno en curso (begin_turn lo reinicia)
     llm_output: str = ""
     llm_ms: float = 0.0
     tool: str = ""
-    args: Dict[str, Any] = field(default_factory=dict)
+    args: dict[str, Any] = field(default_factory=dict)
     thought: str = ""
     action_node_id: str = ""
     resp: Any = None
@@ -262,7 +263,7 @@ class LoopContext:
         return self.tool in FINISH_TOOLS
 
     @property
-    def workspace_root(self) -> Optional[str]:
+    def workspace_root(self) -> str | None:
         return self.mission.get("workspace_root")
 
     @property
@@ -297,7 +298,7 @@ class LoopContext:
             **extra,
         })
 
-    def emit(self, node_id: str, payload: Dict[str, Any], event_type: EventType = EventType.INTERVENTION_APPLIED, **kw: Any) -> None:
+    def emit(self, node_id: str, payload: dict[str, Any], event_type: EventType = EventType.INTERVENTION_APPLIED, **kw: Any) -> None:
         self.runtime.event_bus.emit(session_id=self.sid, event_type=event_type, node_id=node_id, payload=payload, **kw)
 
 
@@ -482,7 +483,7 @@ class ParseActionStep(Step[LoopContext]):
         return Outcome.CONTINUE
 
     @staticmethod
-    def _from_parsed_step(ctx: LoopContext, step: Dict[str, Any]) -> None:
+    def _from_parsed_step(ctx: LoopContext, step: dict[str, Any]) -> None:
         raw_tool = (step.get("tool_name") or "").strip().lower()
         if raw_tool in PLACEHOLDER_TOOLS:
             # Degradación sintáctica del modelo
@@ -556,7 +557,7 @@ class SemanticFixationStep(Step[LoopContext]):
         return Outcome.END
 
 
-def _finish_summary(args: Dict[str, Any]) -> str:
+def _finish_summary(args: dict[str, Any]) -> str:
     return str(args.get("summary") or args.get("final_answer") or "")
 
 
@@ -802,7 +803,7 @@ class RecordResultStep(Step[LoopContext]):
         ctx.circuit_breaker_triggered = True
         observation = ctx.obs_output or "Acción no autorizada o fallida."
         missing_paths = self._missing_paths(ctx, observation)
-        real_files: List[str] = []
+        real_files: list[str] = []
         if missing_paths:
             ws_dir = ctx.workspace_root or get_default_workspace_root()
             try:
@@ -947,7 +948,7 @@ class AgentLoop:
         self.ctx = ctx
         self.steps = tuple(steps)
 
-    def run(self) -> Dict[str, Any]:
+    def run(self) -> dict[str, Any]:
         ctx, mission = self.ctx, self.ctx.mission
         # max_steps <= 0 significa sin límite: lo frenan el finish, los cortacircuitos del supervisor o el operador
         while ctx.max_steps <= 0 or ctx.step_idx < ctx.max_steps:
@@ -977,13 +978,13 @@ class AgentLoop:
             and not ctx.mission.get("stopped") and not ctx.forced_termination
         )
 
-    def _interrupted_node_summary(self) -> Optional[str]:
+    def _interrupted_node_summary(self) -> str | None:
         """Presupuesto agotado trabajando (no atascado): el nodo entrega lo hecho y el flujo decide, en vez de fallar y
         repetirlo todo. Sin trabajo hecho, no hay resumen."""
         done = [r for r in self.ctx.step_records if _made_progress(r)]
         if not done:
             return None
-        touched: List[str] = []
+        touched: list[str] = []
         for r in done:
             target = (r.get("arguments") or {}).get("path") or (r.get("arguments") or {}).get("command")
             if target and str(target)[:120] not in touched:

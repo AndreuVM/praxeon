@@ -12,13 +12,14 @@ import os
 import re
 import threading
 from pathlib import Path
-from typing import Dict, List, Literal, Optional
+from typing import Literal
 from urllib.parse import urlsplit
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from praxeon.config import resolve_cache_dir
 import logging
+import builtins
 
 logger = logging.getLogger(__name__)
 
@@ -29,14 +30,14 @@ _RISKS = ("LOW", "MEDIUM", "HIGH", "CRITICAL")
 class ToolOverride(BaseModel):
     """Ajustes del operador sobre una herramienta concreta (prevalecen sobre lo que anuncie el servidor)."""
 
-    risk: Optional[str] = None
-    read_only: Optional[bool] = None
-    confirm: Optional[bool] = None
+    risk: str | None = None
+    read_only: bool | None = None
+    confirm: bool | None = None
     disabled: bool = False
 
     @field_validator("risk")
     @classmethod
-    def _risk(cls, value: Optional[str]) -> Optional[str]:
+    def _risk(cls, value: str | None) -> str | None:
         if value is None:
             return None
         value = value.upper()
@@ -48,23 +49,23 @@ class ToolOverride(BaseModel):
 class McpServerConfig(BaseModel):
     name: str
     # Servidor local (stdio): `command` + `args`. Servidor remoto: `url` (+ `headers`). Exactamente uno de los dos.
-    command: Optional[str] = None
-    args: List[str] = Field(default_factory=list)
+    command: str | None = None
+    args: list[str] = Field(default_factory=list)
     # La URL y las cabeceras pueden llevar secretos (token en la query, Authorization): nunca se devuelven por la API.
     # Admiten «${VARIABLE}» (valor del entorno de PRAXEON / .env), que es lo recomendable para el token.
-    url: Optional[str] = None
-    headers: Dict[str, str] = Field(default_factory=dict)
+    url: str | None = None
+    headers: dict[str, str] = Field(default_factory=dict)
     transport: Literal["auto", "sse", "streamable_http"] = "auto"
     # Variables del entorno del servidor: literales o «${VARIABLE}» para tomarlas del entorno de PRAXEON (.env)
-    env: Dict[str, str] = Field(default_factory=dict)
-    cwd: Optional[str] = None
+    env: dict[str, str] = Field(default_factory=dict)
+    cwd: str | None = None
     enabled: bool = False
     # Si True se fían las pistas que anuncia el servidor (readOnlyHint…); por defecto no, porque las declara él mismo
     trust_hints: bool = False
     timeout_s: float = Field(default=60.0, gt=0, le=3600)
     # Huella de las herramientas que el operador revisó. Si el servidor las cambia, deja de exponerse hasta reaprobar
-    approved_hash: Optional[str] = None
-    tools: Dict[str, ToolOverride] = Field(default_factory=dict)
+    approved_hash: str | None = None
+    tools: dict[str, ToolOverride] = Field(default_factory=dict)
 
     @field_validator("name")
     @classmethod
@@ -74,7 +75,7 @@ class McpServerConfig(BaseModel):
         return value
 
     @model_validator(mode="after")
-    def _one_transport(self) -> "McpServerConfig":
+    def _one_transport(self) -> McpServerConfig:
         has_cmd = bool((self.command or "").strip())
         has_url = bool((self.url or "").strip())
         if has_cmd == has_url:
@@ -97,7 +98,7 @@ class McpServerConfig(BaseModel):
 class McpConfigStore:
     """Lee y escribe `mcp.json`. Seguro entre hilos; la escritura es atómica."""
 
-    def __init__(self, path: Optional[str] = None) -> None:
+    def __init__(self, path: str | None = None) -> None:
         self._path = path
         self._lock = threading.RLock()
 
@@ -105,12 +106,12 @@ class McpConfigStore:
     def path(self) -> Path:
         return Path(self._path) if self._path else Path(resolve_cache_dir()) / "mcp.json"
 
-    def _read(self) -> Dict[str, McpServerConfig]:
+    def _read(self) -> dict[str, McpServerConfig]:
         try:
             data = json.loads(self.path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             return {}
-        servers: Dict[str, McpServerConfig] = {}
+        servers: dict[str, McpServerConfig] = {}
         raw = data.get("servers") if isinstance(data, dict) else None
         for name, cfg in (raw or {}).items():
             try:
@@ -120,7 +121,7 @@ class McpConfigStore:
                 continue
         return servers
 
-    def _write(self, servers: Dict[str, McpServerConfig]) -> None:
+    def _write(self, servers: dict[str, McpServerConfig]) -> None:
         path = self.path
         path.parent.mkdir(parents=True, exist_ok=True)
         payload = {"servers": {n: c.model_dump(exclude={"name"}) for n, c in sorted(servers.items())}}
@@ -128,11 +129,11 @@ class McpConfigStore:
         tmp.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
         os.replace(tmp, path)
 
-    def list(self) -> List[McpServerConfig]:
+    def list(self) -> builtins.list[McpServerConfig]:
         with self._lock:
             return list(self._read().values())
 
-    def get(self, name: str) -> Optional[McpServerConfig]:
+    def get(self, name: str) -> McpServerConfig | None:
         with self._lock:
             return self._read().get(name)
 
@@ -147,7 +148,7 @@ class McpConfigStore:
             self._write(servers)
             return cfg
 
-    def update(self, name: str, **changes) -> Optional[McpServerConfig]:
+    def update(self, name: str, **changes) -> McpServerConfig | None:
         with self._lock:
             servers = self._read()
             current = servers.get(name)

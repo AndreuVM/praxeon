@@ -25,8 +25,6 @@ import os
 import shutil
 import sys
 from dataclasses import dataclass
-from typing import List, Optional, Tuple
-
 from praxeon.runtime.isolation import bubblewrap
 
 BACKENDS = ("appcontainer", "bubblewrap", "container")
@@ -38,7 +36,7 @@ AUTO_MODES = ("", "auto", "default")
 @dataclass(frozen=True)
 class IsolationStatus:
     requested: str                 # lo que pide PRAXEON_ISOLATION
-    backend: Optional[str]         # el que se usará, o None
+    backend: str | None         # el que se usará, o None
     reason: str                    # por qué (para la interfaz y los eventos)
 
     @property
@@ -77,7 +75,7 @@ def _container_ready() -> bool:
     return ContainerSandboxAdapter.runtime_ready()
 
 
-def _check(backend: str) -> Tuple[bool, str]:
+def _check(backend: str) -> tuple[bool, str]:
     if backend == "appcontainer":
         ok = appcontainer_supported()
         return ok, "AppContainer de Windows" if ok else "AppContainer solo existe en Windows 8 o posterior"
@@ -117,7 +115,7 @@ def refresh() -> IsolationStatus:
     return status()
 
 
-def resolve_execution_mode(requested: Optional[str]) -> Tuple[str, Optional[str]]:
+def resolve_execution_mode(requested: str | None) -> tuple[str, str | None]:
     """Modo efectivo de una sesión nueva y, si hace falta, el aviso para el usuario.
 
     Sin modo (o ``auto``): aislado si hay backend; si no, ``local_restricted`` con aviso. Un modo explícito se respeta;
@@ -135,7 +133,7 @@ def resolve_execution_mode(requested: Optional[str]) -> Tuple[str, Optional[str]
     return mode, None
 
 
-def tool_read_paths() -> List[str]:
+def tool_read_paths() -> list[str]:
     """Carpetas de herramientas que el comando aislado puede leer y ejecutar aunque estén en el perfil del usuario.
 
     El Python base (un entorno virtual del workspace apunta a él), ``git`` y ``node`` si están instalados bajo el
@@ -151,7 +149,7 @@ def tool_read_paths() -> List[str]:
                 paths.append(root)
     extra = os.environ.get("PRAXEON_ISOLATION_READ_PATHS", "")
     paths += [p for p in extra.split(os.pathsep) if p.strip()]
-    seen: List[str] = []
+    seen: list[str] = []
     for p in paths:
         real = os.path.realpath(p)
         if os.path.isdir(real) and real not in seen:

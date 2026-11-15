@@ -7,7 +7,6 @@ import json
 import os
 from pathlib import Path
 import sys
-from typing import List, Optional
 
 # Asegurar codificación UTF-8 en Windows para evitar errores con charmap cp1252
 if sys.platform == "win32":
@@ -37,7 +36,7 @@ from praxeon.models.trace import TraceParser
 console = Console(legacy_windows=False)
 
 
-def analyze_trace_file(file_path: str, config: Optional[PraxeonConfig] = None) -> None:
+def analyze_trace_file(file_path: str, config: PraxeonConfig | None = None) -> None:
     """Carga y analiza detalladamente una traza de razonamiento mediante TypeSafe AI."""
     path = Path(file_path)
     if not path.exists():
@@ -66,7 +65,7 @@ def analyze_trace_file(file_path: str, config: Optional[PraxeonConfig] = None) -
 
     # 1. Ejecutar evaluaciones en lote con TypeSafe AI
     loop_report = engine.diagnose_trajectory(trajectory)
-    scores: List[JEVScore] = []
+    scores: list[JEVScore] = []
     for step in trajectory.steps:
         score = engine.evaluate_step(step)
         scores.append(score)
@@ -185,7 +184,7 @@ def analyze_trace_file(file_path: str, config: Optional[PraxeonConfig] = None) -
         console.print("\n[bold green]✓ No se requiere ninguna intervención correctiva.[/]")
 
 
-def simulate_trace_execution(file_path: str, config: Optional[PraxeonConfig] = None) -> None:
+def simulate_trace_execution(file_path: str, config: PraxeonConfig | None = None) -> None:
     """Simula la ejecución paso a paso de una traza interceptando bucles en tiempo real."""
     from rich.markup import escape
 
@@ -258,8 +257,8 @@ def run_benchmark_cli(
     matrix: bool = False,
     archive_historical: bool = False,
     provider_name: str = "replay",
-    count: Optional[int] = None,
-    output_file: Optional[str] = None,
+    count: int | None = None,
+    output_file: str | None = None,
 ) -> None:
     """Ejecuta y formatea en consola el benchmark formal de supervisión (PRAXEON 1.0)."""
     from praxeon.evaluation import BenchmarkRunner, ScenarioCatalog

@@ -9,7 +9,7 @@ Especificación de independencia del modelo System-1:
 from __future__ import annotations
 
 import os
-from typing import Any, Dict, List, Optional, Protocol, Set, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from praxeon.domain.assessment import ProviderAssessment
@@ -47,15 +47,15 @@ class DecisionModelConfig(BaseModel):
         default="default",
         description="Identificador del modelo específico (ej. 'laya-v1', 'jev-v1', 'trace-01')",
     )
-    model_version: Optional[str] = Field(
+    model_version: str | None = Field(
         default=None,
         description="Versión del modelo o pesos (ej. '0.3', '1.0.0')",
     )
-    backend: Optional[str] = Field(
+    backend: str | None = Field(
         default="local",
         description="Backend de ejecución (ej. 'local', 'api', 'onnx', 'torch')",
     )
-    endpoint: Optional[str] = Field(
+    endpoint: str | None = Field(
         default=None,
         description="URL o endpoint en caso de proveedores remotos",
     )
@@ -63,14 +63,14 @@ class DecisionModelConfig(BaseModel):
         default=False,
         description="Permitir endpoints remotos personalizados fuera de la allowlist canónica (SEC-01)",
     )
-    allowed_hosts: Set[str] = Field(
+    allowed_hosts: set[str] = Field(
         default_factory=set,
         description="Allowlist explícita de dominios de endpoints autorizados",
     )
 
     @field_validator("endpoint")
     @classmethod
-    def _validate_endpoint(cls, v: Optional[str], info: Any) -> Optional[str]:
+    def _validate_endpoint(cls, v: str | None, info: Any) -> str | None:
         if not v:
             return None
         from praxeon.policy.egress import validate_provider_endpoint
@@ -84,11 +84,11 @@ class DecisionModelConfig(BaseModel):
             profile=profile,
             allowed_hosts=allowed,
         )
-    model_path: Optional[str] = Field(
+    model_path: str | None = Field(
         default=None,
         description="Ruta en sistema de archivos hacia pesos o checkpoint local",
     )
-    device: Optional[str] = Field(
+    device: str | None = Field(
         default="auto",
         description="Dispositivo de aceleración (ej. 'cpu', 'cuda', 'mps', 'auto')",
     )
@@ -100,7 +100,7 @@ class DecisionModelConfig(BaseModel):
         default=1,
         description="Número máximo de reintentos ante errores transitorios",
     )
-    calibration_profile: Optional[str] = Field(
+    calibration_profile: str | None = Field(
         default=None,
         description="Perfil de calibración de probabilidades o temperatura (ej. 'conservative', 'strict')",
     )
@@ -108,11 +108,11 @@ class DecisionModelConfig(BaseModel):
         default="none",
         description="Estrategia ante indisponibilidad ('none', 'mock', 'replay', o nombre de provider)",
     )
-    fallback_provider: Optional[str] = Field(
+    fallback_provider: str | None = Field(
         default=None,
         description="Proveedor alternativo explícito a utilizar si fallback_policy es activa",
     )
-    custom_params: Dict[str, Any] = Field(
+    custom_params: dict[str, Any] = Field(
         default_factory=dict,
         description="Parámetros arbitrarios específicos del proveedor o SDK subyacente",
     )
@@ -124,13 +124,13 @@ class DecisionProviderMetadata(BaseModel):
 
     provider_id: str
     model_id: str
-    model_version: Optional[str] = None
-    backend: Optional[str] = None
-    device: Optional[str] = None
+    model_version: str | None = None
+    backend: str | None = None
+    device: str | None = None
     is_available: bool = True
-    capabilities: List[str] = Field(default_factory=list)
-    calibration_profile: Optional[str] = None
-    extra_info: Dict[str, Any] = Field(default_factory=dict)
+    capabilities: list[str] = Field(default_factory=list)
+    calibration_profile: str | None = None
+    extra_info: dict[str, Any] = Field(default_factory=dict)
 
 
 @runtime_checkable
@@ -148,8 +148,8 @@ class DecisionProvider(Protocol):
     def evaluate(
         self,
         state: Any,
-        actions: List[ActionCandidate],
-    ) -> List[ProviderAssessment]:
+        actions: list[ActionCandidate],
+    ) -> list[ProviderAssessment]:
         """Evalúa semánticamente una lista de acciones candidatas bajo el estado provisto."""
         ...
 

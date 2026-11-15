@@ -7,10 +7,10 @@ Implementa las operaciones completas del ciclo de vida de agentes en PRAXEON:
 - Portabilidad: exportación e importación en formatos JSON y YAML.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 import json
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Optional
 import uuid
 import yaml
 
@@ -25,20 +25,20 @@ class AgentRegistry:
 
     def __init__(
         self,
-        storage_dir: Optional[str] = None,
+        storage_dir: str | None = None,
         store: Optional["SqlitePersistenceStore"] = None,
-        db_path: Optional[str] = None,
+        db_path: str | None = None,
     ):
-        self._agents: Dict[str, AgentDefinition] = {}
-        self._quarantined: List[Dict[str, Any]] = []
-        self._version_history: Dict[str, List[Dict[str, Any]]] = {}
-        self._in_memory_versions: Dict[str, Dict[int, AgentDefinition]] = {}
+        self._agents: dict[str, AgentDefinition] = {}
+        self._quarantined: list[dict[str, Any]] = []
+        self._version_history: dict[str, list[dict[str, Any]]] = {}
+        self._in_memory_versions: dict[str, dict[int, AgentDefinition]] = {}
         self.storage_dir = Path(storage_dir) if storage_dir else None
         if store is not None:
-            self.store: Optional["SqlitePersistenceStore"] = store
+            self.store: SqlitePersistenceStore | None = store
         elif db_path is not None:
-            from praxeon.persistence.sqlite_store import SqlitePersistenceStore
-            self.store = SqlitePersistenceStore(db_path=db_path)
+            from praxeon.persistence.sqlite_store import SqlitePersistenceStore as _SqliteStore
+            self.store = _SqliteStore(db_path=db_path)
         else:
             self.store = None
 
@@ -80,15 +80,15 @@ class AgentRegistry:
         self._persist_if_configured(agent)
         return agent
 
-    def get(self, agent_id: str) -> Optional[AgentDefinition]:
+    def get(self, agent_id: str) -> AgentDefinition | None:
         """Obtiene un agente por su identificador único."""
         return self._agents.get(agent_id)
 
     def list_all(
         self,
-        status: Optional[AgentStatus] = None,
-        role: Optional[str] = None,
-    ) -> List[AgentDefinition]:
+        status: AgentStatus | None = None,
+        role: str | None = None,
+    ) -> list[AgentDefinition]:
         """Lista todos los agentes registrados aplicando filtros opcionales de estado o rol."""
         results = list(self._agents.values())
         if status is not None:
@@ -97,7 +97,7 @@ class AgentRegistry:
             results = [a for a in results if a.role.lower() == role.lower()]
         return results
 
-    def update(self, agent_id: str, updates: Dict[str, Any]) -> AgentDefinition:
+    def update(self, agent_id: str, updates: dict[str, Any]) -> AgentDefinition:
         """Actualiza campos de un agente existente, incrementando su versión automáticamente."""
         current = self.get(agent_id)
         if not current:
@@ -110,7 +110,7 @@ class AgentRegistry:
             data[k] = v
 
         data["version"] = current.version + 1
-        data["updated_at"] = datetime.now(timezone.utc)
+        data["updated_at"] = datetime.now(UTC)
 
         updated_agent = AgentDefinition(**data)
         self._agents[agent_id] = updated_agent
@@ -149,8 +149,8 @@ class AgentRegistry:
         self,
         source_agent_id: str,
         new_agent_id: str,
-        new_name: Optional[str] = None,
-        overrides: Optional[Dict[str, Any]] = None,
+        new_name: str | None = None,
+        overrides: dict[str, Any] | None = None,
     ) -> AgentDefinition:
         """Duplica un agente existente asignándole un nuevo ID y registrándolo."""
         source = self.get(source_agent_id)
@@ -204,7 +204,7 @@ class AgentRegistry:
         if not path.exists():
             raise FileNotFoundError(f"Archivo de bundle '{filepath}' no existe.")
 
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             if filepath.endswith((".yaml", ".yml")):
                 items = yaml.safe_load(f)
             else:
@@ -256,11 +256,11 @@ class AgentRegistry:
                     "entity_id": file.stem,
                     "raw_content": raw_content,
                     "error_message": str(exc),
-                    "quarantined_at": datetime.now(timezone.utc).isoformat(),
+                    "quarantined_at": datetime.now(UTC).isoformat(),
                 }
                 self._quarantined.append(entry)
 
-    def get_quarantined_agents(self) -> List[Dict[str, Any]]:
+    def get_quarantined_agents(self) -> list[dict[str, Any]]:
         """Lista los agentes que se encuentran en estado de cuarentena por errores de deserialización o integridad."""
         if self.store:
             return self.store.list_quarantined(entity_type="agent")
@@ -282,10 +282,10 @@ class AgentRegistry:
                 "entity_id": agent_id,
                 "raw_content": raw_content,
                 "error_message": reason,
-                "quarantined_at": datetime.now(timezone.utc).isoformat(),
+                "quarantined_at": datetime.now(UTC).isoformat(),
             })
 
-    def get_agent_history(self, agent_id: str) -> List[Dict[str, Any]]:
+    def get_agent_history(self, agent_id: str) -> list[dict[str, Any]]:
         """Obtiene el historial inmutable de versiones de un agente con sus hashes criptográficos."""
         if self.store:
             return self.store.get_agent_versions(agent_id)
@@ -301,7 +301,7 @@ class AgentRegistry:
             "created_at": agent.created_at.isoformat() if hasattr(agent.created_at, "isoformat") else str(agent.created_at),
         }]
 
-    def get_agent_version(self, agent_id: str, version: int) -> Optional[AgentDefinition]:
+    def get_agent_version(self, agent_id: str, version: int) -> AgentDefinition | None:
         """Obtiene una versión histórica inmutable específica de un agente."""
         if self.store:
             return self.store.get_agent_version(agent_id, version)

@@ -13,7 +13,6 @@ Expone las herramientas y diagnósticos de supervisión cognitiva de PRAXEON:
 """
 
 
-from typing import Optional
 
 from praxeon.config import PraxeonConfig
 from praxeon.interceptor.mcp_bridge import MCPBridge
@@ -25,8 +24,8 @@ class MCPServer(MCPBridge):
 
     def __init__(
         self,
-        config: Optional[PraxeonConfig] = None,
-        navigator: Optional[Navigator] = None,
+        config: PraxeonConfig | None = None,
+        navigator: Navigator | None = None,
     ):
         super().__init__(config=config, navigator=navigator)
 

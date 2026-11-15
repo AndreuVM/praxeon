@@ -2,7 +2,6 @@
 
 from datetime import datetime
 from enum import Enum
-from typing import List, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -23,8 +22,8 @@ class SuccessCriterion(BaseModel):
     id: str
     description: str
     criterion_type: CriterionType = CriterionType.CUSTOM
-    target: Optional[str] = None         # Ej: ruta de archivo, nombre de test suite, comando
-    expected_value: Optional[str] = None # Ej: 'exit_code=0', 'passed', '200'
+    target: str | None = None         # Ej: ruta de archivo, nombre de test suite, comando
+    expected_value: str | None = None # Ej: 'exit_code=0', 'passed', '200'
     mandatory: bool = True               # Si es obligatorio para autorizar finish
 
 
@@ -33,14 +32,14 @@ class Goal(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     objective: str
-    success_criteria: List[str] = Field(default_factory=list)
-    criteria: List[SuccessCriterion] = Field(default_factory=list)
-    constraints: List[str] = Field(default_factory=list)
-    forbidden_outcomes: List[str] = Field(default_factory=list)
-    budget: Optional[float] = None
-    deadline: Optional[datetime] = None
+    success_criteria: list[str] = Field(default_factory=list)
+    criteria: list[SuccessCriterion] = Field(default_factory=list)
+    constraints: list[str] = Field(default_factory=list)
+    forbidden_outcomes: list[str] = Field(default_factory=list)
+    budget: float | None = None
+    deadline: datetime | None = None
 
-    def get_all_criteria(self) -> List[SuccessCriterion]:
+    def get_all_criteria(self) -> list[SuccessCriterion]:
         """Devuelve todos los criterios formalizados, autocompletando con success_criteria si aplica."""
         all_crit = list(self.criteria)
         for i, sc in enumerate(self.success_criteria):

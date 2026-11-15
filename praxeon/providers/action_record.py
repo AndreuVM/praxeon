@@ -10,14 +10,14 @@ la clasificación determinista del comando.
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 _READ_TOOLS = {"read_file", "view_file", "list_dir", "list_directory", "ls", "dir", "tree", "list_files"}
 _WRITE_TOOLS = {"write_file", "edit_file", "create_file", "write_to_file", "save_file", "replace_file_content"}
 _ABSOLUTE = re.compile(r"^([A-Za-z]:[\\/]|/|\\\\|~)")
 _ARGS_CHARS = 400
 
-_classifier: Optional[Any] = None
+_classifier: Any | None = None
 
 
 def _classify(command: str):
@@ -29,7 +29,7 @@ def _classify(command: str):
     return _classifier.classify(command)
 
 
-def _target(args: Dict[str, Any]) -> str:
+def _target(args: dict[str, Any]) -> str:
     return str(args.get("path") or args.get("file") or args.get("command") or args.get("cmd") or args.get("raw") or "").strip()
 
 
@@ -48,7 +48,7 @@ def _yn(value: bool) -> str:
 _URL = re.compile(r"https?://[^\s'\"`)>]+", re.I)
 
 
-def appears_in_observations(target: str, history: List[Dict[str, Any]]) -> bool:
+def appears_in_observations(target: str, history: list[dict[str, Any]]) -> bool:
     """¿La orden (o una URL suya) aparece en lo que el agente leyó antes? Es la señal de procedencia de una posible inyección."""
     haystack = " ".join(str(h.get("observation") or "") for h in history).lower()
     if not haystack or not target:
@@ -59,7 +59,7 @@ def appears_in_observations(target: str, history: List[Dict[str, Any]]) -> bool:
     return any(u.lower().rstrip(".,;") in haystack for u in _URL.findall(target))
 
 
-def build_action_record(candidate: Dict[str, Any], history: List[Dict[str, Any]], with_classifier: bool = True,
+def build_action_record(candidate: dict[str, Any], history: list[dict[str, Any]], with_classifier: bool = True,
                         version: int = 1) -> str:
     """Texto del registro canónico (varias líneas cortas, siempre con la misma estructura).
 

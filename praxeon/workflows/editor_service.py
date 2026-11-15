@@ -8,12 +8,12 @@ Provee la lógica de negocio y persistencia para el editor drag & drop de flujos
     * Coordinación con WorkflowEngine y WorkflowDecisionBridge para ejecución interactiva y backtrack.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 import functools
 import logging
 import os
 import threading
-from typing import Any, Dict, List, Optional
+from typing import Any
 import uuid
 
 from praxeon.agents.bus import AgentMessageBus
@@ -49,10 +49,10 @@ class WorkflowEditorService:
 
     def __init__(
         self,
-        event_bus: Optional[EventBus] = None,
-        agent_bus: Optional[AgentMessageBus] = None,
-        persistence_store: Optional[Any] = None,
-        allow_simulation: Optional[bool] = None,
+        event_bus: EventBus | None = None,
+        agent_bus: AgentMessageBus | None = None,
+        persistence_store: Any | None = None,
+        allow_simulation: bool | None = None,
     ):
         # La ejecución sintética (sin handlers reales) solo se habilita de forma explícita:
         # parámetro `allow_simulation` o PRAXEON_WORKFLOW_SIMULATION=1. Por defecto es fail-closed.
@@ -65,9 +65,9 @@ class WorkflowEditorService:
         self.agent_bus = agent_bus
         self.persistence_store = persistence_store
         self._lock = threading.RLock()
-        self._workflows: Dict[str, WorkflowDefinition] = {}
-        self._active_engines: Dict[str, WorkflowEngine] = {}
-        self._active_bridges: Dict[str, WorkflowDecisionBridge] = {}
+        self._workflows: dict[str, WorkflowDefinition] = {}
+        self._active_engines: dict[str, WorkflowEngine] = {}
+        self._active_bridges: dict[str, WorkflowDecisionBridge] = {}
 
         # Cargar workflows desde persistencia SQLite si está disponible
         loaded = False
@@ -182,7 +182,7 @@ class WorkflowEditorService:
                 logger.warning("No se pudo eliminar el workflow persistido", exc_info=True)
         return removed
 
-    def get_workflow(self, workflow_id: str) -> Optional[WorkflowDefinition]:
+    def get_workflow(self, workflow_id: str) -> WorkflowDefinition | None:
         """Obtiene la definición de un flujo de trabajo."""
         wf = self._workflows.get(workflow_id)
         if not wf and self.persistence_store and hasattr(self.persistence_store, "get_workflow"):
@@ -194,7 +194,7 @@ class WorkflowEditorService:
                 logger.warning('No se pudo cargar el workflow %s', workflow_id, exc_info=True)
         return wf
 
-    def list_workflows(self) -> List[Dict[str, Any]]:
+    def list_workflows(self) -> list[dict[str, Any]]:
         """Lista resúmenes de todos los flujos registrados."""
         return [
             {
@@ -214,7 +214,7 @@ class WorkflowEditorService:
         self,
         name: str,
         description: str = "",
-        workflow_id: Optional[str] = None,
+        workflow_id: str | None = None,
     ) -> WorkflowDefinition:
         """Crea un nuevo workflow vacío con nodos START y END elementales."""
         wid = workflow_id or f"wf_{uuid.uuid4().hex[:12]}"
@@ -238,11 +238,11 @@ class WorkflowEditorService:
         workflow_id: str,
         name: str,
         node_type: NodeType,
-        position: Optional[UIPosition] = None,
-        agent_id: Optional[str] = None,
-        tool_name: Optional[str] = None,
-        inputs: Optional[Dict[str, Any]] = None,
-        control_config: Optional[Dict[str, Any]] = None,
+        position: UIPosition | None = None,
+        agent_id: str | None = None,
+        tool_name: str | None = None,
+        inputs: dict[str, Any] | None = None,
+        control_config: dict[str, Any] | None = None,
     ) -> WorkflowNode:
         """Añade un nodo al flujo de trabajo."""
         wf = self.get_workflow(workflow_id)
@@ -275,7 +275,7 @@ class WorkflowEditorService:
         new_nodes[node_id] = node
 
         # model_copy conserva timeout_seconds, metadata y created_at del workflow
-        updated_wf = wf.model_copy(update={"version": wf.version + 1, "nodes": new_nodes, "updated_at": datetime.now(timezone.utc)})
+        updated_wf = wf.model_copy(update={"version": wf.version + 1, "nodes": new_nodes, "updated_at": datetime.now(UTC)})
         self.register_workflow(updated_wf)
         return node
 
@@ -301,7 +301,7 @@ class WorkflowEditorService:
         new_nodes[node_id] = updated_node
 
         # model_copy conserva timeout_seconds, metadata y created_at del workflow
-        updated_wf = wf.model_copy(update={"nodes": new_nodes, "updated_at": datetime.now(timezone.utc)})
+        updated_wf = wf.model_copy(update={"nodes": new_nodes, "updated_at": datetime.now(UTC)})
         self.register_workflow(updated_wf)
         return updated_node
 
@@ -310,13 +310,13 @@ class WorkflowEditorService:
         self,
         workflow_id: str,
         node_id: str,
-        name: Optional[str] = None,
-        node_type: Optional[NodeType] = None,
-        agent_id: Optional[str] = None,
-        tool_name: Optional[str] = None,
-        inputs: Optional[Dict[str, Any]] = None,
-        control_config: Optional[Dict[str, Any]] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        name: str | None = None,
+        node_type: NodeType | None = None,
+        agent_id: str | None = None,
+        tool_name: str | None = None,
+        inputs: dict[str, Any] | None = None,
+        control_config: dict[str, Any] | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> WorkflowNode:
         """Actualiza las propiedades operativas y de configuración de un nodo."""
         wf = self.get_workflow(workflow_id)
@@ -353,7 +353,7 @@ class WorkflowEditorService:
         new_nodes[node_id] = updated_node
 
         # model_copy conserva timeout_seconds, metadata y created_at del workflow
-        updated_wf = wf.model_copy(update={"version": wf.version + 1, "nodes": new_nodes, "updated_at": datetime.now(timezone.utc)})
+        updated_wf = wf.model_copy(update={"version": wf.version + 1, "nodes": new_nodes, "updated_at": datetime.now(UTC)})
         self.register_workflow(updated_wf)
         return updated_node
 
@@ -379,7 +379,7 @@ class WorkflowEditorService:
         new_edges = [e for e in wf.edges if e.from_node != node_id and e.to_node != node_id]
 
         # model_copy conserva timeout_seconds, metadata y created_at del workflow
-        updated_wf = wf.model_copy(update={"version": wf.version + 1, "nodes": new_nodes, "edges": new_edges, "updated_at": datetime.now(timezone.utc)})
+        updated_wf = wf.model_copy(update={"version": wf.version + 1, "nodes": new_nodes, "edges": new_edges, "updated_at": datetime.now(UTC)})
         self.register_workflow(updated_wf)
         return True
 
@@ -389,7 +389,7 @@ class WorkflowEditorService:
         workflow_id: str,
         from_node: str,
         to_node: str,
-        condition: Optional[EdgeCondition] = None,
+        condition: EdgeCondition | None = None,
         label: str = "",
     ) -> WorkflowEdge:
         """Conecta dos nodos mediante una nueva arista dirigida."""
@@ -412,7 +412,7 @@ class WorkflowEditorService:
         new_edges.append(edge)
 
         # model_copy conserva timeout_seconds, metadata y created_at del workflow
-        updated_wf = wf.model_copy(update={"version": wf.version + 1, "edges": new_edges, "updated_at": datetime.now(timezone.utc)})
+        updated_wf = wf.model_copy(update={"version": wf.version + 1, "edges": new_edges, "updated_at": datetime.now(UTC)})
         self.register_workflow(updated_wf)
         return edge
 
@@ -428,7 +428,7 @@ class WorkflowEditorService:
             return False
 
         # model_copy conserva timeout_seconds, metadata y created_at del workflow
-        updated_wf = wf.model_copy(update={"version": wf.version + 1, "edges": new_edges, "updated_at": datetime.now(timezone.utc)})
+        updated_wf = wf.model_copy(update={"version": wf.version + 1, "edges": new_edges, "updated_at": datetime.now(UTC)})
         self.register_workflow(updated_wf)
         return True
 
@@ -437,8 +437,8 @@ class WorkflowEditorService:
         self,
         workflow_id: str,
         edge_id: str,
-        label: Optional[str] = None,
-        condition: Optional[EdgeCondition] = None,
+        label: str | None = None,
+        condition: EdgeCondition | None = None,
     ) -> WorkflowEdge:
         """Actualiza la etiqueta o condición lógica de una arista dirigida existente."""
         wf = self.get_workflow(workflow_id)
@@ -467,7 +467,7 @@ class WorkflowEditorService:
         new_edges[edge_idx] = updated_edge
 
         # model_copy conserva timeout_seconds, metadata y created_at del workflow
-        updated_wf = wf.model_copy(update={"version": wf.version + 1, "edges": new_edges, "updated_at": datetime.now(timezone.utc)})
+        updated_wf = wf.model_copy(update={"version": wf.version + 1, "edges": new_edges, "updated_at": datetime.now(UTC)})
         self.register_workflow(updated_wf)
         return updated_edge
 
@@ -497,7 +497,7 @@ class WorkflowEditorService:
         return self._active_engines[workflow_id]
 
     @_locked
-    def execute_workflow(self, workflow_id: str, max_steps: int = 100) -> Dict[str, Any]:
+    def execute_workflow(self, workflow_id: str, max_steps: int = 100) -> dict[str, Any]:
         """Ejecuta el flujo de trabajo supervisado por gobernanza."""
         engine = self.get_or_create_engine(workflow_id)
         bridge = self._active_bridges[workflow_id]
@@ -510,7 +510,7 @@ class WorkflowEditorService:
         return ctx.to_dict()
 
     @_locked
-    def step_workflow(self, workflow_id: str) -> Dict[str, Any]:
+    def step_workflow(self, workflow_id: str) -> dict[str, Any]:
         """Avanza un paso individual en el workflow."""
         engine = self.get_or_create_engine(workflow_id)
         bridge = self._active_bridges[workflow_id]
@@ -527,7 +527,7 @@ class WorkflowEditorService:
         }
 
     @_locked
-    def backtrack_workflow(self, workflow_id: str, target_node_id: str) -> Dict[str, Any]:
+    def backtrack_workflow(self, workflow_id: str, target_node_id: str) -> dict[str, Any]:
         """Aplica backtrack determinista hacia un nodo objetivo."""
         engine = self.get_or_create_engine(workflow_id)
         success = engine.backtrack_to_node(target_node_id)
@@ -556,7 +556,7 @@ class WorkflowEditorService:
         approved: bool = True,
         comment: str = "",
         approver_id: str = "operator",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Autoriza o rechaza la ejecución de un nodo en estado WAITING_APPROVAL."""
         engine = self.get_or_create_engine(workflow_id)
         node = engine.workflow.nodes.get(node_id)
@@ -586,7 +586,7 @@ class WorkflowEditorService:
             "context": engine.context.to_dict(),
         }
 
-    def list_templates(self) -> List[Dict[str, Any]]:
+    def list_templates(self) -> list[dict[str, Any]]:
         """Lista las plantillas canónicas de flujos de trabajo disponibles."""
         result = []
         for key, factory in CANONICAL_TEMPLATES.items():
@@ -600,7 +600,7 @@ class WorkflowEditorService:
             })
         return result
 
-    def instantiate_template(self, template_key: str, name: Optional[str] = None) -> WorkflowDefinition:
+    def instantiate_template(self, template_key: str, name: str | None = None) -> WorkflowDefinition:
         """Instancia una plantilla canónica y la registra como un nuevo workflow."""
         if template_key not in CANONICAL_TEMPLATES:
             raise ValueError(f"Plantilla '{template_key}' no reconocida. Disponibles: {list(CANONICAL_TEMPLATES.keys())}")

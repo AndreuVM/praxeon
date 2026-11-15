@@ -6,9 +6,9 @@ Centraliza el ciclo de vida de sesiones:
 - Captura, consulta y restauración de puntos de control (checkpoints/backtracks).
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 import threading
-from typing import Any, Dict, List, Optional
+from typing import Any
 import uuid
 
 from praxeon.domain.events import EventType
@@ -31,20 +31,20 @@ class SessionService:
         self.event_bus = event_bus
         self.state_store = state_store
         self._lock = threading.Lock()
-        self._sessions_meta: Dict[str, Dict[str, Any]] = {}
+        self._sessions_meta: dict[str, dict[str, Any]] = {}
 
     def create_session(
         self,
         goal: str,
-        session_id: Optional[str] = None,
+        session_id: str | None = None,
         agent_name: str = "CodingAgent",
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
         execution_mode: str = "local_restricted",
-        workspace_root: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        workspace_root: str | None = None,
+    ) -> dict[str, Any]:
         """Crea formalmente una nueva sesión de supervisión y persiste su estado génesis."""
         sid = session_id or f"s-{uuid.uuid4().hex[:8]}"
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         meta = dict(metadata or {})
         mode_val = meta.get("execution_mode") or execution_mode
@@ -99,7 +99,7 @@ class SessionService:
 
         return self._sessions_meta[sid]
 
-    def get_session(self, session_id: str) -> Optional[Dict[str, Any]]:
+    def get_session(self, session_id: str) -> dict[str, Any] | None:
         """Obtiene el resumen y metadatos de una sesión."""
         with self._lock:
             if session_id in self._sessions_meta:
@@ -117,15 +117,15 @@ class SessionService:
             "agent_name": "CodingAgent",
             "status": "Active",
             "execution_mode": mode_val,
-            "created_at": datetime.now(timezone.utc),
-            "updated_at": datetime.now(timezone.utc),
+            "created_at": datetime.now(UTC),
+            "updated_at": datetime.now(UTC),
             "metadata": state.metadata,
         }
         with self._lock:
             self._sessions_meta[session_id] = meta
         return meta
 
-    def list_sessions(self) -> List[Dict[str, Any]]:
+    def list_sessions(self) -> list[dict[str, Any]]:
         """Devuelve todas las sesiones registradas con sus resúmenes."""
         session_ids = self.state_store.list_sessions()
         with self._lock:
@@ -140,7 +140,7 @@ class SessionService:
                 results.append(summary)
         return results
 
-    def get_session_summary(self, session_id: str) -> Optional[Dict[str, Any]]:
+    def get_session_summary(self, session_id: str) -> dict[str, Any] | None:
         """Calcula el resumen agregado (contadores, eventos, nodos) de una sesión."""
         sess = self.get_session(session_id)
         if not sess:
@@ -176,7 +176,7 @@ class SessionService:
             "tree": tree,
         }
 
-    def get_session_snapshot(self, session_id: str) -> Optional[Dict[str, Any]]:
+    def get_session_snapshot(self, session_id: str) -> dict[str, Any] | None:
         """Obtiene una instantánea completa de la sesión incluyendo su árbol de decisiones."""
         summary = self.get_session_summary(session_id)
         if not summary:
@@ -187,7 +187,7 @@ class SessionService:
             "events": [e.model_dump(mode="json") if hasattr(e, "model_dump") else e for e in events],
         }
 
-    def create_checkpoint(self, session_id: str, label: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    def create_checkpoint(self, session_id: str, label: str | None = None) -> dict[str, Any] | None:
         """Genera un punto de control inmutable para la sesión."""
         state = self.state_store.load_state(session_id)
         if not state:
@@ -195,7 +195,7 @@ class SessionService:
         ckpt = self.state_store.create_checkpoint(session_id, label=label)
         return ckpt.model_dump(mode="json") if hasattr(ckpt, "model_dump") else dict(ckpt)
 
-    def list_checkpoints(self, session_id: str) -> List[Dict[str, Any]]:
+    def list_checkpoints(self, session_id: str) -> list[dict[str, Any]]:
         """Lista los puntos de control disponibles para una sesión."""
         ckpts = self.state_store.list_checkpoints(session_id)
         return [c.model_dump(mode="json") if hasattr(c, "model_dump") else dict(c) for c in ckpts]
@@ -209,6 +209,6 @@ class SessionService:
             session_id=session_id,
             event_type=EventType.SESSION_ROLLBACK,
             node_id=f"rollback_{checkpoint_id}",
-            payload={"checkpoint_id": checkpoint_id, "restored_at": datetime.now(timezone.utc).isoformat()},
+            payload={"checkpoint_id": checkpoint_id, "restored_at": datetime.now(UTC).isoformat()},
         )
         return True

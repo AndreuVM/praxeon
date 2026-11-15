@@ -9,7 +9,7 @@ Implementa los requisitos de la Sección 23 de la Auditoría Técnica:
 
 import os
 import warnings
-from typing import Any, List, Literal, Optional, Set
+from typing import Any, Literal
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from praxeon.env import env_setting
@@ -18,15 +18,15 @@ from praxeon.env import env_setting
 class ProviderConfig(BaseModel):
     """Configuración del proveedor de inferencia semántica (TypeSafe / LAYA / Replay)."""
     name: str = Field(default="typesafe", description="Identificador del proveedor supervisor ('typesafe', 'jev', 'laya')")
-    api_key: Optional[str] = Field(default=None, description="Clave de API para TypeSafe AI")
+    api_key: str | None = Field(default=None, description="Clave de API para TypeSafe AI")
     use_api: bool = Field(default=False, description="Activar invocación real del proveedor")
     model: str = Field(default="jev-latest", description="Identificador del modelo de inferencia")
-    base_url: Optional[str] = Field(default=None, description="URL base alternativa para el proveedor")
+    base_url: str | None = Field(default=None, description="URL base alternativa para el proveedor")
     allow_custom_endpoints: bool = Field(
         default=False,
         description="Permitir endpoints remotos personalizados fuera de la allowlist canónica (SEC-01)",
     )
-    allowed_custom_hosts: Set[str] = Field(
+    allowed_custom_hosts: set[str] = Field(
         default_factory=set,
         description="Allowlist explícita de dominios de endpoints autorizados",
     )
@@ -38,7 +38,7 @@ class ProviderConfig(BaseModel):
 
     @field_validator("base_url")
     @classmethod
-    def _validate_base_url(cls, v: Optional[str], info: Any) -> Optional[str]:
+    def _validate_base_url(cls, v: str | None, info: Any) -> str | None:
         if not v:
             return None
         from praxeon.policy.egress import validate_provider_endpoint
@@ -74,11 +74,11 @@ class ChunkConfig(BaseModel):
 
 class RiskConfig(BaseModel):
     """Políticas de categorización y contención de riesgo operacional."""
-    protected_files: Set[str] = Field(
+    protected_files: set[str] = Field(
         default_factory=lambda: {".env", "id_rsa", "id_ed25519", "credentials.json", ".git"},
         description="Archivos sensibles protegidos contra mutaciones no confirmadas",
     )
-    destructive_commands: List[str] = Field(
+    destructive_commands: list[str] = Field(
         default_factory=lambda: ["rm -rf", "del /f", "drop table", "mkfs", "dd if="],
         description="Patrones de comandos shell intrínsecamente destructivos",
     )
@@ -107,7 +107,7 @@ class SecurityConfig(BaseModel):
         default=False,
         description="Permitir URLs base/endpoints personalizados fuera de la allowlist canónica de proveedores (SEC-01)",
     )
-    allowed_custom_hosts: Set[str] = Field(
+    allowed_custom_hosts: set[str] = Field(
         default_factory=set,
         description="Allowlist explícita de dominios de endpoints autorizados",
     )
@@ -117,7 +117,7 @@ class TelemetryConfig(BaseModel):
     """Configuración de observabilidad y registro estructurado."""
     enabled: bool = Field(default=True, description="Habilitar emisión de eventos y telemetría")
     log_to_file: bool = Field(default=False, description="Persistir eventos en archivo JSONL")
-    log_file_path: Optional[str] = Field(default=None, description="Ruta para el archivo de logs de eventos")
+    log_file_path: str | None = Field(default=None, description="Ruta para el archivo de logs de eventos")
 
 
 class AdaptiveBranchingConfig(BaseModel):
@@ -219,11 +219,11 @@ class PraxeonConfig(BaseModel):
 
     # --- Propiedades de conveniencia y compatibilidad con versiones previas ---
     @property
-    def typesafe_api_key(self) -> Optional[str]:
+    def typesafe_api_key(self) -> str | None:
         return self.provider.api_key
 
     @typesafe_api_key.setter
-    def typesafe_api_key(self, value: Optional[str]) -> None:
+    def typesafe_api_key(self, value: str | None) -> None:
         self.provider.api_key = value
 
     @property
@@ -395,7 +395,7 @@ class JEVConfig(PraxeonConfig):
 default_config = PraxeonConfig.from_env(load_env_file=True)
 
 
-def resolve_cache_dir(custom_dir: Optional[str] = None) -> str:
+def resolve_cache_dir(custom_dir: str | None = None) -> str:
     """Resuelve la ruta del directorio de caché local.
 
     Por defecto utiliza '.praxeon_cache'. Si no existe pero existe '.jev_cache' con datos,
@@ -419,7 +419,7 @@ def resolve_cache_dir(custom_dir: Optional[str] = None) -> str:
     return str(prax_path)
 
 
-def resolve_db_path(filename: str, custom_path: Optional[str] = None) -> str:
+def resolve_db_path(filename: str, custom_path: str | None = None) -> str:
     """Resuelve la ruta de un archivo de base de datos SQLite dentro del cache dir canónico."""
     if custom_path:
         return custom_path

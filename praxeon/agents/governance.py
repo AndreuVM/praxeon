@@ -8,9 +8,9 @@ Implementa las defensas de seguridad y control de ejecución entre agentes:
 - Generación de alertas de seguridad y registro de violaciones.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 from praxeon.agents.definition import AgentDefinition, AgentStatus
@@ -41,7 +41,7 @@ class GovernanceViolation(BaseModel):
     message_id: str
     reason: str
     severity: str = "HIGH"
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class GovernanceDecision(BaseModel):
@@ -50,7 +50,7 @@ class GovernanceDecision(BaseModel):
 
     allowed: bool
     reason: str
-    violation: Optional[GovernanceViolation] = None
+    violation: GovernanceViolation | None = None
 
 
 class AgentGovernanceGuard:
@@ -58,30 +58,30 @@ class AgentGovernanceGuard:
 
     def __init__(
         self,
-        registry: Optional[AgentRegistry] = None,
+        registry: AgentRegistry | None = None,
         supervisor_id: str = "praxeon_supervisor",
         strict_mode: bool = True,
     ):
         self.registry = registry or AgentRegistry()
         self.supervisor_id = supervisor_id
         self.strict_mode = strict_mode
-        self._local_definitions: Dict[str, AgentDefinition] = {}
-        self._violations: List[GovernanceViolation] = []
+        self._local_definitions: dict[str, AgentDefinition] = {}
+        self._violations: list[GovernanceViolation] = []
 
     def register_definition(self, definition: AgentDefinition) -> None:
         """Registra o actualiza la definición de un agente para supervisión local."""
         self._local_definitions[definition.agent_id] = definition
         self.registry.register(definition)
 
-    def get_definition(self, agent_id: str) -> Optional[AgentDefinition]:
+    def get_definition(self, agent_id: str) -> AgentDefinition | None:
         """Obtiene la definición activa de un agente."""
         if agent_id in self._local_definitions:
             return self._local_definitions[agent_id]
         return self.registry.get(agent_id)
 
-    def _extract_requested_tools(self, payload: Dict[str, Any]) -> List[str]:
+    def _extract_requested_tools(self, payload: dict[str, Any]) -> list[str]:
         """Extrae la lista de herramientas invocadas o requeridas en el cuerpo del mensaje."""
-        tools: List[str] = []
+        tools: list[str] = []
         for key in ("tool", "tool_name", "requested_tool"):
             if key in payload and isinstance(payload[key], str) and payload[key].strip():
                 tools.append(payload[key].strip())
@@ -94,9 +94,9 @@ class AgentGovernanceGuard:
 
         return list(dict.fromkeys(tools))  # Eliminar duplicados preservando orden
 
-    def _extract_required_capabilities(self, payload: Dict[str, Any]) -> List[str]:
+    def _extract_required_capabilities(self, payload: dict[str, Any]) -> list[str]:
         """Extrae las capabilities requeridas por la tarea."""
-        caps: List[str] = []
+        caps: list[str] = []
         if "required_capability" in payload and isinstance(payload["required_capability"], str):
             caps.append(payload["required_capability"].strip())
         if "required_capabilities" in payload and isinstance(payload["required_capabilities"], (list, set, tuple)):
@@ -154,7 +154,7 @@ class AgentGovernanceGuard:
             sender_def = None
 
         # 4. Validar destinatario (si no es broadcast ni supervisor)
-        receiver_def: Optional[AgentDefinition] = None
+        receiver_def: AgentDefinition | None = None
         if message.receiver_id != "*" and message.receiver_id != self.supervisor_id:
             receiver_def = self.get_definition(message.receiver_id)
             if not receiver_def:
@@ -264,14 +264,14 @@ class AgentGovernanceGuard:
 
         return GovernanceDecision(allowed=True, reason="Mensaje conforme con las políticas de gobernanza.")
 
-    def intercept_message(self, message: AgentMessage) -> Optional[AgentMessage]:
+    def intercept_message(self, message: AgentMessage) -> AgentMessage | None:
         """Middleware para AgentMessageBus.add_interceptor. Retorna el mensaje o None si viola políticas."""
         decision = self.validate_message(message)
         if not decision.allowed:
             return None
         return message
 
-    def get_violations(self) -> List[GovernanceViolation]:
+    def get_violations(self) -> list[GovernanceViolation]:
         """Consulta el log acumulado de violaciones de gobernanza."""
         return list(self._violations)
 

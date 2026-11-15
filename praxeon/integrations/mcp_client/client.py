@@ -18,7 +18,7 @@ import re
 import shutil
 import subprocess
 import threading
-from typing import Any, Deque, Dict, List, Optional
+from typing import Any
 from urllib.parse import parse_qsl, urljoin, urlsplit, urlunsplit
 
 PROTOCOL_VERSION = "2025-06-18"
@@ -36,12 +36,12 @@ _VAR_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
 class McpError(RuntimeError):
     """Error del protocolo o del servidor MCP. `status` es el código HTTP si el fallo vino de un transporte remoto."""
 
-    def __init__(self, message: str, status: Optional[int] = None) -> None:
+    def __init__(self, message: str, status: int | None = None) -> None:
         super().__init__(message)
         self.status = status
 
 
-def build_env(declared: Dict[str, str]) -> Dict[str, str]:
+def build_env(declared: dict[str, str]) -> dict[str, str]:
     env = {k: os.environ[k] for k in _BASE_ENV if k in os.environ}
     for key, value in declared.items():
         if value.startswith("${") and value.endswith("}"):
@@ -52,7 +52,7 @@ def build_env(declared: Dict[str, str]) -> Dict[str, str]:
 
 def expand_vars(text: str, what: str = "la configuración") -> str:
     """Sustituye «${VARIABLE}» por el valor del entorno de PRAXEON; si falta, falla con un mensaje claro."""
-    def repl(match: "re.Match[str]") -> str:
+    def repl(match: re.Match[str]) -> str:
         value = os.environ.get(match.group(1))
         if value is None:
             raise McpError(f"Falta la variable de entorno «{match.group(1)}» que usa {what}. Defínela en el entorno o en tu .env.")
@@ -76,7 +76,7 @@ def redact_url(url: str) -> str:
     return urlunsplit((parts.scheme, netloc, path, query, ""))
 
 
-def url_secrets(url: str, headers: Dict[str, str]) -> List[str]:
+def url_secrets(url: str, headers: dict[str, str]) -> list[str]:
     """Valores que no deben aparecer en mensajes de error (query, credenciales y cabeceras)."""
     parts = urlsplit(url)
     secrets = [v for _, v in parse_qsl(parts.query, keep_blank_values=True)] + list(headers.values())
@@ -90,15 +90,15 @@ def url_secrets(url: str, headers: Dict[str, str]) -> List[str]:
 # ---------------------------------------------------------------------------------------------------------
 
 class _RpcClient:
-    def __init__(self, name: str, client_version: str = "1.0", secrets: Optional[List[str]] = None) -> None:
+    def __init__(self, name: str, client_version: str = "1.0", secrets: list[str] | None = None) -> None:
         self.name = name
         self._client_version = client_version
         self._secrets = list(secrets or [])
-        self._pending: Dict[Any, Dict[str, Any]] = {}
+        self._pending: dict[Any, dict[str, Any]] = {}
         self._next_id = 0
         self._id_lock = threading.Lock()
         self.tools_changed = False
-        self.server_info: Dict[str, Any] = {}
+        self.server_info: dict[str, Any] = {}
 
     # -- a implementar por cada transporte
     def start(self, timeout: float = 30.0) -> None:
@@ -110,7 +110,7 @@ class _RpcClient:
     def close(self) -> None:
         raise NotImplementedError
 
-    def _send(self, message: Dict[str, Any], timeout: Optional[float] = None) -> None:
+    def _send(self, message: dict[str, Any], timeout: float | None = None) -> None:
         raise NotImplementedError
 
     @property
@@ -132,9 +132,9 @@ class _RpcClient:
         self.server_info = result.get("serverInfo") or {}
         self._notify("notifications/initialized")
 
-    def list_tools(self, timeout: float = 30.0) -> List[Dict[str, Any]]:
-        tools: List[Dict[str, Any]] = []
-        cursor: Optional[str] = None
+    def list_tools(self, timeout: float = 30.0) -> list[dict[str, Any]]:
+        tools: list[dict[str, Any]] = []
+        cursor: str | None = None
         for _ in range(50):  # tope de páginas
             result = self._request("tools/list", {"cursor": cursor} if cursor else {}, timeout)
             tools.extend(t for t in result.get("tools", []) if isinstance(t, dict) and t.get("name"))
@@ -144,20 +144,20 @@ class _RpcClient:
         self.tools_changed = False
         return tools
 
-    def call_tool(self, name: str, arguments: Dict[str, Any], timeout: float = 60.0) -> Dict[str, Any]:
+    def call_tool(self, name: str, arguments: dict[str, Any], timeout: float = 60.0) -> dict[str, Any]:
         return self._request("tools/call", {"name": name, "arguments": arguments or {}}, timeout)
 
-    def _notify(self, method: str, params: Optional[Dict[str, Any]] = None) -> None:
-        message: Dict[str, Any] = {"jsonrpc": "2.0", "method": method}
+    def _notify(self, method: str, params: dict[str, Any] | None = None) -> None:
+        message: dict[str, Any] = {"jsonrpc": "2.0", "method": method}
         if params:
             message["params"] = params
         self._send(message)
 
-    def _request(self, method: str, params: Dict[str, Any], timeout: float) -> Dict[str, Any]:
+    def _request(self, method: str, params: dict[str, Any], timeout: float) -> dict[str, Any]:
         with self._id_lock:
             self._next_id += 1
             req_id = self._next_id
-        slot: Dict[str, Any] = {"event": threading.Event(), "response": None}
+        slot: dict[str, Any] = {"event": threading.Event(), "response": None}
         self._pending[req_id] = slot
         try:
             self._send({"jsonrpc": "2.0", "id": req_id, "method": method, "params": params}, timeout)
@@ -186,14 +186,14 @@ class _RpcClient:
                 slot["response"] = msg
                 slot["event"].set()
 
-    def _on_server_message(self, msg: Dict[str, Any]) -> None:
+    def _on_server_message(self, msg: dict[str, Any]) -> None:
         method = msg.get("method")
         if method == "notifications/tools/list_changed":
             self.tools_changed = True
         if "id" not in msg:
             return  # notificación
         if method == "ping":
-            reply: Dict[str, Any] = {"jsonrpc": "2.0", "id": msg["id"], "result": {}}
+            reply: dict[str, Any] = {"jsonrpc": "2.0", "id": msg["id"], "result": {}}
         else:  # sampling, roots, elicitation…: PRAXEON no los ofrece
             reply = {"jsonrpc": "2.0", "id": msg["id"], "error": {"code": -32601, "message": "Método no soportado por PRAXEON"}}
         try:
@@ -216,9 +216,9 @@ class StdioMcpClient(_RpcClient):
     def __init__(
         self,
         command: str,
-        args: Optional[List[str]] = None,
-        env: Optional[Dict[str, str]] = None,
-        cwd: Optional[str] = None,
+        args: list[str] | None = None,
+        env: dict[str, str] | None = None,
+        cwd: str | None = None,
         name: str = "mcp",
         client_version: str = "1.0",
     ) -> None:
@@ -227,9 +227,9 @@ class StdioMcpClient(_RpcClient):
         self._args = list(args or [])
         self._env = env
         self._cwd = cwd
-        self._proc: Optional[subprocess.Popen] = None
+        self._proc: subprocess.Popen | None = None
         self._write_lock = threading.Lock()
-        self._stderr: Deque[str] = collections.deque(maxlen=40)
+        self._stderr: collections.deque[str] = collections.deque(maxlen=40)
 
     def start(self, timeout: float = 30.0) -> None:
         exe = shutil.which(self._command) or self._command
@@ -281,7 +281,7 @@ class StdioMcpClient(_RpcClient):
         except Exception:  # noqa: S110 - best-effort: limpieza al cerrar la conexión o el proceso
             pass
 
-    def _send(self, message: Dict[str, Any], timeout: Optional[float] = None) -> None:
+    def _send(self, message: dict[str, Any], timeout: float | None = None) -> None:
         if not self.alive():
             raise McpError(f"El servidor MCP «{self.name}» no está en ejecución. {self.stderr_tail[-300:]}")
         data = (json.dumps(message, ensure_ascii=False) + "\n").encode("utf-8")
@@ -324,7 +324,7 @@ class StdioMcpClient(_RpcClient):
 # Transportes remotos
 # ---------------------------------------------------------------------------------------------------------
 
-def _connection(parts: Any, timeout: Optional[float]) -> http.client.HTTPConnection:
+def _connection(parts: Any, timeout: float | None) -> http.client.HTTPConnection:
     cls = http.client.HTTPSConnection if parts.scheme == "https" else http.client.HTTPConnection
     return cls(parts.hostname, parts.port, timeout=timeout)
 
@@ -338,7 +338,7 @@ def _origin(parts: Any) -> tuple:
 
 
 class _RemoteClient(_RpcClient):
-    def __init__(self, url: str, headers: Optional[Dict[str, str]], name: str, client_version: str = "1.0") -> None:
+    def __init__(self, url: str, headers: dict[str, str] | None, name: str, client_version: str = "1.0") -> None:
         headers = dict(headers or {})
         super().__init__(name, client_version, url_secrets(url, headers))
         self._url = url
@@ -352,7 +352,7 @@ class _RemoteClient(_RpcClient):
     def shown_url(self) -> str:
         return redact_url(self._url)
 
-    def _post(self, url_parts: Any, message: Dict[str, Any], extra: Dict[str, str], timeout: Optional[float]):
+    def _post(self, url_parts: Any, message: dict[str, Any], extra: dict[str, str], timeout: float | None):
         """POST de un mensaje JSON-RPC; devuelve (estado, cabeceras, conexión, respuesta) sin leer el cuerpo."""
         body = json.dumps(message, ensure_ascii=False).encode("utf-8")
         headers = {"Content-Type": "application/json", "Accept": "application/json, text/event-stream", **self._headers, **extra}
@@ -375,8 +375,8 @@ class _RemoteClient(_RpcClient):
     @staticmethod
     def _iter_sse(resp: Any):
         """Eventos SSE (tipo, datos) de una respuesta; termina al cerrarse la conexión."""
-        event: Optional[str] = None
-        data: List[str] = []
+        event: str | None = None
+        data: list[str] = []
         while True:
             raw = resp.readline()
             if not raw:
@@ -405,13 +405,13 @@ class _RemoteClient(_RpcClient):
 class SseMcpClient(_RemoteClient):
     """SSE clásico: un GET mantiene el flujo de respuestas y un POST por mensaje al endpoint que anuncia el servidor."""
 
-    def __init__(self, url: str, headers: Optional[Dict[str, str]] = None, name: str = "mcp", client_version: str = "1.0") -> None:
+    def __init__(self, url: str, headers: dict[str, str] | None = None, name: str = "mcp", client_version: str = "1.0") -> None:
         super().__init__(url, headers, name, client_version)
-        self._endpoint_parts: Optional[Any] = None
+        self._endpoint_parts: Any | None = None
         self._endpoint_ready = threading.Event()
-        self._stream_conn: Optional[http.client.HTTPConnection] = None
-        self._reader: Optional[threading.Thread] = None
-        self._endpoint_error: Optional[str] = None
+        self._stream_conn: http.client.HTTPConnection | None = None
+        self._reader: threading.Thread | None = None
+        self._endpoint_error: str | None = None
 
     def start(self, timeout: float = 30.0) -> None:
         conn = _connection(self._parts, timeout)
@@ -468,7 +468,7 @@ class SseMcpClient(_RemoteClient):
             self._endpoint_parts = target
         self._endpoint_ready.set()
 
-    def _send(self, message: Dict[str, Any], timeout: Optional[float] = None) -> None:
+    def _send(self, message: dict[str, Any], timeout: float | None = None) -> None:
         if self._closed or self._endpoint_parts is None:
             raise McpError(f"El servidor MCP «{self.name}» no está conectado.")
         conn, resp = self._post(self._endpoint_parts, message, {}, timeout or 60.0)
@@ -498,9 +498,9 @@ class SseMcpClient(_RemoteClient):
 class StreamableHttpMcpClient(_RemoteClient):
     """HTTP «streamable»: un único endpoint; cada POST se responde con JSON o con un flujo SSE que acaba con la respuesta."""
 
-    def __init__(self, url: str, headers: Optional[Dict[str, str]] = None, name: str = "mcp", client_version: str = "1.0") -> None:
+    def __init__(self, url: str, headers: dict[str, str] | None = None, name: str = "mcp", client_version: str = "1.0") -> None:
         super().__init__(url, headers, name, client_version)
-        self._session_id: Optional[str] = None
+        self._session_id: str | None = None
         self._negotiated = False
 
     def start(self, timeout: float = 30.0) -> None:
@@ -510,10 +510,10 @@ class StreamableHttpMcpClient(_RemoteClient):
             self.close()
             raise
 
-    def _send(self, message: Dict[str, Any], timeout: Optional[float] = None) -> None:
+    def _send(self, message: dict[str, Any], timeout: float | None = None) -> None:
         if self._closed:
             raise McpError(f"El servidor MCP «{self.name}» no está conectado.")
-        extra: Dict[str, str] = {}
+        extra: dict[str, str] = {}
         if self._session_id:
             extra["Mcp-Session-Id"] = self._session_id
         if self._negotiated:

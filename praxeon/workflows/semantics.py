@@ -7,9 +7,9 @@ Define los contratos y estructuras tipadas para ejecución determinista y acotad
 - ControlConfig: Configuración declarativa para IF/DECISION, WHILE, DELEGATE, PARALLEL_JOIN y HUMAN_APPROVAL.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from enum import Enum
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Union
 from pydantic import BaseModel, ConfigDict, Field
 
 from praxeon.workflows.models import NodeStatus
@@ -26,13 +26,13 @@ class EvaluationContext(BaseModel):
     """Contexto formal de evaluación con namespaces explícitos para evitar colisiones."""
     model_config = ConfigDict(frozen=False)
 
-    variables: Dict[str, Any] = Field(default_factory=dict, description="Variables globales del flujo")
-    outputs: Dict[str, Dict[str, Any]] = Field(default_factory=dict, description="Resultados indexados por node_id")
-    last_result: Optional[Dict[str, Any]] = Field(default=None, description="Último resultado emitido por el nodo upstream")
-    loop: Dict[str, Any] = Field(default_factory=dict, description="Métricas de bucle activo (iteration, max_iterations, elapsed_seconds)")
-    budget: Dict[str, Any] = Field(default_factory=dict, description="Presupuesto de ejecución (remaining_tokens, calls_count)")
-    agent_state: Dict[str, Any] = Field(default_factory=dict, description="Estado reportado por agentes")
-    semantic_assessment: Optional[Dict[str, Any]] = Field(default=None, description="Juicio semántico del System-1")
+    variables: dict[str, Any] = Field(default_factory=dict, description="Variables globales del flujo")
+    outputs: dict[str, dict[str, Any]] = Field(default_factory=dict, description="Resultados indexados por node_id")
+    last_result: dict[str, Any] | None = Field(default=None, description="Último resultado emitido por el nodo upstream")
+    loop: dict[str, Any] = Field(default_factory=dict, description="Métricas de bucle activo (iteration, max_iterations, elapsed_seconds)")
+    budget: dict[str, Any] = Field(default_factory=dict, description="Presupuesto de ejecución (remaining_tokens, calls_count)")
+    agent_state: dict[str, Any] = Field(default_factory=dict, description="Estado reportado por agentes")
+    semantic_assessment: dict[str, Any] | None = Field(default=None, description="Juicio semántico del System-1")
 
     def resolve_field(self, field_path: str) -> Any:
         """Resuelve el valor de una ruta con puntos navegando los namespaces correspondientes.
@@ -115,7 +115,7 @@ class EvaluationContext(BaseModel):
         return None
 
     @staticmethod
-    def _navigate(data: Any, parts: List[str]) -> Any:
+    def _navigate(data: Any, parts: list[str]) -> Any:
         """Navega recursivamente un objeto o diccionario usando partes de clave."""
         curr = data
         for part in parts:
@@ -127,9 +127,9 @@ class EvaluationContext(BaseModel):
                 return None
         return curr
 
-    def to_legacy_dict(self) -> Dict[str, Any]:
+    def to_legacy_dict(self) -> dict[str, Any]:
         """Genera un diccionario aplanado para retrocompatibilidad con evaluadores legados."""
-        legacy: Dict[str, Any] = dict(self.variables)
+        legacy: dict[str, Any] = dict(self.variables)
         if self.last_result:
             legacy["output"] = dict(self.last_result)
             legacy.update(self.last_result)
@@ -148,7 +148,7 @@ class AtomicCondition(BaseModel):
     operator: str = Field(default="==", description="Operador: ==, !=, >, >=, <, <=, in, contains, is_true, is_false, is_null, not_null")
     expected_value: Any = Field(default=None, description="Valor esperado de referencia")
 
-    def evaluate(self, context: Union[EvaluationContext, Dict[str, Any]]) -> bool:
+    def evaluate(self, context: EvaluationContext | dict[str, Any]) -> bool:
         """Evalúa deterministamente la condición sin eval() arbitrario."""
         if self.field in ("_const_true", "true", "True"):
             return True
@@ -221,9 +221,9 @@ class CompoundCondition(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     logical_op: LogicalOperator = Field(default=LogicalOperator.AND)
-    conditions: List[Union["CompoundCondition", AtomicCondition]] = Field(default_factory=list)
+    conditions: list[Union["CompoundCondition", AtomicCondition]] = Field(default_factory=list)
 
-    def evaluate(self, context: Union[EvaluationContext, Dict[str, Any]]) -> bool:
+    def evaluate(self, context: EvaluationContext | dict[str, Any]) -> bool:
         """Evalúa el árbol de condiciones con lógica booleana estricta (fail-closed ante listas vacías si NOT u OR)."""
         if not self.conditions:
             if self.logical_op in (LogicalOperator.NOT, LogicalOperator.OR):
@@ -244,7 +244,7 @@ class CompoundCondition(BaseModel):
 CompoundCondition.model_rebuild()
 
 
-def parse_condition(data: Any) -> Optional[Union[CompoundCondition, AtomicCondition]]:
+def parse_condition(data: Any) -> CompoundCondition | AtomicCondition | None:
     """Parsea una condición estructurada desde diccionario o modelo existente."""
     if data is None:
         return None
@@ -320,10 +320,10 @@ class ConditionResult(BaseModel):
 
     evaluated: bool = Field(default=True, description="Indica si la condición fue evaluada con éxito")
     matched: bool = Field(default=False, description="Resultado booleano de la evaluación")
-    branch_taken: Optional[str] = Field(default=None, description="Rama seleccionada: 'true', 'false', 'default' o ID de arista")
-    reason: Optional[str] = Field(default=None, description="Motivo auditable de la selección de rama")
-    details: Dict[str, Any] = Field(default_factory=dict, description="Entradas y contexto relevantes para telemetría")
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    branch_taken: str | None = Field(default=None, description="Rama seleccionada: 'true', 'false', 'default' o ID de arista")
+    reason: str | None = Field(default=None, description="Motivo auditable de la selección de rama")
+    details: dict[str, Any] = Field(default_factory=dict, description="Entradas y contexto relevantes para telemetría")
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class NodeExecutionResult(BaseModel):
@@ -332,9 +332,9 @@ class NodeExecutionResult(BaseModel):
 
     node_id: str
     status: NodeStatus
-    outputs: Dict[str, Any] = Field(default_factory=dict)
-    condition_result: Optional[ConditionResult] = None
-    error: Optional[str] = None
+    outputs: dict[str, Any] = Field(default_factory=dict)
+    condition_result: ConditionResult | None = None
+    error: str | None = None
     execution_time_seconds: float = 0.0
 
 
@@ -343,29 +343,29 @@ class ControlConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     # 1. Configuración para IF / DECISION
-    condition: Optional[Union[CompoundCondition, AtomicCondition, Dict[str, Any]]] = None
-    true_edge: Optional[str] = Field(default=None, description="ID o destino de arista cuando condition == True")
-    false_edge: Optional[str] = Field(default=None, description="ID o destino de arista cuando condition == False")
-    default_edge: Optional[str] = Field(default=None, description="Rama a tomar cuando la condición no se cumple y no hay false_edge")
-    on_error: Optional[str] = Field(default=None, description="ID o destino de arista ante error o campo ausente")
+    condition: CompoundCondition | AtomicCondition | dict[str, Any] | None = None
+    true_edge: str | None = Field(default=None, description="ID o destino de arista cuando condition == True")
+    false_edge: str | None = Field(default=None, description="ID o destino de arista cuando condition == False")
+    default_edge: str | None = Field(default=None, description="Rama a tomar cuando la condición no se cumple y no hay false_edge")
+    on_error: str | None = Field(default=None, description="ID o destino de arista ante error o campo ausente")
 
     # 2. Configuración para WHILE / LOOP acotado
-    body_entry: Optional[str] = Field(default=None, description="Nodo inicial del cuerpo del bucle")
-    exit_target: Optional[str] = Field(default=None, description="Nodo objetivo al salir del bucle")
-    max_iterations: Optional[int] = Field(default=None, ge=1, description="Límite estricto obligatorio de iteraciones")
-    on_limit: Optional[str] = Field(default="ABORT", description="Acción al agotar iteraciones: 'ABORT' o 'ESCALATE'")
+    body_entry: str | None = Field(default=None, description="Nodo inicial del cuerpo del bucle")
+    exit_target: str | None = Field(default=None, description="Nodo objetivo al salir del bucle")
+    max_iterations: int | None = Field(default=None, ge=1, description="Límite estricto obligatorio de iteraciones")
+    on_limit: str | None = Field(default="ABORT", description="Acción al agotar iteraciones: 'ABORT' o 'ESCALATE'")
 
     # 3. Configuración para DELEGATE / ROUTER
-    routing_mode: Optional[str] = Field(default="MANUAL", description="'MANUAL' a agente fijo o 'AUTOMATIC' según capacidades")
-    candidate_agents: Optional[List[str]] = Field(default=None, description="Lista de agentes candidatos para selección automática")
+    routing_mode: str | None = Field(default="MANUAL", description="'MANUAL' a agente fijo o 'AUTOMATIC' según capacidades")
+    candidate_agents: list[str] | None = Field(default=None, description="Lista de agentes candidatos para selección automática")
 
     # 4. Configuración para PARALLEL_JOIN
-    join_policy: Optional[str] = Field(default="all", description="Política de sincronización: 'all', 'any', 'quorum'")
-    quorum_count: Optional[int] = Field(default=None, ge=1, description="Número de ramas exitosas requeridas si join_policy == 'quorum'")
+    join_policy: str | None = Field(default="all", description="Política de sincronización: 'all', 'any', 'quorum'")
+    quorum_count: int | None = Field(default=None, ge=1, description="Número de ramas exitosas requeridas si join_policy == 'quorum'")
     cancel_remaining: bool = Field(default=False, description="Si es True, cancela las ramas en progreso tras cumplir condición de join")
-    merge_policy: Optional[str] = Field(default="shallow", description="Estrategia de combinación de outputs: 'shallow', 'namespace', 'reduce'")
+    merge_policy: str | None = Field(default="shallow", description="Estrategia de combinación de outputs: 'shallow', 'namespace', 'reduce'")
 
     # 5. Configuración para HUMAN_APPROVAL
-    prompt: Optional[str] = Field(default=None, description="Mensaje explicativo para el supervisor humano")
-    approver_role: Optional[str] = Field(default=None, description="Rol sugerido para autorizar (informativo: no se verifica; el aprobador queda registrado en la salida)")
-    reject_target: Optional[str] = Field(default=None, description="Nodo de destino en caso de rechazo")
+    prompt: str | None = Field(default=None, description="Mensaje explicativo para el supervisor humano")
+    approver_role: str | None = Field(default=None, description="Rol sugerido para autorizar (informativo: no se verifica; el aprobador queda registrado en la salida)")
+    reject_target: str | None = Field(default=None, description="Nodo de destino en caso de rechazo")

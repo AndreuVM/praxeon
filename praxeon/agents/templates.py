@@ -11,7 +11,7 @@ y listas de herramientas ajustadas a su principio de mínimo privilegio:
 7. DataAnalyst: Procesamiento de telemetría, métricas cuantitativas y análisis.
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from praxeon.agents.definition import (
     AgentContextPolicy,
@@ -199,7 +199,7 @@ def create_data_analyst_template() -> AgentDefinition:
 class AgentTemplateCatalog:
     """Registro canónico centralizado de plantillas de agentes."""
 
-    _TEMPLATES: Dict[str, Any] = {
+    _TEMPLATES: dict[str, Any] = {
         "project_manager": create_project_manager_template,
         "developer": create_developer_template,
         "code_reviewer": create_code_reviewer_template,
@@ -210,12 +210,12 @@ class AgentTemplateCatalog:
     }
 
     @classmethod
-    def list_templates(cls) -> List[AgentDefinition]:
+    def list_templates(cls) -> list[AgentDefinition]:
         """Retorna las 7 plantillas canónicas instanciadas."""
         return [factory() for factory in cls._TEMPLATES.values()]
 
     @classmethod
-    def get_template(cls, identifier: str) -> Optional[AgentDefinition]:
+    def get_template(cls, identifier: str) -> AgentDefinition | None:
         """Obtiene una plantilla por su clave canónica o rol (case-insensitive)."""
         key = identifier.lower().replace(" ", "_").replace("-", "_")
         factory = cls._TEMPLATES.get(key)
@@ -235,8 +235,8 @@ class AgentTemplateCatalog:
         cls,
         template_name: str,
         agent_id: str,
-        name: Optional[str] = None,
-        overrides: Optional[Dict[str, Any]] = None,
+        name: str | None = None,
+        overrides: dict[str, Any] | None = None,
     ) -> AgentDefinition:
         """Instancia un agente derivado de una plantilla con nueva identidad y overrides."""
         tpl = cls.get_template(template_name)

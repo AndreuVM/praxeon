@@ -14,7 +14,8 @@ import subprocess
 import sys
 import threading
 import time
-from typing import Any, Callable, Dict, List, Optional, Protocol, Set, Tuple
+from typing import Any, Protocol
+from collections.abc import Callable
 from xml.sax.saxutils import escape
 
 from praxeon.domain.events import EventType, RuntimeEvent
@@ -43,7 +44,7 @@ class RecordingNotifier:
     """Guarda las notificaciones recibidas (útil en pruebas)."""
 
     def __init__(self) -> None:
-        self.messages: List[Tuple[str, str]] = []
+        self.messages: list[tuple[str, str]] = []
 
     def notify(self, title: str, body: str) -> None:
         self.messages.append((title, body))
@@ -71,10 +72,10 @@ def _windows_toast_script(title: str, body: str) -> str:
 class SystemNotifier:
     """Notificaciones del sistema: toast en Windows, `osascript` en macOS y `notify-send` en Linux."""
 
-    def __init__(self, platform: Optional[str] = None) -> None:
+    def __init__(self, platform: str | None = None) -> None:
         self.platform = platform or sys.platform
 
-    def _command(self, title: str, body: str) -> Optional[List[str]]:
+    def _command(self, title: str, body: str) -> list[str] | None:
         if self.platform.startswith("win"):
             return [
                 "powershell", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden",
@@ -105,9 +106,9 @@ class SystemNotifier:
             logger.warning("No se pudo mostrar la notificación del sistema", exc_info=True)
 
 
-def describe_event(event: RuntimeEvent) -> Tuple[str, str]:
+def describe_event(event: RuntimeEvent) -> tuple[str, str]:
     """Título y cuerpo legibles para un evento `approval.requested`."""
-    payload: Dict[str, Any] = event.payload or {}
+    payload: dict[str, Any] = event.payload or {}
     if payload.get("execution_id") or payload.get("source") == "workflow":
         subject = payload.get("node_name") or payload.get("tool") or event.node_id or "nodo"
         detail = payload.get("prompt") or payload.get("reason") or "Un nodo del workflow espera tu aprobación."
@@ -127,16 +128,16 @@ class ApprovalNotifier:
     def __init__(
         self,
         notifier: Notifier,
-        on_pending_changed: Optional[Callable[[int], None]] = None,
+        on_pending_changed: Callable[[int], None] | None = None,
         dedupe_seconds: float = 30.0,
     ) -> None:
         self.notifier = notifier
         self.on_pending_changed = on_pending_changed
         self.dedupe_seconds = dedupe_seconds
-        self._pending: Set[Tuple[str, str]] = set()
-        self._recent: Dict[Tuple[str, str], float] = {}
+        self._pending: set[tuple[str, str]] = set()
+        self._recent: dict[tuple[str, str], float] = {}
         self._lock = threading.Lock()
-        self._unsubscribe: Optional[Callable[[], None]] = None
+        self._unsubscribe: Callable[[], None] | None = None
 
     @property
     def pending_count(self) -> int:
@@ -162,7 +163,7 @@ class ApprovalNotifier:
         except Exception:  # un fallo de notificación nunca debe afectar al runtime
             logger.warning("Error procesando evento de aprobación", exc_info=True)
 
-    def _key(self, event: RuntimeEvent) -> Tuple[str, str]:
+    def _key(self, event: RuntimeEvent) -> tuple[str, str]:
         return (event.session_id, event.node_id or event.decision_id or "")
 
     def _on_requested(self, event: RuntimeEvent) -> None:

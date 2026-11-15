@@ -11,9 +11,10 @@ Ensambla e integra de extremo a extremo todos los subsistemas de PRAXEON:
 8. EventStore / Telemetría: Registro inmutable de auditoría y métricas de ejecución.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 import time
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any
+from collections.abc import Callable
 import uuid
 
 from praxeon.agents.bus import AgentMessageBus
@@ -46,14 +47,14 @@ class AdaptiveAgentRuntime:
 
     def __init__(
         self,
-        registry: Optional[AgentRegistry] = None,
-        router: Optional[AgentRouter] = None,
-        context_manager: Optional[ContextManager] = None,
-        bus: Optional[AgentMessageBus] = None,
-        event_store: Optional[EventStore] = None,
-        step_dispatcher: Optional[StepLevelAdaptiveDispatcher] = None,
-        trajectory_controller: Optional[TrajectoryController] = None,
-        escalation_engine: Optional[DynamicEscalationEngine] = None,
+        registry: AgentRegistry | None = None,
+        router: AgentRouter | None = None,
+        context_manager: ContextManager | None = None,
+        bus: AgentMessageBus | None = None,
+        event_store: EventStore | None = None,
+        step_dispatcher: StepLevelAdaptiveDispatcher | None = None,
+        trajectory_controller: TrajectoryController | None = None,
+        escalation_engine: DynamicEscalationEngine | None = None,
     ):
         # 1. Registro canónico de agentes
         self.registry = registry or AgentRegistry()
@@ -82,19 +83,19 @@ class AdaptiveAgentRuntime:
         )
 
         # 4. Estado de sesiones activas en memoria
-        self._sessions: Dict[str, AdaptiveSessionState] = {}
-        self._step_history: Dict[str, List[TrajectoryStepRecord]] = {}
+        self._sessions: dict[str, AdaptiveSessionState] = {}
+        self._step_history: dict[str, list[TrajectoryStepRecord]] = {}
 
     def initialize_session(
         self,
         session_id: str,
         goal: str,
-        primary_agent_id: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        primary_agent_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> AdaptiveSessionState:
         """Inicializa una sesión adaptativa y siembra la meta en el ContextManager."""
         agent_id = primary_agent_id or "ag_developer"
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         # Sembrar meta en el gestor de contexto
         goal_item = ContextItem.create(
@@ -125,11 +126,11 @@ class AdaptiveAgentRuntime:
     def execute_task(
         self,
         prompt: str,
-        session_id: Optional[str] = None,
+        session_id: str | None = None,
         max_steps: int = 8,
-        target_files: Optional[List[str]] = None,
-        routing_strategy: Optional[RoutingStrategyType] = None,
-        custom_step_executor: Optional[Callable[[StepDispatchSpec, int], Tuple[Dict[str, Any], str]]] = None,
+        target_files: list[str] | None = None,
+        routing_strategy: RoutingStrategyType | None = None,
+        custom_step_executor: Callable[[StepDispatchSpec, int], tuple[dict[str, Any], str]] | None = None,
     ) -> AdaptiveExecutionSummary:
         """Ejecuta una tarea de extremo a extremo mediante el ciclo adaptativo unificado."""
         start_time = time.time()
@@ -277,7 +278,7 @@ class AdaptiveAgentRuntime:
         total_tokens = sum(s.tokens_used for s in history)
         total_cost = sum(s.step_cost for s in history)
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         self._sessions[sid] = AdaptiveSessionState(
             session_id=sid,
             goal=prompt,
@@ -308,10 +309,10 @@ class AdaptiveAgentRuntime:
             duration_seconds=duration,
         )
 
-    def get_session_state(self, session_id: str) -> Optional[AdaptiveSessionState]:
+    def get_session_state(self, session_id: str) -> AdaptiveSessionState | None:
         """Obtiene el estado actual de una sesión."""
         return self._sessions.get(session_id)
 
-    def get_step_history(self, session_id: str) -> List[TrajectoryStepRecord]:
+    def get_step_history(self, session_id: str) -> list[TrajectoryStepRecord]:
         """Recupera el historial de pasos ejecutados para una sesión."""
         return list(self._step_history.get(session_id, []))

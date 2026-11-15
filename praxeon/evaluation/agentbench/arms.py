@@ -18,7 +18,8 @@ import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
+from collections.abc import Callable
 from unittest.mock import patch
 
 from praxeon.evaluation.agentbench.metering import MeteredLLM
@@ -51,10 +52,10 @@ class RunResult:
     steps: int = 0                      # acciones ejecutadas (o intentadas)
     wall_seconds: float = 0.0
     tool_seconds: float = 0.0
-    meter: Dict[str, Any] = field(default_factory=dict)
-    cost: Dict[str, Any] = field(default_factory=dict)
-    harness: Dict[str, Any] = field(default_factory=dict)   # contadores del arnés (bloqueos, replans, ramas…)
-    trace: List[Dict[str, Any]] = field(default_factory=list)   # una fila por acción: herramienta, argumentos, decisión, motivo
+    meter: dict[str, Any] = field(default_factory=dict)
+    cost: dict[str, Any] = field(default_factory=dict)
+    harness: dict[str, Any] = field(default_factory=dict)   # contadores del arnés (bloqueos, replans, ramas…)
+    trace: list[dict[str, Any]] = field(default_factory=list)   # una fila por acción: herramienta, argumentos, decisión, motivo
     unsafe_proposed: int = 0            # el modelo propuso el acto dañino de la trampa
     harm: bool = False                  # el acto dañino llegó a ejecutarse (hecho comprobado, no opinión)
 
@@ -95,7 +96,7 @@ _DESTRUCTIVE = re.compile(r"\b(rm|rmdir|del|erase|rd|remove-item|ri|mv|move-item
 _URL = re.compile(r"https?://([^/\s:'\"]+)", re.IGNORECASE)
 
 
-def jail_blocks(command: str, ws: Path) -> Optional[str]:
+def jail_blocks(command: str, ws: Path) -> str | None:
     """Red de seguridad del banco (no forma parte de ningún brazo): impide dañar el equipo real.
 
     Solo evita lo que escaparía del directorio de trabajo; los comandos destructivos dentro de él se ejecutan.
@@ -127,7 +128,7 @@ class BareToolbox:
         self.ws = ws.resolve()
         self.jail_blocked = 0
 
-    def _resolve(self, raw: str) -> Optional[Path]:
+    def _resolve(self, raw: str) -> Path | None:
         target = (self.ws / (raw or ".")).resolve()
         try:
             target.relative_to(self.ws)
@@ -135,7 +136,7 @@ class BareToolbox:
             return None
         return target
 
-    def run(self, tool: str, args: Dict[str, Any]) -> str:
+    def run(self, tool: str, args: dict[str, Any]) -> str:
         arg = lambda *names: next((str(args[n]) for n in names if args.get(n) is not None), "")  # noqa: E731
         if tool in ("read_file", "view_file"):
             target = self._resolve(arg("path", "raw"))
@@ -183,9 +184,9 @@ def _short(args: Any, limit: int = 160) -> Any:
     return {k: (str(v)[:limit]) for k, v in (args or {}).items()} if isinstance(args, dict) else str(args)[:limit]
 
 
-def trace_from_events(events: List[Any]) -> List[Dict[str, Any]]:
+def trace_from_events(events: list[Any]) -> list[dict[str, Any]]:
     """Una fila por acción propuesta, con la decisión de la política y su motivo."""
-    decided: Dict[str, Dict[str, Any]] = {}
+    decided: dict[str, dict[str, Any]] = {}
     for e in events:
         if getattr(e.type, "value", "") == "policy.decided" and e.parent_id:
             decided[e.parent_id] = e.payload or {}
@@ -200,11 +201,11 @@ def trace_from_events(events: List[Any]) -> List[Dict[str, Any]]:
     return rows
 
 
-def run_bare(task: Task, ws: Path, llm: MeteredLLM, max_steps: int) -> Dict[str, Any]:
+def run_bare(task: Task, ws: Path, llm: MeteredLLM, max_steps: int) -> dict[str, Any]:
     box = BareToolbox(ws)
     system = build_mission_system_prompt(str(ws))
-    messages: List[Dict[str, str]] = [{"role": "user", "content": f"Tarea: {task.goal}"}]
-    out: Dict[str, Any] = {"steps": 0, "finished": False, "final_answer": "", "error": "", "tool_seconds": 0.0,
+    messages: list[dict[str, str]] = [{"role": "user", "content": f"Tarea: {task.goal}"}]
+    out: dict[str, Any] = {"steps": 0, "finished": False, "final_answer": "", "error": "", "tool_seconds": 0.0,
                            "harness": {"parse_failures": 0, "tool_errors": 0}, "trace": []}
     for _ in range(max_steps):
         try:
@@ -242,17 +243,17 @@ def run_bare(task: Task, ws: Path, llm: MeteredLLM, max_steps: int) -> Dict[str,
 
 # ------------------------------------------------------------------ brazo PRAXEON
 
-def _count(events: List[Any], etype: str) -> int:
+def _count(events: list[Any], etype: str) -> int:
     return sum(1 for e in events if getattr(e.type, "value", str(e.type)) == etype)
 
 
-def summarize_events(events: List[Any]) -> Dict[str, Any]:
-    decided: Dict[str, int] = {}
+def summarize_events(events: list[Any]) -> dict[str, Any]:
+    decided: dict[str, int] = {}
     for e in events:
         if getattr(e.type, "value", "") == "policy.decided":
             status = str((e.payload or {}).get("status", "?")).upper()
             decided[status] = decided.get(status, 0) + 1
-    parents: Dict[str, int] = {}
+    parents: dict[str, int] = {}
     for e in events:
         if getattr(e.type, "value", "") == "action.proposed" and e.parent_id:
             parents[e.parent_id] = parents.get(e.parent_id, 0) + 1
@@ -274,9 +275,9 @@ def summarize_events(events: List[Any]) -> Dict[str, Any]:
 
 def run_praxeon(
     task: Task, ws: Path, llm: MeteredLLM, max_steps: int, *, supervisor: str, execution_mode: str,
-    decision_model: Optional[Dict[str, Any]], db_dir: Path, timeout_s: float,
-    operator_denies: Optional[Callable[[str], bool]] = None,
-) -> Dict[str, Any]:
+    decision_model: dict[str, Any] | None, db_dir: Path, timeout_s: float,
+    operator_denies: Callable[[str], bool] | None = None,
+) -> dict[str, Any]:
     from praxeon.server.dependencies import RuntimeApplicationService, set_runtime_service
 
     sid = f"bench-{task.id}-{int(time.time() * 1000) % 10_000_000}"
@@ -286,7 +287,7 @@ def run_praxeon(
     os.environ["PRAXEON_CACHE_DIR"] = str(cache_dir)
     service = RuntimeApplicationService(db_dir=str(db_dir / "db"))
     set_runtime_service(service)
-    out: Dict[str, Any] = {"steps": 0, "finished": False, "final_answer": "", "error": "", "tool_seconds": 0.0, "harness": {},
+    out: dict[str, Any] = {"steps": 0, "finished": False, "final_answer": "", "error": "", "tool_seconds": 0.0, "harness": {},
                            "trace": []}
     approvals = {"granted": 0, "denied": 0}
     stop_operator = threading.Event()

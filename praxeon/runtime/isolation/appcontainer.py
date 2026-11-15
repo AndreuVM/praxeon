@@ -33,7 +33,7 @@ import msvcrt  # noqa: E402
 import os  # noqa: E402
 import subprocess  # noqa: E402  # nosec B404 - solo TimeoutExpired y list2cmdline; no se lanza ningún proceso con él
 import threading  # noqa: E402
-from typing import Dict, Iterable, List, Tuple  # noqa: E402
+from collections.abc import Iterable  # noqa: E402
 
 from praxeon.runtime.isolation import container_name  # noqa: E402
 
@@ -165,16 +165,16 @@ class AppContainer:
 
     # ----------------------------------------------------------------------------------------- permisos
 
-    def ensure_access(self, read_paths: Iterable[str] = ()) -> List[str]:
+    def ensure_access(self, read_paths: Iterable[str] = ()) -> list[str]:
         """Concede lo necesario (idempotente): modificar el workspace, leer las herramientas, atravesar los antecesores.
 
         Devuelve las carpetas en las que se añadió un permiso ahora. En el registro (para ``revoke``) quedan todas las
         que tienen permiso de este AppContainer, nuevas o no, y se guarda aunque falle a mitad.
         """
-        granted: List[str] = []
-        present: List[str] = []
-        inheritable: List[str] = []
-        targets: List[Tuple[str, int]] = [(self.workspace_root, MODIFY)]
+        granted: list[str] = []
+        present: list[str] = []
+        inheritable: list[str] = []
+        targets: list[tuple[str, int]] = [(self.workspace_root, MODIFY)]
         targets += [(os.path.realpath(p), READ_EXECUTE) for p in read_paths if p and os.path.isdir(p)]
         try:
             for path, mask in targets:
@@ -213,8 +213,8 @@ class AppContainer:
 
     # ----------------------------------------------------------------------------------------- ejecución
 
-    def run(self, args: List[str], cwd: str, env: Dict[str, str], timeout: float, max_bytes: int = 524288,
-            max_processes: int = 64, memory_mb: int = 2048) -> Tuple[int, str, bool]:
+    def run(self, args: list[str], cwd: str, env: dict[str, str], timeout: float, max_bytes: int = 524288,
+            max_processes: int = 64, memory_mb: int = 2048) -> tuple[int, str, bool]:
         """Lanza ``args`` en el AppContainer dentro de un Job Object. Devuelve ``(código, salida, desbordada)``.
 
         Al vencer ``timeout`` termina todo el árbol de procesos y lanza ``subprocess.TimeoutExpired``.
@@ -274,7 +274,7 @@ class AppContainer:
             raise AppContainerError(f"No se pudo asignar el proceso al Job Object ({ctypes.get_last_error()}).")
         _k32.ResumeThread(pi.hThread)
 
-        chunks: List[bytes] = []
+        chunks: list[bytes] = []
         state = {"total": 0, "overflow": False}
 
         def reader(fd: int) -> None:
@@ -311,16 +311,16 @@ class AppContainer:
 
     # ----------------------------------------------------------------------------------------- limpieza
 
-    def revoke(self) -> List[str]:
+    def revoke(self) -> list[str]:
         """Retira todos los permisos concedidos a este AppContainer y borra su perfil."""
         return revoke_container(self.name)
 
 
-def revoke_container(name: str) -> List[str]:
+def revoke_container(name: str) -> list[str]:
     """Retira los permisos registrados de un AppContainer de PRAXEON y borra su perfil."""
     state = _load_grants()
     entry = state.pop(name, None)
-    revoked: List[str] = []
+    revoked: list[str] = []
     if entry:
         sid = PSID()
         if _uenv.DeriveAppContainerSidFromAppContainerName(name, ctypes.byref(sid)) == 0:
@@ -345,9 +345,9 @@ def revoke_container(name: str) -> List[str]:
     return revoked
 
 
-def revoke_all() -> List[str]:
+def revoke_all() -> list[str]:
     """Retira los permisos de todos los AppContainer de PRAXEON (``praxeon sandbox revoke``)."""
-    revoked: List[str] = []
+    revoked: list[str] = []
     for name in list(_load_grants()):
         revoked += revoke_container(name)
     return revoked
@@ -356,9 +356,9 @@ def revoke_all() -> List[str]:
 # --------------------------------------------------------------------------------------------- auxiliares
 
 
-def _ancestors(path: str) -> List[str]:
+def _ancestors(path: str) -> list[str]:
     """Carpetas por encima de ``path``, sin la raíz de la unidad (ya legible para los AppContainer)."""
-    out: List[str] = []
+    out: list[str] = []
     current = os.path.dirname(os.path.realpath(path))
     while True:
         drive_rest = os.path.splitdrive(current)[1]
@@ -449,7 +449,7 @@ def _grants_file() -> str:
     return os.path.join(resolve_cache_dir(None), "appcontainer_grants.json")
 
 
-def _load_grants() -> Dict[str, dict]:
+def _load_grants() -> dict[str, dict]:
     try:
         with open(_grants_file(), encoding="utf-8") as fh:
             data = json.load(fh)
@@ -458,14 +458,14 @@ def _load_grants() -> Dict[str, dict]:
         return {}
 
 
-def _save_grants(state: Dict[str, dict]) -> None:
+def _save_grants(state: dict[str, dict]) -> None:
     path = _grants_file()
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as fh:
         json.dump(state, fh, indent=1, ensure_ascii=False)
 
 
-def _record_grants(name: str, sid: str, paths: List[str], inheritable: List[str]) -> None:
+def _record_grants(name: str, sid: str, paths: list[str], inheritable: list[str]) -> None:
     """Registro de lo concedido, para poder revocarlo después aunque el workspace ya no esté abierto."""
     state = _load_grants()
     entry = state.setdefault(name, {"sid": sid, "paths": [], "inheritable": []})
@@ -474,6 +474,6 @@ def _record_grants(name: str, sid: str, paths: List[str], inheritable: List[str]
     _save_grants(state)
 
 
-def granted_containers() -> Dict[str, dict]:
+def granted_containers() -> dict[str, dict]:
     """AppContainer de PRAXEON con permisos concedidos (``praxeon sandbox status``)."""
     return _load_grants()

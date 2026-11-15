@@ -5,9 +5,8 @@ proceso único como frente a reinicios o ejecución distribuida con TTL y poda a
 """
 
 from abc import ABC, abstractmethod
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 import threading
-from typing import Dict, Optional
 import logging
 
 from praxeon.sqlite_base import SqliteStore
@@ -15,14 +14,14 @@ from praxeon.sqlite_base import SqliteStore
 logger = logging.getLogger(__name__)
 
 
-def _is_expired(exp: Optional[datetime], now: Optional[datetime] = None) -> bool:
+def _is_expired(exp: datetime | None, now: datetime | None = None) -> bool:
     if not exp:
         return False
-    current = now or datetime.now(timezone.utc)
+    current = now or datetime.now(UTC)
     if exp.tzinfo is None and current.tzinfo is not None:
-        exp = exp.replace(tzinfo=timezone.utc)
+        exp = exp.replace(tzinfo=UTC)
     elif exp.tzinfo is not None and current.tzinfo is None:
-        current = current.replace(tzinfo=timezone.utc)
+        current = current.replace(tzinfo=UTC)
     return current > exp
 
 
@@ -35,7 +34,7 @@ class NonceStore(ABC):
         pass
 
     @abstractmethod
-    def consume(self, decision_id: str, nonce: str, expires_at: Optional[datetime] = None) -> bool:
+    def consume(self, decision_id: str, nonce: str, expires_at: datetime | None = None) -> bool:
         """Marca un capability como consumido. Devuelve True si se registró con éxito, False si ya existía."""
         pass
 
@@ -51,7 +50,7 @@ class InMemoryNonceStore(NonceStore):
     def __init__(self):
         self._lock = threading.Lock()
         # Clave: f"{decision_id}:{nonce}", Valor: Optional[datetime]
-        self._store: Dict[str, Optional[datetime]] = {}
+        self._store: dict[str, datetime | None] = {}
 
     def _make_key(self, decision_id: str, nonce: str) -> str:
         return f"{decision_id}:{nonce}"
@@ -67,7 +66,7 @@ class InMemoryNonceStore(NonceStore):
                 return False
             return True
 
-    def consume(self, decision_id: str, nonce: str, expires_at: Optional[datetime] = None) -> bool:
+    def consume(self, decision_id: str, nonce: str, expires_at: datetime | None = None) -> bool:
         key = self._make_key(decision_id, nonce)
         with self._lock:
             if key in self._store:
@@ -80,7 +79,7 @@ class InMemoryNonceStore(NonceStore):
             return True
 
     def prune_expired(self) -> int:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         removed = 0
         with self._lock:
             expired_keys = [k for k, exp in self._store.items() if _is_expired(exp, now)]
@@ -150,9 +149,9 @@ class SqliteNonceStore(SqliteStore, NonceStore):
             finally:
                 self._close_conn(conn)
 
-    def consume(self, decision_id: str, nonce: str, expires_at: Optional[datetime] = None) -> bool:
+    def consume(self, decision_id: str, nonce: str, expires_at: datetime | None = None) -> bool:
         import sqlite3
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         now_str = now.isoformat()
         exp_str = expires_at.isoformat() if expires_at else None
 
@@ -192,7 +191,7 @@ class SqliteNonceStore(SqliteStore, NonceStore):
                 self._close_conn(conn)
 
     def prune_expired(self) -> int:
-        now_str = datetime.now(timezone.utc).isoformat()
+        now_str = datetime.now(UTC).isoformat()
         with self._lock:
             conn = self._get_connection()
             try:

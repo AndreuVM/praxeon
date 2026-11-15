@@ -8,8 +8,8 @@ eliminando toda referencia a providers globales mutables en el servicio central.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from datetime import datetime, UTC
+from typing import Any
 
 from praxeon.runtime.decision_runtime import DecisionRuntime
 
@@ -19,13 +19,13 @@ class SessionRuntime:
     """Encapsula los componentes de ejecución y supervisión exclusivos de una sesión."""
     session_id: str
     decision_provider: Any = None
-    decision_runtime: Optional[DecisionRuntime] = None
-    llm_runtime: Optional[Any] = None
-    context_manager: Optional[Any] = None
+    decision_runtime: DecisionRuntime | None = None
+    llm_runtime: Any | None = None
+    context_manager: Any | None = None
     policy_profile: str = "default"
     execution_profile: str = "local_restricted"
-    metadata: Dict[str, Any] = field(default_factory=dict)
-    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    metadata: dict[str, Any] = field(default_factory=dict)
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     def __post_init__(self):
         # Sincronizar decision_runtime y decision_provider

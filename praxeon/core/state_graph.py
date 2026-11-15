@@ -1,6 +1,6 @@
 """Grafo dirigido de estados cognitivos (Trajectory DAG) implementado con NetworkX."""
 
-from typing import Any, List, Optional
+from typing import Any
 import networkx as nx
 
 from praxeon.config import PraxeonConfig, default_config
@@ -10,12 +10,12 @@ from praxeon.models.schema import Step, Trajectory
 class StateGraph:
     """Grafo de estados de razonamiento para modelar la trayectoria del LLM."""
 
-    def __init__(self, config: Optional[PraxeonConfig] = None):
+    def __init__(self, config: PraxeonConfig | None = None):
         self.config = config or default_config
         self.graph: nx.DiGraph = nx.DiGraph()
         self.goal: str = ""
         self.session_id: str = ""
-        self._chronological_nodes: List[str] = []
+        self._chronological_nodes: list[str] = []
 
     def load_trajectory(self, trajectory: Trajectory) -> None:
         """Carga una trayectoria completa en el grafo de estados."""
@@ -61,26 +61,26 @@ class StateGraph:
         if step_id in self._chronological_nodes:
             self._chronological_nodes.remove(step_id)
 
-    def get_step(self, step_id: str) -> Optional[Step]:
+    def get_step(self, step_id: str) -> Step | None:
         """Obtiene el objeto Step de un nodo."""
         if step_id in self.graph:
             return self.graph.nodes[step_id].get("step")
         return None
 
-    def get_all_steps(self) -> List[Step]:
+    def get_all_steps(self) -> list[Step]:
         """Devuelve todos los pasos en orden cronológico."""
         return [self.graph.nodes[nid]["step"] for nid in self._chronological_nodes if nid in self.graph]
 
-    def get_recent_steps(self, k: int = 5) -> List[Step]:
+    def get_recent_steps(self, k: int = 5) -> list[Step]:
         """Devuelve los últimos k pasos ejecutados."""
         recent_ids = self._chronological_nodes[-k:]
         return [self.graph.nodes[nid]["step"] for nid in recent_ids if nid in self.graph]
 
-    def get_chronological_nodes(self) -> List[str]:
+    def get_chronological_nodes(self) -> list[str]:
         """Lista de IDs de nodos en orden cronológico."""
         return list(self._chronological_nodes)
 
-    def get_ancestors(self, step_id: str) -> List[str]:
+    def get_ancestors(self, step_id: str) -> list[str]:
         """Devuelve todos los ancestros de un paso a través de aristas temporales o de rama."""
         if step_id not in self.graph:
             return []
@@ -92,7 +92,7 @@ class StateGraph:
             self.graph.nodes[step_id]["jev_score"] = jev_score
             self.graph.nodes[step_id]["step"].metadata["jev_score"] = jev_score
 
-    def get_highest_jev_step(self) -> Optional[Step]:
+    def get_highest_jev_step(self) -> Step | None:
         """Encuentra el paso previo con mayor puntuación JEV (para backtracking)."""
         best_step = None
         best_score = -float("inf")

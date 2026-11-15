@@ -26,7 +26,6 @@ import time
 
 from praxeon import http_client
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
 
 from praxeon.providers.hardware import kev_device
 
@@ -49,18 +48,18 @@ def server_is_up(base_url: str, timeout: float = 2.0) -> bool:
 class KevServerManager:
     """Lanza y vigila un único proceso ``kev.serve`` por combinación (carpeta, checkpoint, puerto)."""
 
-    _instances: Dict[Tuple[str, str, int], "KevServerManager"] = {}
+    _instances: dict[tuple[str, str, int], KevServerManager] = {}
     _instances_lock = threading.Lock()
 
     def __init__(self, home: str, run: str = DEFAULT_RUN, port: int = DEFAULT_PORT,
-                 command: Optional[str] = None, startup_timeout: float = 300.0):
+                 command: str | None = None, startup_timeout: float = 300.0):
         self.home = Path(home)
         self.run = run
         self.port = int(port)
         self.command = command
         self.startup_timeout = startup_timeout
-        self._proc: Optional[subprocess.Popen] = None
-        self._cuda_graphs: Optional[bool] = None
+        self._proc: subprocess.Popen | None = None
+        self._cuda_graphs: bool | None = None
         self._lock = threading.Lock()
         self._log_handle = None
 
@@ -69,7 +68,7 @@ class KevServerManager:
         return f"http://{LOOPBACK}:{self.port}"
 
     @classmethod
-    def from_env(cls) -> Optional["KevServerManager"]:
+    def from_env(cls) -> KevServerManager | None:
         if os.getenv("KEV_AUTOSTART", "").strip().lower() not in ("1", "true", "yes"):
             return None
         home = os.getenv("KEV_HOME", "").strip()
@@ -89,7 +88,7 @@ class KevServerManager:
                 cls._instances[key] = cls(home, run, port, os.getenv("KEV_SERVE_COMMAND") or None, timeout)
             return cls._instances[key]
 
-    def _argv(self) -> List[str]:
+    def _argv(self) -> list[str]:
         if self.command:
             tokens = shlex.split(self.command.format(run=self.run, port=self.port), posix=(os.name != "nt"))
             # en Windows shlex conserva las comillas de las rutas con espacios: se quitan
