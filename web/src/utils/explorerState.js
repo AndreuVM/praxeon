@@ -3,16 +3,19 @@
 // Guarda solo rutas relativas y números, NUNCA contenido de archivos. Vive en `sessionStorage`: sobrevive a recargas y es propio de
 // cada ventana del navegador. El explorador es del workspace, no del panel: no depende de qué panel tiene el foco.
 //
-// Todo lo que decide algo son funciones puras sobre un estado `{ open, currentDir, selected, scroll }`; el almacén solo lee y
-// escribe. Así se prueban sin navegador.
+// Todo lo que decide algo son funciones puras sobre un estado `{ open, currentDir, selected, scroll, viewer }`; el almacén solo lee
+// y escribe. Así se prueban sin navegador. `viewer` (FE-010) son las pestañas del visor: solo sus rutas y cuál está activa. El
+// texto de los archivos, editado o no, NUNCA llega aquí: vive en memoria (`viewerStore.js`).
 
 export const STORAGE_KEY = 'praxeon:explorer:v1';
 export const MAX_OPEN = 200;          // carpetas abiertas que se recuerdan por workspace (las más recientes)
 export const MAX_WORKSPACES = 20;     // workspaces recordados (los más recientes)
+export const MAX_VIEWER_TABS = 30;    // pestañas del visor que se recuerdan por workspace (las más recientes)
 const MAX_PATH = 1024;
 const MAX_SCROLL = 10_000_000;
 
-export const emptyState = () => ({ open: [], currentDir: '', selected: null, scroll: 0 });
+export const emptyViewer = () => ({ tabs: [], active: null });
+export const emptyState = () => ({ open: [], currentDir: '', selected: null, scroll: 0, viewer: emptyViewer() });
 
 /** Ruta relativa válida de un workspace, con «/» como separador: sin «..», sin segmentos vacíos, sin raíz ni unidad de disco. */
 export function isRelPath(p) {
@@ -38,6 +41,23 @@ export function sanitize(raw) {
   if (isRelPath(raw.currentDir)) out.currentDir = raw.currentDir;
   if (isRelPath(raw.selected)) out.selected = raw.selected;
   if (typeof raw.scroll === 'number' && Number.isFinite(raw.scroll) && raw.scroll > 0) out.scroll = Math.min(Math.round(raw.scroll), MAX_SCROLL);
+  out.viewer = sanitizeViewer(raw.viewer);
+  return out;
+}
+
+/** Pestañas del visor: rutas válidas sin repetir (las más recientes) y la activa solo si es una de ellas. */
+export function sanitizeViewer(raw) {
+  const out = emptyViewer();
+  if (!raw || typeof raw !== 'object' || !Array.isArray(raw.tabs)) return out;
+  const seen = new Set();
+  for (const p of raw.tabs) {
+    if (isRelPath(p) && !seen.has(p)) {
+      seen.add(p);
+      out.tabs.push(p);
+    }
+  }
+  out.tabs = out.tabs.slice(-MAX_VIEWER_TABS);
+  if (out.tabs.includes(raw.active)) out.active = raw.active;
   return out;
 }
 

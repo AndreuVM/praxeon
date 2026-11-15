@@ -149,7 +149,7 @@ describe('createExplorerStore', () => {
   });
   it('un estado manipulado en el almacenamiento se normaliza al leer', () => {
     const raw = JSON.stringify({ order: ['/w'], states: { '/w': { open: ['../etc', 'ok'], currentDir: 'C:/x', selected: '/abs', scroll: -3 } } });
-    expect(createExplorerStore(memoryStorage({ [STORAGE_KEY]: raw })).load('/w')).toEqual({ open: ['ok'], currentDir: '', selected: null, scroll: 0 });
+    expect(createExplorerStore(memoryStorage({ [STORAGE_KEY]: raw })).load('/w')).toEqual({ open: ['ok'], currentDir: '', selected: null, scroll: 0, viewer: { tabs: [], active: null } });
   });
   it('si el almacenamiento falla al escribir o no existe, no lanza', () => {
     const throwing = { getItem: () => null, setItem: () => { throw new Error('QuotaExceededError'); } };

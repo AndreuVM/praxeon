@@ -202,6 +202,14 @@ Todas las modificaciones notables de este proyecto están documentadas en este a
   números, nunca contenido). Una ruta que ya no existe se olvida sin error, y renombrar o mover una carpeta abierta la deja abierta.
   Antes, al cambiar de workspace el árbol reutilizaba las carpetas abiertas del anterior si coincidían los nombres.
   El visor sigue sin conservar los archivos abiertos ni lo no guardado al cambiar de vista.
+- El visor de archivos conserva sus pestañas y el texto sin guardar al cambiar de vista o de workspace y volver, y reabre las
+  pestañas y la activa al recargar (FE-010). Las pestañas viven en un almacén en memoria por workspace, fuera del componente, así
+  que lo editado sin guardar sigue ahí mientras la aplicación esté abierta; al volver se comprueban los archivos en disco: lo no
+  modificado se actualiza si cambió (por ejemplo, por un agente) y lo editado nunca se pisa (guardar sobre un archivo que cambió
+  da el aviso de conflicto de siempre). En `sessionStorage` solo se guardan las rutas y la pestaña activa, nunca el contenido:
+  tras recargar, el texto sin guardar no se restaura, pero el navegador avisa antes de perderlo. Un archivo que ya no existe se
+  descarta sin error; las pestañas siguen al archivo renombrado y se cierran al eliminarlo. Antes, al cambiar de workspace se
+  cerraban todas las pestañas con un aviso; ahora cada workspace conserva las suyas.
 - Con `llm_failure_policy="fail_closed"`, un proveedor del agente sin credenciales hacía que la misión siguiera en silencio
   con el planificador sintético (la fábrica devolvía el simulador en vez de fallar). Ahora la misión se detiene.
 - El supervisor TypeSafe elegido sin modelo explícito llamaba al API con el modelo `typesafe` (o `default`), que rechaza

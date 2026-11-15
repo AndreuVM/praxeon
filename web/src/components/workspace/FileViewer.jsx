@@ -1,9 +1,9 @@
-import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { Suspense, useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { X, Save, Eye, Code2, Download } from 'lucide-react';
 import Markdown from '../Markdown';
-import { fetchWorkspace } from '../../services/api';
-import { notify } from '../Dialogs';
-import { readWorkspaceFile, saveWorkspaceFile, fetchWorkspaceBlob } from '../../services/workspaceFiles';
+import { fetchWorkspaceBlob } from '../../services/workspaceFiles';
+import { baseName, isDirty, isSvg } from '../../utils/viewerState';
+import { viewerStore } from './viewerInstance';
 
 // Monaco va en su propio chunk (code splitting, AUDIT-P2): solo se descarga al abrir un archivo.
 const MonacoEditor = React.lazy(() => import('./MonacoEditor'));
@@ -16,8 +16,6 @@ const LANG = {
 };
 const extOf = (p) => (p.split('.').pop() || '').toLowerCase();
 const langOf = (p) => LANG[extOf(p)] || 'plaintext';
-const baseName = (p) => p.split('/').pop();
-const isSvg = (p) => extOf(p) === 'svg';
 
 const bar = { display: 'flex', alignItems: 'center', gap: 8, padding: '4px 10px', borderBottom: '1px solid var(--line)', fontSize: 12 };
 const toolBtn = { display: 'flex', gap: 4, alignItems: 'center' };
@@ -109,114 +107,38 @@ function BinaryView({ tab }) {
   );
 }
 
-const under = (p, base) => p === base || p.startsWith(`${base}/`);
-
 /**
  * Visor/editor de archivos del workspace (FE-003). Editor tipo VS Code (Monaco) con pestañas; muestra imágenes, SVG, PDF,
- * Markdown y HTML. `openRequest` = { path, nonce } pide abrir un archivo desde el árbol.
+ * Markdown y HTML. Las pestañas y el texto sin guardar viven en `viewerStore` (por workspace), no en este componente: al cambiar
+ * de vista o de workspace siguen ahí (FE-010). Abrir un archivo desde el árbol es `viewerStore.open(workspacePath, ruta)`.
  */
-export default function FileViewer({ openRequest = null }) {
-  const [tabs, setTabs] = useState([]); // {path, kind, content, original, etag, encoding, error, conflict, mode}
-  const [activePath, setActivePath] = useState(null);
-  const tabsRef = useRef(tabs);
-  tabsRef.current = tabs;
-  const activeRef = useRef(activePath);
-  activeRef.current = activePath;
+export default function FileViewer({ workspacePath = '' }) {
+  const ws = workspacePath;
+  useState(() => viewerStore.ensure(ws));            // estado inicial (rutas recordadas) ya en el primer pintado
+  const { tabs, active: activePath } = useSyncExternalStore(viewerStore.subscribe, () => viewerStore.snapshot(ws));
 
-  const patch = useCallback((path, changes) => {
-    setTabs((ts) => ts.map((t) => (t.path === path ? { ...t, ...changes } : t)));
-  }, []);
-
-  const open = useCallback(async (path) => {
-    setActivePath(path);
-    if (tabsRef.current.some((t) => t.path === path)) return;
-    setTabs((ts) => [...ts, { path, kind: 'loading', content: '', original: '', etag: null, encoding: 'utf-8', error: null, conflict: false, mode: isSvg(path) ? 'preview' : 'edit' }]);
-    try {
-      const info = await readWorkspaceFile(path);
-      patch(path, { kind: info.kind, content: info.content ?? '', original: info.content ?? '', etag: info.etag, encoding: info.encoding || 'utf-8', mime: info.mime, size: info.size });
-    } catch (err) {
-      patch(path, { kind: 'error', error: err.message });
-    }
-  }, [patch]);
-
-  useEffect(() => {
-    if (openRequest?.path) open(openRequest.path);
-  }, [openRequest, open]);
+  // Al mostrar el visor: reabrir lo que falte y refrescar lo que no esté modificado.
+  useEffect(() => { viewerStore.activate(ws); }, [ws]);
 
   // Una entrada se eliminó o cambió de nombre desde el explorador: las pestañas siguen a la ruta nueva o se cierran.
   useEffect(() => {
-    const onEntry = (e) => {
-      const { action, path, newPath } = e.detail || {};
-      if (!path) return;
-      if (action === 'delete') {
-        const keep = tabsRef.current.filter((t) => !under(t.path, path));
-        setTabs(keep);
-        if (activeRef.current && under(activeRef.current, path)) setActivePath(keep.length ? keep[keep.length - 1].path : null);
-      } else if (action === 'rename' && newPath) {
-        const move = (p) => (under(p, path) ? newPath + p.slice(path.length) : p);
-        setTabs((ts) => ts.map((t) => ({ ...t, path: move(t.path) })));
-        if (activeRef.current) setActivePath(move(activeRef.current));
-      }
-    };
+    const onEntry = (e) => viewerStore.entryChanged(ws, e.detail);
     window.addEventListener('praxeon:workspace-entry-changed', onEntry);
     return () => window.removeEventListener('praxeon:workspace-entry-changed', onEntry);
-  }, []);
+  }, [ws]);
 
-  // Al cambiar de workspace las pestañas abiertas dejan de corresponder a él: guardar una de ellas escribiría la misma ruta
-  // relativa en el workspace nuevo. Se cierran todas y se avisa de lo que no estaba guardado (FE-002 ↔ FE-003).
-  const workspacePathRef = useRef(null);
-  useEffect(() => {
-    let alive = true;
-    fetchWorkspace().then((w) => { if (alive && workspacePathRef.current === null) workspacePathRef.current = w?.path ?? ''; }).catch(() => {});
-    const onChange = (e) => {
-      const next = e.detail?.path;
-      if (next === undefined || workspacePathRef.current === null || next === workspacePathRef.current) return;
-      workspacePathRef.current = next;
-      const unsaved = tabsRef.current.filter((t) => t.kind === 'text' && t.content !== t.original).length;
-      setTabs([]);
-      setActivePath(null);
-      if (unsaved) notify(`Se cerraron ${unsaved} archivo${unsaved === 1 ? '' : 's'} con cambios sin guardar al cambiar de workspace.`);
-    };
-    window.addEventListener('praxeon:workspace-changed', onChange);
-    return () => { alive = false; window.removeEventListener('praxeon:workspace-changed', onChange); };
-  }, []);
-
-  const save = useCallback(async (force = false) => {
-    const tab = tabsRef.current.find((t) => t.path === activeRef.current);
-    if (!tab || tab.kind !== 'text' || tab.content === tab.original) return;
-    try {
-      const res = await saveWorkspaceFile(tab.path, tab.content, force ? null : tab.etag, tab.encoding);
-      patch(tab.path, { original: tab.content, etag: res.etag, encoding: res.encoding || tab.encoding, conflict: false, error: null });
-    } catch (err) {
-      if (err.status === 409) patch(tab.path, { conflict: true, error: null });
-      else patch(tab.path, { error: err.message });
-    }
-  }, [patch]);
-  const saveRef = useRef(save);
-  saveRef.current = save;
-  const stableSave = useCallback(() => saveRef.current(), []);
-
-  const reload = async (path) => {
-    try {
-      const info = await readWorkspaceFile(path);
-      patch(path, { content: info.content ?? '', original: info.content ?? '', etag: info.etag, encoding: info.encoding || 'utf-8', conflict: false, error: null });
-    } catch (err) {
-      patch(path, { error: err.message });
-    }
-  };
+  const patch = useCallback((path, changes) => viewerStore.patch(ws, path, changes), [ws]);
+  const stableSave = useCallback(() => viewerStore.save(ws), [ws]);
+  const setActivePath = useCallback((path) => viewerStore.select(ws, path), [ws]);
 
   const close = (path) => {
-    const tab = tabsRef.current.find((t) => t.path === path);
-    if (tab && tab.content !== tab.original && !window.confirm(`«${baseName(path)}» tiene cambios sin guardar. ¿Cerrar y descartarlos?`)) return;
-    setTabs((ts) => ts.filter((t) => t.path !== path));
-    if (activeRef.current === path) {
-      const rest = tabsRef.current.filter((t) => t.path !== path);
-      setActivePath(rest.length ? rest[rest.length - 1].path : null);
-    }
+    const t = tabs.find((x) => x.path === path);
+    if (t && isDirty(t) && !window.confirm(`«${baseName(path)}» tiene cambios sin guardar. ¿Cerrar y descartarlos?`)) return;
+    viewerStore.close(ws, path);
   };
 
+  const dirty = isDirty;
   const tab = tabs.find((t) => t.path === activePath) || null;
-  const dirty = (t) => t.kind === 'text' && t.content !== t.original;
   const lang = tab ? langOf(tab.path) : 'plaintext';
   const svg = tab ? isSvg(tab.path) : false;
   const previewable = tab && tab.kind === 'text' && (lang === 'markdown' || lang === 'html' || svg);
@@ -258,8 +180,8 @@ export default function FileViewer({ openRequest = null }) {
           {tab.conflict && (
             <div role="alert" style={{ ...bar, background: 'rgba(229,72,77,.15)' }}>
               <span style={{ flex: 1 }}>El archivo cambió en disco desde que lo abriste.</span>
-              <button type="button" onClick={() => reload(tab.path)}>Recargar (descarta tus cambios)</button>
-              <button type="button" onClick={() => save(true)}>Sobrescribir</button>
+              <button type="button" onClick={() => viewerStore.reload(ws, tab.path)}>Recargar (descarta tus cambios)</button>
+              <button type="button" onClick={() => viewerStore.save(ws, true)}>Sobrescribir</button>
             </div>
           )}
           {tab.error && <div role="alert" style={{ ...bar, color: 'var(--bad, #e5484d)' }}>{tab.error}</div>}

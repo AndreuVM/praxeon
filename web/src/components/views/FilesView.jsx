@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import FileTree from '../workspace/FileTree';
 import FileViewer from '../workspace/FileViewer';
+import { viewerStore } from '../workspace/viewerInstance';
 import { explorerStore, isInside, moveRel } from '../../utils/explorerState';
 
 /** Vista «Archivos»: explorador del workspace activo + visor/editor (FE-001 + FE-003). */
@@ -12,7 +13,6 @@ export default function FilesView({ workspace = null }) {
 }
 
 function FilesPane({ workspace, workspacePath }) {
-  const [openRequest, setOpenRequest] = useState(null);
   const [selected, setSelected] = useState(() => explorerStore.load(workspacePath).selected);
 
   // La selección se recuerda por workspace (FE-004): al volver a la vista, o recargar, sigue marcada
@@ -44,12 +44,12 @@ function FilesPane({ workspace, workspacePath }) {
           onSelectedMissing={forgetSelection}
           onOpenFile={(p) => {
             setSelected(p);
-            setOpenRequest({ path: p, nonce: Date.now() });
+            viewerStore.open(workspacePath, p);
           }}
         />
       </aside>
       <section style={{ flex: 1, minWidth: 0 }}>
-        <FileViewer openRequest={openRequest} />
+        <FileViewer workspacePath={workspacePath} />
       </section>
     </div>
   );
