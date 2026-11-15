@@ -232,7 +232,9 @@ def test_la_persona_puede_declarar_modelos_con_vision(monkeypatch):
     [("openai", None, True), ("anthropic", None, True), ("gemini", None, True), ("groq", None, True), ("openrouter", None, True),
      ("ollama", None, False), ("ollama", "http://localhost:11434", False), ("ollama", "http://127.0.0.1:11434", False),
      ("ollama", "http://192.168.1.50:11434", True), ("openai", "http://127.0.0.1:8080/v1", False), ("openai", "https://api.openai.com/v1", True),
-     ("simulator", None, False), ("claude_cli", None, False)],
+     ("simulator", None, False), ("claude_cli", None, False),
+     ("openai", "http://0.0.0.0:8080/v1", False), ("openai", "http://[::1]:8080/v1", False), ("openai", "http://127.5.5.5/v1", False),
+     ("openai", "http://mi-servidor.local/v1", True), ("openai", "http://localhost.evil.com/v1", True), ("openai", "http://10.0.0.5/v1", True)],
 )
 def test_si_la_imagen_sale_de_la_maquina(provider, base_url, remote):
     assert vision.is_remote(provider, base_url) is remote

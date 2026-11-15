@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import base64
 import io
+import ipaddress
 import math
 import os
 import re
@@ -212,6 +213,17 @@ def model_supports_vision(provider: str | None, model: str | None) -> bool:
     return any(p in name for p in _VISION_PATTERNS.get(prov, ()))
 
 
+def _is_local_host(host: str) -> bool:
+    """«localhost» o una dirección de bucle local/no especificada (127.x, ::1…): la imagen no sale de esta máquina."""
+    if host == "localhost" or host.endswith(".localhost"):
+        return True
+    try:
+        ip = ipaddress.ip_address(host.strip("[]"))
+    except ValueError:
+        return False
+    return ip.is_loopback or ip.is_unspecified
+
+
 def is_remote(provider: str | None, base_url: str | None = None) -> bool:
     """¿La imagen saldría de esta máquina? Todo proveedor salvo el simulador, la CLI local y un Ollama/endpoint en este equipo."""
     prov = (provider or "").strip().lower()
@@ -220,8 +232,7 @@ def is_remote(provider: str | None, base_url: str | None = None) -> bool:
     if prov == "ollama" and not base_url:
         return False
     if base_url:
-        host = (urlparse(base_url).hostname or "").lower()
-        return host not in ("localhost", "127.0.0.1", "::1", "0.0.0.0") and not host.endswith(".localhost")
+        return not _is_local_host((urlparse(base_url).hostname or "").lower())
     return True
 
 
