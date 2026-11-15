@@ -130,6 +130,7 @@ Todas las modificaciones notables de este proyecto están documentadas en este a
   las claves del desarrollador.
 - La interfaz web empaquetada (`praxeon/server/static`) ya no se versiona: `scripts/build_frontend.py` la compila desde
   `web/` antes de empaquetar. La que se versionaba era de mediados de octubre y no incluía los cambios posteriores.
+- Frontend: primer ejecutor de tests (Vitest, `npm test` en `web/`) y paso nuevo en el job de CI del frontend.
 - `openapi.json` (raíz y SDK) regenerado; un test falla si deja de coincidir con la API.
 - CI: los jobs de tipos y tests instalan con `uv sync --locked`, es decir, con las versiones de `uv.lock`, y fallan si
   el lockfile no corresponde a `pyproject.toml`.
@@ -148,6 +149,11 @@ Todas las modificaciones notables de este proyecto están documentadas en este a
   - En Linux/macOS corre con el usuario del host: lo que crea en el workspace ya no queda como propiedad de root.
   - La comprobación de que Docker responde se cachea un minuto, en lugar de repetirse en cada comando.
   - La imagen se puede cambiar con `PRAXEON_CONTAINER_IMAGE`.
+- El explorador de archivos conserva su estado al cambiar de vista, recargar o cambiar de workspace y volver (FE-004): carpetas
+  abiertas, carpeta actual, archivo seleccionado y desplazamiento, por workspace y en `sessionStorage` (solo rutas relativas y
+  números, nunca contenido). Una ruta que ya no existe se olvida sin error, y renombrar o mover una carpeta abierta la deja abierta.
+  Antes, al cambiar de workspace el árbol reutilizaba las carpetas abiertas del anterior si coincidían los nombres.
+  El visor sigue sin conservar los archivos abiertos ni lo no guardado al cambiar de vista.
 - Con `llm_failure_policy="fail_closed"`, un proveedor del agente sin credenciales hacía que la misión siguiera en silencio
   con el planificador sintético (la fábrica devolvía el simulador en vez de fallar). Ahora la misión se detiene.
 - El supervisor TypeSafe elegido sin modelo explícito llamaba al API con el modelo `typesafe` (o `default`), que rechaza

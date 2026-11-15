@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ChevronRight, ChevronDown, Folder, FolderOpen, File, RefreshCw, FilePlus, FolderPlus, Pencil, Trash2 } from 'lucide-react';
 import {
   fetchWorkspaceTree,
@@ -8,6 +8,7 @@ import {
   uploadWorkspaceFile,
 } from '../../services/workspaceFiles';
 import { confirmDialog, notify } from '../Dialogs';
+import { explorerStore, isInside, moveRel, removed, renamed, reveal, setOpen as rememberOpen } from '../../utils/explorerState';
 
 const ROW = { display: 'flex', alignItems: 'center', gap: 6, padding: '3px 8px', cursor: 'pointer', fontSize: 13, whiteSpace: 'nowrap', userSelect: 'none' };
 const iconBtn = { background: 'none', border: 0, color: 'inherit', cursor: 'pointer', padding: 2, display: 'inline-flex', opacity: 0.75 };
@@ -105,32 +106,44 @@ function NameInput({ initial = '', depth, icon: Icon, onSubmit, onCancel }) {
 }
 
 function Node({ entry, depth, selectedPath, onOpenFile, reloadKey, ctx }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(() => entry.type === 'dir' && ctx.isOpen(entry.rel_path));   // restaurado al volver al explorador
   const [hover, setHover] = useState(false);
   const [state, setState] = useState({ loading: false, error: null, entries: null, truncated: false });
   const isDir = entry.type === 'dir';
   const { creating, renaming, startCreate, startRename, commitCreate, commitRename, cancel, remove, focusDir, dragDir, setDragDir, drop } = ctx;
   const dropDir = isDir ? entry.rel_path : parentOf(entry.rel_path);
 
+  const { loadStart, loadEnd, gone, forgetMissing } = ctx;
   const load = useCallback(async () => {
     setState((s) => ({ ...s, loading: true, error: null }));
+    loadStart();
     try {
       const data = await fetchWorkspaceTree(entry.rel_path);
       setState({ loading: false, error: null, entries: data.entries, truncated: data.truncated });
     } catch (err) {
       setState({ loading: false, error: err.message, entries: null, truncated: false });
+      if (err.status === 404) gone(entry.rel_path);    // la carpeta ya no existe: se olvida (no se reabrirá si se recrea)
+    } finally {
+      loadEnd();
     }
-  }, [entry.rel_path]);
+  }, [entry.rel_path, loadStart, loadEnd, gone]);
 
   useEffect(() => {
     if (open) load();
   }, [reloadKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Una ruta recordada (carpeta abierta, selección o carpeta actual) que ya no aparece en el listado de su carpeta se olvida sin error.
+  // Solo al cambiar el listado: un archivo recién creado se selecciona antes de que el listado se recargue.
+  useEffect(() => {
+    if (isDir && state.entries && !state.truncated) forgetMissing(entry.rel_path, state.entries);
+  }, [state.entries]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Crear dentro de esta carpeta: se abre para mostrar el campo de nombre
   const creatingHere = isDir && creating && creating.dir === entry.rel_path;
   useEffect(() => {
     if (creatingHere && !open) {
       setOpen(true);
+      ctx.rememberOpen(entry.rel_path, true);
       if (state.entries === null) load();
     }
   }, [creatingHere]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -143,6 +156,7 @@ function Node({ entry, depth, selectedPath, onOpenFile, reloadKey, ctx }) {
     focusDir(entry.rel_path);
     const next = !open;
     setOpen(next);
+    ctx.rememberOpen(entry.rel_path, next);
     if (next && state.entries === null) load();
   };
 
@@ -237,24 +251,71 @@ function Node({ entry, depth, selectedPath, onOpenFile, reloadKey, ctx }) {
 }
 
 /** Árbol del workspace activo con gestión de archivos (FE-001 + crear, renombrar y eliminar). Se recarga al cambiar de workspace. */
-export default function FileTree({ selectedPath = null, onOpenFile, workspaceName = '' }) {
+export default function FileTree({ selectedPath = null, onOpenFile, workspaceName = '', workspacePath = '', onSelectedMissing }) {
   const [root, setRoot] = useState({ loading: true, error: null, entries: [], truncated: false });
   const [reloadKey, setReloadKey] = useState(0);
   const [creating, setCreating] = useState(null);   // { dir, kind }
   const [renaming, setRenaming] = useState(null);   // rel_path
-  const [currentDir, setCurrentDir] = useState(''); // carpeta donde crean los botones de la cabecera
+  // Estado recordado de este workspace (carpetas abiertas, carpeta actual, desplazamiento). El árbol se monta con la clave del
+  // workspace, así que este estado inicial es siempre el del workspace que se muestra. Sin ruta no se guarda nada.
+  const [initial] = useState(() => explorerStore.save(workspacePath, (s) => reveal(s, selectedPath)));
+  const openSet = useRef(new Set(initial.open));
+  const [currentDir, setCurrentDir] = useState(initial.currentDir); // carpeta donde crean los botones de la cabecera
+  const treeRef = useRef(null);
+  const pending = useRef(0);                                 // cargas de carpetas en curso (para saber cuándo restaurar el desplazamiento)
+  const restoring = useRef(initial.scroll > 0);
+  const lastScroll = useRef(initial.scroll);
+  const settle = useRef(null);
+  const live = useRef({ selectedPath, currentDir });         // lo último visto, para los efectos de los nodos
+  useLayoutEffect(() => { live.current = { selectedPath, currentDir }; });   // antes que los efectos de los nodos
   const [dragDir, setDragDir] = useState(null);     // carpeta que se resalta al arrastrar archivos encima ('' = raíz)
   const [uploading, setUploading] = useState(null); // { done, total } mientras se suben archivos
 
+  const persist = useCallback((update) => {
+    const next = explorerStore.save(workspacePath, update);
+    openSet.current = new Set(next.open);
+    return next;
+  }, [workspacePath]);
+
+  const loadStart = useCallback(() => { pending.current += 1; }, []);
+  const loadEnd = useCallback(() => {
+    pending.current -= 1;
+    settle.current?.();
+  }, []);
+
+  /** Una ruta ya no existe: se olvida lo recordado dentro de ella y se limpian la carpeta actual y la selección si estaban ahí. */
+  const alive = useRef(true);                                // tras desmontar (p. ej. cambio de workspace) una carga tardía ya no toca lo guardado
+  useEffect(() => {
+    alive.current = true;
+    return () => { alive.current = false; };
+  }, []);
+  const gone = useCallback((rel) => {
+    if (!alive.current) return;
+    persist((s) => removed(s, rel));
+    setCurrentDir((c) => (c && isInside(c, rel) ? '' : c));
+    if (live.current.selectedPath && isInside(live.current.selectedPath, rel)) onSelectedMissing?.();
+  }, [persist, onSelectedMissing]);
+
+  /** `entries` es el listado completo de la carpeta `parent`: lo recordado que cuelga directamente de ella y no está se olvida. */
+  const forgetMissing = useCallback((parent, entries) => {
+    const names = new Set(entries.map((c) => c.rel_path));
+    const { selectedPath: sel, currentDir: cur } = live.current;
+    for (const p of [...openSet.current, sel, cur]) if (p && parentOf(p) === parent && !names.has(p)) gone(p);
+  }, [gone]);
+
   const loadRoot = useCallback(async () => {
     setRoot((r) => ({ ...r, loading: true, error: null }));
+    loadStart();
     try {
       const data = await fetchWorkspaceTree('');
       setRoot({ loading: false, error: null, entries: data.entries, truncated: data.truncated });
+      if (!data.truncated) forgetMissing('', data.entries);
     } catch (err) {
       setRoot({ loading: false, error: err.message, entries: [], truncated: false });
+    } finally {
+      loadEnd();
     }
-  }, []);
+  }, [loadStart, loadEnd, forgetMissing]);
 
   const refresh = useCallback(() => {
     setReloadKey((k) => k + 1);
@@ -263,15 +324,79 @@ export default function FileTree({ selectedPath = null, onOpenFile, workspaceNam
 
   useEffect(() => {
     loadRoot();
-    const onChange = () => {
+    const onChange = (e) => {
+      // Otro workspace pasa a ser el activo: este árbol se desmonta (la clave cambia). No se toca su estado guardado, que sigue siendo
+      // el de su workspace, ni se recarga contra el workspace nuevo. Alias, fijar u olvidar del mismo workspace sí recargan.
+      const target = e.detail?.path;
+      if (target && workspacePath && target !== workspacePath) return;
       setCreating(null);
       setRenaming(null);
-      setCurrentDir('');
       refresh();
     };
     window.addEventListener('praxeon:workspace-changed', onChange);
     return () => window.removeEventListener('praxeon:workspace-changed', onChange);
-  }, [loadRoot, refresh]);
+  }, [loadRoot, refresh, workspacePath]);
+
+  // Desplazamiento: se guarda al moverse y se restaura cuando las carpetas abiertas han terminado de cargar (si no, el contenido
+  // aún no tiene la altura necesaria). Hasta restaurar no se guarda nada: el navegador recortaría el valor mientras el árbol crece.
+  useEffect(() => {
+    const el = treeRef.current;
+    if (!el || !workspacePath) return undefined;
+    const target = initial.scroll;
+    let dirty = false;
+    let saveTimer = 0;
+    let settleTimer = 0;
+    let giveUp = 0;
+    let observer = null;
+    const flush = () => {
+      clearTimeout(saveTimer);
+      if (!dirty) return;
+      dirty = false;
+      persist((s) => ({ ...s, scroll: lastScroll.current }));
+    };
+    const onScroll = () => {
+      if (restoring.current) return;
+      lastScroll.current = el.scrollTop;
+      dirty = true;
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(flush, 200);
+    };
+    const stopWatching = () => {
+      clearTimeout(settleTimer);
+      clearTimeout(giveUp);
+      observer?.disconnect();
+      settle.current = null;
+      for (const ev of ['wheel', 'pointerdown', 'keydown']) el.removeEventListener(ev, userTookOver);
+    };
+    const finish = () => {
+      restoring.current = false;
+      stopWatching();
+    };
+    function userTookOver() { finish(); }                  // si la persona se mueve antes, no se le quita el control
+    const apply = () => {
+      el.scrollTop = target;
+      lastScroll.current = el.scrollTop;
+      finish();
+    };
+    const schedule = () => {
+      clearTimeout(settleTimer);
+      settleTimer = setTimeout(() => { if (restoring.current && pending.current === 0) apply(); }, 150);
+    };
+    el.addEventListener('scroll', onScroll, { passive: true });
+    if (restoring.current) {
+      settle.current = schedule;
+      observer = new MutationObserver(schedule);
+      observer.observe(el, { childList: true, subtree: true });
+      for (const ev of ['wheel', 'pointerdown', 'keydown']) el.addEventListener(ev, userTookOver, { passive: true });
+      giveUp = setTimeout(apply, 4000);
+      schedule();
+    }
+    return () => {
+      el.removeEventListener('scroll', onScroll);
+      if (!restoring.current) flush();
+      stopWatching();
+    };
+  }, [workspacePath, persist, initial.scroll]);
 
   const cancel = useCallback(() => {
     setCreating(null);
@@ -279,6 +404,12 @@ export default function FileTree({ selectedPath = null, onOpenFile, workspaceNam
   }, []);
 
   const fail = (err) => notify(err.message || 'No se pudo completar la operación.');
+
+  // Una entrada cambió de ruta: lo recordado dentro de ella (carpetas abiertas, carpeta actual) la sigue
+  const afterRename = (from, to) => {
+    persist((s) => renamed(s, from, to));
+    setCurrentDir((c) => (c ? moveRel(c, from, to) : c));
+  };
 
   // Mueve una entrada del árbol a otra carpeta (arrastrar dentro del explorador)
   const move = async (source, dir) => {
@@ -290,6 +421,7 @@ export default function FileTree({ selectedPath = null, onOpenFile, workspaceNam
     try {
       const res = await renameWorkspaceEntry(source, joinPath(dir, baseNameOf(source)));
       announce({ action: 'rename', path: res.old_rel_path, newPath: res.rel_path });
+      afterRename(res.old_rel_path, res.rel_path);
       refresh();
     } catch (err) {
       fail(err);
@@ -356,7 +488,16 @@ export default function FileTree({ selectedPath = null, onOpenFile, workspaceNam
     },
     creating,
     renaming,
-    focusDir: setCurrentDir,
+    isOpen: (rel) => openSet.current.has(rel),
+    rememberOpen: (rel, open) => persist((s) => rememberOpen(s, rel, open)),
+    forgetMissing,
+    loadStart,
+    loadEnd,
+    gone,
+    focusDir: (dir) => {
+      setCurrentDir(dir);
+      persist((s) => ({ ...s, currentDir: dir }));
+    },
     cancel,
     startCreate: (dir, kind) => {
       setRenaming(null);
@@ -382,6 +523,7 @@ export default function FileTree({ selectedPath = null, onOpenFile, workspaceNam
       try {
         const res = await renameWorkspaceEntry(entry.rel_path, joinPath(parentOf(entry.rel_path), name));
         announce({ action: 'rename', path: res.old_rel_path, newPath: res.rel_path });
+        afterRename(res.old_rel_path, res.rel_path);
         refresh();
       } catch (err) {
         fail(err);
@@ -399,6 +541,8 @@ export default function FileTree({ selectedPath = null, onOpenFile, workspaceNam
       try {
         await deleteWorkspaceEntry(entry.rel_path);
         announce({ action: 'delete', path: entry.rel_path });
+        persist((s) => removed(s, entry.rel_path));
+        setCurrentDir((c) => (c && isInside(c, entry.rel_path) ? '' : c));
         refresh();
       } catch (err) {
         fail(err);
@@ -421,6 +565,7 @@ export default function FileTree({ selectedPath = null, onOpenFile, workspaceNam
       {uploading && <div role="status" style={{ padding: '2px 10px 6px', fontSize: 12, color: 'var(--muted)' }}>Subiendo {uploading.done}/{uploading.total}…</div>}
       <div
         role="tree"
+        ref={treeRef}
         style={{ flex: 1, overflowY: 'auto', outline: dragDir === '' ? '2px dashed rgba(110,160,255,.7)' : 'none', outlineOffset: -2 }}
         onDragOver={(e) => { if (accepts(e)) { e.preventDefault(); e.dataTransfer.dropEffect = isInternal(e) ? 'move' : 'copy'; if (dragDir !== '') setDragDir(''); } }}
         onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setDragDir(null); }}

@@ -147,6 +147,10 @@ jobs:
         working-directory: web
         run: npm run lint
 
+      - name: Frontend unit tests (Vitest)
+        working-directory: web
+        run: npm test
+
       - name: Build Frontend Production Bundle (Vite)
         working-directory: web
         run: npm run build
