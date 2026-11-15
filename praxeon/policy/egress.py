@@ -42,11 +42,11 @@ class EgressPolicy(BaseModel):
     CLOUD_METADATA_IPS: set[str] = {"169.254.169.254", "metadata.google.internal"}
 
     # Patrones para extraer hosts o URLs de cadenas de comandos
-    URL_PATTERN: re.Pattern = re.compile(
+    URL_PATTERN: re.Pattern[str] = re.compile(
         r'(?:https?|ftp|tcp|udp)://([a-zA-Z0-9_\-\.]+)(?::([0-9]+))?',
         re.IGNORECASE,
     )
-    IP_PORT_PATTERN: re.Pattern = re.compile(
+    IP_PORT_PATTERN: re.Pattern[str] = re.compile(
         r'\b((?:[0-9]{1,3}\.){3}[0-9]{1,3})(?::([0-9]+))?\b'
     )
 

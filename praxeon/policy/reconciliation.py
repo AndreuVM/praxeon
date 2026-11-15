@@ -229,16 +229,16 @@ class RiskReconciler:
                 reasons=[f"Herramienta de mutación local: '{tool_name}'."],
             )
 
-        # 7. Ajuste para modo Full Access en operaciones no críticas
+        # 7. Ajuste para modo Full Access. El riesgo crítico (nivel CRITICAL o potencial destructivo) ya se resolvió arriba
+        #    y nunca llega aquí: Full Access solo relaja la confirmación de lo que no es crítico.
         if mode_str == "full_access":
-            if base_risk.level != RiskLevel.CRITICAL:
-                return RiskAssessment(
-                    level=base_risk.level,
-                    requires_confirmation=False,
-                    executable=True,
-                    destructive_potential=base_risk.destructive_potential,
-                    reasons=list(base_risk.reasons) + ["Modo Full Access: confirmación interactiva relajada por consentimiento de sesión."],
-                )
+            return RiskAssessment(
+                level=base_risk.level,
+                requires_confirmation=False,
+                executable=True,
+                destructive_potential=base_risk.destructive_potential,
+                reasons=list(base_risk.reasons) + ["Modo Full Access: confirmación interactiva relajada por consentimiento de sesión."],
+            )
 
         # 8. Retorno preservando el riesgo base evaluado
         return base_risk

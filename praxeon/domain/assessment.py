@@ -55,7 +55,7 @@ class RiskLevel(str, Enum):
     CRITICAL = "critical"
 
     @classmethod
-    def _missing_(cls, value):
+    def _missing_(cls, value: object) -> "RiskLevel | None":
         """Acepta cualquier capitalización («HIGH», «High»): la API y los formularios no deben depender de ella."""
         if isinstance(value, str):
             for member in cls:

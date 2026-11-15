@@ -136,6 +136,22 @@ follow_imports = "silent"
 warn_unused_ignores = true
 warn_redundant_casts = true
 
+# --strict paquete a paquete (AUD-23). mypy no admite `strict = true` por módulo: se listan las opciones que `--strict` activa.
+# Para añadir un paquete: que `mypy --strict <paquete>` dé 0 errores y añadir su patrón aquí. Pendientes: runtime, server.
+[[tool.mypy.overrides]]
+module = ["praxeon.domain.*", "praxeon.policy.*", "praxeon.core.pipeline"]
+disallow_any_generics = true
+disallow_subclassing_any = true
+disallow_untyped_calls = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+warn_return_any = true
+no_implicit_reexport = true
+strict_equality = true
+extra_checks = true
+
 [tool.coverage.run]
 source = ["praxeon"]
 branch = true

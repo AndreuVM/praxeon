@@ -18,7 +18,10 @@ Es la detección canónica de bucles del runtime (pipeline de propuestas, LAYA, 
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from praxeon.reasoning.classifier import CommandClassifier
 
 WRITE_TOOLS = ("edit_file", "write_file", "create_file", "write_to_file", "save_file", "replace_file_content")
 SHELL_TOOLS = ("run_command", "run_script", "git")
@@ -49,10 +52,10 @@ def is_mutation(tool: str, args: dict[str, Any]) -> bool:
     return False
 
 
-_CLASSIFIER = None
+_CLASSIFIER: CommandClassifier | None = None
 
 
-def _classifier():
+def _classifier() -> CommandClassifier:
     global _CLASSIFIER
     if _CLASSIFIER is None:
         from praxeon.reasoning.classifier import CommandClassifier

@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, UTC
 import secrets
 import time
 
-from typing import Any
+from typing import Any, cast
 import uuid
 
 from praxeon.domain.models import (
@@ -80,9 +80,9 @@ class PolicyEngine:
         if execution_mode is not None:
             return execution_mode
         if isinstance(state, dict):
-            return state.get("metadata", {}).get("execution_mode", "local_restricted")
+            return cast(str, state.get("metadata", {}).get("execution_mode", "local_restricted"))
         if hasattr(state, "metadata") and isinstance(state.metadata, dict):
-            return state.metadata.get("execution_mode", "local_restricted")
+            return cast(str, state.metadata.get("execution_mode", "local_restricted"))
         return "local_restricted"
 
     def _classify_operation(self, action: ActionCandidate, state: Any) -> CommandRiskAssessment:
