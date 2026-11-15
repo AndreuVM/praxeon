@@ -477,7 +477,7 @@ class AgentRouter:
 
                 return new_decision
 
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - frontera con el LLM de enrutado: el fallo se registra y se mantiene la decisión del enrutador
             logger.warning(f"Error en fallback LLM de enrutador: {exc}")
 
         return previous_decision

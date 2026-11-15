@@ -290,7 +290,7 @@ def verify_capability_signature(secret_key: str, capability: CapabilityPayload |
     if isinstance(capability, dict):
         try:
             capability = CapabilityPayload(**capability)
-        except Exception:
+        except Exception:  # noqa: BLE001 - verificación fail-closed: cualquier payload inválido cuenta como capability no válida
             return False
     if not capability.signature:
         return False
@@ -353,7 +353,7 @@ def compute_state_hash(state_dict: Any) -> str:
     elif not isinstance(state_dict, dict):
         try:
             state_dict = dict(state_dict)
-        except Exception:
+        except (TypeError, ValueError):
             state_dict = {"repr": str(state_dict)}
     if is_state_snapshot(state_dict):
         return state_snapshot_digest(state_dict)

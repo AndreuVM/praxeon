@@ -186,7 +186,7 @@ def build_loop_system_prompt(
             continue
         try:
             section = render(provider)
-        except Exception as err:
+        except Exception as err:  # noqa: BLE001 - frontera con un generador de sección del prompt: el fallo se registra y se omite la sección
             logger.warning(warning, err)
             section = ""
         if section:
@@ -320,7 +320,7 @@ class PersistMissionStep(Step[LoopContext]):
         if hasattr(store, "save_mission"):
             try:
                 store.save_mission(dict(ctx.mission))
-            except Exception as save_err:
+            except Exception as save_err:  # noqa: BLE001 - persistencia best-effort: un fallo al guardar la misión se registra y la misión sigue
                 logger.debug("Error persistiendo misión en SQLite: %s", save_err)
         return Outcome.CONTINUE
 
@@ -379,7 +379,7 @@ class GenerateStep(Step[LoopContext]):
             )
             ctx.technical_failures = 0
             self._record_usage(ctx)
-        except Exception as gen_err:
+        except Exception as gen_err:  # noqa: BLE001 - frontera con el LLM del agente: cualquier fallo lo gestiona _on_failure (reintento o corte)
             return self._on_failure(ctx, gen_err)
         return Outcome.CONTINUE
 
@@ -644,7 +644,7 @@ class SuperviseAndExecuteStep(Step[LoopContext]):
                 self._review(ctx, resp)
             elif resp.status == "ALLOW":
                 self._execute(ctx, resp.decision_id)
-        except Exception as err:
+        except Exception as err:  # noqa: BLE001 - frontera del paso: el fallo se registra y el paso queda como no ejecutado
             logger.error(f"Error proponiendo paso {ctx.step_idx} en sesión {ctx.sid}: {err}")
             ctx.obs_output = str(err)
             ctx.executed_successfully = False
@@ -656,7 +656,7 @@ class SuperviseAndExecuteStep(Step[LoopContext]):
             result = ctx.runtime.execute_decision(decision_id=decision_id)
             ctx.obs_output = result.output or ""
             ctx.executed_successfully = result.success and not result.is_error
-        except Exception as ex:
+        except Exception as ex:  # noqa: BLE001 - frontera de ejecución: el fallo se registra y queda como observación del paso
             logger.debug("Execution note: %s", ex)
             ctx.obs_output = str(ex)
 
@@ -684,7 +684,7 @@ class SuperviseAndExecuteStep(Step[LoopContext]):
                     result = runtime.execute_decision(decision_id=resp.decision_id)
                     ctx.obs_output = result.output or ""
                     ctx.executed_successfully = result.success and not result.is_error
-            except Exception as ex:
+            except Exception as ex:  # noqa: BLE001 - frontera de ejecución en Full Access: el fallo queda como observación del paso
                 ctx.obs_output = f"Error en ejecución Full Access: {ex}"
                 ctx.executed_successfully = False
             return
@@ -808,7 +808,7 @@ class RecordResultStep(Step[LoopContext]):
             ws_dir = ctx.workspace_root or get_default_workspace_root()
             try:
                 real_files = [f for f in sorted(os.listdir(ws_dir)) if not f.startswith(".")][:12]
-            except Exception:
+            except OSError:  # workspace no listable: se omite la lista de ficheros
                 real_files = []
         real_files_str = ", ".join(real_files) if real_files else "(carpeta vacía)"
         cause = (ctx.step_reasons or "").split(",")[0].strip() or "acción fallida o vetada"

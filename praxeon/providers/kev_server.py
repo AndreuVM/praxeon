@@ -41,7 +41,7 @@ def server_is_up(base_url: str, timeout: float = 2.0) -> bool:
     try:
         code = http_client.get_status(f"{base_url.rstrip('/')}/v1/models", timeout=timeout)
         return code == 200 or code in (401, 403)  # 401/403: está vivo pero exige clave
-    except Exception:
+    except Exception:  # noqa: BLE001 - sondeo: cualquier fallo de red equivale a servidor no disponible
         return False
 
 

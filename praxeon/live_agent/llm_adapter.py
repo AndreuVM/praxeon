@@ -303,7 +303,7 @@ def parse_llm_steps(llm_output: str) -> list[dict[str, Any]]:
                             current_args = {"raw": clean_str}
                     else:
                         current_args = {"raw": str(parsed)}
-                except Exception:
+                except (ValueError, RecursionError):  # no es JSON: se prueba la sintaxis de llamada Python
                     # Sintaxis Python kwargs: tool(param1="val1", param2="""val2""")
                     py_args = _parse_python_call_args(raw_arg, current_tool)
                     if py_args is None and current_tool == "finish":
@@ -342,7 +342,7 @@ def parse_llm_steps(llm_output: str) -> list[dict[str, Any]]:
                                 current_args = parsed
                             else:
                                 current_args = {"raw": str(parsed)}
-                        except Exception:
+                        except (ValueError, RecursionError):  # no es JSON: se prueba la sintaxis de pares clave=valor
                             kw_pairs = re.findall(r'([a-zA-Z0-9_]+)\s*=\s*(?:"([^"]*)"|\'([^\']*)\'|([^\s,)]+))', raw_arg)
                             if current_tool.lower() not in _STRUCTURED_TOOLS and _SHELL_OPERATORS.search(raw_arg):
                                 # «echo … | base64 -d | sh»: es una línea de shell entera; partirla en herramienta + kwargs

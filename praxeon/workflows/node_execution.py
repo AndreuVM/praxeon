@@ -160,7 +160,7 @@ def _run_decision(run: NodeRun) -> dict[str, Any] | None:
             try:
                 matched = parsed_cond.evaluate(eval_ctx)
                 reason = f"Condición evaluada a {matched}"
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - la condición se evalúa sobre datos arbitrarios: un fallo es «no se cumple», con su motivo
                 matched = False
                 reason = f"Error en evaluación de condición: {str(exc)}"
                 if ctrl.get("on_error"):
@@ -398,7 +398,7 @@ class RunNodeStep(Step[NodeRun]):
             })
             run.result = True
             return Outcome.END
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - frontera con el ejecutor del nodo: el fallo queda como salida de error del nodo
             run.success, run.output = False, {"error": str(exc)}
             return Outcome.CONTINUE
         if output is None:   # el nodo quedó a la espera

@@ -138,7 +138,7 @@ def _agent_registry(db_dir: str) -> AgentRegistry:
         for template in DEFAULT_AGENT_TEMPLATES:
             try:
                 registry.register(AgentTemplateCatalog.instantiate(template, f"ag_{template}"))
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - no impide arrancar: se registra por qué falta el agente por defecto
                 # No impide arrancar, pero el operador debe saber por qué falta un agente por defecto (F-05)
                 logger.warning("No se pudo registrar el agente por defecto '%s': %s", template, exc)
     return registry

@@ -111,7 +111,7 @@ class DecisionRuntime:
 
             raw_assessments = self.provider.evaluate(state, actions)
 
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - frontera con el proveedor de decisiones: cualquier fallo activa la política de fallback
             logger.warning(
                 f"Fallo durante evaluación con '{self.provider_id}' ({exc}). Evaluando política de fallback..."
             )
@@ -129,7 +129,7 @@ class DecisionRuntime:
                         DecisionModelConfig(provider=target_fb, model_id="fallback-safe", fallback_policy="none")
                     )
                     raw_assessments = fallback_prov.evaluate(state, actions)
-                except Exception as fb_exc:
+                except Exception as fb_exc:  # noqa: BLE001 - frontera con el proveedor de fallback: el fallo se registra y se devuelve una evaluación de error
                     logger.error(f"Fallo en provider de fallback '{target_fb}': {fb_exc}")
                     raw_assessments = [
                         ProviderAssessment(

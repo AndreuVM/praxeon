@@ -147,7 +147,7 @@ def _is_custom_endpoint(provider_name: str, base_url: str | None) -> bool:
 # Configurar el opener seguro por defecto para proteger redirecciones
 try:
     urllib.request.install_opener(urllib.request.build_opener(SafeNoAuthForwardRedirectHandler()))
-except Exception:  # noqa: S110 - best-effort: lectura de detalle de error, sondeo o cierre de proceso
+except Exception:  # noqa: BLE001, S110 - best-effort: si no se instala el opener seguro, urllib usa el suyo
     pass
 
 
@@ -290,7 +290,7 @@ class OpenAICompatibleLLM(BaseAgentLLM):
                 body = ""
                 try:
                     body = http_err.read().decode("utf-8", errors="replace")
-                except Exception:  # noqa: S110 - best-effort: lectura de detalle de error, sondeo o cierre de proceso
+                except Exception:  # noqa: BLE001, S110 - best-effort: leer el cuerpo del error HTTP no debe enmascarar el error original
                     pass
                 if http_err.code == 429:
                     raise RuntimeError(
@@ -374,7 +374,7 @@ class OllamaLLM(OpenAICompatibleLLM):
             detail = ""
             try:
                 detail = http_err.read().decode("utf-8", errors="replace")
-            except Exception:  # noqa: S110 - best-effort: lectura de detalle de error, sondeo o cierre de proceso
+            except Exception:  # noqa: BLE001, S110 - best-effort: leer el cuerpo del error HTTP no debe enmascarar el error original
                 pass
             raise RuntimeError(f"[ollama] Error HTTP {http_err.code} llamando a {self._native_endpoint}: {detail}") from http_err
         except urllib.error.URLError:
@@ -478,7 +478,7 @@ class AnthropicLLM(BaseAgentLLM):
                 detail = ""
                 try:
                     detail = http_err.read().decode("utf-8", errors="replace")
-                except Exception:  # noqa: S110 - best-effort: lectura de detalle de error, sondeo o cierre de proceso
+                except Exception:  # noqa: BLE001, S110 - best-effort: leer el cuerpo del error HTTP no debe enmascarar el error original
                     pass
                 if http_err.code in self.RETRY_STATUS and attempt < self._max_retries:
                     attempt += 1
@@ -574,10 +574,10 @@ class _CliSession:
             if self.proc.stdin:
                 self.proc.stdin.close()
             self.proc.wait(timeout=3)
-        except Exception:
+        except Exception:  # noqa: BLE001 - limpieza del proceso hijo: cualquier fallo al cerrarlo se resuelve matándolo
             try:
                 self.proc.kill()
-            except Exception:  # noqa: S110 - best-effort: lectura de detalle de error, sondeo o cierre de proceso
+            except Exception:  # noqa: BLE001, S110 - limpieza del proceso hijo: si ni kill() funciona ya no hay nada más que hacer
                 pass
         shutil.rmtree(self.workdir, ignore_errors=True)
 
@@ -849,7 +849,7 @@ def is_ollama_online(host: str = "http://127.0.0.1:11434") -> bool:
         try:
             if http_client.get_status(f"{h.rstrip('/')}/api/tags", timeout=0.35) == 200:
                 return True
-        except Exception:  # noqa: S112 - best-effort: lectura de detalle de error, sondeo o cierre de proceso
+        except Exception:  # noqa: BLE001, S112 - sondeo: cualquier fallo de red equivale a servidor no disponible
             continue
     return False
 
@@ -868,7 +868,7 @@ def get_ollama_installed_models(host: str = "http://127.0.0.1:11434") -> list[st
             models = [m.get("name") for m in data.get("models", []) if m.get("name")]
             if models:
                 return models
-        except Exception:  # noqa: S112 - best-effort: lectura de detalle de error, sondeo o cierre de proceso
+        except Exception:  # noqa: BLE001, S112 - sondeo: cualquier fallo de red equivale a servidor no disponible
             continue
     return []
 
@@ -903,7 +903,7 @@ def try_start_ollama_daemon() -> bool:
             time.sleep(0.2)
             if is_ollama_online():
                 return True
-    except Exception:  # noqa: S110 - best-effort: lectura de detalle de error, sondeo o cierre de proceso
+    except Exception:  # noqa: BLE001, S110 - arranque best-effort de Ollama: si no se puede lanzar, se informa que no está disponible
         pass
     return False
 

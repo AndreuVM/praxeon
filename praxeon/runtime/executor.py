@@ -300,7 +300,7 @@ class SecureExecutor(Executor):
                     execution_time_ms=round(elapsed, 2),
                     tool_name=tool_name,
                 )
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - frontera con un handler de herramienta registrado: cualquier fallo se devuelve como observación de error
                 elapsed = (time.perf_counter() - start_t) * 1000.0
                 return ToolObservation(
                     output=f"Error en handler de '{tool_name}': {e}",
@@ -423,7 +423,7 @@ class SecureExecutor(Executor):
         try:
             validate = getattr(sandbox, "_validate_path_containment", None)
             target = validate(raw) if validate else os.path.join(getattr(sandbox, "workspace_root", os.getcwd()), raw)
-        except Exception as exc:  # SandboxViolation u otra: la ruta sale del workspace
+        except Exception as exc:  # noqa: BLE001 - fail-closed: cualquier fallo al validar la ruta (SandboxViolation u otro) se trata como ruta no válida
             return f"Ruta fuera del workspace o no válida: {exc}", False, True
         text, ok = list_directory(target, raw)
         return text, ok, not ok

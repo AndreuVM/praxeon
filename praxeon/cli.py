@@ -53,7 +53,7 @@ def analyze_trace_file(file_path: str, config: PraxeonConfig | None = None) -> N
             trajectory = TraceParser.from_dict({"steps": data})
         else:
             trajectory = TraceParser.from_scratchpad(text_content, goal=path.stem)
-    except Exception:
+    except Exception:  # noqa: BLE001 - si el contenido no es una traza JSON válida se interpreta como texto libre
         trajectory = TraceParser.from_scratchpad(text_content, goal=path.stem)
 
     cfg = config or default_config
@@ -197,7 +197,7 @@ def simulate_trace_execution(file_path: str, config: PraxeonConfig | None = None
     try:
         data = json.loads(text_content)
         trajectory = TraceParser.from_dict(data)
-    except Exception:
+    except Exception:  # noqa: BLE001 - si el contenido no es una traza JSON válida se interpreta como texto libre
         trajectory = TraceParser.from_scratchpad(text_content)
 
     cfg = config or default_config

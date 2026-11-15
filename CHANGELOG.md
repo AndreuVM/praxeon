@@ -40,6 +40,12 @@ Todas las modificaciones notables de este proyecto están documentadas en este a
 - Calidad (auditoría AUD-23, etapa 2): `praxeon/` usa las anotaciones y APIs de Python 3.11 (`list[int]`, `X | None`,
   `datetime.UTC`) y `ruff` pasa a exigirlo (regla UP). Cambio mecánico y aislado en su propio commit; `class X(str, Enum)` se
   mantiene a propósito (UP042), porque `StrEnum` cambia lo que devuelve `str()` en valores que ya están serializados.
+- Calidad (auditoría AUD-23, etapa 2): `ruff` prohíbe el `except Exception` sin decidir (regla BLE001) en `praxeon/`. De los
+  133 que había, 34 se estrecharon a las excepciones reales (`OSError`, `ValueError`, `(TypeError, ValueError)`…; con JSON
+  de origen no fiable también `RecursionError`, que `json.loads` lanza con un anidamiento extremo y no es `ValueError`) y 99
+  se dejaron anchos con `# noqa: BLE001 - motivo`: fronteras con proveedores, el host, el sandbox o la base de datos,
+  limpiezas y rutas fail-closed (ahí cualquier fallo debe significar «denegado» o «error devuelto»). De paso se corrigieron
+  los motivos genéricos que la etapa 1 copió en varios `noqa: S110`.
 - Calidad (auditoría AUD-23, etapa 2): mypy también comprueba `praxeon/server` (168 errores a 0) y es parte de CI. Los mixins
   del servicio declaran lo que esperan del servicio en `runtime_service/host.py` (solo anotaciones, sin código en ejecución).
   Se quitaron `ExecutionService.get_sandbox` y `execute_action`: ningún código los llamaba y no podían funcionar (usaban

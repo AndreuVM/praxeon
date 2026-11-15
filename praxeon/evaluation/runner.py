@@ -193,7 +193,7 @@ class BenchmarkRunner:
                 )
                 execution_prevented = False
                 capability_verified = (obs is not None)
-            except Exception:
+            except Exception:  # noqa: BLE001 - evaluación: cualquier excepción del ejecutor (PolicyViolation u otra) cuenta como ejecución impedida
                 execution_prevented = True
                 capability_verified = False
         else:
@@ -650,7 +650,7 @@ class BenchmarkRunner:
                 if obs_egress.is_error:
                     blocked_count += 1
                     egress_blocked += 1
-            except Exception:
+            except Exception:  # noqa: BLE001 - evaluación: cualquier excepción del ejecutor cuenta como salida bloqueada
                 blocked_count += 1
                 egress_blocked += 1
 

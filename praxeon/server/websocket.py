@@ -41,7 +41,7 @@ def safe_json_dumps(data: Any) -> str:
         if hasattr(obj, "model_dump") and callable(obj.model_dump):
             try:
                 return obj.model_dump(mode="json")
-            except Exception:
+            except Exception:  # noqa: BLE001 - si el modelo no serializa en modo json se usa el volcado normal
                 return obj.model_dump()
         if hasattr(obj, "to_dict") and callable(obj.to_dict):
             return obj.to_dict()
@@ -112,7 +112,7 @@ def _is_origin_allowed(websocket: WebSocket) -> bool:
     try:
         parsed = urlparse(origin)
         origin_host = (parsed.hostname or "").lower()
-    except Exception:
+    except Exception:  # noqa: BLE001 - fail-closed: un Origin ilegible se rechaza
         return False
 
     # Permitir loopback local y clientes de prueba
@@ -264,7 +264,7 @@ async def websocket_session_stream(
         if after_seq_val is None and "after_sequence" in websocket.query_params:
             try:
                 after_seq_val = int(websocket.query_params["after_sequence"])
-            except Exception:
+            except ValueError:  # after_sequence no numérico: se ignora
                 after_seq_val = None
 
         all_events = service.event_bus.get_all_events(session_id)
@@ -309,7 +309,7 @@ async def websocket_session_stream(
                         await send_ws_json(websocket, {"action": "pong"})
                 except (WebSocketDisconnect, asyncio.CancelledError):
                     break
-                except Exception as ex:
+                except Exception as ex:  # noqa: BLE001 - un mensaje entrante malformado no debe cerrar la conexión
                     logger.debug("Error procesando mensaje entrante WebSocket: %s", ex)
 
         # 3. Tarea concurrente para despachar eventos emitidos por el EventBus
@@ -350,7 +350,7 @@ async def websocket_session_stream(
 
     except WebSocketDisconnect:
         pass
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - frontera de la conexión WebSocket: cualquier fallo la cierra sin tumbar el servidor
         logger.debug("Excepción en conexión WebSocket para sesión '%s': %s", session_id, e)
     finally:
         unregister()

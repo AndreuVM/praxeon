@@ -137,7 +137,7 @@ class FullAccessExecutor:
                     exit_code=0,
                     execution_time_ms=round(elapsed, 2),
                 )
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - frontera con el host: cualquier fallo se devuelve como resultado de error
                 elapsed = (time.perf_counter() - start_t) * 1000.0
                 return FullAccessResult(
                     output=f"[FULL_ACCESS] Error leyendo '{path}': {e}",
@@ -183,7 +183,7 @@ class FullAccessExecutor:
                     exit_code=0,
                     execution_time_ms=round(elapsed, 2),
                 )
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - frontera con el host: cualquier fallo se devuelve como resultado de error
                 elapsed = (time.perf_counter() - start_t) * 1000.0
                 return FullAccessResult(
                     output=f"[FULL_ACCESS] Error modificando '{path}': {e}",
@@ -276,7 +276,7 @@ class FullAccessExecutor:
                     exit_code=124,
                     execution_time_ms=round(elapsed, 2),
                 )
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - frontera con el host: cualquier fallo se devuelve como resultado de error
                 elapsed = (time.perf_counter() - start_t) * 1000.0
                 return FullAccessResult(
                     output=f"[FULL_ACCESS] Error ejecutando '{cmd}' en host: {e}",

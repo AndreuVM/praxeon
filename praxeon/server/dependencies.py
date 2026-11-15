@@ -173,7 +173,7 @@ class RuntimeApplicationService(DecisionPipelineMixin, MissionRuntimeMixin):
                         if sid_rec:
                             with self._lock:
                                 self._running_missions[sid_rec] = m
-            except Exception as ex:
+            except Exception as ex:  # noqa: BLE001 - arranque: un fallo al reconciliar misiones se registra y no impide arrancar
                 logger.warning("Fallo durante la reconciliación de misiones tras reinicio: %s", ex)
 
         # ---------------------------------------------------------------------
@@ -252,7 +252,7 @@ class RuntimeApplicationService(DecisionPipelineMixin, MissionRuntimeMixin):
         elif isinstance(decision_model, dict):
             try:
                 cfg = DecisionModelConfig(**decision_model)
-            except Exception as e:
+            except (TypeError, ValueError) as e:  # decision_model inválido: se ignora y se usa el proveedor por defecto
                 logger.warning(f"Error parseando decision_model dict: {e}")
         elif supervisor:
             cfg = DecisionModelConfig(provider=str(supervisor), model_id=str(supervisor))
@@ -262,7 +262,7 @@ class RuntimeApplicationService(DecisionPipelineMixin, MissionRuntimeMixin):
             try:
                 dec_runtime = DecisionRuntime.from_config(cfg, registry=default_registry)
                 provider_instance = dec_runtime.provider
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - frontera con el proveedor de la sesión: cualquier fallo al resolverlo usa el proveedor por defecto
                 logger.warning(f"Error resolviendo DecisionRuntime para sesión '{session_id}': {e}. Usando fallback.")
                 provider_instance = self._default_provider
         else:

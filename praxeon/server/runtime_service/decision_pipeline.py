@@ -156,7 +156,7 @@ class DecisionPipelineMixin(RuntimeHost):
                         if decision_id in reconstructed:
                             record = reconstructed[decision_id]
                             self.decision_repository.save(record)
-                except Exception as ex:
+                except Exception as ex:  # noqa: BLE001 - reconstrucción best-effort desde los eventos: si falla, la decisión simplemente no existe
                     logger.debug("Reconstrucción desde eventos falló para %s: %s", decision_id, ex)
 
             if record:

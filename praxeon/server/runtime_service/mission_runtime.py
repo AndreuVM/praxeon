@@ -135,7 +135,7 @@ class MissionRuntimeMixin(RuntimeHost):
         elif isinstance(decision_model, dict):
             try:
                 cfg = DecisionModelConfig(**decision_model)
-            except Exception as e:
+            except (TypeError, ValueError) as e:  # decision_model inválido: se ignora y se usa el proveedor por defecto
                 logger.warning(f"Error parseando decision_model dict en start_mission: {e}")
         if not cfg:
             cfg = DecisionModelConfig(provider=supervisor, model_id=supervisor)
@@ -144,7 +144,7 @@ class MissionRuntimeMixin(RuntimeHost):
         try:
             dec_runtime = DecisionRuntime.from_config(cfg, registry=default_registry)
             sess_provider = dec_runtime.provider
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - frontera con el proveedor de la misión: cualquier fallo al resolverlo usa el proveedor por defecto
             logger.warning(f"Error instanciando DecisionRuntime para misión: {e}. Usando fallback.")
             sess_provider = self._default_provider
 
@@ -224,7 +224,7 @@ class MissionRuntimeMixin(RuntimeHost):
         if hasattr(self.state_store, "save_mission"):
             try:
                 self.state_store.save_mission(mission_state)
-            except Exception as ex:
+            except Exception as ex:  # noqa: BLE001 - persistencia best-effort: un fallo al guardar la misión se registra y la misión sigue
                 logger.warning("Fallo al persistir misión '%s' en SQLite: %s", sid, ex)
 
         worker_thread = threading.Thread(
@@ -458,7 +458,7 @@ class MissionRuntimeMixin(RuntimeHost):
                         model=agent.model.model_name,
                         timeout=float(os.getenv("PRAXEON_LLM_TIMEOUT", "180.0")),
                     )
-                except Exception as err:
+                except Exception as err:  # noqa: BLE001 - frontera con el modelo propio del agente: si no está disponible se usa el modelo de la misión
                     logger.warning(
                         "Modelo propio del agente '%s' no disponible (%s): se usa el modelo de la misión.", agent.agent_id, err
                     )
@@ -557,7 +557,7 @@ class MissionRuntimeMixin(RuntimeHost):
                     raise RuntimeError(f"proveedor '{provider_name}' no disponible (sin credenciales válidas o sin servidor)")
                 use_real_llm = True
                 logger.info("Misión inicializada con LLM real: %s (%s)", agent_llm.provider_name, agent_llm.model_name)
-            except Exception as err:
+            except Exception as err:  # noqa: BLE001 - frontera con el proveedor LLM: la política de fallo decide si la misión se detiene o usa el planificador sintético
                 llm_fail_policy = (mission.get("llm_failure_policy") or "synthetic_fallback").lower().strip()
                 if llm_fail_policy == "fail_closed":
                     logger.error(
@@ -707,7 +707,7 @@ class MissionRuntimeMixin(RuntimeHost):
                                 if conf_res.status == "ALLOW":
                                     exec_res = self.execute_decision(decision_id=resp.decision_id)
                                     executed_successfully = exec_res.success and not exec_res.is_error
-                            except Exception as ex:
+                            except Exception as ex:  # noqa: BLE001 - frontera del auto-confirmado en Full Access: el fallo se registra y el paso queda sin ejecutar
                                 logger.warning("Error auto-confirmando en Full Access: %s", ex)
                         else:
                             dec_status = self._await_human_decision(resp.decision_id, mission)
@@ -715,15 +715,15 @@ class MissionRuntimeMixin(RuntimeHost):
                                 try:
                                     exec_res = self.execute_decision(decision_id=resp.decision_id)
                                     executed_successfully = exec_res.success and not exec_res.is_error
-                                except Exception as ex:
+                                except Exception as ex:  # noqa: BLE001 - frontera de ejecución: el fallo se registra y el paso se da por no ejecutado
                                     logger.debug("Execution note: %s", ex)
                     elif resp.status == "ALLOW":
                         try:
                             exec_res = self.execute_decision(decision_id=resp.decision_id)
                             executed_successfully = exec_res.success and not exec_res.is_error
-                        except Exception as ex:
+                        except Exception as ex:  # noqa: BLE001 - frontera de ejecución: el fallo se registra y el paso se da por no ejecutado
                             logger.debug("Execution note: %s", ex)
-                except Exception as err:
+                except Exception as err:  # noqa: BLE001 - frontera del paso: el fallo se registra y el paso queda como no ejecutado
                     logger.error(f"Error proponiendo paso {step_idx} en sesión {sid}: {err}")
                     executed_successfully = False
 

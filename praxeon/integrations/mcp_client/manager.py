@@ -150,7 +150,7 @@ class McpManager:
             try:
                 client = self._connect(cfg, timeout)
                 tools = client.list_tools(timeout=timeout)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - frontera con un servidor MCP externo: el fallo se registra como estado de error, no tumba el gestor
                 message = _scrub_secrets(cfg, str(exc))
                 state.status, state.error, state.error_at = "error", message, time.time()
                 logger.warning("Servidor MCP «%s» no disponible: %s", name, message)

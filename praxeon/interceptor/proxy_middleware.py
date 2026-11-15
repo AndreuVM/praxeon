@@ -132,7 +132,7 @@ class JEVProxyMiddleware:
         # Evaluar bloque agrupado mediante TypeSafe AI
         try:
             eval_results = self.engine.evaluate_step_chunk(candidate_steps, batch_semantics=batch_semantics)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - frontera con el evaluador semántico: la indisponibilidad se registra y se continúa sin él
             import logging
             logging.getLogger("praxeon.interceptor.proxy_middleware").error(
                 "Error o indisponibilidad en el evaluador semántico: %s", exc

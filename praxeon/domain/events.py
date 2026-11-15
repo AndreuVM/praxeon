@@ -26,7 +26,7 @@ def serialize_payload_value(val: Any) -> Any:
     if hasattr(val, "model_dump") and callable(val.model_dump):
         try:
             return serialize_payload_value(val.model_dump(mode="json"))
-        except Exception:
+        except Exception:  # noqa: BLE001 - si el modelo no serializa en modo json se usa el volcado normal
             return serialize_payload_value(val.model_dump())
     if hasattr(val, "to_dict") and callable(val.to_dict):
         return serialize_payload_value(val.to_dict())

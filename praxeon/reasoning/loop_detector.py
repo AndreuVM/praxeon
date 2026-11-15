@@ -69,14 +69,14 @@ class LoopDetector:
             if s.tool_name:
                 try:
                     args_key = json.dumps(s.tool_args or {}, sort_keys=True)
-                except Exception:
+                except (TypeError, ValueError, RecursionError):  # argumentos no serializables en JSON: se usa su representación
                     args_key = str(s.tool_args or {})
                 action_signatures.append((s.tool_name, args_key))
 
         if candidate and candidate.tool_call:
             try:
                 cand_args_key = json.dumps(candidate.tool_call.arguments or {}, sort_keys=True)
-            except Exception:
+            except (TypeError, ValueError, RecursionError):  # argumentos no serializables en JSON: se usa su representación
                 cand_args_key = str(candidate.tool_call.arguments or {})
             action_signatures.append((candidate.tool_call.tool_name, cand_args_key))
 

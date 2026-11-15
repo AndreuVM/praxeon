@@ -55,7 +55,7 @@ class TreeReducer:
         else:
             try:
                 ev_type = EventType(event.type)
-            except Exception:
+            except ValueError:  # tipo de evento desconocido: se conserva como texto
                 ev_type = str(event.type)
 
         if ev_type == EventType.SESSION_STARTED:

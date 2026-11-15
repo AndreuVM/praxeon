@@ -148,7 +148,7 @@ class TrajectoryController:
             auto_probe = "Observación automática de archivos reales en disco: "
             try:
                 auto_probe += ", ".join([f for f in os.listdir(".") if not f.startswith(".")][:6])
-            except Exception:
+            except OSError:
                 auto_probe += "(espacio de trabajo local no listable)"
             self.consecutive_blocks = 0
             return (True, directive_text, auto_probe)

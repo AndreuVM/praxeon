@@ -663,7 +663,7 @@ class MCPBridge:
             sys.stdout.write(json.dumps(out) + "\n")
 
             sys.stdout.flush()
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - frontera JSON-RPC: cualquier fallo del manejador se devuelve como error -32603
             err_resp = {"jsonrpc": "2.0", "id": req.get("id"), "error": {"code": -32603, "message": str(e)}}
             sys.stdout.write(json.dumps(err_resp) + "\n")
             sys.stdout.flush()
@@ -673,12 +673,12 @@ class MCPBridge:
         if hasattr(sys.stdin, "reconfigure"):
             try:
                 sys.stdin.reconfigure(encoding="utf-8")
-            except Exception:  # noqa: S110 - best-effort: reconfigurar la codificación de stdio
+            except (AttributeError, OSError, ValueError):  # stdio sin reconfigure() o sin esa codificación: se queda como está
                 pass
         if hasattr(sys.stdout, "reconfigure"):
             try:
                 sys.stdout.reconfigure(encoding="utf-8")
-            except Exception:  # noqa: S110 - best-effort: reconfigurar la codificación de stdio
+            except (AttributeError, OSError, ValueError):  # stdio sin reconfigure() o sin esa codificación: se queda como está
                 pass
 
         buffer = ""
@@ -693,7 +693,7 @@ class MCPBridge:
                     break
                 try:
                     req = json.loads(body)
-                except Exception as e:
+                except (ValueError, RecursionError) as e:  # JSON inválido o anidado en exceso: error de parseo JSON-RPC
                     err_resp = {"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": f"Parse error: {e}"}}
                     sys.stdout.write(json.dumps(err_resp) + "\n")
                     sys.stdout.flush()

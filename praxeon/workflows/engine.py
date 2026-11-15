@@ -938,7 +938,7 @@ class WorkflowEngine:
                 try:
                     future.result()
                     executed_nodes.append(nid)
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001 - frontera con la ejecución concurrente de un nodo: el fallo marca el workflow como FAILED
                     with self._lock:
                         self.context.node_states[nid] = NodeStatus.FAILED
                         self.context.status = WorkflowStatus.FAILED

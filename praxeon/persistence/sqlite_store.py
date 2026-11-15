@@ -177,7 +177,7 @@ class SqlitePersistenceStore(SqliteStore):
                     if "status" in row.keys() and row["status"]:
                         data["status"] = row["status"]
                     return AgentDefinition.from_dict(data)
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001 - frontera con la base de datos: una fila ilegible o inválida va a cuarentena en vez de romper la carga
                     # Enviar a cuarentena inmediatamente
                     self._quarantine_locked(
                         conn=conn,
@@ -221,7 +221,7 @@ class SqlitePersistenceStore(SqliteStore):
                         if "status" in row.keys() and row["status"]:
                             data["status"] = row["status"]
                         agents.append(AgentDefinition.from_dict(data))
-                    except Exception as exc:
+                    except Exception as exc:  # noqa: BLE001 - frontera con la base de datos: una fila ilegible o inválida va a cuarentena en vez de romper la carga
                         self._quarantine_locked(
                             conn=conn,
                             entity_type="agent",
@@ -255,7 +255,7 @@ class SqlitePersistenceStore(SqliteStore):
                             data["status"] = AgentStatus.TERMINATED.value
                             data["updated_at"] = now_str
                             new_json = json.dumps(data, ensure_ascii=False)
-                        except Exception:
+                        except (ValueError, TypeError, RecursionError):  # JSON ilegible o que no es un objeto: se conserva tal cual
                             new_json = raw_json
                         conn.execute(
                             """

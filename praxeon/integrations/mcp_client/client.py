@@ -264,7 +264,7 @@ class StdioMcpClient(_RpcClient):
             if proc.stdin:
                 proc.stdin.close()
             proc.wait(timeout=2)
-        except Exception:
+        except Exception:  # noqa: BLE001 - cierre del proceso MCP: cualquier fallo se resuelve matando su árbol de procesos
             self._kill_tree(proc)
         self._fail_pending("El servidor MCP se cerró")
 
@@ -278,7 +278,7 @@ class StdioMcpClient(_RpcClient):
             proc.kill()
         try:
             proc.wait(timeout=3)
-        except Exception:  # noqa: S110 - best-effort: limpieza al cerrar la conexión o el proceso
+        except Exception:  # noqa: BLE001, S110 - limpieza: si el proceso no termina tras el kill no hay nada más que hacer
             pass
 
     def _send(self, message: dict[str, Any], timeout: float | None = None) -> None:
@@ -367,7 +367,7 @@ class _RemoteClient(_RpcClient):
     def _http_error(self, resp: http.client.HTTPResponse, what: str) -> McpError:
         try:
             detail = resp.read(300).decode("utf-8", errors="replace")
-        except Exception:
+        except Exception:  # noqa: BLE001 - best-effort: el detalle del error HTTP es opcional y no debe enmascarar el error original
             detail = ""
         hint = " (credenciales rechazadas)" if resp.status in (401, 403) else ""
         return McpError(self._scrub(f"{what}: HTTP {resp.status}{hint}. {detail}".strip()), status=resp.status)
@@ -453,7 +453,7 @@ class SseMcpClient(_RemoteClient):
                         self._handle_message(json.loads(data))
                     except ValueError:
                         continue
-        except Exception:  # noqa: S110 - best-effort: limpieza al cerrar la conexión o el proceso
+        except Exception:  # noqa: BLE001, S110 - lector SSE en segundo plano: al cerrarse o fallar la conexión termina en silencio
             pass
         self._closed = True
         self._endpoint_ready.set()
@@ -490,7 +490,7 @@ class SseMcpClient(_RemoteClient):
         if conn is not None:
             try:
                 conn.close()
-            except Exception:  # noqa: S110 - best-effort: limpieza al cerrar la conexión o el proceso
+            except Exception:  # noqa: BLE001, S110 - limpieza al cerrar la conexión
                 pass
         self._fail_pending("El cliente MCP se cerró")
 
@@ -557,7 +557,7 @@ class StreamableHttpMcpClient(_RemoteClient):
                 conn.request("DELETE", _target(self._parts), headers={"Mcp-Session-Id": self._session_id, **self._headers})
                 conn.getresponse().read()
                 conn.close()
-            except Exception:  # noqa: S110 - best-effort: limpieza al cerrar la conexión o el proceso
+            except Exception:  # noqa: BLE001, S110 - limpieza best-effort: cerrar la sesión MCP en el servidor
                 pass
         self._closed = True
         self._fail_pending("El cliente MCP se cerró")

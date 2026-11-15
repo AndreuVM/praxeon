@@ -47,7 +47,7 @@ class WorkflowScheduler:
             if self.persistence_store and hasattr(self.persistence_store, "save_workflow_execution"):
                 try:
                     self.persistence_store.save_workflow_execution(engine.get_execution())
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001 - persistencia best-effort: un fallo al guardar la ejecución se registra y el scheduler sigue
                     logger.warning(f"Error al persistir ejecución inicial en scheduler: {exc}")
 
     def unregister_engine(self, identifier: str) -> WorkflowEngine | None:
@@ -148,7 +148,7 @@ class WorkflowScheduler:
                     executed_nodes = engine.step_concurrent(current_time=now)
                     if executed_nodes:
                         report["stepped_nodes"].extend(executed_nodes)
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001 - frontera del motor de workflows: el fallo se registra y el scheduler sigue con las demás ejecuciones
                     logger.error(f"Error al avanzar nodos concurrentes en workflow {exec_id}: {exc}")
 
             # 5. Avisar de aprobaciones nuevas/resueltas y persistir estado tras el ciclo
@@ -203,7 +203,7 @@ class WorkflowScheduler:
                     node_id=nid,
                     payload={"source": "workflow", "execution_id": exec_id},
                 )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - publicar eventos es best-effort: un fallo se registra y no detiene el scheduler
             logger.warning(f"Error publicando eventos de aprobación: {exc}")
         if engine.context.status in (WorkflowStatus.COMPLETED, WorkflowStatus.FAILED, WorkflowStatus.CANCELLED):
             self._waiting_nodes.pop(exec_id, None)
@@ -226,7 +226,7 @@ class WorkflowScheduler:
             try:
                 self.persistence_store.save_workflow_execution(engine.get_execution())
                 self._persisted_signatures[ctx.execution_id] = signature
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - persistencia best-effort: un fallo al guardar la ejecución se registra y el scheduler sigue
                 logger.warning(f"Error al persistir ejecución en scheduler: {exc}")
             if ctx.status in (WorkflowStatus.COMPLETED, WorkflowStatus.FAILED, WorkflowStatus.CANCELLED):
                 self._persisted_signatures.pop(ctx.execution_id, None)

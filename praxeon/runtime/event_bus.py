@@ -161,15 +161,15 @@ class EventStore(SqliteStore):
                     ) = row
                     try:
                         p_dict = json.loads(payload_raw)
-                    except Exception:
+                    except (ValueError, TypeError, RecursionError):  # payload ilegible: el evento se devuelve sin datos
                         p_dict = {}
                     try:
                         parsed_type = EventType(ev_type)
-                    except Exception:
+                    except ValueError:  # tipo de evento extendido o desconocido: se conserva como texto
                         parsed_type = ev_type  # Fallback a string si fuese un tipo extendido
                     try:
                         ts = datetime.fromisoformat(ts_str)
-                    except Exception:
+                    except (ValueError, TypeError):  # fecha ilegible: se usa la hora actual
                         ts = datetime.now(UTC)
 
                     results.append(
@@ -386,7 +386,7 @@ class EventBus:
             ev_type_raw = getattr(event, "event_type", getattr(event, "type", "custom_event"))
             try:
                 ev_type = EventType(ev_type_raw)
-            except Exception:
+            except ValueError:  # tipo de evento con nombre antiguo: se traduce con la tabla de abajo
                 type_map = {
                     "policy_decision": EventType.POLICY_DECIDED,
                     "tool_execution": EventType.EXECUTION_COMPLETED,

@@ -322,13 +322,13 @@ def _build_cascade_level(reg: DecisionProviderRegistry, level: str, raw: Any, de
         cfg = _cascade_level_config(level, raw, default)
     except DecisionProviderError:
         raise
-    except Exception as exc:  # configuración inválida (p. ej. endpoint fuera de la allowlist)
+    except Exception as exc:  # noqa: BLE001 - configuración inválida de un nivel (p. ej. endpoint fuera de la allowlist): queda como proveedor no disponible
         pid = (raw.get("provider") if isinstance(raw, dict) else raw) or default.get("provider", level)
         logger.warning("Nivel '%s' de la cascada inválido: %s", level, exc)
         return UnavailableProvider(str(pid), f"Configuración inválida: {exc}")
     try:
         return reg.create(cfg.model_copy(update={"fallback_policy": "none"}))
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - frontera con el proveedor de un nivel: el fallo lo deja como proveedor no disponible
         logger.warning("Nivel '%s' de la cascada ('%s') no disponible: %s", level, cfg.provider, exc)
         return UnavailableProvider(cfg.provider, str(exc))
 

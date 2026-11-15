@@ -186,7 +186,7 @@ class SessionContextManager:
                             if sub.name.startswith(".") or sub.name in ignored_dirs:
                                 continue
                             sub_items.append(sub.name + ("/" if sub.is_dir() else ""))
-                    except Exception:  # noqa: S110 - best-effort: carpetas sin permiso de lectura se omiten del listado
+                    except OSError:  # carpetas sin permiso de lectura se omiten del listado
                         pass
                     if sub_items:
                         preview = ", ".join(sub_items[:8])
@@ -195,7 +195,7 @@ class SessionContextManager:
                         file_tree.append(f"[DIR] {item.name}/ [{preview}]")
                     else:
                         file_tree.append(f"[DIR] {item.name}/")
-        except Exception as e:
+        except OSError as e:
             file_tree.append(f"- (Error explorando directorio: {e})")
 
         tree_str = "\n  ".join(file_tree[:60]) if file_tree else "- (Directorio vacío)"
@@ -339,7 +339,7 @@ class SessionContextManager:
                     found_files.append(rel.replace("\\", "/"))
                     if len(found_files) >= max_files:
                         return found_files
-        except Exception:  # noqa: S110 - best-effort: carpetas sin permiso de lectura se omiten del listado
+        except (OSError, ValueError):  # carpetas sin permiso se omiten; relpath da ValueError entre discos distintos
             pass
         return found_files
 

@@ -79,7 +79,7 @@ class TraceParser:
                         if isinstance(parsed_json, dict):
                             tool_name = parsed_json.get("name") or parsed_json.get("tool")
                             tool_args = parsed_json.get("args") or parsed_json.get("arguments") or parsed_json
-                    except Exception:
+                    except (ValueError, RecursionError):  # no es JSON: la primera palabra es la herramienta
                         tool_name = content.split()[0] if content else "unknown_tool"
 
                 step = Step(
@@ -131,7 +131,7 @@ class TraceParser:
                 raw_args = stripped[len("Action Input:"):].strip()
                 try:
                     current_args = json.loads(raw_args)
-                except Exception:
+                except (ValueError, RecursionError):  # no es JSON: se conserva el texto como argumento
                     current_args = {"input": raw_args}
             elif stripped.startswith("Observation:"):
                 flush_step()
@@ -203,7 +203,7 @@ class TraceParser:
                     raw_args = func.get("arguments", "{}")
                     try:
                         args_dict = json.loads(raw_args) if isinstance(raw_args, str) else raw_args
-                    except Exception:
+                    except (ValueError, RecursionError):  # no es JSON: se conserva el texto original
                         args_dict = {"raw": raw_args}
 
                     steps.append(

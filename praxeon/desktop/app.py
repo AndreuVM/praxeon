@@ -183,7 +183,7 @@ def attach_notifications(window_getter=None, notifier=None):
         if window is not None:
             try:
                 window.set_title(f"{APP_TITLE} · {count} pendiente(s)" if count else APP_TITLE)
-            except Exception:  # noqa: S110 - cosmético: la ventana puede estar cerrándose
+            except Exception:  # noqa: BLE001, S110 - cosmético: la ventana puede estar cerrándose
                 pass
 
     approval_notifier = ApprovalNotifier(notifier or SystemNotifier(), on_pending_changed=update_title)
@@ -203,7 +203,7 @@ def _claim_taskbar_identity() -> None:
         import ctypes
 
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(APP_USER_MODEL_ID)
-    except Exception:  # noqa: S110 - cosmético: la ventana puede estar cerrándose
+    except Exception:  # noqa: BLE001, S110 - cosmético: el identificador de la app solo existe en Windows y no es imprescindible
         pass
 
 

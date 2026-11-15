@@ -54,7 +54,7 @@ def create_sdk_client(api_key: str | None) -> Any:
             return TypeSafeClient(api_key=api_key)
         from typesafe_sdk import TypeSafeClient as _TSC
         return _TSC(api_key=api_key)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - SDK opcional: cualquier fallo al inicializarlo deja el proveedor sin cliente
         logger.warning(f"No se pudo inicializar TypeSafeClient: {e}")
         return None
 
@@ -75,7 +75,7 @@ def invoke_system_one(
             if circuit_breaker is not None:
                 circuit_breaker.record_success()
             return res
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - frontera con la API remota: el fallo se anota en el circuit breaker y se decide si reintentar
             last_error = e
             if circuit_breaker is not None:
                 circuit_breaker.record_failure(e)
@@ -247,7 +247,7 @@ class TypeSafeAdapter(BaseReasoningProvider):
 
             return assessments
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - frontera con la API remota: se clasifica el error y se devuelve una evaluación de fallo
             err_msg = str(e)
             logger.error(f"Error durante evaluación en TypeSafe AI: {err_msg}")
             reason_code = "PROVIDER_ERROR"

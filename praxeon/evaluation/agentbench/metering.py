@@ -103,7 +103,7 @@ class MeteredLLM(BaseAgentLLM):
         try:
             for step in parse_llm_steps(output)[:1]:
                 m.proposed.append({"tool": step.get("tool_name"), "args": step.get("tool_args")})
-        except Exception:  # noqa: S110 - un formato ilegible no cuenta como acción propuesta
+        except Exception:  # noqa: BLE001, S110 - un formato ilegible no cuenta como acción propuesta
             pass
         return output
 

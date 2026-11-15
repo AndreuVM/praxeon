@@ -41,7 +41,7 @@ class Step(BaseModel):
             return ""
         try:
             return json.dumps(self.tool_args, sort_keys=True, ensure_ascii=True)
-        except Exception:
+        except (TypeError, ValueError, RecursionError):  # argumentos no serializables en JSON: se usa su representación
             return str(self.tool_args)
 
     @property

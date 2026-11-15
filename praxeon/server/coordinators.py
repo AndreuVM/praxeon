@@ -309,7 +309,7 @@ class SessionLifecycleCoordinator:
         elif isinstance(decision_model, dict):
             try:
                 cfg = DecisionModelConfig(**decision_model)
-            except Exception as e:
+            except (TypeError, ValueError) as e:  # decision_model inválido: se ignora y se usa el proveedor por defecto
                 logger.warning(f"Error parseando decision_model dict: {e}")
         elif supervisor:
             cfg = DecisionModelConfig(provider=str(supervisor), model_id=str(supervisor))
@@ -319,7 +319,7 @@ class SessionLifecycleCoordinator:
             try:
                 dec_runtime = DecisionRuntime.from_config(cfg, registry=default_registry)
                 provider_instance = dec_runtime.provider
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - frontera con el proveedor de la sesión: cualquier fallo al resolverlo usa el proveedor por defecto
                 logger.warning(f"Error resolviendo DecisionRuntime para sesión '{session_id}': {e}. Usando fallback.")
                 provider_instance = self.service._default_provider
         else:
@@ -377,7 +377,7 @@ class SessionLifecycleCoordinator:
         elif isinstance(decision_model, dict):
             try:
                 cfg = DecisionModelConfig(**decision_model)
-            except Exception as e:
+            except (TypeError, ValueError) as e:  # decision_model inválido: se ignora y se usa el proveedor por defecto
                 logger.warning(f"Error parseando decision_model dict en start_mission: {e}")
         if not cfg:
             cfg = DecisionModelConfig(provider=supervisor, model_id=supervisor)
@@ -386,7 +386,7 @@ class SessionLifecycleCoordinator:
         try:
             dec_runtime = DecisionRuntime.from_config(cfg, registry=default_registry)
             sess_provider = dec_runtime.provider
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - frontera con el proveedor de la misión: cualquier fallo al resolverlo usa el proveedor por defecto
             logger.warning(f"Error instanciando DecisionRuntime para misión: {e}. Usando fallback.")
             sess_provider = self.service._default_provider
 
@@ -457,7 +457,7 @@ class SessionLifecycleCoordinator:
         if hasattr(self.service.state_store, "save_mission"):
             try:
                 self.service.state_store.save_mission(mission_state)
-            except Exception as ex:
+            except Exception as ex:  # noqa: BLE001 - persistencia best-effort: un fallo al guardar la misión se registra y la misión sigue
                 logger.warning("Fallo al persistir misión '%s' en SQLite: %s", sid, ex)
 
         worker_thread = threading.Thread(

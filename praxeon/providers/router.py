@@ -140,7 +140,7 @@ class ConfidenceAwareRouter(BaseReasoningProvider):
                 risk = self.risk_assessor(action)
                 if risk.level in self.risk_thresholds:
                     return self.risk_thresholds[risk.level]
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - frontera con el evaluador de riesgo inyectado: el fallo se registra y se usa el umbral por defecto
                 logger.warning("Fallo al evaluar riesgo en router: %s", e)
         return self.default_confidence_threshold
 
@@ -317,7 +317,7 @@ class ConfidenceAwareRouter(BaseReasoningProvider):
     def _call_primary(self, state: Any, action: ActionCandidate) -> list[ProviderAssessment]:
         try:
             return self.primary.evaluate(state, [action])
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - frontera con el proveedor primario: el fallo se registra y se devuelve una evaluación de error
             logger.error("Error llamando al proveedor primario: %s", e)
             return [
                 ProviderAssessment(
@@ -331,7 +331,7 @@ class ConfidenceAwareRouter(BaseReasoningProvider):
     def _call_secondary(self, state: Any, action: ActionCandidate) -> list[ProviderAssessment]:
         try:
             return self.secondary.evaluate(state, [action])
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - frontera con el proveedor secundario: el fallo se registra y se devuelve una evaluación de error
             logger.error("Error llamando al proveedor secundario: %s", e)
             return [
                 ProviderAssessment(

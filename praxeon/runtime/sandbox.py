@@ -293,12 +293,12 @@ class LocalProcessSandbox(SandboxAdapter):
                         total_bytes[0] += allowed
                     else:
                         overflow[0] = True
-            except Exception:  # noqa: S110 - best-effort: limpieza de tuberías y del proceso
+            except Exception:  # noqa: BLE001, S110 - hilo lector: al cerrarse o fallar la tubería termina sin ruido
                 pass
             finally:
                 try:
                     pipe.close()
-                except Exception:  # noqa: S110 - best-effort: limpieza de tuberías y del proceso
+                except Exception:  # noqa: BLE001, S110 - limpieza de tuberías
                     pass
 
         t_out = threading.Thread(target=read_stream, args=(proc.stdout, stdout_chunks), daemon=True)
@@ -312,7 +312,7 @@ class LocalProcessSandbox(SandboxAdapter):
             try:
                 kill_process_tree(proc)      # los descendientes (p. ej. lo que lanza PowerShell) también
                 proc.wait(timeout=2.0)
-            except Exception:  # noqa: S110 - best-effort: limpieza de tuberías y del proceso
+            except Exception:  # noqa: BLE001, S110 - limpieza del proceso: si no termina tras el kill no hay nada más que hacer
                 pass
             raise
         finally:
@@ -395,7 +395,7 @@ class LocalProcessSandbox(SandboxAdapter):
                 execution_time_ms=round(elapsed, 2),
                 sandboxed=True,
             )
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - frontera con el proceso del sandbox: cualquier fallo se devuelve como resultado de error
             elapsed = (time.perf_counter() - start_t) * 1000.0
             return SandboxExecutionResult(
                 output=f"Error en sandbox ejecutando comando: {e}",
@@ -467,7 +467,7 @@ class LocalProcessSandbox(SandboxAdapter):
                 execution_time_ms=round(elapsed, 2),
                 sandboxed=True,
             )
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - frontera del sandbox: cualquier fallo (SandboxViolation, OSError…) se devuelve como resultado de error
             elapsed = (time.perf_counter() - start_t) * 1000.0
             return SandboxExecutionResult(
                 output=f"Error leyendo '{path}': {e}",
@@ -523,7 +523,7 @@ class LocalProcessSandbox(SandboxAdapter):
                 execution_time_ms=round(elapsed, 2),
                 sandboxed=True,
             )
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - frontera del sandbox: cualquier fallo (SandboxViolation, OSError…) se devuelve como resultado de error
             elapsed = (time.perf_counter() - start_t) * 1000.0
             return SandboxExecutionResult(
                 output=f"Error escribiendo en '{path}': {e}",
@@ -788,7 +788,7 @@ class ContainerSandboxAdapter(SandboxAdapter):
                 fallback_occurred=False,
                 container_runtime=self.runtime_binary,
             )
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - frontera con el contenedor: cualquier fallo se devuelve como resultado de error
             elapsed = (time.perf_counter() - start_t) * 1000.0
             return SandboxExecutionResult(
                 output=f"Error en ejecución de contenedor: {e}",
@@ -912,7 +912,7 @@ class WasmSandbox(SandboxAdapter):
                     tier=SandboxTier.WASM,
                     fallback_occurred=False,
                 )
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - frontera con wasmtime: cualquier fallo se devuelve como resultado de error
                 elapsed = (time.perf_counter() - start_t) * 1000.0
                 return SandboxExecutionResult(
                     output=f"Error en ejecución nativa WASM: {e}",

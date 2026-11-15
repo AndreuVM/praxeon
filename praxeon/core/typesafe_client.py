@@ -183,7 +183,7 @@ class TypeSafeJEVClient:
             else:
                 try:
                     noul_val = float(raw_noul)
-                except Exception:
+                except (TypeError, ValueError, OverflowError):
                     noul_val = 1.0 if bool(raw_noul) else 0.0
 
             is_divergent = bool(noul_val >= 0.5)
@@ -198,7 +198,7 @@ class TypeSafeJEVClient:
                 if div_step_str.startswith("step_"):
                     try:
                         flagged_index = int(div_step_str.split("_")[1])
-                    except Exception:
+                    except ValueError:
                         flagged_index = 0
                 else:
                     flagged_index = 0
@@ -282,7 +282,7 @@ class TypeSafeJEVClient:
                 "total_candidates": len(candidates),
             }
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - frontera con el servicio remoto: cualquier fallo activa el fallback local
             logger.warning(f"Error al invocar TypeSafe AI Jev evaluate_step_chunk: {e}. Activando fallback local.")
             return None
 
@@ -371,7 +371,7 @@ class TypeSafeJEVClient:
             else:
                 try:
                     noul_val = float(raw_noul)
-                except Exception:
+                except (TypeError, ValueError, OverflowError):
                     noul_val = 1.0 if bool(raw_noul) else 0.0
 
             loop_choice_obj = response.choices.get("loop_type") or response.choices.get("divergence_step")
@@ -401,7 +401,7 @@ class TypeSafeJEVClient:
             else:
                 try:
                     p_progress = float(raw_prog) / 4.0
-                except Exception:
+                except (TypeError, ValueError, OverflowError):
                     p_progress = 0.5
 
             nov_obj = response.scores.get("novelty")
@@ -413,7 +413,7 @@ class TypeSafeJEVClient:
             else:
                 try:
                     delta_u = float(raw_nov) / 2.0
-                except Exception:
+                except (TypeError, ValueError, OverflowError):
                     delta_u = 0.5
 
             p_progress = max(0.0, min(1.0, p_progress))
@@ -444,7 +444,7 @@ class TypeSafeJEVClient:
                 "model": getattr(response, "model", self.config.typesafe_model),
             }
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - frontera con el servicio remoto: cualquier fallo activa el fallback local
             logger.warning(f"Error al invocar TypeSafe AI Jev API: {e}.")
             return None
 
@@ -590,7 +590,7 @@ class TypeSafeJEVClient:
                 explanation=explanation,
                 culprit_tool=culprit_tool,
             )
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - frontera con el servicio remoto: cualquier fallo devuelve un informe sin bucle
             logger.warning(f"Error al diagnosticar trayectoria con TypeSafe: {e}")
             return LoopReport(
                 loop_detected=False,

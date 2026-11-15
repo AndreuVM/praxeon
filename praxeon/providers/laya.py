@@ -255,7 +255,7 @@ class LayaProvider(BaseReasoningProvider):
             self._is_warmed_up = True
             logger.info(f"LAYA warmup completado en {(time.perf_counter() - start_t) * 1000.0:.2f} ms ({self.backend})")
             return True
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - frontera con el modelo LAYA: un fallo del warmup se registra y devuelve False
             logger.warning(f"Fallo en warmup de LAYA ({self.backend}): {e}")
             return False
 
@@ -321,7 +321,7 @@ class LayaProvider(BaseReasoningProvider):
         """Inferencia neuronal con el paquete `laya` (Router.predict) en este equipo."""
         try:
             router = self._get_router()
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - cargar el modelo puede fallar de muchas formas (red, disco, memoria): se degrada al motor calibrado
             # No se pudo cargar el modelo (p. ej. sin red en el primer uso): se degrada al motor calibrado, a la vista
             logger.warning("LAYA local no pudo cargar el modelo (%s); se usa el motor calibrado.", exc)
             self.backend = "simulated"
@@ -470,7 +470,7 @@ class LayaProvider(BaseReasoningProvider):
             import psutil  # type: ignore
             process = psutil.Process(os.getpid())
             return round(process.memory_info().rss / (1024 * 1024), 2)
-        except Exception:
+        except Exception:  # noqa: BLE001 - métrica opcional: psutil puede faltar o no soportar la plataforma
             return 0.0
 
     def evaluate_action(self, state: Any, action: ActionCandidate) -> ProviderAssessment:
@@ -548,7 +548,7 @@ class LayaProvider(BaseReasoningProvider):
                 metadata=metadata,
             )
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - frontera del proveedor: un fallo interno produce una evaluación de error, no una excepción en el pipeline
             elapsed_ms = (time.perf_counter() - start_t) * 1000.0
             logger.error(f"Fallo durante la evaluación en {type(self).__name__} ({self.backend}): {e}")
 

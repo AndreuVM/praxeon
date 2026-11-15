@@ -108,7 +108,7 @@ class JsonlTelemetrySink:
         try:
             with open(self.file_path, "a", encoding="utf-8") as f:
                 f.write(event.model_dump_json() + "\n")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - la telemetría nunca debe romper la ejecución
             logger.error(f"Error escribiendo evento de telemetría a {self.file_path}: {e}")
 
 
@@ -127,7 +127,7 @@ class EventBus:
         for callback in self._subscribers:
             try:
                 callback(event)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - observador: un suscriptor defectuoso no debe afectar a los demás
                 logger.error(f"Error en suscriptor de EventBus ({callback}): {e}")
 
     def emit(

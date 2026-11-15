@@ -249,7 +249,7 @@ class AgentRegistry:
                 data = json.loads(raw_content)
                 agent = AgentDefinition.from_dict(data)
                 self._agents[agent.agent_id] = agent
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - frontera con el disco: cualquier definición ilegible o inválida va a cuarentena en vez de perderse
                 entry = {
                     "record_id": f"quarantine_{file.stem}_{uuid.uuid4().hex[:8]}",
                     "entity_type": "agent",

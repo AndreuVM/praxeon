@@ -105,7 +105,7 @@ class KevProvider(LayaProvider):
             self._call({"state": "warmup", "model": self.model_name, "questions": {"q": QUESTIONS["is_loop"]}})
             self._is_warmed_up = True
             return True
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - frontera con el servicio KEV: un fallo del warmup se registra y devuelve False
             logger.warning("Fallo en warmup de KEV (%s): %s", self.backend, exc)
             return False
 
