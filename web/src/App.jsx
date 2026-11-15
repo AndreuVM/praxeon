@@ -261,14 +261,18 @@ export default function App() {
           .sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at))[0] || null;
       } catch { /* sin lista de sesiones: se abre una limpia */ }
       if (cancelled) return;
-      // Los paneles extra del workspace anterior se cierran (sus sesiones siguen en el servidor); el principal carga la última sesión
-      sessions.ids().filter((id) => id !== MAIN_ID).forEach((id) => sessions.close(id));
-      setLayout(initialLayout());
-      setUnread({});
+      // Al CAMBIAR de workspace, los paneles extra del anterior se cierran (sus sesiones siguen en el servidor). Al arrancar no hay
+      // nada que cerrar: si la persona ya abrió un panel mientras cargaba, se respeta. El principal carga la última sesión.
+      const switched = previous !== null;
+      if (switched) {
+        sessions.ids().filter((id) => id !== MAIN_ID).forEach((id) => sessions.close(id));
+        setLayout(initialLayout());
+        setUnread({});
+      }
       const main = sessions.get(MAIN_ID);
       if (target) await main.loadSession(target.session_id);
       else main.newClean();
-      await restorePanels(path);                                      // los paneles que este workspace tenía abiertos
+      if (switched || sessions.ids().length === 1) await restorePanels(path);   // los paneles que este workspace tenía abiertos
       layoutOwnerRef.current = path;
       if (nav !== 'live') setActiveNav(nav);                          // cambiar de workspace no te saca de la vista en que estabas
     })();
