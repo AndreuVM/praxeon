@@ -58,7 +58,9 @@ Todas las modificaciones notables de este proyecto están documentadas en este a
   (91,4 → 95,0), con mínimo propio para `policy/permissions.py` (62,8 → 98,2) y `policy/egress.py` (80,3 → 99,5). Los 129
   tests nuevos fijan propiedades, no líneas: despacho del modo aislado (con un sandbox falso), tickets WebSocket de un solo
   uso, rotación y revocación de tokens, caducidad y ligadura al hash de las aprobaciones humanas, y las reglas anti-SSRF.
-  Pendiente de subir a 90 %: `policy/failsafe.py`, `sanitizer.py`, `registry.py` y `reconciliation.py`.
+  AUD-26 lleva también a mínimo 90 % `policy/failsafe.py` (82,1 → 100), `sanitizer.py` (84,8 → 100), `registry.py` (87,4 → 99,4)
+  y `reconciliation.py` (87,9 → 98,1), con 124 tests más: la tabla de verdad del fail-safe, cada patrón de secreto, la lista
+  blanca de comandos de solo lectura con sus intentos de evasión y la precedencia de reglas de la reconciliación.
 - Calidad (auditoría AUD-23, etapa 2): mypy también comprueba `praxeon/server` (168 errores a 0) y es parte de CI. Los mixins
   del servicio declaran lo que esperan del servicio en `runtime_service/host.py` (solo anotaciones, sin código en ejecución).
   Se quitaron `ExecutionService.get_sandbox` y `execute_action`: ningún código los llamaba y no podían funcionar (usaban
