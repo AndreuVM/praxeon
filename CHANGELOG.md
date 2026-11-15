@@ -133,7 +133,7 @@ Todas las modificaciones notables de este proyecto están documentadas en este a
 - Frontend: primer ejecutor de tests (Vitest, `npm test` en `web/`) y paso nuevo en el job de CI del frontend.
 - Archivos adjuntos en el chat (FE-005, nota N-003): botón con clip, arrastrar al cuadro del mensaje o pegar (Ctrl+V). Cada archivo se
   sube al instante a `.praxeon/attachments/<sesión>/` del workspace (nunca fuera de él) y aparece como ficha con su tamaño; se puede
-  quitar antes de enviar (se borra del workspace). Límites configurables: `PRAXEON_ATTACH_MAX_MB` (25) y `PRAXEON_ATTACH_MAX_FILES` (10).
+  quitar antes de enviar (se borra del workspace). Límites configurables: `PRAXEON_ATTACH_MAX_MB` (100) y `PRAXEON_ATTACH_MAX_FILES` (50).
   El nombre se sanea en el servidor (sin rutas ni `..`, reservados de Windows como `CON`, caracteres de control o de dirección de
   texto) y un nombre repetido no sobrescribe. La misión recibe en su prompt una referencia `[adjunto: ruta, tipo, tamaño]` por archivo
   y lo lee con `read_file` (pasa por la política de siempre: no hay lectura automática); un texto de menos de 8 KB va además en línea,

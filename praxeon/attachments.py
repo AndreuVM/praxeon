@@ -26,8 +26,8 @@ from praxeon import workspace_files
 from praxeon.policy.sanitizer import DataSanitizer
 
 ATTACH_DIR = ".praxeon/attachments"
-DEFAULT_MAX_FILE_MB = 25
-DEFAULT_MAX_FILES = 10
+DEFAULT_MAX_FILE_MB = 100
+DEFAULT_MAX_FILES = 50
 INLINE_MAX_BYTES = 8 * 1024                  # texto pequeño que va en línea en el mensaje
 MAX_NAME_LENGTH = 120
 _RESERVED = {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)), *(f"LPT{i}" for i in range(1, 10))}
@@ -44,7 +44,7 @@ def _env_int(name: str, default: int) -> int:
 
 
 def limits() -> dict[str, int]:
-    """Límites vigentes: ``PRAXEON_ATTACH_MAX_MB`` (25) por archivo y ``PRAXEON_ATTACH_MAX_FILES`` (10) por mensaje."""
+    """Límites vigentes: ``PRAXEON_ATTACH_MAX_MB`` (100) por archivo y ``PRAXEON_ATTACH_MAX_FILES`` (50) por mensaje."""
     return {
         "max_file_bytes": _env_int("PRAXEON_ATTACH_MAX_MB", DEFAULT_MAX_FILE_MB) * 1024 * 1024,
         "max_files": _env_int("PRAXEON_ATTACH_MAX_FILES", DEFAULT_MAX_FILES),

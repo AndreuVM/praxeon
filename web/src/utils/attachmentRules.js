@@ -1,7 +1,7 @@
 // Reglas de los adjuntos del chat (FE-005). Funciones puras: qué archivos se aceptan y cómo se muestran.
 // El servidor vuelve a comprobarlo todo (tamaño, nombre, ruta): esto solo evita subir lo que ya se sabe que se rechazará.
 
-export const DEFAULT_LIMITS = { max_file_bytes: 25 * 1024 * 1024, max_files: 10 };
+export const DEFAULT_LIMITS = { max_file_bytes: 100 * 1024 * 1024, max_files: 50 };   // los mismos que el servidor; él manda (fetchAttachmentLimits)
 
 /** «1.2 KB», «3.4 MB»… */
 export function formatSize(bytes) {

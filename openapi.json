@@ -12066,7 +12066,7 @@
                   "type": "string"
                 },
                 "type": "array",
-                "maxItems": 50
+                "maxItems": 500
               },
               {
                 "type": "null"

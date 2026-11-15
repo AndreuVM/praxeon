@@ -1,5 +1,6 @@
 """Workspace del proyecto: consultar, elegir, explorar carpetas, gestionar recientes y acceder a sus archivos."""
 
+import asyncio
 from collections.abc import Callable
 from typing import Any
 
@@ -11,6 +12,9 @@ from praxeon import attachments, workspace_files, workspace_store
 from praxeon.server.schemas.common import APIResponse
 
 router = APIRouter(prefix="/v1/workspace", tags=["Workspace"])
+
+# Un adjunto se lee entero en memoria antes de guardarse (hasta PRAXEON_ATTACH_MAX_MB): se limitan las subidas simultáneas para acotar la memoria
+_ATTACH_UPLOADS = asyncio.Semaphore(4)
 
 
 class SelectWorkspaceRequest(BaseModel):
@@ -219,13 +223,14 @@ async def upload_attachment(request: Request, session: str = "", name: str = "")
     declared = request.headers.get("content-length")
     if declared and declared.isdigit() and int(declared) > limit:
         raise _http_error(workspace_files.WorkspaceTooLarge(f"El archivo supera el límite de {limit // (1024 * 1024)} MB."))
-    chunks, received = [], 0
-    async for chunk in request.stream():
-        received += len(chunk)
-        if received > limit:
-            raise _http_error(workspace_files.WorkspaceTooLarge(f"El archivo supera el límite de {limit // (1024 * 1024)} MB."))
-        chunks.append(chunk)
-    return _manage(attachments.save_attachment, session, name, chunks)
+    async with _ATTACH_UPLOADS:
+        chunks, received = [], 0
+        async for chunk in request.stream():
+            received += len(chunk)
+            if received > limit:
+                raise _http_error(workspace_files.WorkspaceTooLarge(f"El archivo supera el límite de {limit // (1024 * 1024)} MB."))
+            chunks.append(chunk)
+        return _manage(attachments.save_attachment, session, name, chunks)
 
 
 @router.post("/upload", response_model=APIResponse[dict[str, Any]], status_code=status.HTTP_201_CREATED)

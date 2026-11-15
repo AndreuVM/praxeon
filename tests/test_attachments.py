@@ -119,13 +119,13 @@ def test_limite_de_tamano_por_archivo_y_no_deja_restos(ws, monkeypatch):
 def test_limites_configurables_con_valores_por_defecto(monkeypatch):
     for key in ("PRAXEON_ATTACH_MAX_MB", "PRAXEON_ATTACH_MAX_FILES"):
         monkeypatch.delenv(key, raising=False)
-    assert limits() == {"max_file_bytes": 25 * 1024 * 1024, "max_files": 10, "inline_max_bytes": 8 * 1024}
+    assert limits() == {"max_file_bytes": 100 * 1024 * 1024, "max_files": 50, "inline_max_bytes": 8 * 1024}
     monkeypatch.setenv("PRAXEON_ATTACH_MAX_MB", "5")
     monkeypatch.setenv("PRAXEON_ATTACH_MAX_FILES", "3")
     assert limits()["max_file_bytes"] == 5 * 1024 * 1024 and limits()["max_files"] == 3
     for bad in ("0", "-2", "muchos", ""):
         monkeypatch.setenv("PRAXEON_ATTACH_MAX_MB", bad)
-        assert limits()["max_file_bytes"] == 25 * 1024 * 1024
+        assert limits()["max_file_bytes"] == 100 * 1024 * 1024
 
 
 # ------------------------------------------------------------------ describe: el servidor no se fía del cliente -----------------------
@@ -223,7 +223,7 @@ def api(ws, tmp_path, monkeypatch):
 def test_api_limites_y_subida(api):
     client, _, ws = api
     lim = client.get("/v1/workspace/attachments/limits").json()["data"]
-    assert lim["max_files"] == 10 and lim["max_file_bytes"] == 25 * 1024 * 1024
+    assert lim["max_files"] == 50 and lim["max_file_bytes"] == 100 * 1024 * 1024
     res = client.post("/v1/workspace/attachments", params={"session": "s-9", "name": "../../x.txt"}, content=b"datos")
     assert res.status_code == 201
     data = res.json()["data"]
@@ -319,3 +319,12 @@ def test_sin_adjuntos_todo_sigue_igual(api):
     assert prompt_goal({"goal": "g", "prompt_context": None}) == "g"
     assert prompt_goal({"goal": "g"}) == "g"
     assert prompt_goal({"goal": "g", "prompt_context": "ctx"}) == "g\n\nctx"
+
+
+def test_los_limites_por_defecto_admiten_30_mb_y_rechazan_mas_de_100(api):
+    client, _, ws = api
+    ok = client.post("/v1/workspace/attachments", params={"session": "grandes", "name": "treinta.bin"}, content=b"x" * (30 * 1024 * 1024))
+    assert ok.status_code == 201 and ok.json()["data"]["size"] == 30 * 1024 * 1024
+    too_big = client.post("/v1/workspace/attachments", params={"session": "grandes", "name": "enorme.bin"}, content=b"x" * (101 * 1024 * 1024))
+    assert too_big.status_code == 413
+    assert sorted(p.name for p in (ws / ATTACH_DIR / "grandes").iterdir()) == ["treinta.bin"]

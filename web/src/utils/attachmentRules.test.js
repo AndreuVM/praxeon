@@ -21,10 +21,10 @@ describe('checkNewFiles', () => {
     expect(r.rejected).toEqual([]);
   });
   it('rechaza vacíos y los que superan el tamaño, con el motivo', () => {
-    const r = checkNewFiles([], [file('vacio.txt', 0), file('enorme.bin', 26 * MB), file('ok.txt', 1)]);
+    const r = checkNewFiles([], [file('vacio.txt', 0), file('enorme.bin', 101 * MB), file('ok.txt', 1)]);
     expect(r.accepted.map((f) => f.name)).toEqual(['ok.txt']);
     expect(r.rejected[0]).toMatchObject({ name: 'vacio.txt', reason: expect.stringContaining('vacío') });
-    expect(r.rejected[1].reason).toContain('25.0 MB');
+    expect(r.rejected[1].reason).toContain('100.0 MB');
   });
   it('el límite de un archivo es exacto', () => {
     expect(checkNewFiles([], [file('justo', DEFAULT_LIMITS.max_file_bytes)]).accepted).toHaveLength(1);
@@ -32,14 +32,14 @@ describe('checkNewFiles', () => {
   });
   it('máximo de archivos por mensaje contando los que ya hay (los fallidos no cuentan)', () => {
     const existing = [
-      ...Array.from({ length: 8 }, (_, i) => ({ id: i, status: 'ready' })),
+      ...Array.from({ length: DEFAULT_LIMITS.max_files - 2 }, (_, i) => ({ id: i, status: 'ready' })),
       { id: 'x', status: 'error' },
       { id: 'y', status: 'uploading' },
     ];
     const r = checkNewFiles(existing, [file('uno', 1), file('dos', 1), file('tres', 1)]);
-    expect(r.accepted).toHaveLength(1);                           // 9 válidos + 1 = 10
+    expect(r.accepted).toHaveLength(1);                           // (máximo - 2) listos + 1 subiendo + 1 nuevo = máximo
     expect(r.rejected.map((x) => x.name)).toEqual(['dos', 'tres']);
-    expect(r.rejected[0].reason).toContain('Máximo 10');
+    expect(r.rejected[0].reason).toContain('Máximo 50');
   });
   it('respeta límites propios', () => {
     const r = checkNewFiles([], [file('a', 3), file('b', 1), file('c', 1)], { max_file_bytes: 2, max_files: 2 });

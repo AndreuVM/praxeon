@@ -4,6 +4,7 @@ import { fetchAttachmentLimits, uploadAttachment } from '../../services/attachme
 import { DEFAULT_LIMITS, checkNewFiles } from '../../utils/attachmentRules';
 
 let counter = 0;
+const PARALLEL_UPLOADS = 3;                      // con hasta 50 archivos de 100 MB, subirlos todos a la vez agotaría la memoria
 
 /**
  * Adjuntos del mensaje que se está escribiendo (FE-005). Cada archivo se sube nada más añadirlo, así un error de tamaño o de
@@ -34,14 +35,18 @@ export default function useAttachments(sessionId) {
       ...rejected.map((r) => ({ id: `att-${++counter}`, name: r.name, size: 0, status: 'error', error: r.reason })),
       ...toUpload.map(({ id, file }) => ({ id, name: file.name, size: file.size, status: 'uploading' })),
     ]);
-    await Promise.all(toUpload.map(async ({ id, file }) => {
-      try {
-        const saved = await uploadAttachment(session.current, file);
-        patch(id, { status: 'ready', name: saved.name, size: saved.size, rel_path: saved.rel_path, mime: saved.mime });
-      } catch (err) {
-        patch(id, { status: 'error', error: err.message || 'No se pudo subir el archivo.' });
+    const queue = [...toUpload];
+    const worker = async () => {
+      for (let next = queue.shift(); next; next = queue.shift()) {
+        try {
+          const saved = await uploadAttachment(session.current, next.file);
+          patch(next.id, { status: 'ready', name: saved.name, size: saved.size, rel_path: saved.rel_path, mime: saved.mime });
+        } catch (err) {
+          patch(next.id, { status: 'error', error: err.message || 'No se pudo subir el archivo.' });
+        }
       }
-    }));
+    };
+    await Promise.all(Array.from({ length: Math.min(PARALLEL_UPLOADS, queue.length) }, worker));
   }, [patch, update]);
 
   /** Quita la ficha; si el archivo ya estaba subido y no se envió, también se borra del workspace (mejor esfuerzo). */
