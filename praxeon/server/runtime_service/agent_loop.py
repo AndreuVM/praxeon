@@ -466,6 +466,7 @@ class GenerateStep(Step[LoopContext]):
                 "consecutive_technical_failures": ctx.technical_failures,
             })
             ctx.mission["stopped"] = True
+            ctx.mission["technical_failure"] = f"El proveedor LLM '{provider}' falló {ctx.technical_failures} veces seguidas. Último error: {gen_err}"[:600]
             return Outcome.STOP
 
         if ctx.llm_fail_policy == "fail_closed":
@@ -475,6 +476,7 @@ class GenerateStep(Step[LoopContext]):
                 "llm_failure_policy": "fail_closed",
             })
             ctx.mission["stopped"] = True
+            ctx.mission["technical_failure"] = f"El proveedor LLM '{provider}' falló y la política es fail_closed. Último error: {gen_err}"[:600]
             return Outcome.STOP
 
         ctx.emit(ctx.root_id, {

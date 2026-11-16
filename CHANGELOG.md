@@ -235,6 +235,15 @@ Todas las modificaciones notables de este proyecto están documentadas en este a
   (`agy.tools_enabled`, `agy.tool_used`, `agy.image_generated`). Corrige además un punto flojo de FE-014: los pasos de `invoke_subagent` llegan
   con `step_type: "subagent"` y el monitor solo miraba `"tool"`. **El navegador de agy NO se puede ofrecer**: en modo `-p` no está declarado como
   herramienta, no existe subagente de navegador, `/browser` no se expande y ningún ajuste de `--settings` lo activa. Probado con el agy real.
+- **Corrección de agy: misiones que fallaban sin hacer nada.** Una misión real con agy en Full Access terminó «exitosamente» tras tres
+  fallos seguidos del proveedor, sin ejecutar nada. Tres causas, las tres arregladas: (1) PRAXEON y agy llaman **igual** a sus herramientas
+  (`run_command`, `read_file`, `write_file`…): el modelo llamaba a la nativa, el hook la bloqueaba (bien) y agy lo contaba como un paso
+  `error_message`, que el monitor de seguridad tomó por una herramienta ejecutada y mató el turno. El monitor solo trata como acción un
+  paso con `tool_name` o de tipo `tool`/`subagent`; un aviso de error se anota y se sigue. (2) El hook bloqueaba sin decir nada: ahora el
+  mensaje (en ASCII, sin acentos que lo rompen) le dice al modelo que escriba la acción como TEXTO en el formato Thought/Action, y el primer
+  mensaje avisa de que los nombres coinciden pero no son sus herramientas nativas. Sin herramientas activadas el hook también es el de lista de
+  permitidas (política vacía). (3) Cuando el proveedor falla y se abre el cortacircuitos técnico (o con `fail_closed`), la misión acaba como
+  **fallida** con el motivo y el último error, no como «finalizada exitosamente» tras pasos vacíos del planificador de contingencia.
 - Con `llm_failure_policy="fail_closed"`, un proveedor del agente sin credenciales hacía que la misión siguiera en silencio
   con el planificador sintético (la fábrica devolvía el simulador en vez de fallar). Ahora la misión se detiene.
 - El supervisor TypeSafe elegido sin modelo explícito llamaba al API con el modelo `typesafe` (o `default`), que rechaza

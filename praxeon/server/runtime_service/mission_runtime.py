@@ -864,7 +864,12 @@ class MissionRuntimeMixin(RuntimeHost):
             if sid in self._sessions_meta:
                 final_summary = self._sessions_meta[sid].get("final_answer")
 
-        if not final_summary and not has_any_success:
+        technical_failure = mission.get("technical_failure")
+        if technical_failure and not final_summary:
+            # El modelo falló y el planificador de contingencia solo «ejecutó» pasos vacíos: no es una misión completada
+            resolved_status = "Failed"
+            resolved_summary = f"La misión se detuvo sin completarse. {technical_failure}"
+        elif not final_summary and not has_any_success:
             resolved_status = "Intervened"
             resolved_summary = f"Misión '{goal}' intervenida por el supervisor PRAXEON tras vetos por falta de evidencia empírica."
         else:

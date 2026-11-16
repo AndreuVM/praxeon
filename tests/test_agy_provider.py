@@ -105,7 +105,8 @@ def test_agy_is_launched_as_a_pure_llm_with_every_tool_closed(fake_agy, monkeypa
         # barrera principal: el hook PreToolUse que rechaza cualquier herramienta (y falla cerrado)
         pre = rec["hooks"]["hooks"]["PreToolUse"]
         assert len(pre) == 1 and pre[0]["matcher"] == ".*"
-        assert pre[0]["hooks"] == [{"type": "command", "command": "exit 2"}]
+        (hook,) = pre[0]["hooks"]
+        assert hook["type"] == "command" and "agy_hook.py" in hook["command"] and " -I " in hook["command"]   # el hook de lista de permitidas, VACÍA: bloquea todo
         # barreras adicionales (solo esta sesión: `--settings`, nunca el settings.json del usuario)
         assert rec["settings"]["toolPermission"] == "request-review"
         assert rec["settings"]["allowNonWorkspaceAccess"] is False
@@ -283,7 +284,12 @@ def test_real_agy_cannot_act_on_its_own_even_when_asked():
     work = Path(tempfile.mkdtemp(prefix="praxeon-agy-real-"))
     try:
         (work / ".agents").mkdir()
-        (work / ".agents" / "hooks.json").write_text(json.dumps(agent_llm._AGY_HOOKS), encoding="utf-8")
+        hook = work / "agy_hook.py"
+        shutil.copyfile(Path(agent_llm.__file__).with_name("agy_hook.py"), hook)
+        policy = work / "agy_policy.json"
+        policy.write_text(json.dumps({"tools": [], "subagents": [], "caps": {}}), encoding="utf-8")
+        command = f'"{sys.executable}" -I "{hook}" "{policy}" "{work}"'
+        (work / ".agents" / "hooks.json").write_text(json.dumps({"hooks": {"PreToolUse": [{"matcher": ".*", "hooks": [{"type": "command", "command": command}]}]}}), encoding="utf-8")
         settings = work / "s.json"
         settings.write_text(json.dumps(agent_llm._AGY_SETTINGS), encoding="utf-8")
         prompt = "Crea un archivo prueba.txt con el texto hola usando tu herramienta de escribir archivos y ejecuta: echo hecho > cmd.txt"

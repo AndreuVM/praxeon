@@ -165,6 +165,23 @@ def test_a_mission_with_images_logs_the_activation_collects_the_picture_and_bloc
     assert "base64" not in json.dumps(events)
 
 
+def test_a_mission_whose_provider_keeps_failing_does_not_end_as_a_success(api, fake_agy, monkeypatch):
+    """Regresión: tras fallos seguidos del proveedor el planificador de contingencia «ejecutaba» pasos vacíos y la misión terminaba «exitosamente»."""
+    client, service, root = api
+    monkeypatch.setenv("FAKE_AGY_BYPASS", "1")                                    # el agy falso «se salta» el hook: el monitor falla cada turno
+    monkeypatch.setenv("FAKE_AGY_CALLS", json.dumps([{"name": "run_command", "args": {"CommandLine": "dir"}}]))
+    # directo al servicio para acortar la espera de la aprobación humana que pide el planificador de contingencia (en la API son 10 min)
+    service.start_mission(
+        goal="dibuja un círculo rojo", session_id="agyfail", execution_mode="local_restricted", workspace_root=str(root), llm_provider="agy",
+        max_steps=6, step_delay_ms=200, metadata={"approval_timeout_seconds": 1},
+    )
+    events = wait_for(client, "agyfail", "session.completed", timeout=90)
+    done = next(e["payload"] for e in events if e["type"] == "session.completed")
+    assert done["status"] == "failed" and "finalizada exitosamente" not in done["summary"]
+    assert "se detuvo sin completarse" in done["summary"] and "falló 3 veces seguidas" in done["summary"] and "run_command" in done["summary"]
+    assert any(e["payload"].get("intervention") == "TECHNICAL_CIRCUIT_BREAKER" for e in events if e["type"] == "intervention.applied")
+
+
 def test_a_mission_without_tools_behaves_like_fe_014(api, fake_agy, monkeypatch):
     client, _, root = api
     monkeypatch.setenv("FAKE_AGY_CALLS", json.dumps([{"name": "search_web", "args": {"query": "x"}}]))

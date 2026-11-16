@@ -808,23 +808,32 @@ class ClaudeCLILLM(BaseAgentLLM):
 # equivalente de `claude --tools ""`. Una CLI que actúa por su cuenta se saltaría la política, el supervisor y el sandbox de
 # PRAXEON, así que se la usa solo como generador de texto y se le CIERRAN todas las herramientas con varias barreras
 # (comprobado con el agy real, ver la nota N-018 de MarQ y docs/plans/…-plan-funciones-pendientes.md §4.7):
-#   1. Un hook PreToolUse en `<workdir>/.agents/hooks.json` que rechaza CUALQUIER herramienta. Es la barrera principal: las
-#      reglas `permissions.deny` solo cubren siete categorías y `deny:["*"]` no es un comodín. FALLA CERRADO: un comando que
-#      no existe o que sale con código distinto de cero también bloquea.
+#   1. Un hook PreToolUse en `<workdir>/.agents/hooks.json` (`praxeon/agy_hook.py`) que rechaza toda herramienta que el usuario no
+#      haya activado a mano, y con un mensaje que le dice al modelo qué hacer en su lugar. Es la barrera principal: las reglas
+#      `permissions.deny` solo cubren siete categorías y `deny:["*"]` no es un comodín. FALLA CERRADO: un comando que no existe o
+#      que sale con código distinto de cero también bloquea.
 #   2. `toolPermission: request-review`, reglas deny de esas siete categorías y `allowNonWorkspaceAccess: false`
 #      (con `--settings`, solo para esta sesión: no toca el settings.json del usuario) y `--sandbox`.
-#   3. El flujo de eventos se vigila: una herramienta que llegue a ejecutarse (estado DONE) mata el proceso y falla el turno.
+#   3. El flujo de eventos se vigila: una ACCIÓN de agy (paso con `tool_name` o de tipo `tool`/`subagent`) que llegue a ejecutarse (estado
+#      DONE) sin estar activada mata el proceso y falla el turno. Un paso que no es una acción (p. ej. `error_message`) es un aviso, no una
+#      herramienta ejecutada: tomarlo por una violación hizo fallar misiones reales (el modelo llamaba a su `run_command` nativo y el bloqueo
+#      llegaba como `error_message`).
 # El directorio de trabajo es temporal y vacío.
 _AGY_DENIED_CATEGORIES = ("command", "write_file", "read_file", "read_url", "mcp", "execute_url", "download_url")
-_AGY_HOOKS = {"hooks": {"PreToolUse": [{"matcher": ".*", "hooks": [{"type": "command", "command": "exit 2"}]}]}}
 _AGY_SETTINGS = {
     "toolPermission": "request-review",
     "allowNonWorkspaceAccess": False,
     "permissions": {"allow": [], "ask": [], "deny": [f"{c}(*)" for c in _AGY_DENIED_CATEGORIES]},
 }
+# PRAXEON y agy llaman IGUAL a sus herramientas (run_command, read_file, write_file…): sin esta aclaración el modelo llama a la nativa, que
+# está bloqueada, en vez de escribir la acción como texto para que PRAXEON la ejecute.
+_AGY_SAME_NAMES = (
+    "OJO: las acciones del formato de respuesta (run_command, read_file, write_file, list_dir…) NO son tus herramientas nativas aunque se llamen "
+    "igual: escríbelas como TEXTO en la línea «Action: …» y PRAXEON las ejecutará. Nunca las invoques como herramienta propia."
+)
 _AGY_NO_TOOLS_NOTE = (
     "Eres un módulo de razonamiento puro: NO uses ninguna de tus herramientas propias (están desactivadas y cualquier intento "
-    "se bloquea). Responde solo con texto, siguiendo exactamente las instrucciones anteriores."
+    "se bloquea). Responde solo con texto, siguiendo exactamente las instrucciones anteriores. " + _AGY_SAME_NAMES
 )
 
 
@@ -834,11 +843,13 @@ class _AgySession(_CliSession):
     label = "agy"
     cli_name = "la CLI de agy"
     thread_name = "praxeon-agy-cli"
-    # Pasos del flujo que NO son una acción de agy; todo lo demás (tool, subagent…) se vigila.
-    _PASSIVE_STEPS = frozenset({"user_input", "agent_response", "system_message"})
+    # Pasos del flujo que SON una acción de agy (los vigila el monitor). Cualquier paso con `tool_name` también lo es. Lo demás (respuesta,
+    # mensaje del sistema, `error_message`…) no es una herramienta ejecutada.
+    _ACTION_STEPS = frozenset({"tool", "subagent"})
 
     blocked_tools: list[str]
     executed_tools: list[str]
+    notices: list[str]                            # pasos de error/aviso de agy que no son una acción (p. ej. `error_message`)
     allowed_tools: frozenset[str] = frozenset()   # lo que el usuario activó (nombres de paso del flujo); vacío = ninguna
     state_dir: str | None = None                  # donde el hook deja sus eventos y PRAXEON el número de turno
     conversation_id: str | None = None
@@ -856,6 +867,7 @@ class _AgySession(_CliSession):
     def _begin_turn(self) -> None:
         self.blocked_tools = []
         self.executed_tools = []
+        self.notices = []
         self.turn += 1
         self.turn_started = time.time()
         if self.state_dir:
@@ -872,10 +884,13 @@ class _AgySession(_CliSession):
         if not isinstance(step, dict):
             return
         name = str(step.get("tool_name") or "")
-        if step.get("step_type") in self._PASSIVE_STEPS and not name:
-            return
-        name = name or str(step.get("step_type") or "?")
+        step_type = str(step.get("step_type") or "")
         state = step.get("state")
+        if not name and step_type not in self._ACTION_STEPS:
+            if state == "ERROR" or "error" in step_type:
+                self.notices.append(step_type or "?")
+            return
+        name = name or step_type
         if state == "DONE":
             if name in self.allowed_tools:
                 self.executed_tools.append(name)
@@ -944,16 +959,15 @@ class AgyCLILLM(ClaudeCLILLM):
         root = Path(workdir)
         try:
             (root / ".agents").mkdir()
-            hooks = _AGY_HOOKS
-            allowed: set[str] = set()
-            if self._policy is not None:
-                # copia del hook DENTRO de la sesión: no depende de dónde esté instalado PRAXEON
-                hook = root / "agy_hook.py"
-                shutil.copyfile(Path(__file__).with_name("agy_hook.py"), hook)
-                policy = root / "agy_policy.json"
-                policy.write_text(json.dumps(self._policy), encoding="utf-8")
-                hooks = {"hooks": {"PreToolUse": [{"matcher": ".*", "hooks": [{"type": "command", "command": self._hook_command(hook, policy, root)}]}]}}
-                allowed = set(self._policy["tools"]) | ({"invoke_subagent"} if self._policy["subagents"] else set())
+            # copia del hook DENTRO de la sesión: no depende de dónde esté instalado PRAXEON. Sin herramientas activadas la política es
+            # vacía y el hook las bloquea todas, pero con el mensaje que le dice al modelo que escriba la acción como texto.
+            policy_data = self._policy if self._policy is not None else {"tools": [], "subagents": [], "caps": {}}
+            hook = root / "agy_hook.py"
+            shutil.copyfile(Path(__file__).with_name("agy_hook.py"), hook)
+            policy = root / "agy_policy.json"
+            policy.write_text(json.dumps(policy_data), encoding="utf-8")
+            hooks = {"hooks": {"PreToolUse": [{"matcher": ".*", "hooks": [{"type": "command", "command": self._hook_command(hook, policy, root)}]}]}}
+            allowed = set(policy_data["tools"]) | ({"invoke_subagent"} if policy_data["subagents"] else set())
             (root / ".agents" / "hooks.json").write_text(json.dumps(hooks), encoding="utf-8")
             settings = root / "praxeon-agy-settings.json"
             settings.write_text(json.dumps(_AGY_SETTINGS), encoding="utf-8")
@@ -963,8 +977,8 @@ class AgyCLILLM(ClaudeCLILLM):
             ]
             session = _AgySession(cmd, env, workdir)
             session.allowed_tools = frozenset(allowed)
-            session.state_dir = workdir if self._policy is not None else None
-            session.blocked_tools, session.executed_tools = [], []
+            session.state_dir = workdir
+            session.blocked_tools, session.executed_tools, session.notices = [], [], []
             return session
         except OSError as exc:
             shutil.rmtree(workdir, ignore_errors=True)
@@ -980,7 +994,7 @@ class AgyCLILLM(ClaudeCLILLM):
         names = ", ".join(agy_tools.GROUPS[g].title.lower() for g in self._tools)
         return (
             "Eres un módulo de razonamiento. Solo tienes activadas estas capacidades: " + names + ". Úsalas solo si la tarea las pide; "
-            "cualquier otra herramienta tuya está desactivada y se bloquea. Responde con texto siguiendo exactamente las instrucciones anteriores."
+            "cualquier otra herramienta tuya está desactivada y se bloquea. Responde con texto siguiendo exactamente las instrucciones anteriores. " + _AGY_SAME_NAMES
         )
 
     # ---------------------------------------------------------------------------------------- resultado y actividad
@@ -997,6 +1011,9 @@ class AgyCLILLM(ClaudeCLILLM):
         blocked = getattr(session, "blocked_tools", [])
         if blocked:
             logging.getLogger(__name__).warning("[agy] PRAXEON bloqueó %d intento(s) de la CLI de usar herramientas propias: %s", len(blocked), ", ".join(blocked))
+        notices = getattr(session, "notices", [])
+        if notices:
+            logging.getLogger(__name__).warning("[agy] La CLI informó %d aviso(s) de error durante el turno (%s): suele ser el bloqueo de una herramienta propia", len(notices), ", ".join(sorted(set(notices))))
         usage = data.get("usage") or {}
         self._record_usage(usage.get("input_tokens"), usage.get("output_tokens"), usage.get("cache_read_tokens"))
         if self._policy is not None and isinstance(session, _AgySession):

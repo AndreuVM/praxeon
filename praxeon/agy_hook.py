@@ -88,11 +88,16 @@ def main(argv: list[str]) -> int:
         _append(events, {"t": time.time(), "turn": turn, "decision": "allow" if allowed else "deny", "name": name, "why": why, "detail": detail})
         if allowed:
             return 0
-        sys.stderr.write(f"PRAXEON: la herramienta '{name}' no está permitida ({why}). Responde solo con texto.")
+        # ASCII a propósito: con acentos el mensaje llega roto al modelo. Le dice qué hacer en vez de dejarlo a ciegas: PRAXEON y agy usan los
+        # MISMOS nombres (run_command, read_file…) y el modelo tiende a llamar a la herramienta nativa en vez de escribir la acción como texto.
+        sys.stderr.write(
+            f"PRAXEON: la herramienta propia '{name}' de agy no esta activada ({why}). No uses tus herramientas propias: "
+            f"para actuar, responde con TEXTO en el formato Thought/Action de las instrucciones (por ejemplo Action: {name}(...)) y PRAXEON lo ejecutara por ti."
+        )
         return 2
     except BaseException as exc:  # noqa: BLE001 - falla cerrado: cualquier error bloquea
         try:
-            sys.stderr.write(f"PRAXEON: hook de herramientas bloqueó '{name}' por un error: {type(exc).__name__}")
+            sys.stderr.write(f"PRAXEON: el hook de herramientas bloqueo '{name}' por un error: {type(exc).__name__}")
         except BaseException:  # noqa: BLE001, S110
             pass
         return 2

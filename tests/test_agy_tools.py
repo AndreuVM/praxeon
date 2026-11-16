@@ -50,6 +50,10 @@ for line in sys.stdin:
             if src:
                 name = c["args"].get("ImageName", "img") + "_" + str(int(time.time() * 1000)) + os.path.splitext(src)[1]
                 open(os.path.join(d, name), "wb").write(open(src, "rb").read())
+    if os.environ.get("FAKE_AGY_NOISE") == "1":     # agy informa un bloqueo como «error_message», sin tool_name: NO es una herramienta ejecutada
+        emit({"event": "step_update", "step_update": {"step_index": n, "state": "DONE", "step_type": "error_message"}})
+        emit({"event": "step_update", "step_update": {"step_index": n + 1, "state": "ERROR", "step_type": "generic"}})
+        emit({"event": "step_update", "step_update": {"step_index": n + 2, "state": "DONE", "step_type": "planner_response"}})
     responses = json.loads(os.environ.get("FAKE_AGY_RESPONSES", "[]"))
     text = responses[n - 1] if n - 1 < len(responses) else f"turno {n}"
     emit({"event": "result", "result": {"conversation_id": conv, "status": "SUCCESS", "response": text, "usage": {"input_tokens": 10, "output_tokens": 2}}})
@@ -191,7 +195,9 @@ def run_hook(tmp_path, policy, stdin, state_dir=None):
 def test_hook_process_allows_and_denies_and_records(tmp_path):
     ok = run_hook(tmp_path, POLICY, json.dumps({"toolCall": {"name": "search_web", "args": {"query": "capital " + "x" * 500}}}))
     no = run_hook(tmp_path, POLICY, json.dumps({"toolCall": {"name": "run_command", "args": {"CommandLine": "rm -rf /"}}}))
-    assert ok.returncode == 0 and no.returncode == 2 and "no está permitida" in no.stderr
+    assert ok.returncode == 0 and no.returncode == 2 and "no esta activada" in no.stderr
+    assert no.stderr.isascii()                                                                  # sin acentos: con ellos el mensaje llega roto al modelo
+    assert "Thought/Action" in no.stderr and "Action: run_command(...)" in no.stderr             # y le dice qué hacer en lugar de dejarlo a ciegas
     recs = [json.loads(x) for x in (tmp_path / "hook_events.jsonl").read_text(encoding="utf-8").splitlines()]
     assert [(r["decision"], r["name"]) for r in recs] == [("allow", "search_web"), ("deny", "run_command")]
     assert len(recs[0]["detail"]) <= agy_hook.MAX_DETAIL and recs[1]["detail"] == ""        # sin comandos ni prompts completos en el log
@@ -223,14 +229,28 @@ def test_hook_cap_counts_per_turn_through_the_state_files(tmp_path):
 
 
 # ------------------------------------------------------------------------------- con el agy falso: de la política a la imagen
-def test_without_tools_the_hook_is_still_the_fixed_exit_2(env):
+def test_without_tools_the_hook_blocks_everything_with_an_empty_policy(env):
     llm = make(env, ())
     try:
         llm.generate([U("x")])
         session = next(iter(llm._sessions.values()))
-        hooks = json.loads(Path(session.workdir, ".agents", "hooks.json").read_text(encoding="utf-8"))
-        assert hooks["hooks"]["PreToolUse"][0]["hooks"] == [{"type": "command", "command": "exit 2"}]
-        assert not Path(session.workdir, "agy_hook.py").exists() and llm.enabled_tools == ()
+        root = Path(session.workdir)
+        cmd = json.loads((root / ".agents" / "hooks.json").read_text(encoding="utf-8"))["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
+        assert "agy_hook.py" in cmd and llm.enabled_tools == ()
+        assert json.loads((root / "agy_policy.json").read_text(encoding="utf-8")) == {"tools": [], "subagents": [], "caps": {}}
+        assert session.allowed_tools == frozenset()
+    finally:
+        llm.end_session()
+
+
+def test_without_tools_every_native_tool_is_blocked_and_the_model_is_told_what_to_do(env):
+    env["calls"]([{"name": n, "args": {}} for n in ("run_command", "read_file", "write_file", "search_web", "invoke_subagent", "call_mcp_tool", "schedule")])
+    llm = make(env, ())
+    try:
+        llm.generate([U("x")])
+        assert [r["allowed"] for r in env["log"]()] == [False] * 7
+        assert all(r["rc"] == 2 for r in env["log"]())
+        assert "Thought/Action" in env["log"]()[0]["stderr"] and "run_command" in env["log"]()[0]["stderr"]
     finally:
         llm.end_session()
 
@@ -390,7 +410,51 @@ def test_an_activated_tool_that_runs_is_not_a_violation(env, monkeypatch):
         llm.end_session()
 
 
+# ----------------------------------------------------------------- un aviso de error de agy NO es una herramienta ejecutada
+@pytest.mark.parametrize("groups", [(), ("web_search",), ("images",)])
+def test_an_error_step_is_a_notice_not_a_violation(env, monkeypatch, groups, caplog):
+    """Regresión de una misión real: el modelo llamó a su `run_command` nativo, el hook lo bloqueó y agy lo contó como «error_message»
+    (sin tool_name). El monitor lo tomó por una herramienta ejecutada, mató el turno y la misión «terminó» tras tres fallos."""
+    import logging
+
+    monkeypatch.setenv("FAKE_AGY_NOISE", "1")
+    monkeypatch.setenv("FAKE_AGY_RESPONSES", json.dumps(['Thought: sigo\nAction: list_dir(".")']))
+    llm = make(env, groups)
+    try:
+        with caplog.at_level(logging.WARNING, logger="praxeon.agent_llm"):
+            assert llm.generate([U("x")]) == 'Thought: sigo\nAction: list_dir(".")'
+        session = next(iter(llm._sessions.values()))
+        assert session.executed_tools == [] and set(session.notices) == {"error_message", "generic"}
+        assert any("aviso(s) de error" in r.message for r in caplog.records)
+    finally:
+        llm.end_session()
+
+
+def test_a_notice_does_not_hide_a_real_violation_in_the_same_turn(env, monkeypatch):
+    monkeypatch.setenv("FAKE_AGY_NOISE", "1")
+    monkeypatch.setenv("FAKE_AGY_BYPASS", "1")
+    env["calls"]([{"name": "run_command", "args": {}}])
+    llm = make(env, ())
+    try:
+        with pytest.raises(RuntimeError, match="ejecutó por su cuenta «run_command»"):
+            llm.generate([U("x")])
+    finally:
+        llm.end_session()
+
+
 # --------------------------------------------------------------------------------------------------------- fábrica y mensaje
+def test_the_first_message_warns_that_praxeon_and_agy_share_tool_names(env):
+    """PRAXEON y agy llaman igual a run_command/read_file/write_file: hay que decir que la acción va como TEXTO, no como herramienta nativa."""
+    for groups in ((), ("web_search",)):
+        llm = make(env, groups)
+        try:
+            msg = llm._first_message("Eres un nodo.", "hola")
+            assert "NO son tus herramientas nativas aunque se llamen igual" in msg and "Action: …" in msg and "Nunca las invoques como herramienta propia" in msg
+            assert msg.index("<instrucciones_del_sistema>") < msg.index("OJO") < msg.index("hola")
+        finally:
+            llm.end_session()
+
+
 def test_the_system_message_tells_the_model_what_is_enabled(env):
     env["calls"]([])
     llm = make(env, ("images", "web_search"))
