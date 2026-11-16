@@ -19,6 +19,8 @@ os.environ["PRAXEON_NO_DOTENV"] = "1"
 # Sin aislamiento fuerte por defecto: la suite no depende de que el equipo tenga AppContainer o bubblewrap. Los tests
 # de aislamiento (tests/security/test_isolation*.py) lo activan ellos mismos.
 os.environ["PRAXEON_ISOLATION"] = "off"
+# El perfil propio de agy (FE-014/FE-015) nunca debe crearse en la carpeta de usuario real durante los tests.
+os.environ.setdefault("PRAXEON_AGY_PROFILE_DIR", tempfile.mkdtemp(prefix="praxeon_test_agy_profile_"))
 PROVIDER_CREDENTIALS = (
     "TYPESAFE_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY", "OPENAI_API_KEY", "GROQ_API_KEY", "OPENROUTER_API_KEY",
     "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "KEV_API_KEY", "LAYA_AUTH_TOKEN", "BRAVE_API_KEY",

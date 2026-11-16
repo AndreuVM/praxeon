@@ -244,6 +244,16 @@ Todas las modificaciones notables de este proyecto están documentadas en este a
   mensaje avisa de que los nombres coinciden pero no son sus herramientas nativas. Sin herramientas activadas el hook también es el de lista de
   permitidas (política vacía). (3) Cuando el proveedor falla y se abre el cortacircuitos técnico (o con `fail_closed`), la misión acaba como
   **fallida** con el motivo y el último error, no como «finalizada exitosamente» tras pasos vacíos del planificador de contingencia.
+- **agy 10-15 veces más rápido: perfil propio de PRAXEON.** Con tu perfil, `agy` tardaba 20-40 s POR TURNO aunque el modelo respondiera en 2 s
+  (medido con el agy real y un modelo rápido: 40,8 / 20,9 / 21,0 s en tres turnos): antes de cada llamada carga tus plugins, skills (48 solo en el
+  plugin «science»), reglas, memoria, servidores MCP y hooks globales, y eso es lo que tardaba ~18 s. PRAXEON usa agy solo como generador de
+  texto, así que ahora lo lanza con un **perfil propio, limpio y persistente** (`~/.praxeon/agy-home`, por `USERPROFILE`/`HOME`): 5,1 / 3,7 / 1,9 s
+  y la mitad de tokens de entrada (10 000 en vez de 21 000). El inicio de sesión se comparte porque agy lo guarda en el almacén de credenciales
+  del sistema. Además es más seguro: ya no hereda tu `toolPermission: always-proceed`, tus permisos ni tus hooks globales. Las conversaciones de
+  ese perfil con más de 7 días se borran (solo ahí, nunca tus datos). **Solo verificado en Windows**, donde es lo predeterminado; en otros sistemas
+  se activa con `PRAXEON_AGY_ISOLATE=1`; con `PRAXEON_AGY_ISOLATE=0` se usa tu perfil. Si tu sesión de agy no se comparte (credenciales en un
+  archivo en vez de en el almacén del sistema) el error lo explica. La generación de imágenes de Google es intermitente («no image generated in
+  response», a veces en los tres intentos del modelo) y puede tardar 40-70 s: no depende del perfil.
 - Con `llm_failure_policy="fail_closed"`, un proveedor del agente sin credenciales hacía que la misión siguiera en silencio
   con el planificador sintético (la fábrica devolvía el simulador en vez de fallar). Ahora la misión se detiene.
 - El supervisor TypeSafe elegido sin modelo explícito llamaba al API con el modelo `typesafe` (o `default`), que rechaza

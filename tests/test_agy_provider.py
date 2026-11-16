@@ -229,6 +229,27 @@ def test_errors_are_translated_and_reset_the_session(fake_agy, monkeypatch, mode
         llm.end_session()
 
 
+def test_a_login_error_explains_the_own_profile(fake_agy, monkeypatch, tmp_path):
+    exe, _ = fake_agy
+    monkeypatch.setenv("FAKE_AGY_MODE", "login")
+    monkeypatch.setenv("PRAXEON_AGY_PROFILE_DIR", str(tmp_path / "perfil de agy"))
+    monkeypatch.setenv("PRAXEON_AGY_ISOLATE", "1")
+    llm = AgyCLILLM(executable=exe, timeout=15)
+    try:
+        with pytest.raises(RuntimeError, match=r"perfil propio de agy.*PRAXEON_AGY_ISOLATE=0"):
+            llm.generate([U("x")])
+    finally:
+        llm.end_session()
+    monkeypatch.setenv("PRAXEON_AGY_ISOLATE", "0")           # con el perfil del usuario el mensaje no habla del perfil propio
+    llm = AgyCLILLM(executable=exe, timeout=15)
+    try:
+        with pytest.raises(RuntimeError, match="no tiene sesión iniciada") as exc:
+            llm.generate([U("x")])
+        assert "perfil propio" not in str(exc.value)
+    finally:
+        llm.end_session()
+
+
 def test_usage_is_recorded_from_the_result_event(fake_agy):
     exe, _ = fake_agy
     llm = AgyCLILLM(executable=exe)

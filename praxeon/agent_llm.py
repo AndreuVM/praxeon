@@ -958,6 +958,11 @@ class AgyCLILLM(ClaudeCLILLM):
         workdir = tempfile.mkdtemp(prefix="praxeon-agy-")
         root = Path(workdir)
         try:
+            if self._isolate_profile():
+                profile = self._profile_dir()
+                profile.mkdir(parents=True, exist_ok=True)
+                env["USERPROFILE"] = env["HOME"] = str(profile)      # agy busca su configuración, plugins y memoria bajo la carpeta de usuario
+                self._prune_profile()
             (root / ".agents").mkdir()
             # copia del hook DENTRO de la sesión: no depende de dónde esté instalado PRAXEON. Sin herramientas activadas la política es
             # vacía y el hook las bloquea todas, pero con el mensaje que le dice al modelo que escriba la acción como texto.
@@ -1004,7 +1009,12 @@ class AgyCLILLM(ClaudeCLILLM):
             detail = str(data.get("error") or data.get("response") or status or "sin detalle")[:500]
             low = detail.lower()
             if any(w in low for w in ("login", "log in", "sign in", "authenticat", "credential", "unauthorized")):
-                raise RuntimeError(f"[agy] La CLI no tiene sesión iniciada. Ejecuta 'agy' y haz login. Detalle: {detail}")
+                hint = (
+                    f" PRAXEON usa un perfil propio de agy ({self._profile_dir()}): si tu sesión no se comparte (credenciales en un archivo en vez del "
+                    "almacén del sistema), inicia sesión en ese perfil o desactívalo con PRAXEON_AGY_ISOLATE=0."
+                    if self._isolate_profile() else ""
+                )
+                raise RuntimeError(f"[agy] La CLI no tiene sesión iniciada. Ejecuta 'agy' y haz login.{hint} Detalle: {detail}")
             if any(w in low for w in ("quota", "rate limit", "resource_exhausted", "exhausted", "429")):
                 raise RuntimeError(f"[agy] Cuota o límite de uso agotado en tu cuenta. Detalle: {detail}")
             raise RuntimeError(f"[agy] La CLI devolvió un error: {detail}")
@@ -1020,9 +1030,51 @@ class AgyCLILLM(ClaudeCLILLM):
             self._collect_activity(session)
         return str(data.get("response") or "").strip()
 
+    # ------------------------------------------------------------------------------------------------ perfil propio de agy
+    # Con el perfil del usuario, agy tardaba 20-40 s POR TURNO aunque el modelo respondiera en 2 s: antes de cada llamada carga sus plugins,
+    # skills (48 solo en «science»), reglas, memoria, servidores MCP y hooks globales. Con un perfil limpio un turno tarda 1-5 s (medido con el
+    # agy real). PRAXEON usa agy solo como generador de texto, así que no necesita nada de eso, y el perfil propio es además más seguro: no hereda
+    # el `toolPermission: always-proceed`, los permisos ni los hooks globales del usuario. El inicio de sesión se comparte porque agy lo guarda en el
+    # almacén de credenciales del sistema (comprobado en Windows). Solo se verificó en Windows: allí es lo predeterminado; en otros sistemas, con
+    # PRAXEON_AGY_ISOLATE=1. Con PRAXEON_AGY_ISOLATE=0 se usa el perfil del usuario.
+    PROFILE_MAX_AGE_DAYS = 7
+
     @staticmethod
-    def _agy_home() -> Path:
-        return Path(os.environ.get("PRAXEON_AGY_HOME") or Path.home() / ".gemini" / "antigravity-cli")
+    def _isolate_profile() -> bool:
+        value = os.environ.get("PRAXEON_AGY_ISOLATE", "").strip().lower()
+        if value in ("1", "true", "yes", "on"):
+            return True
+        if value in ("0", "false", "no", "off"):
+            return False
+        return sys.platform == "win32"
+
+    @staticmethod
+    def _profile_dir() -> Path:
+        return Path(os.environ.get("PRAXEON_AGY_PROFILE_DIR") or Path.home() / ".praxeon" / "agy-home")
+
+    @classmethod
+    def _agy_home(cls) -> Path:
+        """Carpeta de datos de agy donde deja las conversaciones y artefactos (de ahí se recogen las imágenes generadas)."""
+        if os.environ.get("PRAXEON_AGY_HOME"):
+            return Path(os.environ["PRAXEON_AGY_HOME"])
+        base = cls._profile_dir() if cls._isolate_profile() else Path.home()
+        return base / ".gemini" / "antigravity-cli"
+
+    def _prune_profile(self) -> None:
+        """Borra las conversaciones de más de PROFILE_MAX_AGE_DAYS del perfil PROPIO de PRAXEON. Nunca toca datos del usuario ni nada fuera de él."""
+        if not self._isolate_profile():
+            return
+        try:
+            root = self._profile_dir().resolve()
+            brain = (self._agy_home() / "brain").resolve()
+            if root not in brain.parents or not brain.is_dir():
+                return                                       # PRAXEON_AGY_HOME apunta fuera del perfil propio: no se toca
+            limit = time.time() - self.PROFILE_MAX_AGE_DAYS * 86400
+            for entry in brain.iterdir():
+                if entry.is_dir() and not entry.is_symlink() and entry.stat().st_mtime < limit:
+                    shutil.rmtree(entry, ignore_errors=True)
+        except OSError:
+            pass                                             # limpieza de cortesía: un fallo no debe impedir la sesión
 
     def _artifact_dir(self, session: _AgySession) -> Path | None:
         """Carpeta de artefactos de esta conversación, solo si está DENTRO de `<agy>/brain/` (nunca una ruta que dé agy sin comprobar)."""

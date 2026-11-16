@@ -158,6 +158,10 @@ denegación, `--sandbox` y `--settings` solo para esa sesión (no toca tu `setti
 llegara a ejecutarse, mata el proceso y falla el turno. Quita `GEMINI_API_KEY`/`GOOGLE_API_KEY` del entorno para usar tu cuenta. Límites: no admite
 imágenes por este canal; cada turno gasta unos 21 000 tokens de entrada por las definiciones de herramientas de agy; el primer turno tarda
 unos 35 s; y la barrera depende de que agy siga respetando los hooks (hay una prueba opt-in con el agy real: `PRAXEON_TEST_REAL_AGY=1`).
+**Velocidad:** PRAXEON lanza agy con un **perfil propio y limpio** (`~/.praxeon/agy-home`) porque con tu perfil agy carga en cada turno tus plugins,
+skills, memoria, servidores MCP y hooks globales: unos 20-40 s por turno frente a 1-5 s con el perfil limpio, y la mitad de tokens de entrada. Está
+activado por defecto en Windows (lo único verificado); `PRAXEON_AGY_ISOLATE=1`/`0` lo fuerza o lo desactiva. (La cifra de «unos 35 s el primer turno»
+de arriba corresponde al perfil del usuario.)
 
 **Activar herramientas de agy a mano.** En la configuración de la misión (Ajustes), con el proveedor agy, aparece el catálogo de
 herramientas: *Generación de imágenes* (el subagente `image-generator`; la imagen se limpia de metadatos y se muestra en el chat) y *Búsqueda
