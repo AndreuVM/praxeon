@@ -55,6 +55,18 @@ export function withoutAgyTools(config) {
   return rest;
 }
 
+/**
+ * Aviso cuando el modelo elegido de agy es de los lentos. Medido con el agy real (3 turnos con el proveedor de PRAXEON): los de esfuerzo bajo o medio de
+ * Gemini 3.8 y los de Claude/GPT-OSS responden en 2-5 s por turno; los «xhigh»/«high» y las familias argon/carbon tardan 6-20 s.
+ * `null` si el modelo es rápido o desconocido.
+ */
+export function slowModelNotice(model) {
+  const m = String(model || '').trim().toLowerCase();
+  if (!m) return null;
+  if (!/(xhigh|-high$|argon|carbon)/.test(m)) return null;
+  return `«${m}» piensa más y suele tardar 3-5 veces más por paso (6-20 s frente a 2-5 s). Para ir rápido usa gemini-3.8-flash-medium, gemini-3.8-flash-low o gemini-4-hydrogen-low.`;
+}
+
 /** Imágenes que ha generado el modelo, a partir de los eventos `agy.image_generated` (las rutas son del workspace). */
 export function imageFromEvent(payload) {
   const rel = payload?.rel_path;

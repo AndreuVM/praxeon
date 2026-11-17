@@ -11,6 +11,7 @@ import uuid
 
 from praxeon.domain.interfaces import EvidenceProvider
 from praxeon.domain.models import ActionCandidate, Claim, Evidence
+from praxeon.reasoning.observations import is_failure_observation
 
 
 class EvidenceEngine(EvidenceProvider):
@@ -103,8 +104,8 @@ class EvidenceEngine(EvidenceProvider):
     ) -> list[Evidence]:
         """Extrae e ingesta evidencias automáticas a partir de la ejecución de una herramienta."""
         added: list[Evidence] = []
-        obs_lower = observation.lower()
-        is_error = "error" in obs_lower or "no encontrado" in obs_lower or "no existe" in obs_lower
+        # Solo un MENSAJE de fallo cuenta como error: leer un documento que dice «error» o «no existe» es una lectura correcta y es evidencia
+        is_error = is_failure_observation(observation)
 
         if tool_name in ("read_file", "view_file") and not is_error:
             path = str(tool_args.get("path") or tool_args.get("AbsolutePath") or tool_args.get("file_path") or "").strip()

@@ -254,6 +254,18 @@ Todas las modificaciones notables de este proyecto están documentadas en este a
   se activa con `PRAXEON_AGY_ISOLATE=1`; con `PRAXEON_AGY_ISOLATE=0` se usa tu perfil. Si tu sesión de agy no se comparte (credenciales en un
   archivo en vez de en el almacén del sistema) el error lo explica. La generación de imágenes de Google es intermitente («no image generated in
   response», a veces en los tres intentos del modelo) y puede tardar 40-70 s: no depende del perfil.
+- **Falsos «fallos» del supervisor al leer documentos** (misiones de edición de documentación): el supervisor decidía que algo había fallado buscando «error» o
+  «no existe» en CUALQUIER parte de la observación, y la observación de leer un documento o de ejecutar un comando es el contenido de lo leído. Una guía que
+  decía «los diagramas aún no existen» hizo que el cortacircuitos anunciara «fallos consecutivos intentando acceder a rutas que no existen» sobre archivos que
+  existían, y una lectura correcta que mencionaba «error» no contaba como evidencia. Ahora hay un criterio único (`praxeon.reasoning.observations`): un fallo es un
+  mensaje corto o que empieza como tal (el que ya usaba el detector de bucles); el contenido largo que solo menciona esas palabras no lo es. Lo usan el detector de bucles,
+  el motor de evidencias y el cortacircuitos.
+- **agy: reintento acotado ante «Malformed function call».** Los modelos de Gemini en agy a veces intentan una llamada a función en vez de escribir la acción como texto
+  y agy la rechaza (error del modelo, tras ~55 s de reintentos internos); eso degradaba la misión al planificador de contingencia (que ejecutaba `run_command` con
+  argumentos vacíos). Ahora PRAXEON le pide la respuesta de nuevo solo en texto, hasta 2 veces; otros errores (cuota, sesión) no se reintentan.
+- **agy: modelo predeterminado coherente y avisos de velocidad.** La interfaz decía «Predeterminado (gemini-3.8-flash-low)» pero el servidor usaba flash-medium; ahora es el
+  mismo (flash-medium) y la lista pone primero los rápidos. Medido con el agy real (3 turnos): gemini-3.8-flash-low/medium, gemini-4-hydrogen-low, claude-sonnet-5-5-low y
+  gpt-oss-120b-medium tardan 2-5 s por turno; gemini-4-hydrogen-xhigh 7-20 s; las familias argon y carbon 6-21 s. Elegir uno lento muestra un aviso.
 - Con `llm_failure_policy="fail_closed"`, un proveedor del agente sin credenciales hacía que la misión siguiera en silencio
   con el planificador sintético (la fábrica devolvía el simulador en vez de fallar). Ahora la misión se detiene.
 - El supervisor TypeSafe elegido sin modelo explícito llamaba al API con el modelo `typesafe` (o `default`), que rechaza

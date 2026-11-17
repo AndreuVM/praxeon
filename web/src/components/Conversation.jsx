@@ -15,7 +15,7 @@ import { filesFromTransfer, hasFiles, visionNotice } from '../utils/attachmentRu
 import AgyToolsPicker from './AgyToolsPicker';
 import useAgyTools from './useAgyTools';
 import GeneratedImages from './GeneratedImages';
-import { agyNotice, agySelection, isAgy, missionFields } from '../utils/agyTools';
+import { agyNotice, agySelection, isAgy, missionFields, slowModelNotice } from '../utils/agyTools';
 
 /** Posición del último mensaje del asistente (-1 si no hay): los mensajes del operador pueden ir detrás. */
 function lastAssistantIndex(messages) {
@@ -705,6 +705,11 @@ export default function Conversation({
                   compact
                 />
               </div>
+              {isAgy(llmProvider) && slowModelNotice(customModel) && (
+                <div role="note" style={{ gridColumn: '1 / -1', fontSize: 12, color: 'var(--muted)', border: '1px solid var(--line)', borderRadius: 6, padding: '4px 8px' }}>
+                  {slowModelNotice(customModel)}
+                </div>
+              )}
               {isAgy(llmProvider) && (
                 <div style={{ gridColumn: '1 / -1' }}>
                   <AgyToolsPicker config={effectiveConfig} onChange={updateConfig} disabled={isRunning} catalog={agyCatalog} />

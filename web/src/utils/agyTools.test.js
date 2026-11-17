@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { agyNotice, agySelection, confirmGroup, imageFromEvent, isAgy, missionFields, toggleGroup, withoutAgyTools } from './agyTools.js';
+import { agyNotice, agySelection, confirmGroup, imageFromEvent, isAgy, missionFields, slowModelNotice, toggleGroup, withoutAgyTools } from './agyTools.js';
 import { CONFIG_FIELDS } from './chatStore.js';
 import { pickConfig } from './panelLayout.js';
 
@@ -99,5 +99,25 @@ describe('imageFromEvent', () => {
       expect(imageFromEvent({ rel_path: bad })).toBeNull();
     }
     expect(imageFromEvent(undefined)).toBeNull();
+  });
+});
+
+describe('slowModelNotice', () => {
+  it('avisa de los modelos lentos medidos y no de los rápidos', () => {
+    for (const slow of ['gemini-4-hydrogen-xhigh', 'gemini-3.8-flash-high', 'claude-opus-5-5-high', 'gemini-4-argon-low', 'gemini-4-carbon-medium', 'GEMINI-4-HYDROGEN-XHIGH']) {
+      expect(slowModelNotice(slow), slow).toMatch(/3-5 veces más/);
+    }
+    for (const fast of ['gemini-3.8-flash-medium', 'gemini-3.8-flash-low', 'gemini-4-hydrogen-low', 'claude-sonnet-5-5-low', 'gpt-oss-120b-medium', '', null, undefined]) {
+      expect(slowModelNotice(fast), String(fast)).toBeNull();
+    }
+    expect(slowModelNotice('gemini-4-hydrogen-xhigh')).toContain('gemini-3.8-flash-medium');
+  });
+  it('la lista de la interfaz empieza por el predeterminado del servidor y deja los lentos al final', async () => {
+    const { BUILTIN_MODELS } = await import('./modelCatalog.js');
+    const list = BUILTIN_MODELS.agy;
+    expect(list[0]).toBe('gemini-3.8-flash-medium');
+    const firstSlow = list.findIndex((m) => slowModelNotice(m));
+    expect(list.slice(0, firstSlow).every((m) => !slowModelNotice(m))).toBe(true);
+    expect(list.slice(firstSlow).every((m) => slowModelNotice(m))).toBe(true);
   });
 });

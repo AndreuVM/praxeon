@@ -20,6 +20,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from praxeon.reasoning.observations import is_failure_observation
+
 if TYPE_CHECKING:
     from praxeon.reasoning.classifier import CommandClassifier
 
@@ -65,12 +67,9 @@ def _classifier() -> CommandClassifier:
 
 
 def _is_failure(observation: str) -> bool:
-    """Los mensajes de fallo de las herramientas son cortos o empiezan por «error»; el contenido de un archivo largo puede
-    contener «error» o «failed» (código, tests, logs) sin que la lectura haya fallado."""
-    obs = observation.strip().lower()
-    if not any(err in obs for err in ("no existe", "error", "failed", "fail", "not found")):
-        return False
-    return len(obs) <= 300 or obs.startswith(("error", "fallo", "traceback"))
+    """Criterio único del arnés (``praxeon.reasoning.observations``): un mensaje de fallo es corto o empieza como tal; el contenido de un
+    archivo largo puede contener «error» o «failed» (código, tests, logs) sin que la lectura haya fallado."""
+    return is_failure_observation(observation)
 
 
 def estimate_loop_probability(history: list[dict[str, Any]], tool_name: str, args: dict[str, Any]) -> float:

@@ -59,6 +59,11 @@ for line in sys.stdin:
         emit({"event": "step_update", "step_update": {"step_index": n + 2, "state": "DONE", "step_type": "planner_response"}})
     responses = json.loads(os.environ.get("FAKE_AGY_RESPONSES", "[]"))
     text = responses[n - 1] if n - 1 < len(responses) else f"turno {n}"
+    if os.environ.get("FAKE_AGY_MSGLOG"):
+        open(os.environ["FAKE_AGY_MSGLOG"], "a", encoding="utf-8").write(json.dumps({"msg": json.loads(line)["message"]["content"]}) + "\n")
+    if n <= int(os.environ.get("FAKE_AGY_MALFORMED", "0")):      # el modelo intentó una llamada a función: agy la rechaza con este error
+        emit({"event": "result", "result": {"conversation_id": conv, "status": "ERROR", "response": "", "error": text}})
+        continue
     emit({"event": "result", "result": {"conversation_id": conv, "status": "SUCCESS", "response": text, "usage": {"input_tokens": 10, "output_tokens": 2}}})
 '''
 
@@ -87,6 +92,7 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setenv("PRAXEON_AGY_HOME", str(home))
     monkeypatch.setenv("FAKE_AGY_LOG", str(base / "log.jsonl"))
     monkeypatch.setenv("FAKE_AGY_ENVLOG", str(base / "envlog.jsonl"))
+    monkeypatch.setenv("FAKE_AGY_MSGLOG", str(base / "msglog.jsonl"))
     tmp = base / "tmp"
     tmp.mkdir()
     monkeypatch.setattr("tempfile.tempdir", str(tmp))
@@ -571,6 +577,77 @@ def test_pruning_never_touches_a_data_dir_outside_the_own_profile(env, monkeypat
     finally:
         llm.end_session()
     assert user_brain.exists()
+
+
+# ------------------------------------------------------------- «Malformed function call»: el modelo intentó una llamada a función
+MALFORMED = "Your previous response contained an improperly formatted function call: Malformed function call: Failed to parse function call: Function call is empty - no input to parse.\nPlease retry with a properly formatted function call\nRetries remaining: 3"
+
+
+def msglog(env):
+    p = env["base"] / "msglog.jsonl"
+    return [json.loads(x) for x in p.read_text(encoding="utf-8").splitlines()] if p.exists() else []
+
+
+def test_a_malformed_function_call_is_retried_once_in_text_instead_of_failing_the_turn(env, monkeypatch, caplog):
+    import logging
+
+    monkeypatch.setenv("FAKE_AGY_MALFORMED", "1")
+    monkeypatch.setenv("FAKE_AGY_RESPONSES", json.dumps([MALFORMED, 'Thought: sigo\nAction: list_dir(".")']))
+    llm = make(env, ())
+    try:
+        with caplog.at_level(logging.WARNING, logger="praxeon.agent_llm"):
+            assert llm.generate([U("x")]) == 'Thought: sigo\nAction: list_dir(".")'
+        msgs = [m["msg"] for m in msglog(env)]
+        assert len(msgs) == 2 and "llamada a función mal formada" in msgs[1] and "SOLO con texto" in msgs[1]       # el segundo mensaje es el empujón
+        assert any("reintento 1 de 2" in r.message for r in caplog.records)
+    finally:
+        llm.end_session()
+
+
+def test_the_retry_is_bounded_and_then_the_error_is_reported(env, monkeypatch):
+    monkeypatch.setenv("FAKE_AGY_MALFORMED", "3")
+    monkeypatch.setenv("FAKE_AGY_RESPONSES", json.dumps([MALFORMED] * 3))
+    llm = make(env, ())
+    try:
+        with pytest.raises(RuntimeError, match="La CLI devolvió un error: .*improperly formatted function call"):
+            llm.generate([U("x")])
+        assert len(msglog(env)) == 3                       # el original y 2 reintentos, ninguno más
+        assert not llm._sessions
+    finally:
+        llm.end_session()
+
+
+def test_two_failures_then_success_is_recovered(env, monkeypatch):
+    monkeypatch.setenv("FAKE_AGY_MALFORMED", "2")
+    monkeypatch.setenv("FAKE_AGY_RESPONSES", json.dumps([MALFORMED, MALFORMED, 'Thought: ok\nAction: finish("hecho")']))
+    llm = make(env, ())
+    try:
+        assert llm.generate([U("x")]) == 'Thought: ok\nAction: finish("hecho")'
+    finally:
+        llm.end_session()
+
+
+def test_other_errors_are_not_retried(env, monkeypatch):
+    """Cuota, sesión caducada o un fallo cualquiera no se arreglan pidiendo lo mismo otra vez."""
+    monkeypatch.setenv("FAKE_AGY_MALFORMED", "1")
+    monkeypatch.setenv("FAKE_AGY_RESPONSES", json.dumps(["RESOURCE_EXHAUSTED: quota exceeded"]))
+    llm = make(env, ())
+    try:
+        with pytest.raises(RuntimeError, match="Cuota o límite de uso agotado"):
+            llm.generate([U("x")])
+        assert len(msglog(env)) == 1
+    finally:
+        llm.end_session()
+
+
+def test_a_successful_turn_mentioning_those_words_is_not_retried(env, monkeypatch):
+    monkeypatch.setenv("FAKE_AGY_RESPONSES", json.dumps(["Thought: el error decía «Malformed function call»\nAction: list_dir(\".\")"]))
+    llm = make(env, ())
+    try:
+        assert "Malformed function call" in llm.generate([U("x")])
+        assert len(msglog(env)) == 1
+    finally:
+        llm.end_session()
 
 
 # --------------------------------------------------------------------------------------------------------- fábrica y mensaje

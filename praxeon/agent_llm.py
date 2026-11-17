@@ -106,14 +106,14 @@ PROVIDER_PRESETS: dict[str, dict[str, Any]] = {
         "description": "CLI de Antigravity (agy) en segundo plano, solo como generador de texto y con sus herramientas bloqueadas (usa la sesión de tu cuenta de Google, sin clave de API)",
         "env_key": None,
         "requires_key": False,
+        # El primero es el predeterminado (el servidor y la interfaz usan el mismo). Orden: primero los que responden en 2-5 s por turno, luego los
+        # de más esfuerzo y las familias argon/carbon, que tardan 3-5 veces más (medido con el agy real).
         "recommended_models": [
-            "gemini-3.8-flash-low", "gemini-3.8-flash-medium", "gemini-3.8-flash-high",
-            "gemini-4-carbon-low", "gemini-4-carbon-medium", "gemini-4-carbon-high",
+            "gemini-3.8-flash-medium", "gemini-3.8-flash-low", "gemini-4-hydrogen-low", "claude-sonnet-5-5-low", "gpt-oss-120b-medium",
+            "claude-sonnet-5-5-medium", "claude-opus-5-5-low", "claude-opus-5-5-medium", "gemini-4-hydrogen-medium",
+            "gemini-3.8-flash-high", "claude-sonnet-5-5-high", "claude-opus-5-5-high", "gemini-4-hydrogen-high", "gemini-4-hydrogen-xhigh",
             "gemini-4-argon-low", "gemini-4-argon-medium", "gemini-4-argon-high",
-            "gemini-4-hydrogen-low", "gemini-4-hydrogen-medium", "gemini-4-hydrogen-high", "gemini-4-hydrogen-xhigh",
-            "claude-sonnet-5-5-low", "claude-sonnet-5-5-medium", "claude-sonnet-5-5-high",
-            "claude-opus-5-5-low", "claude-opus-5-5-medium", "claude-opus-5-5-high",
-            "gpt-oss-120b-medium",
+            "gemini-4-carbon-low", "gemini-4-carbon-medium", "gemini-4-carbon-high",
         ],
     },
     "gemini": {
@@ -1003,7 +1003,32 @@ class AgyCLILLM(ClaudeCLILLM):
         )
 
     # ---------------------------------------------------------------------------------------- resultado y actividad
+    # Los modelos de Gemini en agy a veces intentan una LLAMADA A FUNCIÓN en vez de escribir la acción como texto (PRAXEON y agy usan los mismos
+    # nombres de herramienta) y agy la rechaza: «Your previous response contained an improperly formatted function call… Malformed function
+    # call». Es un fallo del modelo, no del proveedor: se le pide de nuevo la respuesta SOLO en texto (acotado) en vez de degradar la misión.
+    MALFORMED_CALL_RETRIES = 2
+    _MALFORMED_CALL_MARKERS = ("improperly formatted function call", "malformed function call")
+    _MALFORMED_CALL_NUDGE = (
+        "Tu respuesta anterior no se pudo interpretar: agy la tomó por una llamada a función mal formada. No llames a ninguna función ni "
+        "herramienta: responde de nuevo SOLO con texto, en el formato Thought/Action de las instrucciones."
+    )
+
+    @classmethod
+    def _is_malformed_call(cls, data: dict[str, Any]) -> bool:
+        if str(data.get("status") or "").upper() == "SUCCESS":
+            return False
+        text = f"{data.get('error') or ''} {data.get('response') or ''}".lower()
+        return any(marker in text for marker in cls._MALFORMED_CALL_MARKERS)
+
     def _read_result(self, data: dict[str, Any], session: _CliSession) -> str:
+        retries = 0
+        while isinstance(session, _AgySession) and retries < self.MALFORMED_CALL_RETRIES and self._is_malformed_call(data):
+            retries += 1
+            logging.getLogger(__name__).warning(
+                "[agy] El modelo dejó una llamada a función mal formada (reintento %d de %d): se le pide la respuesta de nuevo, solo en texto",
+                retries, self.MALFORMED_CALL_RETRIES,
+            )
+            data = session.ask(self._MALFORMED_CALL_NUDGE, self._timeout)
         status = str(data.get("status") or "").upper()
         if status != "SUCCESS":
             detail = str(data.get("error") or data.get("response") or status or "sin detalle")[:500]

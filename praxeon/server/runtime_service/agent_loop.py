@@ -25,6 +25,7 @@ from collections.abc import Callable, Iterable
 from praxeon import attachments
 from praxeon.core.pipeline import Outcome, Step, run_steps
 from praxeon.domain.events import EventType
+from praxeon.reasoning.observations import reports_missing_path
 from praxeon.runtime.sandbox import get_default_workspace_root
 from praxeon.server.runtime_service.mission_prompt import build_mission_system_prompt
 from praxeon.server.runtime_service.node_prompt import (
@@ -820,7 +821,7 @@ class RecordResultStep(Step[LoopContext]):
         """Los fallos se deben a rutas inexistentes (solo entonces se habla de archivos inexistentes)."""
         return (
             "UNGROUNDED_FILE_NOT_FOUND" in (ctx.step_reasons or "")
-            or "no existe" in observation.lower()
+            or reports_missing_path(observation)      # no basta con que el CONTENIDO leído diga «no existe»/«no existen»
             or _targets_missing_path(ctx.tool, ctx.args, ctx.workspace_root)
         )
 
